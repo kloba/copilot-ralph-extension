@@ -381,15 +381,35 @@ test("preview is truncated to PREVIEW_CHARS + ellipsis", async () => {
 
 // ── attach/detach ─────────────────────────────────────────────────────────
 
-test("attach returns a detach function that unsubscribes listeners", async () => {
+test("attach returns a detach function that unsubscribes listeners and finalizes active loop", async () => {
     const session = makeFakeSession();
     const c = createRalphController();
     const detach = c.attach(session);
     await c.tools[0].handler({ prompt: "go", max_iterations: 5 });
     detach();
+    // Active loop is finalized with reason=detached
+    assert.equal(c.state.active, null);
+    assert.equal(c.state.lastResult.reason, "detached");
+    // Listeners are unsubscribed: emitting after detach has no effect
     session.emit("assistant.turn_end", { data: { turnId: "t0" } });
     assert.equal(session.sent.length, 0);
-    assert.equal(c.state.active.i, 0);
+});
+
+test("re-attach with a fresh session after detach starts cleanly", async () => {
+    const session1 = makeFakeSession();
+    const c = createRalphController();
+    const detach1 = c.attach(session1);
+    await c.tools[0].handler({ prompt: "go", max_iterations: 5 });
+    detach1();
+    assert.equal(c.state.lastResult.reason, "detached");
+
+    const session2 = makeFakeSession();
+    c.attach(session2);
+    const r = await c.tools[0].handler({ prompt: "go again", max_iterations: 3 });
+    assert.equal(r.resultType, "success");
+    session2.emit("assistant.turn_end", { data: { turnId: "t1" } });
+    assert.equal(session2.sent.length, 1);
+    assert.equal(c.state.active.i, 1);
 });
 
 // ── log progress ──────────────────────────────────────────────────────────

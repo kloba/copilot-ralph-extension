@@ -101,7 +101,7 @@ The actual loop **outcome** (iteration count, reason) is surfaced in two ways:
 - `session.log` markers visible in the timeline (`🔁 ralph_loop iter 4/20`, `✅ completed ralph_loop after 4 iterations (reason: completion_promise)`).
 - An `additionalContext` injection on the *next* `onUserPromptSubmitted` hook so the agent silently learns the loop finished and why (`[ralph_loop just finished — iterations=4, reason=completion_promise]`).
 
-`reason` ∈ `completion_promise` · `abort_promise` · `stagnation` · `max_iterations` · `send_error` · `aborted` · `user_stopped`.
+`reason` ∈ `completion_promise` · `abort_promise` · `stagnation` · `max_iterations` · `send_error` · `aborted` · `user_stopped` · `detached`.
 
 ### Tips
 

@@ -298,6 +298,9 @@ export function createRalphController() {
             session.on?.("abort", onAbort),
         ].filter((fn) => typeof fn === "function");
         return () => {
+            // If a loop is in flight when the session goes away, finish it
+            // gracefully instead of leaving orphaned state behind.
+            if (state.active) finish("detached");
             for (const u of unsubs) {
                 try { u(); } catch { /* ignore */ }
             }

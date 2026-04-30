@@ -156,6 +156,13 @@ test("public tools and hooks surface is frozen (defensive against accidental mut
     assert.throws(() => { c.tools.push({}); }, TypeError);
     assert.throws(() => { c.tools[0].handler = () => {}; }, TypeError);
     assert.throws(() => { c.hooks.onUserPromptSubmitted = null; }, TypeError);
+    // Deep freeze: nested parameters/properties also locked so a consumer
+    // can't tweak the declared JSON-schema bounds at runtime.
+    const ralphTool = c.tools.find((t) => t.name === "ralph_loop");
+    assert.ok(Object.isFrozen(ralphTool.parameters));
+    assert.ok(Object.isFrozen(ralphTool.parameters.properties));
+    assert.ok(Object.isFrozen(ralphTool.parameters.properties.prompt));
+    assert.throws(() => { ralphTool.parameters.properties.prompt.maxLength = 9999; }, TypeError);
 });
 
 test("ralph_loop tool spec includes stagnation_limit and required prompt", () => {

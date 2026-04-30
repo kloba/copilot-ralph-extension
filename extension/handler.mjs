@@ -450,10 +450,17 @@ export function createRalphController() {
             },
         },
     ];
-    // Freeze the public tool surface so consumers can't accidentally mutate
-    // tool descriptors or swap out handlers (would break the controller and
-    // any test that depends on tools[0]).
-    for (const t of tools) Object.freeze(t);
+    // Deep-freeze the public tool surface so consumers can't accidentally
+    // mutate tool descriptors, swap out handlers, OR tweak the JSON schema
+    // (which would break clients that introspected our parameters and
+    // would silently desync runtime validation from declared bounds).
+    const deepFreeze = (obj) => {
+        if (obj === null || typeof obj !== "object" || Object.isFrozen(obj)) return obj;
+        Object.freeze(obj);
+        for (const key of Object.keys(obj)) deepFreeze(obj[key]);
+        return obj;
+    };
+    for (const t of tools) deepFreeze(t);
     Object.freeze(tools);
 
     const hooks = Object.freeze({

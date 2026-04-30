@@ -1,5 +1,77 @@
 # Changelog
 
+## 0.4.0
+
+### Bug fixes
+- **Stale `detach()`** returned by a superseded `attach()` no longer kills
+  the controller's currently-active loop. Stale detaches skip the
+  `finish('detached')` step and only attempt to remove their own listeners.
+- **Double `attach()`** no longer registers duplicate event listeners
+  (which caused every turn to be processed twice). The second attach
+  tears down the prior wiring first.
+- **Pre-attach `ralph_loop` invocation** fails fast with a clear error
+  ("session not attached") instead of arming a loop that can never fire.
+- **`ralph_stop(null)`** no longer throws — null/non-object args are
+  tolerated and treated as "no reason".
+- **`previewOf` surrogate-pair safety** — the 500-char preview no longer
+  truncates in the middle of a UTF-16 surrogate pair, which previously
+  left a lone high surrogate that broke JSON round-tripping.
+- **Whitespace-only `completion_promise` / `abort_promise`** are now
+  rejected at validation time (previously they silently disabled the
+  matcher).
+- **`stagnation_limit: 1`** is now rejected — comparison is impossible
+  after a single response, so it would always fire on iter 1. Valid
+  values are 0 (disabled) or any integer ≥ 2.
+- **Substring overlap** between `completion_promise` and `abort_promise`
+  (e.g. `"DONE"` / `"DONE_FAIL"`) is rejected — `.includes()` would
+  always fire the first matcher, opposite of caller intent.
+
+### New features
+- **`success`/`failure` helpers protect message and resultType** —
+  `extra` metadata cannot accidentally clobber them.
+- **`note` on `send_error`** — the underlying error message is now
+  surfaced on `result.note` (sync throw or async rejection) instead
+  of only being logged.
+- **`note` on aborted reason** — when the SDK abort event carries a
+  reason payload (`ev.data.reason` / `ev.reason`), it's surfaced on
+  `result.note` and logged.
+- **Iteration log lines include elapsed-since-arm** — every
+  `🔁 ralph_loop iter X/Y` log now reports `(elapsed Xms)`.
+- **Non-string `prompt`** is rejected with a typed error
+  (`"prompt must be a string (got array)"`) instead of silently
+  coerced via `String()`.
+- **`MAX_CONTENT_CHARS = 1 MiB` cap** on the per-iteration accumulated
+  assistant content, preserving the tail (where completion phrases
+  typically live).
+
+### Defensive
+- **`Object.freeze(state.lastResult)`**, controller `tools` array, each
+  tool descriptor, and `hooks` object — consumers cannot mutate the
+  public surface or rewrite history.
+- **`attach(session)` validates session shape** (must have `.send` and
+  `.on`) and throws `TypeError` immediately instead of silently
+  no-op'ing or failing later at fire-time.
+- **`validateArgs`** rejects array/string/null arguments with a typed
+  error message indicating what was received.
+
+### Tooling
+- **install.sh** iterates files instead of hardcoding, adds `cmp -s`
+  byte-equality verification post-copy.
+- **package.json** repository.url normalized to npm-canonical
+  `git+https://...git`.
+
+### Tests
+- Suite grew from 42 → 56 covering all of the above plus regressions
+  for: stale-detach, double-attach, surrogate-pair preview, freeze
+  invariants, send_error note surfacing, content cap.
+
+### Docs
+- README **Limitations** section documenting substring-match self-trigger,
+  verbatim re-injection, stagnation override, arm-relative timing, and
+  the single-loop-per-session constraint.
+- README result-shape comment updated: `note` is set by `ralph_stop`,
+  `send_error`, and aborted-with-reason — no longer "ralph_stop only".
+
 ## 0.3.0
 
 ### Bug fixes

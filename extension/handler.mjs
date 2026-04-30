@@ -396,6 +396,13 @@ export function createRalphController() {
     };
 
     const onAbort = (ev) => {
+        // Sub-agents (task / explore / code-review / rubber-duck …) emit
+        // their own abort events that bubble up to the session bus. Per
+        // the SDK schema, sub-agent events carry an `agentId` field
+        // while root-agent events do not. We must only react to root-
+        // agent aborts; otherwise a sub-agent that gets aborted would
+        // tear down the root ralph_loop along with it.
+        if (ev && ev.agentId !== undefined && ev.agentId !== null) return;
         if (state.active) {
             // If the SDK supplies an abort reason in the event payload,
             // capture it so it shows up in the log line and additionalContext.

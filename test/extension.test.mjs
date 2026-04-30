@@ -783,6 +783,26 @@ test("sub-agent assistant.message content is NOT scanned for completion_promise"
 });
 
 
+test("sub-agent abort event does NOT terminate the root ralph_loop", async () => {
+    // Sub-agents (task / explore / rubber-duck …) emit their own abort
+    // events when they fail or are cancelled. Per the SDK schema, those
+    // events carry an `agentId` field while root-agent events don't.
+    // A sub-agent's abort must NOT tear down the root ralph_loop.
+    const { session, controller } = await arm({ max_iterations: 5, stagnation_limit: 0 });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } }); // fire iter 1
+    assert.equal(controller.state.active.i, 1);
+    // A sub-agent reports abort — must be ignored by the root controller.
+    session.emit("abort", { agentId: "explore-1", data: { reason: "subagent crashed" } });
+    assert.notEqual(controller.state.active, null, "root loop should still be active");
+    assert.equal(controller.state.active.i, 1);
+    // A real root-level abort still tears the loop down.
+    session.emit("abort", { data: { reason: "user pressed Esc" } });
+    assert.equal(controller.state.active, null);
+    assert.equal(controller.state.lastResult.reason, "aborted");
+    assert.equal(controller.state.lastResult.note, "user pressed Esc");
+});
+
+
 test("multiple turn_ends without intervening assistant.message do not bloat queue", async () => {
     // Regression for the user-reported `Queued (3)` bug: when the SDK emits
     // several turn_ends in quick succession (sub-turn boundaries, tool-call

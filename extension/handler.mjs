@@ -70,7 +70,7 @@ function success(message, extra = {}) {
  * @property {number} startedAt - Epoch ms when the loop was armed.
  * @property {number} finishedAt - Epoch ms when the loop finished.
  * @property {number} durationMs - finishedAt - startedAt.
- * @property {string} [note] - Optional reason text passed to ralph_stop.
+ * @property {string} [note] - Optional human-readable context: caller-supplied via ralph_stop({reason}), or the underlying error message on send_error, or the SDK abort reason on aborted. Truncated to 500 chars (surrogate-safe).
  */
 
 /**

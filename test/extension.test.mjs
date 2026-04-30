@@ -153,6 +153,22 @@ test("ralph_loop tool spec includes stagnation_limit and required prompt", () =>
     assert.deepEqual(t.parameters.required, ["prompt"]);
 });
 
+test("ralph_loop tool spec declares numeric ranges (minimum/maximum) on integer params", () => {
+    const c = createRalphController();
+    const t = c.tools.find((x) => x.name === "ralph_loop");
+    const p = t.parameters.properties;
+    // max_iterations: 1..1000
+    assert.equal(p.max_iterations.minimum, 1);
+    assert.equal(p.max_iterations.maximum, 1000);
+    // min_iterations: 1..1000
+    assert.equal(p.min_iterations.minimum, 1);
+    // stagnation_limit: ≥ 0 (0 disables)
+    assert.equal(p.stagnation_limit.minimum, 0);
+    // completion_promise / abort_promise: minLength=1 (no empty strings)
+    assert.equal(p.completion_promise.minLength, 1);
+    assert.equal(p.abort_promise.minLength, 1);
+});
+
 // ── arming behaviour ──────────────────────────────────────────────────────
 
 test("arming returns success and does NOT send before first turn_end", async () => {

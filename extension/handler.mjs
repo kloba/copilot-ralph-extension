@@ -346,27 +346,34 @@ export function createRalphController() {
                         type: "integer",
                         description: `Maximum iterations before stopping (default ${DEFAULTS.max_iterations}, max ${MAX_ALLOWED_ITERATIONS}).`,
                         default: DEFAULTS.max_iterations,
+                        minimum: 1,
+                        maximum: MAX_ALLOWED_ITERATIONS,
                     },
                     min_iterations: {
                         type: "integer",
                         description: `Minimum iterations before completion_promise / abort_promise are honored (default ${DEFAULTS.min_iterations}). Use this to force the agent to run additional verification passes even if it declares completion early.`,
                         default: DEFAULTS.min_iterations,
+                        minimum: 1,
+                        maximum: MAX_ALLOWED_ITERATIONS,
                     },
                     completion_promise: {
                         type: "string",
                         description:
                             "Substring that, when present in an assistant turn's response, signals completion (default 'COMPLETE').",
                         default: DEFAULTS.completion_promise,
+                        minLength: 1,
                     },
                     abort_promise: {
                         type: "string",
                         description:
                             "Optional substring that, when present in an assistant turn's response, aborts the loop early (e.g. when the agent signals a precondition failure).",
+                        minLength: 1,
                     },
                     stagnation_limit: {
                         type: "integer",
                         description: `Abort if the assistant returns N consecutive byte-identical responses (default ${DEFAULTS.stagnation_limit}, 0 to disable).`,
                         default: DEFAULTS.stagnation_limit,
+                        minimum: 0,
                     },
                 },
                 required: ["prompt"],

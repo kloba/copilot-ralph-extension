@@ -1,8 +1,13 @@
 // Hook/event-driven Ralph Wiggum controller for Copilot CLI.
 //
 // Architecture: the ralph_loop tool returns immediately after arming the loop.
-// Iterations are driven by listening to `assistant.turn_end` events and
-// re-injecting the prompt via `session.send` (fire-and-forget). This avoids
+// Iterations are driven by listening to `session.idle` events (the root
+// agent's "agentic loop fully done" signal) and re-injecting the prompt via
+// `session.send` (fire-and-forget). Using `session.idle` rather than
+// `assistant.turn_end` is critical: the SDK emits a turn_end per agentic-loop
+// sub-turn (one per tool-call boundary), so a single root response with N
+// tool calls produces N+ turn_ends. Only `session.idle` fires exactly once
+// per root response. This avoids
 // the deadlock that the older `sendAndWait`-based design hit when invoked
 // in-session, while still keeping full conversation context — every
 // iteration is a real assistant turn the user sees.
@@ -215,14 +220,13 @@ export function validateArgs(args) {
  *   hooks: { onUserPromptSubmitted: Function },
  *   attach: (session: object) => () => void,
  *   state: { active: object|null, lastAssistantContent: string, lastResult: RalphResult|null },
- *   _internal: { onAssistantMessage: Function, onTurnEnd: Function, onAbort: Function, finish: Function, success: Function, failure: Function }
+ *   _internal: { onAssistantMessage: Function, onIdle: Function, onAbort: Function, finish: Function, success: Function, failure: Function }
  * }} Controller. `attach` returns an unsubscribe function that detaches all listeners and finalizes any active loop with reason='detached'.
  */
 export function createRalphController() {
     // Sentinel for "no turn_end has been processed yet" — using a fresh
     // Symbol guarantees it can never compare equal to any value the SDK
     // might emit (including null, undefined, "", 0, NaN).
-    const NO_TURN_ID = Symbol("ralph.no_turn_id");
     const state = {
         active: null,           // see arming below for shape
         lastAssistantContent: "",
@@ -338,26 +342,19 @@ export function createRalphController() {
             : next;
     };
 
-    const onTurnEnd = (ev) => {
+    const onIdle = (ev) => {
         const a = state.active;
         if (!a) return;
 
-        // Only refire on the root agent's turn boundaries — see
-        // isSubAgentEvent() rationale. Otherwise every sub-agent
-        // invocation (task / explore / code-review / rubber-duck …)
-        // would queue another copy of our prompt.
+        // Only refire on the root agent's idle transitions — sub-agents
+        // (task / explore / code-review / rubber-duck …) report their own
+        // session.idle on the shared bus and would otherwise queue an
+        // extra copy of our prompt every time one finishes.
         if (isSubAgentEvent(ev)) return;
 
-        // Dedupe: the SDK should only emit one turn_end per turnId, but a
-        // misbehaving session implementation that double-emits would otherwise
-        // double-count iterations. Track the last turnId we processed.
-        const turnId = ev?.data?.turnId;
-        if (turnId !== undefined && turnId === a.lastTurnId) return;
-        if (turnId !== undefined) a.lastTurnId = turnId;
-
-        // The turn that *called* ralph_loop will end before any iteration runs.
-        // Use that first turn_end to fire iteration 1's prompt; only evaluate
-        // completion/abort on subsequent turn_ends.
+        // The turn that *called* ralph_loop will go idle before any
+        // iteration runs. Use that first idle to fire iteration 1's
+        // prompt; only evaluate completion/abort on subsequent idles.
         if (a.pendingFire) {
             a.pendingFire = false;
             a.i = 1;
@@ -370,15 +367,15 @@ export function createRalphController() {
         }
 
         // Queue-bloat protection: if the prompt we previously fired hasn't
-        // produced any assistant.message yet, this turn_end is a sub-turn /
-        // tool-call boundary fired before the agent picked up our prompt.
+        // produced any assistant.message yet, this idle is a stale signal
+        // (e.g. the SDK fired idle before the agent picked up our send).
         // Refiring here would queue another identical copy.
         if (a.fireInFlight && !a.observedMessageThisFire) {
-            log(`ralph_loop: skipping turn_end — previous prompt not yet picked up by agent`);
+            log(`ralph_loop: skipping idle — previous prompt not yet picked up by agent`);
             return;
         }
         // Consume the in-flight marker now that the agent has fully
-        // responded to our last fire (assistant.message + turn_end).
+        // responded to our last fire (assistant.message + session.idle).
         a.fireInFlight = false;
         a.observedMessageThisFire = false;
 
@@ -498,7 +495,6 @@ export function createRalphController() {
                     fireInFlight: false,
                     observedMessageThisFire: false,
                     startedAt: Date.now(),
-                    lastTurnId: NO_TURN_ID,
                 };
                 state.lastAssistantContent = "";
                 state.lastResult = null;
@@ -610,7 +606,7 @@ export function createRalphController() {
         // drop the bogus value so detach doesn't crash.
         const subs = [
             ["assistant.message", session.on("assistant.message", onAssistantMessage)],
-            ["assistant.turn_end", session.on("assistant.turn_end", onTurnEnd)],
+            ["session.idle", session.on("session.idle", onIdle)],
             ["abort", session.on("abort", onAbort)],
         ];
         const unsubs = [];
@@ -644,7 +640,7 @@ export function createRalphController() {
         attach,
         state,
         // Exposed for tests so they can drive events deterministically.
-        _internal: { onAssistantMessage, onTurnEnd, onAbort, finish, success, failure },
+        _internal: { onAssistantMessage, onIdle, onAbort, finish, success, failure },
     };
 }
 

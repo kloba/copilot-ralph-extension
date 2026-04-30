@@ -13,14 +13,14 @@ Ralph Wiggum is an iterative-agent technique: re-feed the same prompt to a codin
 
 Existing Ralph implementations for Copilot CLI (open-ralph-wiggum, copilot-ralph-mode, etc.) are **shell wrappers** — they spawn `copilot -p "..."` as a subprocess for each iteration. Each iteration starts with a **fresh session**.
 
-This extension instead runs **in-session**, driven by the Copilot CLI extension SDK's `assistant.turn_end` event — the same architectural pattern as Anthropic's Claude Code [`ralph-wiggum`](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum) plugin (their `Stop` hook). Conversation context is **retained** across iterations and every iteration is a normal assistant turn the user sees.
+This extension instead runs **in-session**, driven by the Copilot CLI extension SDK's `session.idle` event — the same architectural pattern as Anthropic's Claude Code [`ralph-wiggum`](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum) plugin (their `Stop` hook). Conversation context is **retained** across iterations and every iteration is a normal assistant turn the user sees.
 
 | | This extension | Shell wrappers | Claude Code plugin |
 |---|---|---|---|
 | Agent | Copilot CLI | Copilot/Claude/Codex/etc. | Claude Code |
 | Context across iterations | Retained | Fresh each iter | Retained |
 | Where it runs | Inside your active session | External subprocess | Inside your active session |
-| Mechanism | `assistant.turn_end` event + `session.send` | Subprocess fork per iter | `Stop` hook + re-prompt |
+| Mechanism | `session.idle` event + `session.send` | Subprocess fork per iter | `Stop` hook + re-prompt |
 
 If you want fresh-context iterations, use [open-ralph-wiggum](https://github.com/Th0rgal/open-ralph-wiggum). If you want the agent to keep its working memory inside Copilot CLI, use this.
 
@@ -67,7 +67,7 @@ In a Copilot CLI session, ask the agent to invoke `ralph_loop`:
 
 > *"Use ralph_loop to: create a REST API for todos with CRUD operations and tests. Run tests after each change. Output COMPLETE when all tests pass. max_iterations 20."*
 
-The tool **arms** the loop and returns immediately. Iterations then play out as normal assistant turns, each kicked off by an `assistant.turn_end` event re-injecting the prompt via `session.send`.
+The tool **arms** the loop and returns immediately. Iterations then play out as normal assistant turns, each kicked off by a `session.idle` event re-injecting the prompt via `session.send`.
 
 ### Tool parameters
 
@@ -164,7 +164,7 @@ const session = await joinSession({
     tools: controller.tools,   // ralph_loop + ralph_stop
     hooks: controller.hooks,   // onUserPromptSubmitted carries the result forward
 });
-controller.attach(session);    // wires assistant.turn_end / assistant.message / abort listeners
+controller.attach(session);    // wires session.idle / assistant.message / abort listeners
 ```
 
 ### Arming
@@ -178,12 +178,12 @@ controller.attach(session);    // wires assistant.turn_end / assistant.message /
 | Event | Role |
 |---|---|
 | `assistant.message` | Accumulates the current turn's content into `state.lastAssistantContent` (capped at 1 MiB; tail preserved so completion phrases near the end aren't lost). |
-| `assistant.turn_end` | The heartbeat. The first `turn_end` after arming is the turn that *called* `ralph_loop` — that fires iteration 1's prompt. Each subsequent `turn_end` runs the decision ladder: completion → abort → stagnation → max → otherwise re-fire. |
+| `session.idle` | The heartbeat. The first idle after arming is the turn that *called* `ralph_loop` — that fires iteration 1's prompt. Each subsequent idle runs the decision ladder: completion → abort → stagnation → max → otherwise re-fire. |
 | `abort` | Finalizes the loop with `reason: "aborted"` (and `note` if the SDK supplies a reason). |
 
 Re-firing means calling `session.send({ prompt })` — fire-and-forget. Each call **enqueues a new user-turn** in the live conversation, which is why every iteration shows up in the timeline as a real user prompt followed by a real assistant turn (not some hidden background invocation).
 
-Decision ladder per `turn_end` (in order, first match wins):
+Decision ladder per `session.idle` (in order, first match wins):
 
 1. `i >= min` and `text.includes(completion_promise)` → finish `completion_promise`.
 2. `i >= min` and `abort_promise` set and `text.includes(abort_promise)` → finish `abort_promise`.
@@ -195,17 +195,17 @@ A failed `session.send` (sync throw or async rejection) finishes with `reason: "
 
 ### Root agent only — sub-agents are filtered
 
-The SDK fans every event out to a single bus: a sub-agent (e.g. invoking `task` / `explore` / `code-review` / `rubber-duck`) emits its own `assistant.message`, `assistant.turn_end`, and `abort` events alongside the root agent's. Every event carries an optional `agentId` field that is **absent on root-agent events** and a string on sub-agent events.
+The SDK fans every event out to a single bus: a sub-agent (e.g. invoking `task` / `explore` / `code-review` / `rubber-duck`) emits its own `assistant.message`, `session.idle`, and `abort` events alongside the root agent's. Every event carries an optional `agentId` field that is **absent on root-agent events** and a string on sub-agent events.
 
 Ralph filters on this field before reacting:
 
 - **`assistant.message`** — sub-agent content is ignored, so quoting `COMPLETE` inside an `explore` summary doesn't terminate the loop.
-- **`assistant.turn_end`** — sub-agent turn boundaries are ignored, so an `explore` invocation that takes 12 turns doesn't queue 12 copies of the prompt.
+- **`session.idle`** — sub-agent idle transitions are ignored, so an `explore` invocation that takes 12 turns doesn't queue 12 copies of the prompt.
 - **`abort`** — sub-agent aborts are ignored, so a failed `task` / `explore` / `rubber-duck` doesn't kill the root ralph loop.
 
 ### Queue-bloat protection
 
-Even on the root agent, the SDK can emit several `assistant.turn_end` events around a single response (sub-turn / tool-call boundaries). Without protection, every extra `turn_end` would `session.send` another copy of the prompt, producing the visible **`Queued (3)`** marker in the CLI UI of identical messages. A `fireInFlight` / `observedMessageThisFire` gate ensures Ralph only refires after it's actually seen an `assistant.message` from the root agent since the previous fire.
+The SDK emits one `session.idle` per *root-level* agentic loop completion — not per agentic-loop sub-turn. (An earlier design listened to `assistant.turn_end`, which fires once per tool-call boundary, so a single root response with N tool calls produced N+ events and queued duplicates — visible as the **`Queued (N)`** marker in the CLI UI.) As an additional belt-and-suspenders gate, a `fireInFlight` / `observedMessageThisFire` flag pair ensures Ralph only refires after it's actually seen an `assistant.message` from the root agent since the previous fire.
 
 ### The one hook (post-loop, not iteration driver)
 

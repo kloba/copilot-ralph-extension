@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Bug fixes (root agentic loop boundary)
+- **Refire trigger switched from `assistant.turn_end` to `session.idle`.**
+  The SDK emits one `assistant.turn_end` per *agentic-loop sub-turn*
+  (each tool-call roundtrip carries its own `turnId`), so a single root
+  response with N tool calls produced N+ events. Earlier per-turnId
+  dedupe + `fireInFlight` gates didn't cover the case where the root
+  agent emitted an `assistant.message` early in the response and then
+  ran tool calls — each subsequent sub-turn `turn_end` passed all
+  gates and queued another copy of the prompt, reproducing the
+  `Queued (N)` UI marker. `session.idle` fires exactly once per
+  root-level agentic-loop completion, which is the correct iteration
+  boundary. The `fireInFlight` / `observedMessageThisFire` gate is
+  retained as belt-and-suspenders.
+
 ## 0.5.0
 
 ### Bug fixes (queue stacking & sub-agent leakage)

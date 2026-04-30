@@ -35,7 +35,7 @@ let _turnCounter = 0;
 function runTurn(session, content) {
     _turnCounter += 1;
     session.emit("assistant.message", { data: { content } });
-    session.emit("assistant.turn_end", { data: { turnId: `t${_turnCounter}` } });
+    session.emit("session.idle", { data: {} });
 }
 
 async function arm(args = {}) {
@@ -285,7 +285,7 @@ test("arming twice before first turn_end shows clearer 'armed' message", async (
 
 test("first turn_end after arming fires iter 1 prompt; subsequent turn_ends evaluate", async () => {
     const { session, controller } = await arm({ max_iterations: 3 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     assert.equal(session.sent.length, 1);
     assert.equal(session.sent[0].prompt, "go");
     assert.equal(controller.state.active.i, 1);
@@ -297,7 +297,7 @@ test("first turn_end after arming fires iter 1 prompt; subsequent turn_ends eval
 
 test("completion_promise on iteration 1 stops the loop", async () => {
     const { session, controller } = await arm({ max_iterations: 5 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "all done COMPLETE");
     assert.equal(controller.state.active, null);
     assert.equal(controller.state.lastResult.reason, "completion_promise");
@@ -307,7 +307,7 @@ test("completion_promise on iteration 1 stops the loop", async () => {
 
 test("min_iterations: completion_promise ignored before min reached", async () => {
     const { session, controller } = await arm({ max_iterations: 5, min_iterations: 3 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "early COMPLETE 1"); // iter 1: ignored
     assert.equal(controller.state.active !== null, true, "still active after iter 1");
     runTurn(session, "early COMPLETE 2"); // iter 2: ignored
@@ -325,7 +325,7 @@ test("min_iterations: abort_promise also ignored before min", async () => {
         min_iterations: 2,
         abort_promise: "GIVE_UP",
     });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "GIVE_UP early"); // iter 1: ignored
     assert.equal(controller.state.active !== null, true);
     runTurn(session, "GIVE_UP now"); // iter 2: honored
@@ -339,7 +339,7 @@ test("min_iterations: stagnation still triggers before min (safety override)", a
         min_iterations: 5,
         stagnation_limit: 2,
     });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "same");
     runTurn(session, "same");
     runTurn(session, "same");
@@ -393,7 +393,7 @@ test("min_iterations validation: must be >= 1 and <= max_iterations", async () =
 
 test("completion_promise on iteration 3 stops the loop", async () => {
     const { session, controller } = await arm({ max_iterations: 5 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "step 1");
     runTurn(session, "step 2");
     runTurn(session, "yes COMPLETE here");
@@ -404,7 +404,7 @@ test("completion_promise on iteration 3 stops the loop", async () => {
 
 test("max_iterations exhaustion finishes with reason=max_iterations", async () => {
     const { session, controller } = await arm({ max_iterations: 2, stagnation_limit: 0 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "alpha");
     runTurn(session, "beta");
     assert.equal(controller.state.active, null);
@@ -418,7 +418,7 @@ test("abort_promise stops the loop", async () => {
         max_iterations: 5,
         abort_promise: "PRECONDITION_FAILED",
     });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "PRECONDITION_FAILED missing config");
     assert.equal(controller.state.lastResult.reason, "abort_promise");
     assert.equal(controller.state.lastResult.iterations, 1);
@@ -426,7 +426,7 @@ test("abort_promise stops the loop", async () => {
 
 test("stagnation: 3 identical responses trigger stagnation", async () => {
     const { session, controller } = await arm({ max_iterations: 10, stagnation_limit: 3 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "same");
     runTurn(session, "same");
     runTurn(session, "same");
@@ -436,7 +436,7 @@ test("stagnation: 3 identical responses trigger stagnation", async () => {
 
 test("stagnation streak resets on different response", async () => {
     const { session, controller } = await arm({ max_iterations: 10, stagnation_limit: 3 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "a");
     runTurn(session, "a");
     runTurn(session, "b");
@@ -448,7 +448,7 @@ test("stagnation streak resets on different response", async () => {
 
 test("stagnation_limit=0 disables detection", async () => {
     const { session, controller } = await arm({ max_iterations: 4, stagnation_limit: 0 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "same");
     runTurn(session, "same");
     runTurn(session, "same");
@@ -461,7 +461,7 @@ test("stagnation_limit=0 disables detection", async () => {
 
 test("ralph_stop cancels an active loop and reports iteration count", async () => {
     const { session, controller, stop } = await arm({ max_iterations: 10 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "still going");
     runTurn(session, "still going 2");
     const r = await stop.handler({});
@@ -507,7 +507,7 @@ test("ralph_stop with no active loop returns failure", async () => {
 
 test("ralph_stop tolerates null/undefined/array args without crashing", async () => {
     const { session, controller, stop } = await arm({ max_iterations: 5 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     // null instead of {} — JS default params don't catch null
     const r = await stop.handler(null);
     assert.equal(r.resultType, "success");
@@ -516,13 +516,13 @@ test("ralph_stop tolerates null/undefined/array args without crashing", async ()
 
     // Re-arm and try undefined
     await controller.tools[0].handler({ prompt: "go", max_iterations: 5 });
-    session.emit("assistant.turn_end", { data: { turnId: "t1" } });
+    session.emit("session.idle", { data: {} });
     const r2 = await stop.handler(undefined);
     assert.equal(r2.resultType, "success");
 
     // Array: must not throw, reason just ignored
     await controller.tools[0].handler({ prompt: "go", max_iterations: 5 });
-    session.emit("assistant.turn_end", { data: { turnId: "t2" } });
+    session.emit("session.idle", { data: {} });
     const r3 = await stop.handler(["reason"]);
     assert.equal(r3.resultType, "success");
     assert.equal(controller.state.lastResult.note, undefined);
@@ -535,7 +535,7 @@ test("send throwing during arm fire-out finishes with reason=send_error", async 
     const c = createRalphController();
     c.attach(session);
     await c.tools[0].handler({ prompt: "go", max_iterations: 5 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     assert.equal(c.state.active, null);
     assert.equal(c.state.lastResult.reason, "send_error");
     // The underlying error message should be surfaced on the result.
@@ -547,7 +547,7 @@ test("send rejecting asynchronously finishes with reason=send_error", async () =
     const c = createRalphController();
     c.attach(session);
     await c.tools[0].handler({ prompt: "go", max_iterations: 5 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     // give microtasks a tick
     await new Promise((r) => setImmediate(r));
     assert.equal(c.state.active, null);
@@ -562,7 +562,7 @@ test("session.log throwing does not crash the controller", async () => {
     c.attach(session);
     const r = await c.tools[0].handler({ prompt: "go", max_iterations: 3 });
     assert.equal(r.resultType, "success");
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     assert.equal(c.state.active.i, 1);
 });
 
@@ -570,7 +570,7 @@ test("session.log throwing does not crash the controller", async () => {
 
 test("session abort event finishes the loop with reason=aborted", async () => {
     const { session, controller } = await arm({ max_iterations: 10 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "halfway");
     session.emit("abort", {});
     assert.equal(controller.state.active, null);
@@ -587,7 +587,7 @@ test("abort event with no active loop is a no-op", async () => {
 
 test("abort event with reason payload captures it as note on the result", async () => {
     const { session, controller } = await arm({ max_iterations: 10 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "halfway");
     session.emit("abort", { data: { reason: "user pressed Ctrl-C" } });
     assert.equal(controller.state.lastResult.reason, "aborted");
@@ -599,7 +599,7 @@ test("abort event with reason payload captures it as note on the result", async 
 test("abort event falls back to top-level ev.reason when ev.data.reason is absent", async () => {
     // SDKs vary; some put reason at the event root rather than under data.
     const { session, controller } = await arm({ max_iterations: 5 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     session.emit("abort", { reason: "  network blip  " });
     assert.equal(controller.state.lastResult.reason, "aborted");
     // Whitespace must be trimmed so it lands cleanly in logs / additionalContext.
@@ -609,7 +609,7 @@ test("abort event falls back to top-level ev.reason when ev.data.reason is absen
 test("abort event with non-string reason ignores it (no note)", async () => {
     // Defensive: a numeric / object reason must not be stringified into the note.
     const { session, controller } = await arm({ max_iterations: 5 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     session.emit("abort", { data: { reason: 42 } });
     assert.equal(controller.state.lastResult.reason, "aborted");
     assert.equal(controller.state.lastResult.note, undefined);
@@ -617,7 +617,7 @@ test("abort event with non-string reason ignores it (no note)", async () => {
 
 test("abort event with whitespace-only reason ignores it (no note)", async () => {
     const { session, controller } = await arm({ max_iterations: 5 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     session.emit("abort", { data: { reason: "   \t\n  " } });
     assert.equal(controller.state.lastResult.reason, "aborted");
     assert.equal(controller.state.lastResult.note, undefined);
@@ -627,7 +627,7 @@ test("abort event with whitespace-only reason ignores it (no note)", async () =>
 
 test("onUserPromptSubmitted injects additionalContext exactly once after a finish", async () => {
     const { session, controller } = await arm({ max_iterations: 5 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "COMPLETE done");
     assert.equal(controller.state.lastResult.reason, "completion_promise");
 
@@ -653,7 +653,7 @@ test("onUserPromptSubmitted is a no-op when no loop has finished", async () => {
 
 test("onUserPromptSubmitted collapses multi-line note into single line", async () => {
     const { session, controller, stop } = await arm({ max_iterations: 5 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     // Stop with a multi-line reason — note should land on the result, then
     // be flattened inside additionalContext.
     await stop.handler({ reason: "first line\n  second line\n\nthird" });
@@ -667,7 +667,7 @@ test("finish log line collapses multi-line note (single-line timeline marker)", 
     // A note with newlines (e.g. an Error stack from send_error) must not
     // break the timeline log into multiple lines.
     const { session, controller, stop } = await arm({ max_iterations: 5 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     await stop.handler({ reason: "line1\nline2\n  line3" });
     // Find the finish log entry.
     const finishLog = session.logs.find((l) => /ralph_loop after \d+ iteration/.test(l));
@@ -683,10 +683,10 @@ test("missing assistant.message before turn_end skips refire (queue-bloat protec
     // sub-turn boundaries (or similar) faster than the agent picks up our
     // prompt. Refiring would queue duplicate prompts; instead we wait.
     const { session, controller } = await arm({ max_iterations: 3, stagnation_limit: 0 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } }); // pendingFire → iter 1
+    session.emit("session.idle", { data: {} }); // pendingFire → iter 1
     assert.equal(controller.state.active.i, 1);
     assert.equal(session.sent.length, 1);
-    session.emit("assistant.turn_end", { data: { turnId: "t1" } }); // skipped (no msg)
+    session.emit("session.idle", { data: {} }); // skipped (no msg)
     assert.equal(controller.state.active.i, 1, "iter must not advance without assistant.message");
     assert.equal(session.sent.length, 1, "no duplicate prompt queued");
 });
@@ -698,7 +698,7 @@ test("silent iteration does not carry prior content into completion check (regre
         completion_promise: "MAGIC",
         stagnation_limit: 0,
     });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } }); // fire iter 1
+    session.emit("session.idle", { data: {} }); // fire iter 1
     runTurn(session, "MAGIC happens here"); // iter 1 has MAGIC
     // iter 1's eval: contains MAGIC at i=1, min=1 → finishes immediately.
     assert.equal(controller.state.lastResult.reason, "completion_promise");
@@ -714,10 +714,10 @@ test("silent iteration does not carry prior content into completion check (regre
         completion_promise: "MAGIC",
         stagnation_limit: 0,
     });
-    s2.emit("assistant.turn_end", { data: { turnId: "t0" } }); // fire iter 1
+    s2.emit("session.idle", { data: {} }); // fire iter 1
     runTurn(s2, "MAGIC at iter 1"); // iter 1 ignored (min=3), fires iter 2
     assert.equal(c2.state.active.i, 2);
-    s2.emit("assistant.turn_end", { data: { turnId: "t2" } }); // silent → skipped
+    s2.emit("session.idle", { data: {} }); // silent → skipped
     assert.notEqual(c2.state.active, null);
     assert.equal(c2.state.active.i, 2, "silent turn_end must not advance the loop");
     assert.equal(s2.sent.length, 2, "no duplicate prompt queued");
@@ -726,53 +726,55 @@ test("silent iteration does not carry prior content into completion check (regre
     assert.equal(c2.state.lastAssistantContent, "");
 });
 
-test("duplicate turn_end with same turnId is ignored (no double-count)", async () => {
+test("duplicate session.idle is naturally idempotent (no double-count)", async () => {
     const { session, controller } = await arm({ max_iterations: 5, stagnation_limit: 0 });
-    session.emit("assistant.turn_end", { data: { turnId: "t-init" } }); // fires iter 1
+    session.emit("session.idle", { data: {} }); // fires iter 1
     // Iter 1 produces "step 1"
     session.emit("assistant.message", { data: { content: "step 1" } });
-    session.emit("assistant.turn_end", { data: { turnId: "t-iter-1" } }); // i=2, sends iter 2 prompt
+    session.emit("session.idle", { data: {} }); // i=2, sends iter 2 prompt
     assert.equal(controller.state.active.i, 2);
     assert.equal(session.sent.length, 2);
-    // Duplicate emit of the same turnId should be a no-op.
-    session.emit("assistant.turn_end", { data: { turnId: "t-iter-1" } });
+    // Duplicate idle without a new assistant.message hits the queue-bloat
+    // gate (fireInFlight && !observedMessageThisFire) and is skipped.
+    session.emit("session.idle", { data: {} });
     assert.equal(controller.state.active.i, 2);
     assert.equal(session.sent.length, 2);
 });
 
-test("turn_end with turnId=null is NOT mistaken for duplicate of initial sentinel", async () => {
-    // Regression: lastTurnId used to be initialized to null, so the very first
-    // turn_end carrying turnId:null would self-match and be dropped, leaving
-    // the loop stuck before iter 1 ever fired.
+test("session.idle with empty data fires iter 1 (no turnId required)", async () => {
+    // Regression: the older implementation tracked lastTurnId and used a
+    // sentinel because turnId:null could self-match. session.idle has no
+    // turnId, so this edge case is gone — but cover it explicitly so a
+    // future refactor doesn't reintroduce the bug.
     const { session, controller } = await arm({ max_iterations: 5, stagnation_limit: 0 });
-    session.emit("assistant.turn_end", { data: { turnId: null } });
-    assert.equal(controller.state.active.i, 1, "iter 1 must have armed despite turnId=null");
+    session.emit("session.idle", { data: {} });
+    assert.equal(controller.state.active.i, 1, "iter 1 must have armed");
     assert.equal(session.sent.length, 1, "prompt must have been sent");
 });
 
-test("sub-agent turn_end events (agentId set) do not refire — root only", async () => {
-    // Regression for the user-reported `Queued (5)` bug: when the root
+test("sub-agent idle events (agentId set) do not refire — root only", async () => {
+    // Regression for the user-reported `Queued (N)` bug: when the root
     // agent invokes sub-agents (task/explore/code-review/rubber-duck),
-    // each sub-agent's own assistant.turn_end bubbles up to the session
+    // each sub-agent's own session.idle bubbles up to the shared session
     // bus. Per the SDK schema, those carry an `agentId` while the root
     // agent's events do not. Refiring on a sub-agent boundary queues
     // duplicate prompts.
     const { session, controller } = await arm({ max_iterations: 10, stagnation_limit: 0 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } }); // pendingFire → iter 1 sent
+    session.emit("session.idle", { data: {} }); // pendingFire → iter 1 sent
     assert.equal(session.sent.length, 1);
     // Root emits a real message so the in-flight gate is cleared.
     session.emit("assistant.message", { data: { content: "thinking…" } });
-    // 5 sub-agent turn_ends in a row — must all be ignored.
+    // 5 sub-agent idle events in a row — must all be ignored.
     for (let k = 0; k < 5; k++) {
-        session.emit("assistant.turn_end", {
+        session.emit("session.idle", {
             agentId: `sub-${k}`,
-            data: { turnId: `sub-turn-${k}` },
+            data: {},
         });
     }
-    assert.equal(session.sent.length, 1, "sub-agent turn_ends must not queue more prompts");
+    assert.equal(session.sent.length, 1, "sub-agent idle events must not queue more prompts");
     assert.equal(controller.state.active.i, 1);
-    // The root agent's actual turn_end (no agentId) finally fires next iter.
-    session.emit("assistant.turn_end", { data: { turnId: "root-1" } });
+    // The root agent's actual idle (no agentId) finally fires next iter.
+    session.emit("session.idle", { data: {} });
     assert.equal(controller.state.active.i, 2);
     assert.equal(session.sent.length, 2);
 });
@@ -786,7 +788,7 @@ test("sub-agent assistant.message content is NOT scanned for completion_promise"
         completion_promise: "ALL_DONE",
         stagnation_limit: 0,
     });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } }); // fire iter 1
+    session.emit("session.idle", { data: {} }); // fire iter 1
     // Sub-agent says ALL_DONE — must be ignored.
     session.emit("assistant.message", {
         agentId: "explore-1",
@@ -794,7 +796,7 @@ test("sub-agent assistant.message content is NOT scanned for completion_promise"
     });
     // Root agent emits its own (non-completion) message and turn_end.
     session.emit("assistant.message", { data: { content: "root response" } });
-    session.emit("assistant.turn_end", { data: { turnId: "root-1" } });
+    session.emit("session.idle", { data: {} });
     assert.notEqual(controller.state.active, null, "loop should still be running");
     assert.equal(controller.state.active.i, 2);
 });
@@ -806,7 +808,7 @@ test("sub-agent abort event does NOT terminate the root ralph_loop", async () =>
     // events carry an `agentId` field while root-agent events don't.
     // A sub-agent's abort must NOT tear down the root ralph_loop.
     const { session, controller } = await arm({ max_iterations: 5, stagnation_limit: 0 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } }); // fire iter 1
+    session.emit("session.idle", { data: {} }); // fire iter 1
     assert.equal(controller.state.active.i, 1);
     // A sub-agent reports abort — must be ignored by the root controller.
     session.emit("abort", { agentId: "explore-1", data: { reason: "subagent crashed" } });
@@ -820,23 +822,23 @@ test("sub-agent abort event does NOT terminate the root ralph_loop", async () =>
 });
 
 
-test("multiple turn_ends without intervening assistant.message do not bloat queue", async () => {
-    // Regression for the user-reported `Queued (3)` bug: when the SDK emits
-    // several turn_ends in quick succession (sub-turn boundaries, tool-call
-    // events, etc.) before the agent has actually picked up our prompt,
-    // each extra turn_end must be skipped rather than queueing another copy.
+test("multiple session.idle events without intervening assistant.message do not bloat queue", async () => {
+    // Regression for the user-reported `Queued (N)` bug: even if the SDK
+    // emits several spurious idle events in quick succession before the
+    // agent has actually picked up our prompt, each extra idle must be
+    // skipped rather than queueing another copy.
     const { session, controller } = await arm({ max_iterations: 10, stagnation_limit: 0 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } }); // pendingFire → iter 1 sent
+    session.emit("session.idle", { data: {} }); // pendingFire → iter 1 sent
     assert.equal(session.sent.length, 1);
-    // Five spurious turn_ends with no assistant.message in between.
+    // Five spurious idle events with no assistant.message in between.
     for (let k = 0; k < 5; k++) {
-        session.emit("assistant.turn_end", { data: { turnId: `spurious-${k}` } });
+        session.emit("session.idle", { data: {} });
     }
     assert.equal(session.sent.length, 1, "no duplicate prompts queued");
     assert.equal(controller.state.active.i, 1);
-    // Once the agent finally responds, the next turn_end advances normally.
+    // Once the agent finally responds, the next idle advances normally.
     session.emit("assistant.message", { data: { content: "ack" } });
-    session.emit("assistant.turn_end", { data: { turnId: "real" } });
+    session.emit("session.idle", { data: {} });
     assert.equal(controller.state.active.i, 2);
     assert.equal(session.sent.length, 2);
 });
@@ -847,11 +849,11 @@ test("multiple assistant.message events in one turn are accumulated", async () =
         completion_promise: "ALL_DONE",
         stagnation_limit: 0,
     });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } }); // fire iter 1
+    session.emit("session.idle", { data: {} }); // fire iter 1
     // Iter 1: agent emits TWO messages, completion phrase only in the first.
     session.emit("assistant.message", { data: { content: "first chunk ALL_DONE here" } });
     session.emit("assistant.message", { data: { content: "second chunk follow-up" } });
-    session.emit("assistant.turn_end", { data: { turnId: "t1" } });
+    session.emit("session.idle", { data: {} });
     // Without accumulation, "ALL_DONE" would have been overwritten by the second
     // message and the loop would not finish. With accumulation it does.
     assert.equal(controller.state.lastResult.reason, "completion_promise");
@@ -860,7 +862,7 @@ test("multiple assistant.message events in one turn are accumulated", async () =
 
 test("preview is truncated to PREVIEW_CHARS + ellipsis", async () => {
     const { session, controller } = await arm({ max_iterations: 1, stagnation_limit: 0 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "x".repeat(700));
     assert.equal(controller.state.lastResult.preview.length, 501);
     assert.ok(controller.state.lastResult.preview.endsWith("…"));
@@ -871,7 +873,7 @@ test("preview does not split UTF-16 surrogate pairs (no lone high surrogate)", a
     // a lone high surrogate at index 499.
     const content = "a".repeat(499) + "🎉" + "z".repeat(100);
     const { session, controller } = await arm({ max_iterations: 1, stagnation_limit: 0 });
-    session.emit("assistant.turn_end", { data: { turnId: "t-init" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, content);
     const preview = controller.state.lastResult.preview;
     assert.ok(preview.endsWith("…"));
@@ -886,7 +888,7 @@ test("note truncation does not split UTF-16 surrogate pairs", async () => {
     // exercising the note path via ralph_stop reason.
     const longReason = "a".repeat(499) + "🎉" + "z".repeat(100);
     const { session, controller, stop } = await arm({ max_iterations: 5 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     await stop.handler({ reason: longReason });
     const note = controller.state.lastResult.note;
     assert.equal(note.length <= 500, true);
@@ -899,7 +901,7 @@ test("ralph_stop caps oversized user-supplied reason in response and result.note
     // string nor the structured note field. Both should be ≤ PREVIEW_CHARS.
     const huge = "x".repeat(50_000);
     const { session, controller, stop } = await arm({ max_iterations: 5 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     const r = await stop.handler({ reason: huge });
     assert.equal(r.resultType, "success");
     // Structured note in tool reply
@@ -915,7 +917,7 @@ test("ralph_stop caps oversized user-supplied reason in response and result.note
 
 test("lastAssistantContent is capped at MAX_CONTENT_CHARS (1 MiB)", async () => {
     const { session, controller } = await arm({ max_iterations: 5, stagnation_limit: 0 });
-    session.emit("assistant.turn_end", { data: { turnId: "t-init" } });
+    session.emit("session.idle", { data: {} });
     // Emit several 400KB messages within one turn → would be 2 MB+ unbounded.
     for (let i = 0; i < 6; i++) {
         session.emit("assistant.message", { data: { content: String.fromCharCode(65 + i).repeat(400_000) } });
@@ -971,14 +973,14 @@ test("late send-rejection from a stale arming does NOT poison a freshly-armed lo
 
     // A1
     await ralph.handler({ prompt: "first", max_iterations: 5, stagnation_limit: 0 });
-    session.emit("assistant.turn_end", { data: { turnId: "a1-init" } }); // fire iter 1 (the pending-promise send)
+    session.emit("session.idle", { data: {} }); // fire iter 1 (the pending-promise send)
     assert.equal(controller.state.active.i, 1);
     await stop.handler({ reason: "manual" });
     assert.equal(controller.state.active, null);
 
     // A2
     await ralph.handler({ prompt: "second", max_iterations: 5, stagnation_limit: 0 });
-    session.emit("assistant.turn_end", { data: { turnId: "a2-init" } });
+    session.emit("session.idle", { data: {} });
     const a2 = controller.state.active;
     assert.ok(a2, "A2 should be active");
 
@@ -1024,7 +1026,7 @@ test("attach returns a detach function that unsubscribes listeners and finalizes
     assert.equal(c.state.active, null);
     assert.equal(c.state.lastResult.reason, "detached");
     // Listeners are unsubscribed: emitting after detach has no effect
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     assert.equal(session.sent.length, 0);
 });
 
@@ -1058,7 +1060,7 @@ test("re-attach with a fresh session after detach starts cleanly", async () => {
     c.attach(session2);
     const r = await c.tools[0].handler({ prompt: "go again", max_iterations: 3 });
     assert.equal(r.resultType, "success");
-    session2.emit("assistant.turn_end", { data: { turnId: "t1" } });
+    session2.emit("session.idle", { data: {} });
     assert.equal(session2.sent.length, 1);
     assert.equal(c.state.active.i, 1);
 });
@@ -1074,8 +1076,8 @@ test("attach warns when session.on() returns non-function (listener-leak risk)",
         log: (m) => logs.push(m),
         send: () => Promise.resolve("msg"),
         on: (evName, _handler) => {
-            // turn_end returns a proper unsub; the other two violate contract.
-            if (evName === "assistant.turn_end") return () => {};
+            // session.idle returns a proper unsub; the other two violate contract.
+            if (evName === "session.idle") return () => {};
             if (evName === "assistant.message") return undefined;
             if (evName === "abort") return null;
             return undefined;
@@ -1104,7 +1106,7 @@ test("double attach without detach: second attach replaces first (no duplicate l
     assert.notEqual(detach1, detach2);
 
     await c.tools[0].handler({ prompt: "go", max_iterations: 5 });
-    session.emit("assistant.turn_end", { data: { turnId: "t1" } });
+    session.emit("session.idle", { data: {} });
     // Exactly ONE prompt re-injection — would be 2 if listeners had doubled.
     assert.equal(session.sent.length, 1);
     assert.equal(c.state.active.i, 1);
@@ -1132,7 +1134,7 @@ test("stale detach after re-attach does NOT kill the new session's active loop",
 
 test("result includes durationMs, startedAt, finishedAt", async () => {
     const { session, controller } = await arm({ max_iterations: 3 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "all done COMPLETE");
     const r = controller.state.lastResult;
     assert.equal(typeof r.startedAt, "number");
@@ -1144,7 +1146,7 @@ test("result includes durationMs, startedAt, finishedAt", async () => {
 
 test("lastResult is frozen so consumers can't mutate the historical record", async () => {
     const { session, controller } = await arm({ max_iterations: 3 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "all done COMPLETE");
     const r = controller.state.lastResult;
     assert.ok(Object.isFrozen(r));
@@ -1156,7 +1158,7 @@ test("lastResult is frozen so consumers can't mutate the historical record", asy
 
 test("session.log records arming, iter markers, and finish reason", async () => {
     const { session, controller } = await arm({ max_iterations: 3 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("session.idle", { data: {} });
     runTurn(session, "ok COMPLETE");
     const joined = session.logs.join("\n");
     assert.match(joined, /armed/);
@@ -1170,12 +1172,12 @@ test("finish log marker differentiates by reason category", async () => {
     const c1 = createRalphController();
     c1.attach(session1);
     await c1.tools[0].handler({ prompt: "go", max_iterations: 5 });
-    session1.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session1.emit("session.idle", { data: {} });
     assert.match(session1.logs.join("\n"), /⚠️ ended ralph_loop.*reason: send_error/);
 
     // user_stopped → ⏹ stopped (not ⚠️)
     const { session: s2, stop } = await arm({ max_iterations: 5 });
-    s2.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    s2.emit("session.idle", { data: {} });
     await stop.handler({});
     assert.match(s2.logs.join("\n"), /⏹ stopped ralph_loop.*reason: user_stopped/);
 });

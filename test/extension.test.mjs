@@ -113,6 +113,20 @@ test("validateArgs: rejects negative/non-integer/=1 stagnation_limit", () => {
     assert.ok(validateArgs({ prompt: "x", stagnation_limit: 2 }).value);
 });
 
+test("validateArgs: rejects boolean/array numerics (no silent type coercion)", () => {
+    // Number(true) === 1, Number([5]) === 5 — both would silently coerce
+    // through Number()/Number.isInteger() and arm a loop the caller didn't
+    // ask for. Reject them at the type-check stage with a clear message.
+    for (const bad of [true, false, [5], [], { v: 5 }]) {
+        assert.match(validateArgs({ prompt: "x", max_iterations: bad }).error, /max_iterations must be a number/, `max_iterations=${JSON.stringify(bad)}`);
+        assert.match(validateArgs({ prompt: "x", min_iterations: bad }).error, /min_iterations must be a number/, `min_iterations=${JSON.stringify(bad)}`);
+        assert.match(validateArgs({ prompt: "x", stagnation_limit: bad }).error, /stagnation_limit must be a number/, `stagnation_limit=${JSON.stringify(bad)}`);
+    }
+    // Numeric strings still accepted (LLM tool callers commonly pass strings).
+    assert.ok(validateArgs({ prompt: "x", max_iterations: "5" }).value);
+    assert.ok(validateArgs({ prompt: "x", stagnation_limit: "0" }).value);
+});
+
 // ── tool spec ─────────────────────────────────────────────────────────────
 
 test("controller exposes ralph_loop and ralph_stop tools and hooks", () => {

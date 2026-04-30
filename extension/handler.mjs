@@ -95,6 +95,9 @@ export function validateArgs(args) {
     }
 
     const rawMax = args.max_iterations ?? DEFAULTS.max_iterations;
+    if (typeof rawMax !== "number" && typeof rawMax !== "string") {
+        return { error: `ralph_loop: max_iterations must be a number (got ${Array.isArray(rawMax) ? "array" : typeof rawMax}).` };
+    }
     const max = Number(rawMax);
     if (!Number.isInteger(max) || max < 1 || max > MAX_ALLOWED_ITERATIONS) {
         return {
@@ -103,6 +106,9 @@ export function validateArgs(args) {
     }
 
     const rawMin = args.min_iterations ?? DEFAULTS.min_iterations;
+    if (typeof rawMin !== "number" && typeof rawMin !== "string") {
+        return { error: `ralph_loop: min_iterations must be a number (got ${Array.isArray(rawMin) ? "array" : typeof rawMin}).` };
+    }
     const min = Number(rawMin);
     if (!Number.isInteger(min) || min < 1 || min > max) {
         return {
@@ -138,6 +144,9 @@ export function validateArgs(args) {
     }
 
     const rawStagnation = args.stagnation_limit ?? DEFAULTS.stagnation_limit;
+    if (typeof rawStagnation !== "number" && typeof rawStagnation !== "string") {
+        return { error: `ralph_loop: stagnation_limit must be a number (got ${Array.isArray(rawStagnation) ? "array" : typeof rawStagnation}).` };
+    }
     const stagnationLimit = Number(rawStagnation);
     if (!Number.isInteger(stagnationLimit) || stagnationLimit < 0 || stagnationLimit === 1) {
         return {

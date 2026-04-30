@@ -7,12 +7,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE="$SCRIPT_DIR/extension/extension.mjs"
+SOURCE_DIR="$SCRIPT_DIR/extension"
 
-if [[ ! -f "$SOURCE" ]]; then
-  echo "Error: $SOURCE not found." >&2
-  exit 1
-fi
+for f in extension.mjs handler.mjs; do
+  if [[ ! -f "$SOURCE_DIR/$f" ]]; then
+    echo "Error: $SOURCE_DIR/$f not found." >&2
+    exit 1
+  fi
+done
 
 if [[ "${1:-}" == "--project" ]]; then
   GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -26,7 +28,7 @@ else
 fi
 
 mkdir -p "$TARGET_DIR"
-cp "$SOURCE" "$TARGET_DIR/extension.mjs"
-echo "✅ Installed ralph extension to $TARGET_DIR/extension.mjs"
+cp "$SOURCE_DIR/extension.mjs" "$SOURCE_DIR/handler.mjs" "$TARGET_DIR/"
+echo "✅ Installed ralph extension to $TARGET_DIR/"
 echo ""
 echo "Restart Copilot CLI (or run /extensions reload) to activate."

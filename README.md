@@ -30,8 +30,10 @@ Both have legitimate use cases. If you want fresh-context iterations, use [open-
 
 ```bash
 mkdir -p ~/.copilot/extensions/ralph
-curl -fsSL https://raw.githubusercontent.com/kloba/copilot-ralph-extension/main/extension/extension.mjs \
-  -o ~/.copilot/extensions/ralph/extension.mjs
+for f in extension.mjs handler.mjs; do
+  curl -fsSL "https://raw.githubusercontent.com/kloba/copilot-ralph-extension/main/extension/$f" \
+    -o ~/.copilot/extensions/ralph/$f
+done
 ```
 
 Then in any Copilot CLI session, run:
@@ -46,8 +48,10 @@ Then in any Copilot CLI session, run:
 
 ```bash
 mkdir -p .github/extensions/ralph
-curl -fsSL https://raw.githubusercontent.com/kloba/copilot-ralph-extension/main/extension/extension.mjs \
-  -o .github/extensions/ralph/extension.mjs
+for f in extension.mjs handler.mjs; do
+  curl -fsSL "https://raw.githubusercontent.com/kloba/copilot-ralph-extension/main/extension/$f" \
+    -o .github/extensions/ralph/$f
+done
 ```
 
 ### Option C — From source
@@ -68,17 +72,41 @@ In a Copilot CLI session, ask the agent to invoke `ralph_loop`:
 | Param | Default | Purpose |
 |---|---|---|
 | `prompt` | _(required)_ | The task prompt re-fed each iteration |
-| `max_iterations` | `20` | Hard iteration cap |
+| `max_iterations` | `20` | Hard iteration cap (1–1000) |
 | `completion_promise` | `"COMPLETE"` | Substring in assistant response → stop |
 | `abort_promise` | _(none)_ | Substring → early abort (precondition fail) |
-| `timeout_ms` | `600000` | Per-iteration timeout (10 min) |
+| `timeout_ms` | `600000` | Per-iteration timeout (10 min, min 1000) |
+| `stagnation_limit` | `3` | Abort after N consecutive byte-identical responses (0 disables) |
+
+### Result shape
+
+`ralph_loop` returns a structured object:
+
+```js
+{
+  textResultForLlm: "ralph_loop completed successfully after 4 iterations …",
+  resultType: "success" | "failure",
+  iterations: 4,
+  reason: "completion_promise" | "abort_promise" | "stagnation" | "max_iterations" | "send_error",
+  last_content_preview: "…last 500 chars of the final assistant response…"
+}
+```
 
 ### Tips
 
 - **Always set `max_iterations`** — runaway loops burn premium requests fast.
 - The prompt **must instruct the agent to emit the completion promise** when done, otherwise the loop only stops at `max_iterations`.
 - Use `abort_promise` for "stop early if the precondition fails" — e.g. `"PRECONDITION_FAILED"`.
+- `stagnation_limit` (default 3) catches stuck agents that keep returning identical responses; set to `0` to disable.
 - Each iteration is a **paid turn**. Budget accordingly.
+
+## Development
+
+```bash
+npm test    # runs the node:test suite under test/
+```
+
+The handler logic lives in [`extension/handler.mjs`](extension/handler.mjs) and is decoupled from the SDK so it can be unit-tested with a mocked session.
 
 ## How it works
 
@@ -101,7 +129,7 @@ const session = await joinSession({
 });
 ```
 
-The full implementation in [`extension/extension.mjs`](extension/extension.mjs) adds error handling, abort-promise support, configurable timeout, and `session.log()` progress reporting.
+The full implementation lives in [`extension/handler.mjs`](extension/handler.mjs) (pure, testable) and [`extension/extension.mjs`](extension/extension.mjs) (thin SDK boot). It adds error handling, abort-promise support, configurable timeout, stagnation detection, and `session.log()` progress reporting.
 
 ## Requirements
 

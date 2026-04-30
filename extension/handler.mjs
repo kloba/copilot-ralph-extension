@@ -373,8 +373,13 @@ export function createRalphController() {
             },
         },
     ];
+    // Freeze the public tool surface so consumers can't accidentally mutate
+    // tool descriptors or swap out handlers (would break the controller and
+    // any test that depends on tools[0]).
+    for (const t of tools) Object.freeze(t);
+    Object.freeze(tools);
 
-    const hooks = {
+    const hooks = Object.freeze({
         onUserPromptSubmitted: async () => {
             if (!state.lastResult) return;
             const r = state.lastResult;
@@ -383,7 +388,7 @@ export function createRalphController() {
                 additionalContext: `[ralph_loop just finished — iterations=${r.iterations}, reason=${r.reason}${r.note ? `, note=${r.note}` : ""}, durationMs=${r.durationMs}]`,
             };
         },
-    };
+    });
 
     let currentDetach = null;
     function attach(session) {

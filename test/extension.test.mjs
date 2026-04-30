@@ -92,6 +92,16 @@ test("controller exposes ralph_loop and ralph_stop tools and hooks", () => {
     assert.equal(typeof c.attach, "function");
 });
 
+test("public tools and hooks surface is frozen (defensive against accidental mutation)", () => {
+    const c = createRalphController();
+    assert.ok(Object.isFrozen(c.tools));
+    assert.ok(Object.isFrozen(c.hooks));
+    for (const t of c.tools) assert.ok(Object.isFrozen(t), `${t.name} not frozen`);
+    assert.throws(() => { c.tools.push({}); }, TypeError);
+    assert.throws(() => { c.tools[0].handler = () => {}; }, TypeError);
+    assert.throws(() => { c.hooks.onUserPromptSubmitted = null; }, TypeError);
+});
+
 test("ralph_loop tool spec includes stagnation_limit and required prompt", () => {
     const c = createRalphController();
     const t = c.tools.find((x) => x.name === "ralph_loop");

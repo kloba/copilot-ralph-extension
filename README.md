@@ -156,6 +156,14 @@ controller.attach(session);    // wires assistant.turn_end / assistant.message /
 
 The first `assistant.turn_end` after arming fires iteration 1's prompt; subsequent turn_ends evaluate the assistant's response against `completion_promise` / `abort_promise` / stagnation / `max_iterations`, and either re-fire the prompt or finish the loop. This is the same architectural pattern as Anthropic's Claude Code `ralph-wiggum` plugin (which uses a `Stop` hook for the same purpose).
 
+## Limitations
+
+- **Substring-match completion can self-trigger.** Both `completion_promise` and `abort_promise` use plain substring matching against the assistant's accumulated turn output. If the agent quotes the trigger phrase mid-thought (e.g. *"I'll mark this COMPLETE when done"*), the loop will finish on that turn. Pick a phrase the agent is unlikely to mention casually; emoji or unusual tokens (e.g. `RALPH_DONE_42`) work well.
+- **Prompt is re-injected verbatim every iteration.** The loop has no concept of progress — the agent must derive what's already done from its own conversation history. This is intentional (it matches the Anthropic plugin) but means a vague prompt yields vague iteration.
+- **Stagnation always overrides `min_iterations`.** Identical responses fire stagnation regardless of `min_iterations` — this is a safety floor, not a configurable behavior.
+- **Iteration timing is loop-arm-relative.** The `(elapsed Xms)` value in iter logs and the final `durationMs` measure time from arming, not per-turn latency. Per-turn timing isn't tracked.
+- **One loop per session.** Arming a second `ralph_loop` while one is active fails fast — you must `ralph_stop` the active loop first.
+
 ## Requirements
 
 - GitHub Copilot CLI (tested on `1.0.40-0`)

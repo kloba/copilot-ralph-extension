@@ -19,6 +19,10 @@ const DEFAULTS = {
 const MAX_ALLOWED_ITERATIONS = 1000;
 const PREVIEW_CHARS = 500;
 const MAX_PROMPT_CHARS = 65536;
+// Cap the per-iteration accumulated assistant content. We only need it for
+// substring matching (completion/abort/stagnation) and a 500-char preview;
+// extremely chatty turns shouldn't be allowed to consume unbounded memory.
+const MAX_CONTENT_CHARS = 1_048_576; // 1 MiB
 
 function previewOf(text) {
     if (!text) return "";
@@ -197,9 +201,15 @@ export function createRalphController() {
         // Accumulate across multiple assistant.message events within the same
         // turn (the SDK can emit several distinct messages per turn). The
         // accumulator is reset on each iteration fire-out.
-        state.lastAssistantContent = state.lastAssistantContent
+        const next = state.lastAssistantContent
             ? state.lastAssistantContent + "\n" + text
             : text;
+        // Bound memory: drop oldest content past the cap. The completion /
+        // abort / stagnation checks only ever inspect this string, and a
+        // 1 MiB tail is more than enough to find any reasonable signal.
+        state.lastAssistantContent = next.length > MAX_CONTENT_CHARS
+            ? next.slice(next.length - MAX_CONTENT_CHARS)
+            : next;
     };
 
     const onTurnEnd = (ev) => {

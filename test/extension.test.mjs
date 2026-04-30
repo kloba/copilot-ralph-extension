@@ -518,6 +518,25 @@ test("preview does not split UTF-16 surrogate pairs (no lone high surrogate)", a
     assert.deepEqual(JSON.parse(JSON.stringify(preview)), preview);
 });
 
+test("lastAssistantContent is capped at MAX_CONTENT_CHARS (1 MiB)", async () => {
+    const { session, controller } = await arm({ max_iterations: 5, stagnation_limit: 0 });
+    session.emit("assistant.turn_end", { data: { turnId: "t-init" } });
+    // Emit several 400KB messages within one turn → would be 2 MB+ unbounded.
+    for (let i = 0; i < 6; i++) {
+        session.emit("assistant.message", { data: { content: String.fromCharCode(65 + i).repeat(400_000) } });
+    }
+    assert.ok(
+        controller.state.lastAssistantContent.length <= 1_048_576,
+        `expected lastAssistantContent ≤ 1 MiB, got ${controller.state.lastAssistantContent.length}`,
+    );
+    // The most recent content (tail) is preserved → completion check still works.
+    const lastChar = String.fromCharCode(65 + 5); // 'F'
+    assert.ok(
+        controller.state.lastAssistantContent.endsWith(lastChar.repeat(1000)),
+        "tail should contain the most recent message",
+    );
+});
+
 // ── attach/detach ─────────────────────────────────────────────────────────
 
 test("calling ralph_loop before attach fails fast with a clear error and does NOT arm", async () => {

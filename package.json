@@ -8,8 +8,24 @@
     "test": "node --test 'test/**/*.test.mjs'"
   },
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "github-copilot",
+    "copilot-cli",
+    "extension",
+    "ralph-wiggum",
+    "agent",
+    "iterative-loop",
+    "autonomous"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/kloba/copilot-ralph-extension"
-  }
+  },
+  "bugs": {
+    "url": "https://github.com/kloba/copilot-ralph-extension/issues"
+  },
+  "homepage": "https://github.com/kloba/copilot-ralph-extension#readme"
 }

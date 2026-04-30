@@ -31,6 +31,33 @@ function success(message, extra = {}) {
     return { textResultForLlm: message, resultType: "success", ...extra };
 }
 
+/**
+ * @typedef {Object} RalphArgs
+ * @property {string} prompt - Required. The prompt re-injected each iteration. ≤ 64KiB.
+ * @property {number} [max_iterations=20] - Hard cap on iterations (1..1000).
+ * @property {number} [min_iterations=1] - Floor before completion/abort phrases honored (1..max_iterations).
+ * @property {string} [completion_promise="COMPLETE"] - Substring → finish with reason "completion_promise".
+ * @property {string} [abort_promise] - Optional substring → finish with reason "abort_promise". Must differ from completion_promise.
+ * @property {number} [stagnation_limit=3] - Abort after N consecutive byte-identical responses (0 disables).
+ */
+
+/**
+ * @typedef {Object} RalphResult
+ * @property {string} reason - One of: completion_promise, abort_promise, stagnation, max_iterations, send_error, aborted, user_stopped, detached.
+ * @property {number} iterations - Number of iterations completed (post-fire count).
+ * @property {string} preview - First 500 chars of the final assistant content.
+ * @property {number} startedAt - Epoch ms when the loop was armed.
+ * @property {number} finishedAt - Epoch ms when the loop finished.
+ * @property {number} durationMs - finishedAt - startedAt.
+ * @property {string} [note] - Optional reason text passed to ralph_stop.
+ */
+
+/**
+ * Validate ralph_loop arguments.
+ *
+ * @param {RalphArgs} args
+ * @returns {{value: object} | {error: string}} Validated values or a single human-readable error.
+ */
 export function validateArgs(args) {
     if (args === null || args === undefined || typeof args !== "object") {
         return { error: "ralph_loop: arguments object is required." };
@@ -93,13 +120,19 @@ export function validateArgs(args) {
 }
 
 /**
- * Build a Ralph controller. Returns { tools, hooks, attach, state }.
+ * Build a Ralph controller.
  *
  * Use `tools` and `hooks` directly in `joinSession({ tools, hooks })`.
  * Then call `attach(session)` once with the resolved session to wire up
  * event listeners and bind the session reference used by tool handlers.
  *
- * `attach` returns an unsubscribe function that detaches all listeners.
+ * @returns {{
+ *   tools: Array<object>,
+ *   hooks: { onUserPromptSubmitted: Function },
+ *   attach: (session: object) => () => void,
+ *   state: { active: object|null, lastAssistantContent: string, lastResult: RalphResult|null },
+ *   _internal: { onAssistantMessage: Function, onTurnEnd: Function, onAbort: Function, finish: Function }
+ * }} Controller. `attach` returns an unsubscribe function that detaches all listeners and finalizes any active loop with reason='detached'.
  */
 export function createRalphController() {
     const state = {

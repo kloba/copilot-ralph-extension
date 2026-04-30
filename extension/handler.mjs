@@ -45,6 +45,12 @@ function truncateNote(text) {
     if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
     return s.slice(0, cut);
 }
+// Collapse whitespace (newlines, tabs, runs of spaces) into single spaces and
+// trim. Used to flatten a multi-line note (e.g. an Error stack) into the
+// single-line log marker and additionalContext bracket.
+function collapseNote(text) {
+    return text ? String(text).replace(/\s+/g, " ").trim() : "";
+}
 function failure(message, extra = {}) {
     return { ...extra, textResultForLlm: message, resultType: "failure" };
 }
@@ -242,7 +248,7 @@ export function createRalphController() {
             "⏹ stopped";
         // Collapse note whitespace for the single-line log format (a multi-
         // line Error stack would otherwise break alignment in the timeline).
-        const noteForLog = result.note ? result.note.replace(/\s+/g, " ").trim() : "";
+        const noteForLog = collapseNote(result.note);
         log(`${verb} ralph_loop after ${result.iterations} iteration${result.iterations === 1 ? "" : "s"} (reason: ${reason}${noteForLog ? `, note: ${noteForLog}` : ""}, ${result.durationMs}ms)`);
         state.active = null;
         state.lastResult = Object.freeze(result);
@@ -448,7 +454,7 @@ export function createRalphController() {
             // Collapse whitespace so a multi-line note (e.g. an Error stack
             // surfaced via send_error) doesn't break the bracketed context
             // line presented to the agent.
-            const noteOneLine = r.note ? String(r.note).replace(/\s+/g, " ").trim() : "";
+            const noteOneLine = collapseNote(r.note);
             return {
                 additionalContext: `[ralph_loop just finished — iterations=${r.iterations}, reason=${r.reason}${noteOneLine ? `, note=${noteOneLine}` : ""}, durationMs=${r.durationMs}]`,
             };

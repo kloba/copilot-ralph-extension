@@ -371,6 +371,34 @@ test("missing assistant.message before turn_end is treated as empty content", as
     assert.equal(controller.state.active.i, 2);
 });
 
+test("silent iteration does not carry prior content into completion check (regression)", async () => {
+    // Iteration N's content must not be re-evaluated for iteration N+1 if N+1 emits no message.
+    const { session, controller } = await arm({
+        max_iterations: 5,
+        completion_promise: "MAGIC",
+        stagnation_limit: 0,
+    });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } }); // fire iter 1
+    runTurn(session, "MAGIC happens here"); // iter 1 has MAGIC
+    // iter 1's eval: contains MAGIC at i=1, min=1 → finishes immediately.
+    assert.equal(controller.state.lastResult.reason, "completion_promise");
+    assert.equal(controller.state.lastResult.iterations, 1);
+
+    // Now: same scenario but min=3 so iter 1's MAGIC is ignored, then iter 2 is silent.
+    const { session: s2, controller: c2 } = await arm({
+        max_iterations: 5,
+        min_iterations: 3,
+        completion_promise: "MAGIC",
+        stagnation_limit: 0,
+    });
+    s2.emit("assistant.turn_end", { data: { turnId: "t0" } }); // fire iter 1
+    runTurn(s2, "MAGIC at iter 1"); // iter 1 ignored (min=3), fires iter 2
+    s2.emit("assistant.turn_end", { data: { turnId: "t2" } }); // iter 2 silent
+    // iter 2: lastAssistantContent must be "", NOT "MAGIC at iter 1" — so not finished yet.
+    assert.notEqual(c2.state.active, null);
+    assert.equal(c2.state.active.i, 3);
+});
+
 test("preview is truncated to PREVIEW_CHARS + ellipsis", async () => {
     const { session, controller } = await arm({ max_iterations: 1, stagnation_limit: 0 });
     session.emit("assistant.turn_end", { data: { turnId: "t0" } });

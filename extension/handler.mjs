@@ -159,6 +159,9 @@ export function createRalphController() {
             a.pendingFire = false;
             a.i = 1;
             log(`🔁 ralph_loop iter 1/${a.max}`);
+            // Clear before firing so a silent iteration (no assistant.message)
+            // is correctly evaluated as empty content rather than the prior turn.
+            state.lastAssistantContent = "";
             tryFire(a.prompt);
             return;
         }
@@ -181,6 +184,7 @@ export function createRalphController() {
 
         a.i += 1;
         log(`🔁 ralph_loop iter ${a.i}/${a.max}`);
+        state.lastAssistantContent = "";
         tryFire(a.prompt);
     };
 

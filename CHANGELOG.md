@@ -1,5 +1,97 @@
 # Changelog
 
+## 0.5.0
+
+### Bug fixes (queue stacking & sub-agent leakage)
+- **Queue stacking eliminated** — the SDK can emit multiple
+  `assistant.turn_end` events around a single agent reply (sub-turn /
+  tool-call boundaries). Each one used to refire the prompt, producing
+  the dreaded `Queued (3)` of identical messages in the CLI UI. A
+  `fireInFlight` / `observedMessageThisFire` gate now ensures we only
+  refire after the *root* agent has actually responded with an
+  `assistant.message`. Verified end-to-end with file-based event
+  tracing.
+- **Sub-agent events (`task` / `explore` / `code-review` /
+  `rubber-duck` …) no longer trigger a refire**. Per the SDK schema,
+  sub-agent events carry an `agentId` field that is absent on root-
+  agent events; both `onTurnEnd` and `onAssistantMessage` now ignore
+  any event with `agentId !== undefined`. Without this, every
+  sub-agent invocation queued another copy of the prompt.
+- **`turn_end` with `turnId=null`** no longer self-deduplicates against
+  the initial `NO_TURN_ID` sentinel; a real `null` turnId is now treated
+  as "no dedup info" instead of being silently dropped.
+- **Stale `session.send` rejection** from a previous (cancelled) arming
+  can no longer poison a freshly-armed loop. `tryFire` now snapshots the
+  active loop identity at fire-time and ignores late rejections from
+  superseded armings.
+- **Boolean/array values for numeric args** (`max_iterations`,
+  `min_iterations`, `stagnation_limit`) are rejected with a typed error
+  instead of being silently coerced via `Number()` (which would yield
+  e.g. `Number(true) === 1`).
+- **`npm test` works on Node 20.0–20.5** — switched from a quoted
+  `'test/**/*.test.mjs'` glob (which relies on Node ≥20.6's built-in
+  matcher) to a shell-expanded `test/*.test.mjs` pattern.
+
+### New / hardened behavior
+- **JSON schema bounds** declared for every parameter:
+  `max_iterations`/`min_iterations` carry `minimum`/`maximum`,
+  `completion_promise`/`abort_promise` carry `minLength: 1`,
+  `prompt` carries `minLength: 1` and `maxLength: 65536`,
+  `ralph_stop.reason` carries `maxLength: 500`. Clients learn the
+  bounds up-front instead of via a runtime validation error.
+- **`additionalProperties: false`** on both tool schemas — combined with
+  runtime unknown-key rejection (see below), typos like `max_iter`
+  fail loudly instead of silently using the default.
+- **Unknown argument keys** in `ralph_loop` are now rejected at
+  validation time with the list of valid keys; the runtime mirrors what
+  the JSON schema already enforces.
+- **`ralph_stop(reason)`** truncates an oversized user-supplied reason
+  in both the response message and `result.note` (≤500 chars,
+  surrogate-safe).
+- **Tool descriptors are deep-frozen** — consumers can no longer mutate
+  nested JSON-schema fields (e.g. `tools[0].parameters.properties.prompt.maxLength`)
+  and silently desync the declared schema from the runtime validator.
+- **`extension.mjs` wraps `joinSession` and `controller.attach`** in
+  try/catch and writes a clear identifying line to stderr on failure
+  (instead of a silent unhandled promise rejection at module-load).
+
+### Polish
+- **Finish log marker differentiates by reason category** —
+  `✅ completed` for `completion_promise`, `⚠️ ended` for
+  `send_error` / `aborted`, `⏹ stopped` for everything else. An error
+  finish no longer visually reads like a clean cancellation.
+- **Multi-line notes are collapsed to one line** in the finish log
+  marker and `additionalContext` injection (an `Error` stack would
+  otherwise break alignment in the timeline).
+- **`already armed` vs `already running`** is reported separately when
+  a second `ralph_loop` is invoked, so the caller can tell whether the
+  prior loop has fired its first iteration yet.
+
+### CI / docs / refactor
+- **`session.on()` returning a non-function** now produces a per-event
+  warning (listener-leak risk) instead of being silently filtered out.
+- **`ralph_stop` return shape** is now documented in the README,
+  including the `iterations` / `note` fields and the `no loop running`
+  failure path.
+- **GitHub Actions** workflow runs `npm test` on push/PR across Node
+  20.x and 22.x. Includes a `node --check` syntax pass on the source
+  files.
+- **README "How it works"** rewritten to distinguish event-driven
+  iteration (`assistant.message`/`turn_end`/`abort`) from the single
+  post-loop hook (`onUserPromptSubmitted`), document the per-turn
+  decision ladder, and explain why each iteration appears as a queued
+  user-turn in the timeline (`session.send`).
+- **README test-count drift removed** — replaced "29 tests" with a
+  description that doesn't churn on every test addition.
+- **Helpers extracted** (`logIterStart`, `collapseNote`) to remove
+  duplication.
+- **Test suite grew from 56 → 78** covering all of the above plus
+  regressions for: surrogate-safe truncation, boundary at exactly
+  `MAX_PROMPT_CHARS`, deep-freeze of nested schema, unknown-key
+  rejection, stale-detach-during-pendingFire, late-rejection from
+  cancelled arming, multiple turn_ends without intervening message,
+  sub-agent event filtering, and `session.on()` non-function warnings.
+
 ## 0.4.0
 
 ### Bug fixes

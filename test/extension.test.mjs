@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { createRalphController, validateArgs } from "../extension/handler.mjs";
+import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
 
 function makeFakeSession({ failSend = false, rejectSend = false } = {}) {
     const sent = [];
@@ -310,10 +310,10 @@ test("prompt length cap: rejects prompts over 64KiB", async () => {
     const session = makeFakeSession();
     const c = createRalphController();
     c.attach(session);
-    const huge = "x".repeat(65537);
+    const huge = "x".repeat(__test__.MAX_PROMPT_CHARS + 1);
     const r = await c.tools[0].handler({ prompt: huge });
     assert.equal(r.resultType, "failure");
-    assert.match(r.textResultForLlm, /exceeds 65536 characters/);
+    assert.match(r.textResultForLlm, new RegExp(`exceeds ${__test__.MAX_PROMPT_CHARS} characters`));
     assert.equal(c.state.active, null);
 });
 
@@ -735,8 +735,8 @@ test("lastAssistantContent is capped at MAX_CONTENT_CHARS (1 MiB)", async () => 
         session.emit("assistant.message", { data: { content: String.fromCharCode(65 + i).repeat(400_000) } });
     }
     assert.ok(
-        controller.state.lastAssistantContent.length <= 1_048_576,
-        `expected lastAssistantContent ≤ 1 MiB, got ${controller.state.lastAssistantContent.length}`,
+        controller.state.lastAssistantContent.length <= __test__.MAX_CONTENT_CHARS,
+        `expected lastAssistantContent ≤ ${__test__.MAX_CONTENT_CHARS}, got ${controller.state.lastAssistantContent.length}`,
     );
     // The most recent content (tail) is preserved → completion check still works.
     const lastChar = String.fromCharCode(65 + 5); // 'F'

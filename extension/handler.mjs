@@ -522,4 +522,4 @@ export function createRalphController() {
     };
 }
 
-export const __test__ = { DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, previewOf };
+export const __test__ = { DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_CONTENT_CHARS, previewOf };

@@ -348,11 +348,12 @@ export function createRalphController() {
                     },
                 },
             },
-            handler: async (args = {}) => {
+            handler: async (args) => {
                 if (!state.active) return failure("ralph_stop: no ralph_loop is currently running.");
                 const i = state.active.i;
                 const max = state.active.max;
-                const note = typeof args.reason === "string" && args.reason.trim() ? args.reason.trim() : undefined;
+                const reason = (args && typeof args === "object" && !Array.isArray(args)) ? args.reason : undefined;
+                const note = typeof reason === "string" && reason.trim() ? reason.trim() : undefined;
                 finish("user_stopped", note);
                 return success(
                     `ralph_loop stopped after ${i}/${max} iterations${note ? ` (${note})` : ""}.`,

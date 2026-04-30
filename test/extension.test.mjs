@@ -328,6 +328,29 @@ test("ralph_stop with no active loop returns failure", async () => {
     assert.equal(r.resultType, "failure");
 });
 
+test("ralph_stop tolerates null/undefined/array args without crashing", async () => {
+    const { session, controller, stop } = await arm({ max_iterations: 5 });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    // null instead of {} — JS default params don't catch null
+    const r = await stop.handler(null);
+    assert.equal(r.resultType, "success");
+    assert.equal(controller.state.lastResult.reason, "user_stopped");
+    assert.equal(controller.state.lastResult.note, undefined);
+
+    // Re-arm and try undefined
+    await controller.tools[0].handler({ prompt: "go", max_iterations: 5 });
+    session.emit("assistant.turn_end", { data: { turnId: "t1" } });
+    const r2 = await stop.handler(undefined);
+    assert.equal(r2.resultType, "success");
+
+    // Array: must not throw, reason just ignored
+    await controller.tools[0].handler({ prompt: "go", max_iterations: 5 });
+    session.emit("assistant.turn_end", { data: { turnId: "t2" } });
+    const r3 = await stop.handler(["reason"]);
+    assert.equal(r3.resultType, "success");
+    assert.equal(controller.state.lastResult.note, undefined);
+});
+
 // ── send error handling ───────────────────────────────────────────────────
 
 test("send throwing during arm fire-out finishes with reason=send_error", async () => {

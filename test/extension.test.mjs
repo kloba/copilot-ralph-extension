@@ -525,6 +525,27 @@ test("re-attach with a fresh session after detach starts cleanly", async () => {
 
 // ── log progress ──────────────────────────────────────────────────────────
 
+test("double attach without detach: second attach replaces first (no duplicate listeners)", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    const detach1 = c.attach(session);
+    // Second attach on the same session — should tear down the first
+    // wiring rather than register a duplicate set of listeners.
+    const detach2 = c.attach(session);
+    assert.notEqual(detach1, detach2);
+
+    await c.tools[0].handler({ prompt: "go", max_iterations: 5 });
+    session.emit("assistant.turn_end", { data: { turnId: "t1" } });
+    // Exactly ONE prompt re-injection — would be 2 if listeners had doubled.
+    assert.equal(session.sent.length, 1);
+    assert.equal(c.state.active.i, 1);
+
+    detach2();
+    // Calling the now-stale detach1 must be a safe no-op: state is gone.
+    detach1();
+    assert.equal(c.state.active, null);
+});
+
 test("result includes durationMs, startedAt, finishedAt", async () => {
     const { session, controller } = await arm({ max_iterations: 3 });
     session.emit("assistant.turn_end", { data: { turnId: "t0" } });

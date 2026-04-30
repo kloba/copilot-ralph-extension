@@ -368,22 +368,33 @@ export function createRalphController() {
         },
     };
 
+    let currentDetach = null;
     function attach(session) {
+        // Idempotent re-attach: if we're already wired (possibly to a
+        // different session), tear that down first so we don't end up with
+        // duplicate listeners that would double-count every event.
+        if (currentDetach) {
+            try { currentDetach(); } catch { /* ignore */ }
+            currentDetach = null;
+        }
         sessionRef = session;
         const unsubs = [
             session.on?.("assistant.message", onAssistantMessage),
             session.on?.("assistant.turn_end", onTurnEnd),
             session.on?.("abort", onAbort),
         ].filter((fn) => typeof fn === "function");
-        return () => {
+        const detach = () => {
             // If a loop is in flight when the session goes away, finish it
             // gracefully instead of leaving orphaned state behind.
             if (state.active) finish("detached");
             for (const u of unsubs) {
                 try { u(); } catch { /* ignore */ }
             }
+            if (currentDetach === detach) currentDetach = null;
             sessionRef = null;
         };
+        currentDetach = detach;
+        return detach;
     }
 
     return {

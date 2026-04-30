@@ -145,7 +145,13 @@ export function createRalphController() {
 
     const onAssistantMessage = (ev) => {
         const text = ev?.data?.content;
-        if (typeof text === "string") state.lastAssistantContent = text;
+        if (typeof text !== "string") return;
+        // Accumulate across multiple assistant.message events within the same
+        // turn (the SDK can emit several distinct messages per turn). The
+        // accumulator is reset on each iteration fire-out.
+        state.lastAssistantContent = state.lastAssistantContent
+            ? state.lastAssistantContent + "\n" + text
+            : text;
     };
 
     const onTurnEnd = () => {

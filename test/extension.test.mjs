@@ -399,6 +399,23 @@ test("silent iteration does not carry prior content into completion check (regre
     assert.equal(c2.state.active.i, 3);
 });
 
+test("multiple assistant.message events in one turn are accumulated", async () => {
+    const { session, controller } = await arm({
+        max_iterations: 5,
+        completion_promise: "ALL_DONE",
+        stagnation_limit: 0,
+    });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } }); // fire iter 1
+    // Iter 1: agent emits TWO messages, completion phrase only in the first.
+    session.emit("assistant.message", { data: { content: "first chunk ALL_DONE here" } });
+    session.emit("assistant.message", { data: { content: "second chunk follow-up" } });
+    session.emit("assistant.turn_end", { data: { turnId: "t1" } });
+    // Without accumulation, "ALL_DONE" would have been overwritten by the second
+    // message and the loop would not finish. With accumulation it does.
+    assert.equal(controller.state.lastResult.reason, "completion_promise");
+    assert.equal(controller.state.lastResult.iterations, 1);
+});
+
 test("preview is truncated to PREVIEW_CHARS + ellipsis", async () => {
     const { session, controller } = await arm({ max_iterations: 1, stagnation_limit: 0 });
     session.emit("assistant.turn_end", { data: { turnId: "t0" } });

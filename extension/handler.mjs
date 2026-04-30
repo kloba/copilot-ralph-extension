@@ -260,10 +260,14 @@ export function createRalphController() {
         tryFire(a.prompt);
     };
 
-    const onAbort = () => {
+    const onAbort = (ev) => {
         if (state.active) {
-            log("⏹ ralph_loop interrupted by session abort.");
-            finish("aborted");
+            // If the SDK supplies an abort reason in the event payload,
+            // capture it so it shows up in the log line and additionalContext.
+            const reason = ev?.data?.reason ?? ev?.reason;
+            const note = typeof reason === "string" && reason.trim() ? reason.trim() : undefined;
+            log(`⏹ ralph_loop interrupted by session abort${note ? ` (${note})` : ""}.`);
+            finish("aborted", note);
         }
     };
 

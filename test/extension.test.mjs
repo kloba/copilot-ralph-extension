@@ -420,6 +420,17 @@ test("abort event with no active loop is a no-op", async () => {
     assert.equal(c.state.lastResult, null);
 });
 
+test("abort event with reason payload captures it as note on the result", async () => {
+    const { session, controller } = await arm({ max_iterations: 10 });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    runTurn(session, "halfway");
+    session.emit("abort", { data: { reason: "user pressed Ctrl-C" } });
+    assert.equal(controller.state.lastResult.reason, "aborted");
+    assert.equal(controller.state.lastResult.note, "user pressed Ctrl-C");
+    const joined = session.logs.join("\n");
+    assert.match(joined, /interrupted by session abort \(user pressed Ctrl-C\)/);
+});
+
 // ── hook ──────────────────────────────────────────────────────────────────
 
 test("onUserPromptSubmitted injects additionalContext exactly once after a finish", async () => {

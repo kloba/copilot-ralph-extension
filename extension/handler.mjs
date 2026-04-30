@@ -33,6 +33,18 @@ function previewOf(text) {
     if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
     return text.slice(0, cut) + "…";
 }
+
+// Truncate `note` to PREVIEW_CHARS without splitting a surrogate pair —
+// same risk as previewOf since notes can carry user-supplied or error
+// strings containing emoji or other 4-byte chars.
+function truncateNote(text) {
+    const s = String(text);
+    if (s.length <= PREVIEW_CHARS) return s;
+    let cut = PREVIEW_CHARS;
+    const code = s.charCodeAt(cut - 1);
+    if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
+    return s.slice(0, cut);
+}
 function failure(message, extra = {}) {
     return { ...extra, textResultForLlm: message, resultType: "failure" };
 }
@@ -198,7 +210,7 @@ export function createRalphController() {
             finishedAt,
             durationMs: finishedAt - startedAt,
         };
-        if (note) result.note = String(note).slice(0, PREVIEW_CHARS);
+        if (note) result.note = truncateNote(note);
         // Differentiate the log marker by category so an error finish doesn't
         // visually read like a clean cancellation:
         //   ✅ completed  — completion_promise

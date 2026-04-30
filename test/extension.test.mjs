@@ -589,6 +589,19 @@ test("preview does not split UTF-16 surrogate pairs (no lone high surrogate)", a
     assert.deepEqual(JSON.parse(JSON.stringify(preview)), preview);
 });
 
+test("note truncation does not split UTF-16 surrogate pairs", async () => {
+    // 499 'a's + "🎉" + filler — same surrogate-edge as preview test, but
+    // exercising the note path via ralph_stop reason.
+    const longReason = "a".repeat(499) + "🎉" + "z".repeat(100);
+    const { session, controller, stop } = await arm({ max_iterations: 5 });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    await stop.handler({ reason: longReason });
+    const note = controller.state.lastResult.note;
+    assert.equal(note.length <= 500, true);
+    assert.equal(note.indexOf("\uFFFD"), -1, "note contains replacement char");
+    assert.deepEqual(JSON.parse(JSON.stringify(note)), note);
+});
+
 test("lastAssistantContent is capped at MAX_CONTENT_CHARS (1 MiB)", async () => {
     const { session, controller } = await arm({ max_iterations: 5, stagnation_limit: 0 });
     session.emit("assistant.turn_end", { data: { turnId: "t-init" } });

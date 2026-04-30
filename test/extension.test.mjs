@@ -626,6 +626,25 @@ test("note truncation does not split UTF-16 surrogate pairs", async () => {
     assert.deepEqual(JSON.parse(JSON.stringify(note)), note);
 });
 
+test("ralph_stop caps oversized user-supplied reason in response and result.note", async () => {
+    // A pathologically large reason must not balloon the LLM-visible response
+    // string nor the structured note field. Both should be ≤ PREVIEW_CHARS.
+    const huge = "x".repeat(50_000);
+    const { session, controller, stop } = await arm({ max_iterations: 5 });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    const r = await stop.handler({ reason: huge });
+    assert.equal(r.resultType, "success");
+    // Structured note in tool reply
+    assert.ok(r.note, "response should carry note");
+    assert.ok(r.note.length <= 500, `r.note.length=${r.note.length} > 500`);
+    // Visible text should be the bounded "stopped after … (note)." form,
+    // not 50 KiB of x's.
+    assert.ok(r.textResultForLlm.length < 1000, `textResultForLlm too long: ${r.textResultForLlm.length}`);
+    // Result note matches the visible note
+    assert.equal(controller.state.lastResult.note, r.note);
+    assert.ok(controller.state.lastResult.note.length <= 500);
+});
+
 test("lastAssistantContent is capped at MAX_CONTENT_CHARS (1 MiB)", async () => {
     const { session, controller } = await arm({ max_iterations: 5, stagnation_limit: 0 });
     session.emit("assistant.turn_end", { data: { turnId: "t-init" } });

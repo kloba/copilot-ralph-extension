@@ -415,7 +415,10 @@ export function createRalphController() {
                 const i = state.active.i;
                 const max = state.active.max;
                 const reason = (args && typeof args === "object" && !Array.isArray(args)) ? args.reason : undefined;
-                const note = typeof reason === "string" && reason.trim() ? reason.trim() : undefined;
+                const trimmed = typeof reason === "string" && reason.trim() ? reason.trim() : undefined;
+                // Cap before surfacing in the response or storing in result.note
+                // so a giant user-supplied reason can't pollute the LLM context.
+                const note = trimmed !== undefined ? truncateNote(trimmed) : undefined;
                 finish("user_stopped", note);
                 return success(
                     `ralph_loop stopped after ${i}/${max} iterations${note ? ` (${note})` : ""}.`,

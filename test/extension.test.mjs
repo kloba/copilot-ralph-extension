@@ -494,6 +494,33 @@ test("abort event with reason payload captures it as note on the result", async 
     assert.match(joined, /interrupted by session abort \(user pressed Ctrl-C\)/);
 });
 
+test("abort event falls back to top-level ev.reason when ev.data.reason is absent", async () => {
+    // SDKs vary; some put reason at the event root rather than under data.
+    const { session, controller } = await arm({ max_iterations: 5 });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("abort", { reason: "  network blip  " });
+    assert.equal(controller.state.lastResult.reason, "aborted");
+    // Whitespace must be trimmed so it lands cleanly in logs / additionalContext.
+    assert.equal(controller.state.lastResult.note, "network blip");
+});
+
+test("abort event with non-string reason ignores it (no note)", async () => {
+    // Defensive: a numeric / object reason must not be stringified into the note.
+    const { session, controller } = await arm({ max_iterations: 5 });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("abort", { data: { reason: 42 } });
+    assert.equal(controller.state.lastResult.reason, "aborted");
+    assert.equal(controller.state.lastResult.note, undefined);
+});
+
+test("abort event with whitespace-only reason ignores it (no note)", async () => {
+    const { session, controller } = await arm({ max_iterations: 5 });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    session.emit("abort", { data: { reason: "   \t\n  " } });
+    assert.equal(controller.state.lastResult.reason, "aborted");
+    assert.equal(controller.state.lastResult.note, undefined);
+});
+
 // ── hook ──────────────────────────────────────────────────────────────────
 
 test("onUserPromptSubmitted injects additionalContext exactly once after a finish", async () => {

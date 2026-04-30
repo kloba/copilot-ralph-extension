@@ -167,6 +167,16 @@ test("ralph_loop tool spec declares numeric ranges (minimum/maximum) on integer 
     // completion_promise / abort_promise: minLength=1 (no empty strings)
     assert.equal(p.completion_promise.minLength, 1);
     assert.equal(p.abort_promise.minLength, 1);
+    // prompt: minLength=1, maxLength=65536 (matches MAX_PROMPT_CHARS guard)
+    assert.equal(p.prompt.minLength, 1);
+    assert.equal(p.prompt.maxLength, 65536);
+});
+
+test("ralph_stop tool spec declares maxLength on optional reason", () => {
+    const c = createRalphController();
+    const t = c.tools.find((x) => x.name === "ralph_stop");
+    // Matches PREVIEW_CHARS / truncateNote cap so clients learn the bound up-front.
+    assert.equal(t.parameters.properties.reason.maxLength, 500);
 });
 
 // ── arming behaviour ──────────────────────────────────────────────────────

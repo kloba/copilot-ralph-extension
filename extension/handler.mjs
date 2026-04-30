@@ -340,7 +340,9 @@ export function createRalphController() {
                     prompt: {
                         type: "string",
                         description:
-                            "The task prompt that gets re-fed each iteration. Should instruct the agent to emit the completion_promise when done.",
+                            `The task prompt that gets re-fed each iteration. Should instruct the agent to emit the completion_promise when done. Max ${MAX_PROMPT_CHARS} chars.`,
+                        minLength: 1,
+                        maxLength: MAX_PROMPT_CHARS,
                     },
                     max_iterations: {
                         type: "integer",
@@ -426,7 +428,8 @@ export function createRalphController() {
                 properties: {
                     reason: {
                         type: "string",
-                        description: "Optional human-readable reason for stopping the loop (≤500 chars).",
+                        description: `Optional human-readable reason for stopping the loop (≤${PREVIEW_CHARS} chars).`,
+                        maxLength: PREVIEW_CHARS,
                     },
                 },
             },

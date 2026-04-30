@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (heading to 0.3.0)
+## 0.3.0
 
 ### Bug fixes
 - **Detach during active loop** no longer leaves orphaned `state.active`
@@ -16,6 +16,8 @@
   throws and finish the loop with `reason="send_error"` instead of surfacing
   as an unhandled promise rejection.
 - **A throwing `session.log`** can no longer crash event listeners.
+- **Duplicate `assistant.turn_end` events** with the same `turnId` are
+  ignored to prevent double-counting iterations.
 
 ### New features
 - **`min_iterations` parameter** — forces the loop to run at least N
@@ -37,7 +39,7 @@
   `homepage` metadata.
 
 ### Tests
-- Test suite grew from 19 → 41 cases covering the new behaviors and
+- Test suite grew from 19 → 42 cases covering the new behaviors and
   regressions for the bugs above.
 - Test runner updated to `node --test 'test/**/*.test.mjs'` (no new deps).
 

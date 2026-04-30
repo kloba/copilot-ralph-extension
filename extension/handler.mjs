@@ -567,11 +567,25 @@ export function createRalphController() {
             currentDetach = null;
         }
         sessionRef = session;
-        const unsubs = [
-            session.on("assistant.message", onAssistantMessage),
-            session.on("assistant.turn_end", onTurnEnd),
-            session.on("abort", onAbort),
-        ].filter((fn) => typeof fn === "function");
+        // Subscribe to the three events we care about. Per the SDK
+        // contract `session.on()` returns an unsubscribe function — if a
+        // session implementation returns anything else we'd have no way
+        // to remove the listener on detach (memory/listener leak). Warn
+        // loudly with the event name so the issue is debuggable, then
+        // drop the bogus value so detach doesn't crash.
+        const subs = [
+            ["assistant.message", session.on("assistant.message", onAssistantMessage)],
+            ["assistant.turn_end", session.on("assistant.turn_end", onTurnEnd)],
+            ["abort", session.on("abort", onAbort)],
+        ];
+        const unsubs = [];
+        for (const [evName, ret] of subs) {
+            if (typeof ret === "function") {
+                unsubs.push(ret);
+            } else {
+                log(`ralph: warning — session.on(${JSON.stringify(evName)}) did not return an unsubscribe function (got ${ret === null ? "null" : typeof ret}); listener may leak on detach.`);
+            }
+        }
         const detach = () => {
             // If THIS detach is still the current wiring AND a loop is in flight,
             // finish it gracefully instead of leaving orphaned state behind.

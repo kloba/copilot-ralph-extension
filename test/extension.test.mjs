@@ -1010,6 +1010,35 @@ test("re-attach with a fresh session after detach starts cleanly", async () => {
     assert.equal(c.state.active.i, 1);
 });
 
+test("attach warns when session.on() returns non-function (listener-leak risk)", () => {
+    // SDK contract: session.on(eventName, handler) returns an unsubscribe
+    // function. A misbehaving session that returns void / undefined / null
+    // / a non-function leaves us with no way to remove the listener — a
+    // memory leak. We don't crash, but we MUST log a clear warning per
+    // affected event so the integrator can see it.
+    const logs = [];
+    const session = {
+        log: (m) => logs.push(m),
+        send: () => Promise.resolve("msg"),
+        on: (evName, _handler) => {
+            // turn_end returns a proper unsub; the other two violate contract.
+            if (evName === "assistant.turn_end") return () => {};
+            if (evName === "assistant.message") return undefined;
+            if (evName === "abort") return null;
+            return undefined;
+        },
+    };
+    const c = createRalphController();
+    // Should not throw — just warn.
+    const detach = c.attach(session);
+    const warnings = logs.filter((l) => /session\.on\(.*\) did not return an unsubscribe/.test(l));
+    assert.equal(warnings.length, 2, `expected 2 warnings, got: ${JSON.stringify(logs)}`);
+    assert.match(warnings.find((l) => l.includes("assistant.message")) ?? "", /undefined/);
+    assert.match(warnings.find((l) => l.includes("abort")) ?? "", /null/);
+    // Detach must still be safe to call.
+    detach();
+});
+
 // ── log progress ──────────────────────────────────────────────────────────
 
 test("double attach without detach: second attach replaces first (no duplicate listeners)", async () => {

@@ -639,11 +639,17 @@ test("finish log line collapses multi-line note (single-line timeline marker)", 
 
 // ── content tracking ──────────────────────────────────────────────────────
 
-test("missing assistant.message before turn_end is treated as empty content", async () => {
+test("missing assistant.message before turn_end skips refire (queue-bloat protection)", async () => {
+    // Without an assistant.message between fires, the SDK is emitting
+    // sub-turn boundaries (or similar) faster than the agent picks up our
+    // prompt. Refiring would queue duplicate prompts; instead we wait.
     const { session, controller } = await arm({ max_iterations: 3, stagnation_limit: 0 });
-    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
-    session.emit("assistant.turn_end", { data: { turnId: "t1" } });
-    assert.equal(controller.state.active.i, 2);
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } }); // pendingFire → iter 1
+    assert.equal(controller.state.active.i, 1);
+    assert.equal(session.sent.length, 1);
+    session.emit("assistant.turn_end", { data: { turnId: "t1" } }); // skipped (no msg)
+    assert.equal(controller.state.active.i, 1, "iter must not advance without assistant.message");
+    assert.equal(session.sent.length, 1, "no duplicate prompt queued");
 });
 
 test("silent iteration does not carry prior content into completion check (regression)", async () => {
@@ -659,7 +665,10 @@ test("silent iteration does not carry prior content into completion check (regre
     assert.equal(controller.state.lastResult.reason, "completion_promise");
     assert.equal(controller.state.lastResult.iterations, 1);
 
-    // Now: same scenario but min=3 so iter 1's MAGIC is ignored, then iter 2 is silent.
+    // Now: same scenario but min=3. Iter 1 contains MAGIC but is below min,
+    // so iter 2 is fired. A subsequent silent turn_end (no assistant.message)
+    // is now treated as a spurious sub-turn boundary and skipped — the loop
+    // stays armed waiting for iter 2's real response.
     const { session: s2, controller: c2 } = await arm({
         max_iterations: 5,
         min_iterations: 3,
@@ -668,10 +677,14 @@ test("silent iteration does not carry prior content into completion check (regre
     });
     s2.emit("assistant.turn_end", { data: { turnId: "t0" } }); // fire iter 1
     runTurn(s2, "MAGIC at iter 1"); // iter 1 ignored (min=3), fires iter 2
-    s2.emit("assistant.turn_end", { data: { turnId: "t2" } }); // iter 2 silent
-    // iter 2: lastAssistantContent must be "", NOT "MAGIC at iter 1" — so not finished yet.
+    assert.equal(c2.state.active.i, 2);
+    s2.emit("assistant.turn_end", { data: { turnId: "t2" } }); // silent → skipped
     assert.notEqual(c2.state.active, null);
-    assert.equal(c2.state.active.i, 3);
+    assert.equal(c2.state.active.i, 2, "silent turn_end must not advance the loop");
+    assert.equal(s2.sent.length, 2, "no duplicate prompt queued");
+    // lastAssistantContent must still be "" (cleared at iter 2 fire) so that
+    // when iter 2's real response arrives it isn't polluted by iter 1's text.
+    assert.equal(c2.state.lastAssistantContent, "");
 });
 
 test("duplicate turn_end with same turnId is ignored (no double-count)", async () => {
@@ -696,6 +709,27 @@ test("turn_end with turnId=null is NOT mistaken for duplicate of initial sentine
     session.emit("assistant.turn_end", { data: { turnId: null } });
     assert.equal(controller.state.active.i, 1, "iter 1 must have armed despite turnId=null");
     assert.equal(session.sent.length, 1, "prompt must have been sent");
+});
+
+test("multiple turn_ends without intervening assistant.message do not bloat queue", async () => {
+    // Regression for the user-reported `Queued (3)` bug: when the SDK emits
+    // several turn_ends in quick succession (sub-turn boundaries, tool-call
+    // events, etc.) before the agent has actually picked up our prompt,
+    // each extra turn_end must be skipped rather than queueing another copy.
+    const { session, controller } = await arm({ max_iterations: 10, stagnation_limit: 0 });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } }); // pendingFire → iter 1 sent
+    assert.equal(session.sent.length, 1);
+    // Five spurious turn_ends with no assistant.message in between.
+    for (let k = 0; k < 5; k++) {
+        session.emit("assistant.turn_end", { data: { turnId: `spurious-${k}` } });
+    }
+    assert.equal(session.sent.length, 1, "no duplicate prompts queued");
+    assert.equal(controller.state.active.i, 1);
+    // Once the agent finally responds, the next turn_end advances normally.
+    session.emit("assistant.message", { data: { content: "ack" } });
+    session.emit("assistant.turn_end", { data: { turnId: "real" } });
+    assert.equal(controller.state.active.i, 2);
+    assert.equal(session.sent.length, 2);
 });
 
 test("multiple assistant.message events in one turn are accumulated", async () => {

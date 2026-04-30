@@ -222,13 +222,28 @@ export function createRalphController() {
     // Fire iteration prompt; handle both sync throws and async rejections.
     // Captures the active-loop identity at fire-time so a late rejection from
     // a previous arming can't poison a freshly-armed loop.
+    //
+    // Queue-bloat protection: refuse to fire if a previously-fired prompt
+    // hasn't been picked up by the agent yet (no assistant.message
+    // observed since the last fire). Without this, the SDK can emit
+    // multiple turn_ends back-to-back (sub-turn boundaries, tool-call
+    // events, etc.) and each one would queue another copy of the same
+    // prompt — visible to the user as `Queued (3)` of identical messages.
     const tryFire = (prompt) => {
         const armedFor = state.active;
+        if (!armedFor) return;
+        if (armedFor.fireInFlight) {
+            log(`ralph_loop: skipping refire — previous prompt still queued (no assistant.message observed yet)`);
+            return;
+        }
+        armedFor.fireInFlight = true;
+        armedFor.observedMessageThisFire = false;
         try {
             const r = sendPrompt(prompt);
             if (r && typeof r.then === "function") {
                 r.then(undefined, (err) => {
                     if (state.active !== armedFor) return;
+                    armedFor.fireInFlight = false;
                     const msg = err?.message ?? String(err);
                     log(`ralph_loop: send rejected: ${msg}`);
                     finish("send_error", `send rejected: ${msg}`);
@@ -236,6 +251,7 @@ export function createRalphController() {
             }
         } catch (err) {
             if (state.active !== armedFor) return;
+            armedFor.fireInFlight = false;
             const msg = err?.message ?? String(err);
             log(`ralph_loop: send failed: ${msg}`);
             finish("send_error", `send failed: ${msg}`);
@@ -275,6 +291,13 @@ export function createRalphController() {
     const onAssistantMessage = (ev) => {
         const text = ev?.data?.content;
         if (typeof text !== "string") return;
+        // Mark the in-flight fire as "consumed by the agent" so the next
+        // turn_end is treated as a real response cycle rather than a
+        // spurious sub-turn boundary that would otherwise queue another
+        // copy of the prompt.
+        if (state.active && state.active.fireInFlight) {
+            state.active.observedMessageThisFire = true;
+        }
         // Accumulate across multiple assistant.message events within the same
         // turn (the SDK can emit several distinct messages per turn). The
         // accumulator is reset on each iteration fire-out.
@@ -313,6 +336,19 @@ export function createRalphController() {
             tryFire(a.prompt);
             return;
         }
+
+        // Queue-bloat protection: if the prompt we previously fired hasn't
+        // produced any assistant.message yet, this turn_end is a sub-turn /
+        // tool-call boundary fired before the agent picked up our prompt.
+        // Refiring here would queue another identical copy.
+        if (a.fireInFlight && !a.observedMessageThisFire) {
+            log(`ralph_loop: skipping turn_end — previous prompt not yet picked up by agent`);
+            return;
+        }
+        // Consume the in-flight marker now that the agent has fully
+        // responded to our last fire (assistant.message + turn_end).
+        a.fireInFlight = false;
+        a.observedMessageThisFire = false;
 
         const text = state.lastAssistantContent;
 
@@ -421,6 +457,8 @@ export function createRalphController() {
                     prev: null,
                     streak: 0,
                     pendingFire: true,
+                    fireInFlight: false,
+                    observedMessageThisFire: false,
                     startedAt: Date.now(),
                     lastTurnId: NO_TURN_ID,
                 };

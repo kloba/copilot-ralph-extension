@@ -116,7 +116,7 @@ The full structured result (available via `controller.state.lastResult` for embe
   startedAt: 1719000000000,
   finishedAt: 1719000012345,
   durationMs: 12345,
-  note: "user changed plan"          // present only when set via ralph_stop
+  note: "user changed plan"          // present when set via ralph_stop or on send_error / abort with reason
 }
 ```
 

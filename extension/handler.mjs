@@ -291,6 +291,10 @@ export function createRalphController() {
     const onAssistantMessage = (ev) => {
         const text = ev?.data?.content;
         if (typeof text !== "string") return;
+        // Ignore sub-agent messages — they're not part of the root
+        // agent's response to our queued prompt and would otherwise
+        // be checked for completion_promise / abort_promise tokens.
+        if (ev && ev.agentId !== undefined && ev.agentId !== null) return;
         // Mark the in-flight fire as "consumed by the agent" so the next
         // turn_end is treated as a real response cycle rather than a
         // spurious sub-turn boundary that would otherwise queue another
@@ -315,6 +319,14 @@ export function createRalphController() {
     const onTurnEnd = (ev) => {
         const a = state.active;
         if (!a) return;
+
+        // Sub-agents (task / explore / code-review / rubber-duck …) emit
+        // their own assistant.turn_end events that bubble up to the
+        // session bus. Per the SDK schema, sub-agent events carry an
+        // `agentId` field while root-agent events do not. We must only
+        // refire on the root agent's turn boundaries, otherwise every
+        // sub-agent invocation queues another copy of our prompt.
+        if (ev && ev.agentId !== undefined && ev.agentId !== null) return;
 
         // Dedupe: the SDK should only emit one turn_end per turnId, but a
         // misbehaving session implementation that double-emits would otherwise

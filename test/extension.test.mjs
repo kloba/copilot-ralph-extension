@@ -717,6 +717,56 @@ test("turn_end with turnId=null is NOT mistaken for duplicate of initial sentine
     assert.equal(session.sent.length, 1, "prompt must have been sent");
 });
 
+test("sub-agent turn_end events (agentId set) do not refire — root only", async () => {
+    // Regression for the user-reported `Queued (5)` bug: when the root
+    // agent invokes sub-agents (task/explore/code-review/rubber-duck),
+    // each sub-agent's own assistant.turn_end bubbles up to the session
+    // bus. Per the SDK schema, those carry an `agentId` while the root
+    // agent's events do not. Refiring on a sub-agent boundary queues
+    // duplicate prompts.
+    const { session, controller } = await arm({ max_iterations: 10, stagnation_limit: 0 });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } }); // pendingFire → iter 1 sent
+    assert.equal(session.sent.length, 1);
+    // Root emits a real message so the in-flight gate is cleared.
+    session.emit("assistant.message", { data: { content: "thinking…" } });
+    // 5 sub-agent turn_ends in a row — must all be ignored.
+    for (let k = 0; k < 5; k++) {
+        session.emit("assistant.turn_end", {
+            agentId: `sub-${k}`,
+            data: { turnId: `sub-turn-${k}` },
+        });
+    }
+    assert.equal(session.sent.length, 1, "sub-agent turn_ends must not queue more prompts");
+    assert.equal(controller.state.active.i, 1);
+    // The root agent's actual turn_end (no agentId) finally fires next iter.
+    session.emit("assistant.turn_end", { data: { turnId: "root-1" } });
+    assert.equal(controller.state.active.i, 2);
+    assert.equal(session.sent.length, 2);
+});
+
+test("sub-agent assistant.message content is NOT scanned for completion_promise", async () => {
+    // A sub-agent's response containing the completion token must not
+    // terminate the root loop early — only the root agent's own message
+    // counts.
+    const { session, controller } = await arm({
+        max_iterations: 5,
+        completion_promise: "ALL_DONE",
+        stagnation_limit: 0,
+    });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } }); // fire iter 1
+    // Sub-agent says ALL_DONE — must be ignored.
+    session.emit("assistant.message", {
+        agentId: "explore-1",
+        data: { content: "ALL_DONE from sub-agent" },
+    });
+    // Root agent emits its own (non-completion) message and turn_end.
+    session.emit("assistant.message", { data: { content: "root response" } });
+    session.emit("assistant.turn_end", { data: { turnId: "root-1" } });
+    assert.notEqual(controller.state.active, null, "loop should still be running");
+    assert.equal(controller.state.active.i, 2);
+});
+
+
 test("multiple turn_ends without intervening assistant.message do not bloat queue", async () => {
     // Regression for the user-reported `Queued (3)` bug: when the SDK emits
     // several turn_ends in quick succession (sub-turn boundaries, tool-call

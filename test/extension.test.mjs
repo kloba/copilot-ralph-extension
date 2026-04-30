@@ -394,6 +394,18 @@ test("attach returns a detach function that unsubscribes listeners", async () =>
 
 // ── log progress ──────────────────────────────────────────────────────────
 
+test("result includes durationMs, startedAt, finishedAt", async () => {
+    const { session, controller } = await arm({ max_iterations: 3 });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    runTurn(session, "all done COMPLETE");
+    const r = controller.state.lastResult;
+    assert.equal(typeof r.startedAt, "number");
+    assert.equal(typeof r.finishedAt, "number");
+    assert.equal(typeof r.durationMs, "number");
+    assert.ok(r.finishedAt >= r.startedAt);
+    assert.equal(r.durationMs, r.finishedAt - r.startedAt);
+});
+
 test("session.log records arming, iter markers, and finish reason", async () => {
     const { session, controller } = await arm({ max_iterations: 3 });
     session.emit("assistant.turn_end", { data: { turnId: "t0" } });

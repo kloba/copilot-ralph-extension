@@ -127,13 +127,18 @@ export function createRalphController() {
 
     const finish = (reason) => {
         if (!state.active) return;
+        const startedAt = state.active.startedAt ?? Date.now();
+        const finishedAt = Date.now();
         const result = {
             reason,
             iterations: state.active.i,
             preview: previewOf(state.lastAssistantContent),
+            startedAt,
+            finishedAt,
+            durationMs: finishedAt - startedAt,
         };
         const verb = reason === "completion_promise" ? "✅ completed" : "⏹ stopped";
-        log(`${verb} ralph_loop after ${result.iterations} iteration${result.iterations === 1 ? "" : "s"} (reason: ${reason})`);
+        log(`${verb} ralph_loop after ${result.iterations} iteration${result.iterations === 1 ? "" : "s"} (reason: ${reason}, ${result.durationMs}ms)`);
         state.active = null;
         state.lastResult = result;
     };
@@ -280,7 +285,7 @@ export function createRalphController() {
             const r = state.lastResult;
             state.lastResult = null;
             return {
-                additionalContext: `[ralph_loop just finished — iterations=${r.iterations}, reason=${r.reason}]`,
+                additionalContext: `[ralph_loop just finished — iterations=${r.iterations}, reason=${r.reason}, durationMs=${r.durationMs}]`,
             };
         },
     };

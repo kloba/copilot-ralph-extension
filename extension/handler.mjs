@@ -422,14 +422,17 @@ export function createRalphController() {
             session.on("abort", onAbort),
         ].filter((fn) => typeof fn === "function");
         const detach = () => {
-            // If a loop is in flight when the session goes away, finish it
-            // gracefully instead of leaving orphaned state behind.
-            if (state.active) finish("detached");
+            // If THIS detach is still the current wiring AND a loop is in flight,
+            // finish it gracefully instead of leaving orphaned state behind.
+            // A stale detach (e.g. one returned by a previous attach() that has
+            // since been superseded) must NOT touch state.active — that would
+            // kill the loop running on the newer session.
+            if (currentDetach === detach && state.active) finish("detached");
             for (const u of unsubs) {
                 try { u(); } catch { /* ignore */ }
             }
             if (currentDetach === detach) currentDetach = null;
-            sessionRef = null;
+            if (sessionRef === session) sessionRef = null;
         };
         currentDetach = detach;
         return detach;

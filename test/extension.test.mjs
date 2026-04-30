@@ -659,6 +659,21 @@ test("double attach without detach: second attach replaces first (no duplicate l
     assert.equal(c.state.active, null);
 });
 
+test("stale detach after re-attach does NOT kill the new session's active loop", async () => {
+    // Regression: a detach returned by a SUPERSEDED attach() must not call
+    // finish('detached') on the controller's currently-active loop.
+    const sessionA = makeFakeSession();
+    const sessionB = makeFakeSession();
+    const c = createRalphController();
+    const detachA = c.attach(sessionA);   // wiring #1
+    c.attach(sessionB);                   // wiring #2 supersedes #1
+    await c.tools[0].handler({ prompt: "go", max_iterations: 5 });
+    assert.ok(c.state.active, "loop should be armed on session B");
+    detachA();                             // stale — must be a no-op for active state
+    assert.ok(c.state.active, "stale detach must NOT have killed the active loop");
+    assert.equal(c.state.lastResult, null);
+});
+
 test("result includes durationMs, startedAt, finishedAt", async () => {
     const { session, controller } = await arm({ max_iterations: 3 });
     session.emit("assistant.turn_end", { data: { turnId: "t0" } });

@@ -139,6 +139,30 @@ test("validateArgs: prompt at exactly MAX_PROMPT_CHARS is accepted (boundary)", 
     assert.match(validateArgs({ prompt: overLimit }).error, /exceeds/);
 });
 
+test("validateArgs: rejects unknown keys (typo guard)", () => {
+    // Common typo for max_iterations — would silently use the default.
+    const r1 = validateArgs({ prompt: "x", max_iter: 100 });
+    assert.match(r1.error, /unknown argument.*"max_iter"/);
+    // Multiple unknowns reported together.
+    const r2 = validateArgs({ prompt: "x", foo: 1, bar: 2 });
+    assert.match(r2.error, /unknown arguments.*"foo".*"bar"/);
+    // Lists valid keys to help the caller fix their call.
+    assert.match(r1.error, /Valid keys:.*max_iterations/);
+    // All-known keys still pass.
+    assert.ok(validateArgs({
+        prompt: "x", max_iterations: 5, min_iterations: 1,
+        completion_promise: "DONE", abort_promise: "FAIL", stagnation_limit: 0,
+    }).value);
+});
+
+test("ralph_loop & ralph_stop schemas declare additionalProperties:false (mirrors runtime validation)", () => {
+    const c = createRalphController();
+    const ralph = c.tools.find((t) => t.name === "ralph_loop");
+    const stop = c.tools.find((t) => t.name === "ralph_stop");
+    assert.equal(ralph.parameters.additionalProperties, false);
+    assert.equal(stop.parameters.additionalProperties, false);
+});
+
 // ── tool spec ─────────────────────────────────────────────────────────────
 
 test("controller exposes ralph_loop and ralph_stop tools and hooks", () => {

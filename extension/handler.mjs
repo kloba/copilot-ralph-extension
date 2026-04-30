@@ -89,6 +89,24 @@ export function validateArgs(args) {
     if (args === null || args === undefined || typeof args !== "object" || Array.isArray(args)) {
         return { error: "ralph_loop: arguments must be an object (got " + (args === null ? "null" : Array.isArray(args) ? "array" : typeof args) + ")." };
     }
+    // Reject unknown keys so a typo like `max_iter` (instead of
+    // `max_iterations`) fails loudly rather than silently falling back to
+    // the default. Without this, the caller thinks they configured the
+    // loop but the runtime ignores their value.
+    const KNOWN_KEYS = new Set([
+        "prompt",
+        "max_iterations",
+        "min_iterations",
+        "completion_promise",
+        "abort_promise",
+        "stagnation_limit",
+    ]);
+    const unknown = Object.keys(args).filter((k) => !KNOWN_KEYS.has(k));
+    if (unknown.length > 0) {
+        return {
+            error: `ralph_loop: unknown argument${unknown.length === 1 ? "" : "s"}: ${unknown.map((k) => JSON.stringify(k)).join(", ")}. Valid keys: ${[...KNOWN_KEYS].join(", ")}.`,
+        };
+    }
     if (args.prompt !== undefined && args.prompt !== null && typeof args.prompt !== "string") {
         return { error: `ralph_loop: prompt must be a string (got ${Array.isArray(args.prompt) ? "array" : typeof args.prompt}).` };
     }
@@ -379,6 +397,7 @@ export function createRalphController() {
                     },
                 },
                 required: ["prompt"],
+                additionalProperties: false,
             },
             handler: async (args) => {
                 if (!sessionRef?.send) {
@@ -432,6 +451,7 @@ export function createRalphController() {
                         maxLength: PREVIEW_CHARS,
                     },
                 },
+                additionalProperties: false,
             },
             handler: async (args) => {
                 if (!state.active) return failure("ralph_stop: no ralph_loop is currently running.");

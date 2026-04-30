@@ -119,6 +119,11 @@ export function validateArgs(args) {
             error: "ralph_loop: abort_promise must differ from completion_promise (otherwise the signal is ambiguous).",
         };
     }
+    if (abortPromise !== null && (abortPromise.includes(completionPromise) || completionPromise.includes(abortPromise))) {
+        return {
+            error: `ralph_loop: completion_promise (${JSON.stringify(completionPromise)}) and abort_promise (${JSON.stringify(abortPromise)}) overlap as substrings — whichever check runs first will always fire. Pick disjoint phrases.`,
+        };
+    }
 
     const rawStagnation = args.stagnation_limit ?? DEFAULTS.stagnation_limit;
     const stagnationLimit = Number(rawStagnation);

@@ -94,6 +94,17 @@ test("validateArgs: rejects identical completion and abort promise", () => {
     assert.match(r.error, /must differ/);
 });
 
+test("validateArgs: rejects substring overlap between completion and abort promises", () => {
+    // abort contains completion → completion would always match first
+    const r1 = validateArgs({ prompt: "x", completion_promise: "DONE", abort_promise: "DONE_FAIL" });
+    assert.match(r1.error, /overlap/);
+    // completion contains abort → abort would always match too
+    const r2 = validateArgs({ prompt: "x", completion_promise: "ALL_DONE", abort_promise: "DONE" });
+    assert.match(r2.error, /overlap/);
+    // disjoint phrases pass
+    assert.ok(validateArgs({ prompt: "x", completion_promise: "COMPLETE", abort_promise: "ABORT" }).value);
+});
+
 test("validateArgs: rejects negative/non-integer/=1 stagnation_limit", () => {
     assert.match(validateArgs({ prompt: "x", stagnation_limit: -1 }).error, /stagnation_limit/);
     assert.match(validateArgs({ prompt: "x", stagnation_limit: 1.5 }).error, /stagnation_limit/);

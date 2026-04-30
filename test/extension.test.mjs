@@ -558,6 +558,18 @@ test("result includes durationMs, startedAt, finishedAt", async () => {
     assert.equal(r.durationMs, r.finishedAt - r.startedAt);
 });
 
+test("lastResult is frozen so consumers can't mutate the historical record", async () => {
+    const { session, controller } = await arm({ max_iterations: 3 });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    runTurn(session, "all done COMPLETE");
+    const r = controller.state.lastResult;
+    assert.ok(Object.isFrozen(r));
+    assert.throws(() => { r.reason = "tampered"; }, TypeError);
+    assert.throws(() => { r.iterations = 999; }, TypeError);
+    // Original values intact.
+    assert.equal(r.reason, "completion_promise");
+});
+
 test("session.log records arming, iter markers, and finish reason", async () => {
     const { session, controller } = await arm({ max_iterations: 3 });
     session.emit("assistant.turn_end", { data: { turnId: "t0" } });

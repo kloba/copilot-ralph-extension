@@ -188,7 +188,7 @@ export function createRalphController() {
         const verb = reason === "completion_promise" ? "✅ completed" : "⏹ stopped";
         log(`${verb} ralph_loop after ${result.iterations} iteration${result.iterations === 1 ? "" : "s"} (reason: ${reason}${result.note ? `, note: ${result.note}` : ""}, ${result.durationMs}ms)`);
         state.active = null;
-        state.lastResult = result;
+        state.lastResult = Object.freeze(result);
     };
 
     const onAssistantMessage = (ev) => {

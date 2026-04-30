@@ -367,9 +367,11 @@ export function createRalphController() {
                     );
                 }
                 if (state.active) {
-                    return failure(
-                        `ralph_loop is already running (iteration ${state.active.i}/${state.active.max}). Use ralph_stop first.`,
-                    );
+                    const a = state.active;
+                    const where = a.pendingFire
+                        ? `armed (iteration 1/${a.max} pending — call ralph_stop first)`
+                        : `running (iteration ${a.i}/${a.max} — call ralph_stop first)`;
+                    return failure(`ralph_loop is already ${where}.`);
                 }
                 const parsed = validateArgs(args);
                 if (parsed.error) return failure(parsed.error);

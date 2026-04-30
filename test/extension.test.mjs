@@ -180,6 +180,22 @@ test("arming twice while active is rejected", async () => {
     assert.equal(controller.state.active.i, 1);
 });
 
+test("arming twice before first turn_end shows clearer 'armed' message", async () => {
+    // Race: ralph_loop called, then ralph_loop called again before any
+    // turn_end has fired (state.active.i === 0). The error message used to
+    // confusingly say "iteration 0/max"; now it says "armed (iteration 1/max
+    // pending …)".
+    const { ralph, controller } = await arm({ max_iterations: 7 });
+    // No turn_end fired yet — pendingFire is true, i is 0.
+    assert.equal(controller.state.active.i, 0);
+    assert.equal(controller.state.active.pendingFire, true);
+    const r = await ralph.handler({ prompt: "again" });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /already armed/);
+    assert.match(r.textResultForLlm, /iteration 1\/7 pending/);
+    assert.doesNotMatch(r.textResultForLlm, /iteration 0/);
+});
+
 // ── iteration loop ────────────────────────────────────────────────────────
 
 test("first turn_end after arming fires iter 1 prompt; subsequent turn_ends evaluate", async () => {

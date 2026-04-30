@@ -78,7 +78,7 @@ The tool **arms** the loop and returns immediately. Iterations then play out as 
 | `min_iterations` | `1` | Minimum iterations before `completion_promise` / `abort_promise` are honored. Use this to force verification passes even if the agent declares completion early. |
 | `completion_promise` | `"COMPLETE"` | Substring in assistant response → stop |
 | `abort_promise` | _(none)_ | Substring → early abort. Must differ from `completion_promise` |
-| `stagnation_limit` | `3` | Abort after N consecutive byte-identical responses (0 disables) |
+| `stagnation_limit` | `3` | Abort after N consecutive byte-identical responses (0 disables, must be ≥ 2 if set) |
 
 ### Companion tool
 

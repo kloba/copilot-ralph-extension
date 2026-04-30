@@ -34,10 +34,10 @@ function previewOf(text) {
     return text.slice(0, cut) + "…";
 }
 function failure(message, extra = {}) {
-    return { textResultForLlm: message, resultType: "failure", ...extra };
+    return { ...extra, textResultForLlm: message, resultType: "failure" };
 }
 function success(message, extra = {}) {
-    return { textResultForLlm: message, resultType: "success", ...extra };
+    return { ...extra, textResultForLlm: message, resultType: "success" };
 }
 
 /**
@@ -143,7 +143,7 @@ export function validateArgs(args) {
  *   hooks: { onUserPromptSubmitted: Function },
  *   attach: (session: object) => () => void,
  *   state: { active: object|null, lastAssistantContent: string, lastResult: RalphResult|null },
- *   _internal: { onAssistantMessage: Function, onTurnEnd: Function, onAbort: Function, finish: Function }
+ *   _internal: { onAssistantMessage: Function, onTurnEnd: Function, onAbort: Function, finish: Function, success: Function, failure: Function }
  * }} Controller. `attach` returns an unsubscribe function that detaches all listeners and finalizes any active loop with reason='detached'.
  */
 export function createRalphController() {
@@ -441,7 +441,7 @@ export function createRalphController() {
         attach,
         state,
         // Exposed for tests so they can drive events deterministically.
-        _internal: { onAssistantMessage, onTurnEnd, onAbort, finish },
+        _internal: { onAssistantMessage, onTurnEnd, onAbort, finish, success, failure },
     };
 }
 

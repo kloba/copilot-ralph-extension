@@ -61,6 +61,18 @@ test("validateArgs: rejects non-string prompt (number, boolean, array, object)",
     assert.match(validateArgs({ prompt: { x: 1 } }).error, /prompt must be a string \(got object\)/);
 });
 
+test("success/failure helpers: extra cannot override message or resultType", () => {
+    const c = createRalphController();
+    const f = c._internal.failure("real error", { textResultForLlm: "OVERRIDE", resultType: "success", note: "ok" });
+    assert.equal(f.textResultForLlm, "real error");
+    assert.equal(f.resultType, "failure");
+    assert.equal(f.note, "ok");
+    const s = c._internal.success("real ok", { textResultForLlm: "OVERRIDE", resultType: "failure", iterations: 7 });
+    assert.equal(s.textResultForLlm, "real ok");
+    assert.equal(s.resultType, "success");
+    assert.equal(s.iterations, 7);
+});
+
 test("validateArgs: rejects bad max_iterations", () => {
     assert.match(validateArgs({ prompt: "x", max_iterations: 0 }).error, /max_iterations/);
     assert.match(validateArgs({ prompt: "x", max_iterations: -1 }).error, /max_iterations/);

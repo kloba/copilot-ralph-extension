@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { createRalphController, validateArgs } from "../extension/handler.mjs";
 
-function makeFakeSession({ failSend = false } = {}) {
+function makeFakeSession({ failSend = false, rejectSend = false } = {}) {
     const sent = [];
     const logs = [];
     const handlers = new Map();
@@ -14,6 +14,7 @@ function makeFakeSession({ failSend = false } = {}) {
         send: (opts) => {
             if (failSend) throw new Error("simulated send failure");
             sent.push(opts);
+            if (rejectSend) return Promise.reject(new Error("simulated async rejection"));
             return Promise.resolve("msg-" + sent.length);
         },
         on: (type, handler) => {
@@ -295,6 +296,29 @@ test("send throwing during arm fire-out finishes with reason=send_error", async 
     session.emit("assistant.turn_end", { data: { turnId: "t0" } });
     assert.equal(c.state.active, null);
     assert.equal(c.state.lastResult.reason, "send_error");
+});
+
+test("send rejecting asynchronously finishes with reason=send_error", async () => {
+    const session = makeFakeSession({ rejectSend: true });
+    const c = createRalphController();
+    c.attach(session);
+    await c.tools[0].handler({ prompt: "go", max_iterations: 5 });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    // give microtasks a tick
+    await new Promise((r) => setImmediate(r));
+    assert.equal(c.state.active, null);
+    assert.equal(c.state.lastResult.reason, "send_error");
+});
+
+test("session.log throwing does not crash the controller", async () => {
+    const session = makeFakeSession();
+    session.log = () => { throw new Error("log failure"); };
+    const c = createRalphController();
+    c.attach(session);
+    const r = await c.tools[0].handler({ prompt: "go", max_iterations: 3 });
+    assert.equal(r.resultType, "success");
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    assert.equal(c.state.active.i, 1);
 });
 
 // ── abort event ───────────────────────────────────────────────────────────

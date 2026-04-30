@@ -100,10 +100,29 @@ export function createRalphController() {
     };
     let sessionRef = null;
 
-    const log = (msg) => sessionRef?.log?.(msg);
+    const log = (msg) => {
+        try { sessionRef?.log?.(msg); } catch { /* swallow */ }
+    };
     const sendPrompt = (prompt) => {
         if (!sessionRef?.send) throw new Error("session not attached");
         return sessionRef.send({ prompt });
+    };
+
+    // Fire iteration prompt; handle both sync throws and async rejections.
+    const tryFire = (prompt) => {
+        try {
+            const r = sendPrompt(prompt);
+            if (r && typeof r.then === "function") {
+                r.then(undefined, (err) => {
+                    if (!state.active) return;
+                    log(`ralph_loop: send rejected: ${err?.message ?? err}`);
+                    finish("send_error");
+                });
+            }
+        } catch (err) {
+            log(`ralph_loop: send failed: ${err?.message ?? err}`);
+            finish("send_error");
+        }
     };
 
     const finish = (reason) => {
@@ -135,8 +154,7 @@ export function createRalphController() {
             a.pendingFire = false;
             a.i = 1;
             log(`🔁 ralph_loop iter 1/${a.max}`);
-            try { sendPrompt(a.prompt); }
-            catch (err) { log(`ralph_loop: send failed: ${err?.message ?? err}`); finish("send_error"); }
+            tryFire(a.prompt);
             return;
         }
 
@@ -158,8 +176,7 @@ export function createRalphController() {
 
         a.i += 1;
         log(`🔁 ralph_loop iter ${a.i}/${a.max}`);
-        try { sendPrompt(a.prompt); }
-        catch (err) { log(`ralph_loop: send failed: ${err?.message ?? err}`); finish("send_error"); }
+        tryFire(a.prompt);
     };
 
     const onAbort = () => {

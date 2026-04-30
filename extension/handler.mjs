@@ -18,6 +18,7 @@ const DEFAULTS = {
 };
 const MAX_ALLOWED_ITERATIONS = 1000;
 const PREVIEW_CHARS = 500;
+const MAX_PROMPT_CHARS = 65536;
 
 function previewOf(text) {
     if (!text) return "";
@@ -33,6 +34,11 @@ function success(message, extra = {}) {
 export function validateArgs(args) {
     const prompt = String(args.prompt ?? "").trim();
     if (!prompt) return { error: "ralph_loop: prompt is required and must be non-empty." };
+    if (prompt.length > MAX_PROMPT_CHARS) {
+        return {
+            error: `ralph_loop: prompt exceeds ${MAX_PROMPT_CHARS} characters (got ${prompt.length}). Shorten the prompt or split the work.`,
+        };
+    }
 
     const rawMax = args.max_iterations ?? DEFAULTS.max_iterations;
     const max = Number(rawMax);

@@ -184,6 +184,17 @@ test("min_iterations: stagnation still triggers before min (safety override)", a
     assert.equal(controller.state.lastResult.reason, "stagnation");
 });
 
+test("prompt length cap: rejects prompts over 64KiB", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const huge = "x".repeat(65537);
+    const r = await c.tools[0].handler({ prompt: huge });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /exceeds 65536 characters/);
+    assert.equal(c.state.active, null);
+});
+
 test("min_iterations validation: must be >= 1 and <= max_iterations", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

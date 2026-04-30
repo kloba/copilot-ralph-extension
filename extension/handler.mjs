@@ -377,6 +377,15 @@ export function createRalphController() {
 
     let currentDetach = null;
     function attach(session) {
+        if (!session || typeof session !== "object") {
+            throw new TypeError("ralph: attach(session) requires a session object.");
+        }
+        if (typeof session.send !== "function") {
+            throw new TypeError("ralph: attached session is missing required method 'send(message)'.");
+        }
+        if (typeof session.on !== "function") {
+            throw new TypeError("ralph: attached session is missing required method 'on(event, handler)'.");
+        }
         // Idempotent re-attach: if we're already wired (possibly to a
         // different session), tear that down first so we don't end up with
         // duplicate listeners that would double-count every event.
@@ -386,9 +395,9 @@ export function createRalphController() {
         }
         sessionRef = session;
         const unsubs = [
-            session.on?.("assistant.message", onAssistantMessage),
-            session.on?.("assistant.turn_end", onTurnEnd),
-            session.on?.("abort", onAbort),
+            session.on("assistant.message", onAssistantMessage),
+            session.on("assistant.turn_end", onTurnEnd),
+            session.on("abort", onAbort),
         ].filter((fn) => typeof fn === "function");
         const detach = () => {
             // If a loop is in flight when the session goes away, finish it

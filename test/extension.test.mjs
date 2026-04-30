@@ -529,6 +529,18 @@ test("calling ralph_loop before attach fails fast with a clear error and does NO
     assert.equal(c.state.active, null, "must not leave armed state behind");
 });
 
+test("attach validates session shape (must have send and on)", () => {
+    const c = createRalphController();
+    assert.throws(() => c.attach(null), /requires a session object/);
+    assert.throws(() => c.attach("not-an-object"), /requires a session object/);
+    assert.throws(() => c.attach({}), /missing required method 'send/);
+    assert.throws(() => c.attach({ send: () => {} }), /missing required method 'on/);
+    // valid shape: passes
+    const ok = c.attach({ send: () => {}, on: () => () => {} });
+    assert.equal(typeof ok, "function");
+    ok();
+});
+
 test("attach returns a detach function that unsubscribes listeners and finalizes active loop", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

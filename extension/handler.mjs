@@ -466,8 +466,8 @@ export function createRalphController() {
                 state.lastResult = null;
 
                 log(
-                    `🔁 ralph_loop armed — max=${parsed.value.max}${parsed.value.min > 1 ? `, min=${parsed.value.min}` : ""}, completion='${parsed.value.completionPromise}'${
-                        parsed.value.abortPromise ? `, abort='${parsed.value.abortPromise}'` : ""
+                    `🔁 ralph_loop armed — max=${parsed.value.max}${parsed.value.min > 1 ? `, min=${parsed.value.min}` : ""}, completion=${JSON.stringify(parsed.value.completionPromise)}${
+                        parsed.value.abortPromise ? `, abort=${JSON.stringify(parsed.value.abortPromise)}` : ""
                     }${parsed.value.stagnationLimit > 0 ? `, stagnation_limit=${parsed.value.stagnationLimit}` : ""}`,
                 );
                 return success(

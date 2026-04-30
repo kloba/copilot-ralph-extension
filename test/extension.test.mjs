@@ -776,6 +776,24 @@ test("attach returns a detach function that unsubscribes listeners and finalizes
     assert.equal(session.sent.length, 0);
 });
 
+test("detach during pendingFire records iterations=0 (loop never fired)", async () => {
+    // Arm a loop, then detach BEFORE any turn_end fires. The result should
+    // honestly report iterations=0 — no iteration ever ran. Previously this
+    // was tested only for reason='detached'; this asserts the count too.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    const detach = c.attach(session);
+    await c.tools[0].handler({ prompt: "go", max_iterations: 5 });
+    assert.equal(c.state.active.pendingFire, true);
+    assert.equal(c.state.active.i, 0);
+    detach();
+    assert.equal(c.state.lastResult.reason, "detached");
+    assert.equal(c.state.lastResult.iterations, 0, "no iteration should be reported");
+    assert.equal(session.sent.length, 0, "no prompt should have been sent");
+    // durationMs is meaningful (≥ 0) even for a 0-iteration result.
+    assert.ok(c.state.lastResult.durationMs >= 0);
+});
+
 test("re-attach with a fresh session after detach starts cleanly", async () => {
     const session1 = makeFakeSession();
     const c = createRalphController();

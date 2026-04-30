@@ -124,7 +124,19 @@ test("validateArgs: rejects boolean/array numerics (no silent type coercion)", (
     }
     // Numeric strings still accepted (LLM tool callers commonly pass strings).
     assert.ok(validateArgs({ prompt: "x", max_iterations: "5" }).value);
+    assert.ok(validateArgs({ prompt: "x", min_iterations: "2", max_iterations: "5" }).value);
     assert.ok(validateArgs({ prompt: "x", stagnation_limit: "0" }).value);
+});
+
+test("validateArgs: prompt at exactly MAX_PROMPT_CHARS is accepted (boundary)", () => {
+    // Off-by-one guard: the check is `> MAX_PROMPT_CHARS`, so === should pass.
+    const atLimit = "x".repeat(__test__.MAX_PROMPT_CHARS);
+    const r = validateArgs({ prompt: atLimit });
+    assert.ok(r.value, r.error);
+    assert.equal(r.value.prompt.length, __test__.MAX_PROMPT_CHARS);
+    // One char over → rejected.
+    const overLimit = "x".repeat(__test__.MAX_PROMPT_CHARS + 1);
+    assert.match(validateArgs({ prompt: overLimit }).error, /exceeds/);
 });
 
 // ── tool spec ─────────────────────────────────────────────────────────────

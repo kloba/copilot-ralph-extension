@@ -184,18 +184,22 @@ export function createRalphController() {
     };
 
     // Fire iteration prompt; handle both sync throws and async rejections.
+    // Captures the active-loop identity at fire-time so a late rejection from
+    // a previous arming can't poison a freshly-armed loop.
     const tryFire = (prompt) => {
+        const armedFor = state.active;
         try {
             const r = sendPrompt(prompt);
             if (r && typeof r.then === "function") {
                 r.then(undefined, (err) => {
-                    if (!state.active) return;
+                    if (state.active !== armedFor) return;
                     const msg = err?.message ?? String(err);
                     log(`ralph_loop: send rejected: ${msg}`);
                     finish("send_error", `send rejected: ${msg}`);
                 });
             }
         } catch (err) {
+            if (state.active !== armedFor) return;
             const msg = err?.message ?? String(err);
             log(`ralph_loop: send failed: ${msg}`);
             finish("send_error", `send failed: ${msg}`);

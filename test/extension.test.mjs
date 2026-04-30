@@ -631,6 +631,65 @@ test("lastAssistantContent is capped at MAX_CONTENT_CHARS (1 MiB)", async () => 
     );
 });
 
+test("late send-rejection from a stale arming does NOT poison a freshly-armed loop", async () => {
+    // Sequence:
+    //  1. Arm loop A1; capture its pending send-promise so we can reject it later.
+    //  2. Stop A1 cleanly via ralph_stop. state.active becomes null.
+    //  3. Arm loop A2.
+    //  4. Late-reject the A1 promise. Without per-arming identity capture, the
+    //     rejection handler would call finish('send_error') on A2 and kill it.
+    let rejectA1;
+    const session = {
+        sent: [],
+        log: () => {},
+        send: (opts) => {
+            session.sent.push(opts);
+            // First send (A1's): hand-controlled promise. Subsequent sends (A2's
+            // arming send): resolve normally.
+            if (session.sent.length === 1) {
+                return new Promise((_resolve, reject) => { rejectA1 = reject; });
+            }
+            return Promise.resolve("ok");
+        },
+        on: (type, handler) => {
+            session._h = session._h || new Map();
+            if (!session._h.has(type)) session._h.set(type, new Set());
+            session._h.get(type).add(handler);
+            return () => session._h.get(type).delete(handler);
+        },
+        emit: (type, payload) => {
+            const set = session._h?.get(type);
+            if (!set) return;
+            for (const h of [...set]) h(payload);
+        },
+    };
+    const controller = createRalphController();
+    controller.attach(session);
+    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
+    const stop = controller.tools.find((t) => t.name === "ralph_stop");
+
+    // A1
+    await ralph.handler({ prompt: "first", max_iterations: 5, stagnation_limit: 0 });
+    session.emit("assistant.turn_end", { data: { turnId: "a1-init" } }); // fire iter 1 (the pending-promise send)
+    assert.equal(controller.state.active.i, 1);
+    await stop.handler({ reason: "manual" });
+    assert.equal(controller.state.active, null);
+
+    // A2
+    await ralph.handler({ prompt: "second", max_iterations: 5, stagnation_limit: 0 });
+    session.emit("assistant.turn_end", { data: { turnId: "a2-init" } });
+    const a2 = controller.state.active;
+    assert.ok(a2, "A2 should be active");
+
+    // Late rejection of A1's send-promise
+    rejectA1(new Error("stale rejection from A1"));
+    // Allow the rejection microtask to run.
+    await new Promise((r) => setTimeout(r, 0));
+
+    assert.strictEqual(controller.state.active, a2, "A2 must NOT be killed by stale A1 rejection");
+    assert.equal(controller.state.lastResult, null, "no result should have been recorded");
+});
+
 // ── attach/detach ─────────────────────────────────────────────────────────
 
 test("calling ralph_loop before attach fails fast with a clear error and does NOT arm", async () => {

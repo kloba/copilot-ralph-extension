@@ -64,8 +64,8 @@ function success(message, extra = {}) {
  * @returns {{value: object} | {error: string}} Validated values or a single human-readable error.
  */
 export function validateArgs(args) {
-    if (args === null || args === undefined || typeof args !== "object") {
-        return { error: "ralph_loop: arguments object is required." };
+    if (args === null || args === undefined || typeof args !== "object" || Array.isArray(args)) {
+        return { error: "ralph_loop: arguments must be an object (got " + (args === null ? "null" : Array.isArray(args) ? "array" : typeof args) + ")." };
     }
     const prompt = String(args.prompt ?? "").trim();
     if (!prompt) return { error: "ralph_loop: prompt is required and must be non-empty." };

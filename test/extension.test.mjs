@@ -186,17 +186,22 @@ test("min_iterations: stagnation still triggers before min (safety override)", a
     assert.equal(controller.state.lastResult.reason, "stagnation");
 });
 
-test("validateArgs guards against null/undefined args", async () => {
+test("validateArgs guards against null/undefined/array args", async () => {
     const session = makeFakeSession();
     const c = createRalphController();
     c.attach(session);
     const r1 = await c.tools[0].handler(null);
     assert.equal(r1.resultType, "failure");
-    assert.match(r1.textResultForLlm, /arguments object is required/);
+    assert.match(r1.textResultForLlm, /arguments must be an object \(got null\)/);
     const r2 = await c.tools[0].handler(undefined);
     assert.equal(r2.resultType, "failure");
+    assert.match(r2.textResultForLlm, /got undefined/);
     const r3 = await c.tools[0].handler("not-an-object");
     assert.equal(r3.resultType, "failure");
+    assert.match(r3.textResultForLlm, /got string/);
+    const r4 = await c.tools[0].handler(["prompt"]);
+    assert.equal(r4.resultType, "failure");
+    assert.match(r4.textResultForLlm, /got array/);
     assert.equal(c.state.active, null);
 });
 

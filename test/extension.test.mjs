@@ -486,6 +486,18 @@ test("onUserPromptSubmitted is a no-op when no loop has finished", async () => {
     assert.equal(r, undefined);
 });
 
+test("onUserPromptSubmitted collapses multi-line note into single line", async () => {
+    const { session, controller, stop } = await arm({ max_iterations: 5 });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    // Stop with a multi-line reason — note should land on the result, then
+    // be flattened inside additionalContext.
+    await stop.handler({ reason: "first line\n  second line\n\nthird" });
+    const r = await controller.hooks.onUserPromptSubmitted({ prompt: "next" });
+    assert.match(r.additionalContext, /note=first line second line third/);
+    // Ensure no raw newlines made it into the bracketed context.
+    assert.equal(r.additionalContext.includes("\n"), false);
+});
+
 // ── content tracking ──────────────────────────────────────────────────────
 
 test("missing assistant.message before turn_end is treated as empty content", async () => {

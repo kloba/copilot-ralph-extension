@@ -395,6 +395,8 @@ test("send throwing during arm fire-out finishes with reason=send_error", async 
     session.emit("assistant.turn_end", { data: { turnId: "t0" } });
     assert.equal(c.state.active, null);
     assert.equal(c.state.lastResult.reason, "send_error");
+    // The underlying error message should be surfaced on the result.
+    assert.match(c.state.lastResult.note, /simulated send failure/);
 });
 
 test("send rejecting asynchronously finishes with reason=send_error", async () => {
@@ -407,6 +409,7 @@ test("send rejecting asynchronously finishes with reason=send_error", async () =
     await new Promise((r) => setImmediate(r));
     assert.equal(c.state.active, null);
     assert.equal(c.state.lastResult.reason, "send_error");
+    assert.match(c.state.lastResult.note, /simulated async rejection/);
 });
 
 test("session.log throwing does not crash the controller", async () => {

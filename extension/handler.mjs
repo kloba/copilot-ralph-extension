@@ -169,13 +169,15 @@ export function createRalphController() {
             if (r && typeof r.then === "function") {
                 r.then(undefined, (err) => {
                     if (!state.active) return;
-                    log(`ralph_loop: send rejected: ${err?.message ?? err}`);
-                    finish("send_error");
+                    const msg = err?.message ?? String(err);
+                    log(`ralph_loop: send rejected: ${msg}`);
+                    finish("send_error", `send rejected: ${msg}`);
                 });
             }
         } catch (err) {
-            log(`ralph_loop: send failed: ${err?.message ?? err}`);
-            finish("send_error");
+            const msg = err?.message ?? String(err);
+            log(`ralph_loop: send failed: ${msg}`);
+            finish("send_error", `send failed: ${msg}`);
         }
     };
 

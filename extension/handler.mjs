@@ -71,7 +71,10 @@ export function validateArgs(args) {
     if (args === null || args === undefined || typeof args !== "object" || Array.isArray(args)) {
         return { error: "ralph_loop: arguments must be an object (got " + (args === null ? "null" : Array.isArray(args) ? "array" : typeof args) + ")." };
     }
-    const prompt = String(args.prompt ?? "").trim();
+    if (args.prompt !== undefined && args.prompt !== null && typeof args.prompt !== "string") {
+        return { error: `ralph_loop: prompt must be a string (got ${Array.isArray(args.prompt) ? "array" : typeof args.prompt}).` };
+    }
+    const prompt = (args.prompt ?? "").trim();
     if (!prompt) return { error: "ralph_loop: prompt is required and must be non-empty." };
     if (prompt.length > MAX_PROMPT_CHARS) {
         return {

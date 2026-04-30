@@ -54,6 +54,13 @@ test("validateArgs: rejects empty prompt", () => {
     assert.match(validateArgs({ prompt: "   " }).error, /prompt is required/);
 });
 
+test("validateArgs: rejects non-string prompt (number, boolean, array, object)", () => {
+    assert.match(validateArgs({ prompt: 42 }).error, /prompt must be a string \(got number\)/);
+    assert.match(validateArgs({ prompt: false }).error, /prompt must be a string \(got boolean\)/);
+    assert.match(validateArgs({ prompt: ["a", "b"] }).error, /prompt must be a string \(got array\)/);
+    assert.match(validateArgs({ prompt: { x: 1 } }).error, /prompt must be a string \(got object\)/);
+});
+
 test("validateArgs: rejects bad max_iterations", () => {
     assert.match(validateArgs({ prompt: "x", max_iterations: 0 }).error, /max_iterations/);
     assert.match(validateArgs({ prompt: "x", max_iterations: -1 }).error, /max_iterations/);

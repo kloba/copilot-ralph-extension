@@ -161,9 +161,16 @@ export function createRalphController() {
             : text;
     };
 
-    const onTurnEnd = () => {
+    const onTurnEnd = (ev) => {
         const a = state.active;
         if (!a) return;
+
+        // Dedupe: the SDK should only emit one turn_end per turnId, but a
+        // misbehaving session implementation that double-emits would otherwise
+        // double-count iterations. Track the last turnId we processed.
+        const turnId = ev?.data?.turnId;
+        if (turnId !== undefined && turnId === a.lastTurnId) return;
+        if (turnId !== undefined) a.lastTurnId = turnId;
 
         // The turn that *called* ralph_loop will end before any iteration runs.
         // Use that first turn_end to fire iteration 1's prompt; only evaluate
@@ -266,6 +273,7 @@ export function createRalphController() {
                     streak: 0,
                     pendingFire: true,
                     startedAt: Date.now(),
+                    lastTurnId: null,
                 };
                 state.lastAssistantContent = "";
                 state.lastResult = null;

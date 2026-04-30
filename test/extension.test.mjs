@@ -30,9 +30,11 @@ function makeFakeSession({ failSend = false, rejectSend = false } = {}) {
     };
 }
 
+let _turnCounter = 0;
 function runTurn(session, content) {
+    _turnCounter += 1;
     session.emit("assistant.message", { data: { content } });
-    session.emit("assistant.turn_end", { data: { turnId: "t" } });
+    session.emit("assistant.turn_end", { data: { turnId: `t${_turnCounter}` } });
 }
 
 async function arm(args = {}) {
@@ -418,6 +420,20 @@ test("silent iteration does not carry prior content into completion check (regre
     // iter 2: lastAssistantContent must be "", NOT "MAGIC at iter 1" — so not finished yet.
     assert.notEqual(c2.state.active, null);
     assert.equal(c2.state.active.i, 3);
+});
+
+test("duplicate turn_end with same turnId is ignored (no double-count)", async () => {
+    const { session, controller } = await arm({ max_iterations: 5, stagnation_limit: 0 });
+    session.emit("assistant.turn_end", { data: { turnId: "t-init" } }); // fires iter 1
+    // Iter 1 produces "step 1"
+    session.emit("assistant.message", { data: { content: "step 1" } });
+    session.emit("assistant.turn_end", { data: { turnId: "t-iter-1" } }); // i=2, sends iter 2 prompt
+    assert.equal(controller.state.active.i, 2);
+    assert.equal(session.sent.length, 2);
+    // Duplicate emit of the same turnId should be a no-op.
+    session.emit("assistant.turn_end", { data: { turnId: "t-iter-1" } });
+    assert.equal(controller.state.active.i, 2);
+    assert.equal(session.sent.length, 2);
 });
 
 test("multiple assistant.message events in one turn are accumulated", async () => {

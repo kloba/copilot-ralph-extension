@@ -733,3 +733,19 @@ test("session.log records arming, iter markers, and finish reason", async () => 
     assert.match(joined, /iter 1\/3 \(elapsed \d+ms\)/);
     assert.match(joined, /completed.*1 iteration/);
 });
+
+test("finish log marker differentiates by reason category", async () => {
+    // send_error → ⚠️ ended (not ⏹ stopped)
+    const session1 = makeFakeSession({ failSend: true });
+    const c1 = createRalphController();
+    c1.attach(session1);
+    await c1.tools[0].handler({ prompt: "go", max_iterations: 5 });
+    session1.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    assert.match(session1.logs.join("\n"), /⚠️ ended ralph_loop.*reason: send_error/);
+
+    // user_stopped → ⏹ stopped (not ⚠️)
+    const { session: s2, stop } = await arm({ max_iterations: 5 });
+    s2.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    await stop.handler({});
+    assert.match(s2.logs.join("\n"), /⏹ stopped ralph_loop.*reason: user_stopped/);
+});

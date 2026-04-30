@@ -199,7 +199,15 @@ export function createRalphController() {
             durationMs: finishedAt - startedAt,
         };
         if (note) result.note = String(note).slice(0, PREVIEW_CHARS);
-        const verb = reason === "completion_promise" ? "✅ completed" : "⏹ stopped";
+        // Differentiate the log marker by category so an error finish doesn't
+        // visually read like a clean cancellation:
+        //   ✅ completed  — completion_promise
+        //   ⚠️  ended    — send_error, aborted (something went wrong)
+        //   ⏹ stopped    — everything else (max_iter, abort_promise, stagnation, user_stopped, detached)
+        const verb =
+            reason === "completion_promise" ? "✅ completed" :
+            reason === "send_error" || reason === "aborted" ? "⚠️ ended" :
+            "⏹ stopped";
         log(`${verb} ralph_loop after ${result.iterations} iteration${result.iterations === 1 ? "" : "s"} (reason: ${reason}${result.note ? `, note: ${result.note}` : ""}, ${result.durationMs}ms)`);
         state.active = null;
         state.lastResult = Object.freeze(result);

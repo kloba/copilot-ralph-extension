@@ -290,6 +290,16 @@ test("ralph_stop cancels an active loop and reports iteration count", async () =
     assert.equal(controller.state.lastResult.reason, "user_stopped");
 });
 
+test("ralph_stop accepts an optional reason and records it as note", async () => {
+    const { stop, controller, session } = await arm({ max_iterations: 5 });
+    runTurn(session, "still working");
+    const r = await stop.handler({ reason: "user changed plan" });
+    assert.equal(r.resultType, "success");
+    assert.match(r.textResultForLlm, /user changed plan/);
+    assert.equal(controller.state.lastResult.reason, "user_stopped");
+    assert.equal(controller.state.lastResult.note, "user changed plan");
+});
+
 test("ralph_stop with no active loop returns failure", async () => {
     const c = createRalphController();
     const stop = c.tools.find((t) => t.name === "ralph_stop");

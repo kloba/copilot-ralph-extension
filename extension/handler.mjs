@@ -131,7 +131,7 @@ export function createRalphController() {
         }
     };
 
-    const finish = (reason) => {
+    const finish = (reason, note) => {
         if (!state.active) return;
         const startedAt = state.active.startedAt ?? Date.now();
         const finishedAt = Date.now();
@@ -143,8 +143,9 @@ export function createRalphController() {
             finishedAt,
             durationMs: finishedAt - startedAt,
         };
+        if (note) result.note = String(note).slice(0, PREVIEW_CHARS);
         const verb = reason === "completion_promise" ? "✅ completed" : "⏹ stopped";
-        log(`${verb} ralph_loop after ${result.iterations} iteration${result.iterations === 1 ? "" : "s"} (reason: ${reason}, ${result.durationMs}ms)`);
+        log(`${verb} ralph_loop after ${result.iterations} iteration${result.iterations === 1 ? "" : "s"} (reason: ${reason}${result.note ? `, note: ${result.note}` : ""}, ${result.durationMs}ms)`);
         state.active = null;
         state.lastResult = result;
     };
@@ -283,14 +284,26 @@ export function createRalphController() {
         {
             name: "ralph_stop",
             description:
-                "Cancel a currently-running ralph_loop. Returns the iteration count at the moment of stop. Returns failure if no loop is active.",
-            parameters: { type: "object", properties: {} },
-            handler: async () => {
+                "Cancel a currently-running ralph_loop. Returns the iteration count at the moment of stop. Returns failure if no loop is active. Optionally pass a `reason` describing why the loop is being stopped (recorded as `note` on the result).",
+            parameters: {
+                type: "object",
+                properties: {
+                    reason: {
+                        type: "string",
+                        description: "Optional human-readable reason for stopping the loop (≤500 chars).",
+                    },
+                },
+            },
+            handler: async (args = {}) => {
                 if (!state.active) return failure("ralph_stop: no ralph_loop is currently running.");
                 const i = state.active.i;
                 const max = state.active.max;
-                finish("user_stopped");
-                return success(`ralph_loop stopped after ${i}/${max} iterations.`, { iterations: i });
+                const note = typeof args.reason === "string" && args.reason.trim() ? args.reason.trim() : undefined;
+                finish("user_stopped", note);
+                return success(
+                    `ralph_loop stopped after ${i}/${max} iterations${note ? ` (${note})` : ""}.`,
+                    { iterations: i, note },
+                );
             },
         },
     ];
@@ -301,7 +314,7 @@ export function createRalphController() {
             const r = state.lastResult;
             state.lastResult = null;
             return {
-                additionalContext: `[ralph_loop just finished — iterations=${r.iterations}, reason=${r.reason}, durationMs=${r.durationMs}]`,
+                additionalContext: `[ralph_loop just finished — iterations=${r.iterations}, reason=${r.reason}${r.note ? `, note=${r.note}` : ""}, durationMs=${r.durationMs}]`,
             };
         },
     };

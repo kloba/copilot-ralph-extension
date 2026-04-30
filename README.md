@@ -88,6 +88,19 @@ The tool **arms** the loop and returns immediately. Iterations then play out as 
 ralph_stop({ reason: "user changed plan" })
 ```
 
+`ralph_stop` returns:
+
+```js
+{
+  textResultForLlm: "ralph_loop stopped after 4/20 iterations (user changed plan).",
+  resultType: "success",
+  iterations: 4,
+  note: "user changed plan"   // omitted when no reason was supplied
+}
+```
+
+If no loop is active it returns `resultType: "failure"` with the message `ralph_stop: no ralph_loop is currently running.` — the loop's structured outcome (with `reason: "user_stopped"`) is still surfaced via the next `additionalContext` injection, exactly as for any other finish reason.
+
 ### Result shape
 
 `ralph_loop` (the arming call) returns:

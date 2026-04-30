@@ -135,7 +135,7 @@ The full structured result (available via `controller.state.lastResult` for embe
 ## Development
 
 ```bash
-npm test    # runs the node:test suite under test/ (29 tests, no deps)
+npm test    # runs the node:test suite under test/ (no deps, no install needed)
 ```
 
 The handler logic lives in [`extension/handler.mjs`](extension/handler.mjs) and is decoupled from the SDK so it can be unit-tested with a fake session that drives events deterministically.

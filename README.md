@@ -193,6 +193,20 @@ Decision ladder per `turn_end` (in order, first match wins):
 
 A failed `session.send` (sync throw or async rejection) finishes with `reason: "send_error"` and the underlying message on `result.note`.
 
+### Root agent only — sub-agents are filtered
+
+The SDK fans every event out to a single bus: a sub-agent (e.g. invoking `task` / `explore` / `code-review` / `rubber-duck`) emits its own `assistant.message`, `assistant.turn_end`, and `abort` events alongside the root agent's. Every event carries an optional `agentId` field that is **absent on root-agent events** and a string on sub-agent events.
+
+Ralph filters on this field before reacting:
+
+- **`assistant.message`** — sub-agent content is ignored, so quoting `COMPLETE` inside an `explore` summary doesn't terminate the loop.
+- **`assistant.turn_end`** — sub-agent turn boundaries are ignored, so an `explore` invocation that takes 12 turns doesn't queue 12 copies of the prompt.
+- **`abort`** — sub-agent aborts are ignored, so a failed `task` / `explore` / `rubber-duck` doesn't kill the root ralph loop.
+
+### Queue-bloat protection
+
+Even on the root agent, the SDK can emit several `assistant.turn_end` events around a single response (sub-turn / tool-call boundaries). Without protection, every extra `turn_end` would `session.send` another copy of the prompt, producing the visible **`Queued (3)`** marker in the CLI UI of identical messages. A `fireInFlight` / `observedMessageThisFire` gate ensures Ralph only refires after it's actually seen an `assistant.message` from the root agent since the previous fire.
+
 ### The one hook (post-loop, not iteration driver)
 
 `onUserPromptSubmitted` is the only hook the extension registers. It does **not** drive iterations. It runs on the *next* user prompt after the loop has finished and injects a single `additionalContext` line so the agent silently learns the outcome:

@@ -1,57 +1,43 @@
-// Pure handler logic for ralph_loop, decoupled from the Copilot SDK so it
-// can be unit-tested with a mocked session.
+// Hook/event-driven Ralph Wiggum controller for Copilot CLI.
+//
+// Architecture: the ralph_loop tool returns immediately after arming the loop.
+// Iterations are driven by listening to `assistant.turn_end` events and
+// re-injecting the prompt via `session.send` (fire-and-forget). This avoids
+// the deadlock that the older `sendAndWait`-based design hit when invoked
+// in-session, while still keeping full conversation context — every
+// iteration is a real assistant turn the user sees.
+//
+// Inspired by Anthropic's Claude Code ralph-wiggum plugin (Stop hook
+// re-injection pattern) and Th0rgal/open-ralph-wiggum.
 
 const DEFAULTS = {
     max_iterations: 20,
     completion_promise: "COMPLETE",
-    timeout_ms: 600000,
     stagnation_limit: 3,
 };
-
 const MAX_ALLOWED_ITERATIONS = 1000;
-const MIN_TIMEOUT_MS = 1000;
 const PREVIEW_CHARS = 500;
 
 function previewOf(text) {
     if (!text) return "";
     return text.length > PREVIEW_CHARS ? text.slice(0, PREVIEW_CHARS) + "…" : text;
 }
-
 function failure(message, extra = {}) {
-    return {
-        textResultForLlm: message,
-        resultType: "failure",
-        ...extra,
-    };
+    return { textResultForLlm: message, resultType: "failure", ...extra };
 }
-
 function success(message, extra = {}) {
-    return {
-        textResultForLlm: message,
-        resultType: "success",
-        ...extra,
-    };
+    return { textResultForLlm: message, resultType: "success", ...extra };
 }
 
 export function validateArgs(args) {
     const prompt = String(args.prompt ?? "").trim();
-    if (!prompt) {
-        return { error: "ralph_loop: prompt is required and must be non-empty." };
-    }
+    if (!prompt) return { error: "ralph_loop: prompt is required and must be non-empty." };
 
     const rawMax = args.max_iterations ?? DEFAULTS.max_iterations;
     const max = Number(rawMax);
     if (!Number.isInteger(max) || max < 1 || max > MAX_ALLOWED_ITERATIONS) {
         return {
             error: `ralph_loop: max_iterations must be an integer in [1, ${MAX_ALLOWED_ITERATIONS}] (got ${rawMax}).`,
-        };
-    }
-
-    const rawTimeout = args.timeout_ms ?? DEFAULTS.timeout_ms;
-    const timeout = Number(rawTimeout);
-    if (!Number.isFinite(timeout) || timeout < MIN_TIMEOUT_MS) {
-        return {
-            error: `ralph_loop: timeout_ms must be a number ≥ ${MIN_TIMEOUT_MS} (got ${rawTimeout}).`,
         };
     }
 
@@ -85,134 +71,209 @@ export function validateArgs(args) {
         };
     }
 
-    return {
-        value: {
-            prompt,
-            max,
-            timeout,
-            completionPromise,
-            abortPromise,
-            stagnationLimit,
+    return { value: { prompt, max, completionPromise, abortPromise, stagnationLimit } };
+}
+
+/**
+ * Build a Ralph controller. Returns { tools, hooks, attach, state }.
+ *
+ * Use `tools` and `hooks` directly in `joinSession({ tools, hooks })`.
+ * Then call `attach(session)` once with the resolved session to wire up
+ * event listeners and bind the session reference used by tool handlers.
+ *
+ * `attach` returns an unsubscribe function that detaches all listeners.
+ */
+export function createRalphController() {
+    const state = {
+        active: null,           // see arming below for shape
+        lastAssistantContent: "",
+        lastResult: null,       // { reason, iterations, preview }
+    };
+    let sessionRef = null;
+
+    const log = (msg) => sessionRef?.log?.(msg);
+    const sendPrompt = (prompt) => {
+        if (!sessionRef?.send) throw new Error("session not attached");
+        return sessionRef.send({ prompt });
+    };
+
+    const finish = (reason) => {
+        if (!state.active) return;
+        const result = {
+            reason,
+            iterations: state.active.i,
+            preview: previewOf(state.lastAssistantContent),
+        };
+        const verb = reason === "completion_promise" ? "✅ completed" : "⏹ stopped";
+        log(`${verb} ralph_loop after ${result.iterations} iteration${result.iterations === 1 ? "" : "s"} (reason: ${reason})`);
+        state.active = null;
+        state.lastResult = result;
+    };
+
+    const onAssistantMessage = (ev) => {
+        const text = ev?.data?.content;
+        if (typeof text === "string") state.lastAssistantContent = text;
+    };
+
+    const onTurnEnd = () => {
+        const a = state.active;
+        if (!a) return;
+
+        // The turn that *called* ralph_loop will end before any iteration runs.
+        // Use that first turn_end to fire iteration 1's prompt; only evaluate
+        // completion/abort on subsequent turn_ends.
+        if (a.pendingFire) {
+            a.pendingFire = false;
+            a.i = 1;
+            log(`🔁 ralph_loop iter 1/${a.max}`);
+            try { sendPrompt(a.prompt); }
+            catch (err) { log(`ralph_loop: send failed: ${err?.message ?? err}`); finish("send_error"); }
+            return;
+        }
+
+        const text = state.lastAssistantContent;
+
+        if (text.includes(a.completionPromise)) return finish("completion_promise");
+        if (a.abortPromise && text.includes(a.abortPromise)) return finish("abort_promise");
+
+        if (a.stagnationLimit > 0) {
+            a.streak = a.prev !== null && text === a.prev ? a.streak + 1 : 1;
+            a.prev = text;
+            if (a.streak >= a.stagnationLimit) return finish("stagnation");
+        }
+
+        if (a.i >= a.max) return finish("max_iterations");
+
+        a.i += 1;
+        log(`🔁 ralph_loop iter ${a.i}/${a.max}`);
+        try { sendPrompt(a.prompt); }
+        catch (err) { log(`ralph_loop: send failed: ${err?.message ?? err}`); finish("send_error"); }
+    };
+
+    const onAbort = () => {
+        if (state.active) {
+            log("⏹ ralph_loop interrupted by session abort.");
+            finish("aborted");
+        }
+    };
+
+    const tools = [
+        {
+            name: "ralph_loop",
+            description:
+                "Run a Ralph Wiggum-style autonomous iterative loop. The tool returns immediately after arming the loop; iterations are driven by reacting to each assistant turn_end and re-injecting the prompt as a new user message. Each iteration is a real conversation turn — context is retained, and progress is visible inline. Use ralph_stop to cancel an active loop. Tip: instruct the agent in the prompt to emit the completion_promise (default 'COMPLETE') when finished, otherwise the loop only stops at max_iterations.",
+            parameters: {
+                type: "object",
+                properties: {
+                    prompt: {
+                        type: "string",
+                        description:
+                            "The task prompt that gets re-fed each iteration. Should instruct the agent to emit the completion_promise when done.",
+                    },
+                    max_iterations: {
+                        type: "integer",
+                        description: `Maximum iterations before stopping (default ${DEFAULTS.max_iterations}, max ${MAX_ALLOWED_ITERATIONS}).`,
+                        default: DEFAULTS.max_iterations,
+                    },
+                    completion_promise: {
+                        type: "string",
+                        description:
+                            "Substring that, when present in an assistant turn's response, signals completion (default 'COMPLETE').",
+                        default: DEFAULTS.completion_promise,
+                    },
+                    abort_promise: {
+                        type: "string",
+                        description:
+                            "Optional substring that, when present in an assistant turn's response, aborts the loop early (e.g. when the agent signals a precondition failure).",
+                    },
+                    stagnation_limit: {
+                        type: "integer",
+                        description: `Abort if the assistant returns N consecutive byte-identical responses (default ${DEFAULTS.stagnation_limit}, 0 to disable).`,
+                        default: DEFAULTS.stagnation_limit,
+                    },
+                },
+                required: ["prompt"],
+            },
+            handler: async (args) => {
+                if (state.active) {
+                    return failure(
+                        `ralph_loop is already running (iteration ${state.active.i}/${state.active.max}). Use ralph_stop first.`,
+                    );
+                }
+                const parsed = validateArgs(args);
+                if (parsed.error) return failure(parsed.error);
+
+                state.active = {
+                    ...parsed.value,
+                    i: 0,
+                    prev: null,
+                    streak: 0,
+                    pendingFire: true,
+                    startedAt: Date.now(),
+                };
+                state.lastAssistantContent = "";
+                state.lastResult = null;
+
+                log(
+                    `🔁 ralph_loop armed — max=${parsed.value.max}, completion='${parsed.value.completionPromise}'${
+                        parsed.value.abortPromise ? `, abort='${parsed.value.abortPromise}'` : ""
+                    }${parsed.value.stagnationLimit > 0 ? `, stagnation_limit=${parsed.value.stagnationLimit}` : ""}`,
+                );
+                return success(
+                    `ralph_loop armed (max=${parsed.value.max}). Iterations will run as conversation turns. Use ralph_stop to cancel.`,
+                    { armed: true, max: parsed.value.max },
+                );
+            },
         },
+        {
+            name: "ralph_stop",
+            description:
+                "Cancel a currently-running ralph_loop. Returns the iteration count at the moment of stop. Returns failure if no loop is active.",
+            parameters: { type: "object", properties: {} },
+            handler: async () => {
+                if (!state.active) return failure("ralph_stop: no ralph_loop is currently running.");
+                const i = state.active.i;
+                const max = state.active.max;
+                finish("user_stopped");
+                return success(`ralph_loop stopped after ${i}/${max} iterations.`, { iterations: i });
+            },
+        },
+    ];
+
+    const hooks = {
+        onUserPromptSubmitted: async () => {
+            if (!state.lastResult) return;
+            const r = state.lastResult;
+            state.lastResult = null;
+            return {
+                additionalContext: `[ralph_loop just finished — iterations=${r.iterations}, reason=${r.reason}]`,
+            };
+        },
+    };
+
+    function attach(session) {
+        sessionRef = session;
+        const unsubs = [
+            session.on?.("assistant.message", onAssistantMessage),
+            session.on?.("assistant.turn_end", onTurnEnd),
+            session.on?.("abort", onAbort),
+        ].filter((fn) => typeof fn === "function");
+        return () => {
+            for (const u of unsubs) {
+                try { u(); } catch { /* ignore */ }
+            }
+            sessionRef = null;
+        };
+    }
+
+    return {
+        tools,
+        hooks,
+        attach,
+        state,
+        // Exposed for tests so they can drive events deterministically.
+        _internal: { onAssistantMessage, onTurnEnd, onAbort, finish },
     };
 }
 
-export async function runRalphLoop(session, args) {
-    const parsed = validateArgs(args);
-    if (parsed.error) {
-        return failure(parsed.error);
-    }
-    const { prompt, max, timeout, completionPromise, abortPromise, stagnationLimit } = parsed.value;
-
-    session.log?.(
-        `🔁 ralph_loop starting — max=${max}, completion='${completionPromise}'${
-            abortPromise ? `, abort='${abortPromise}'` : ""
-        }${stagnationLimit > 0 ? `, stagnation_limit=${stagnationLimit}` : ""}`,
-    );
-
-    let lastContent = "";
-    let prevContent = null;
-    let stagnationStreak = 0;
-
-    for (let i = 1; i <= max; i++) {
-        session.log?.(`🔁 ralph_loop iteration ${i}/${max}`);
-
-        let event;
-        try {
-            event = await session.sendAndWait({ prompt }, timeout);
-        } catch (err) {
-            const msg = err?.message ?? String(err);
-            return failure(
-                `ralph_loop: iteration ${i} failed: ${msg}. Stopping.`,
-                { iterations: i, reason: "send_error", last_content_preview: previewOf(lastContent) },
-            );
-        }
-
-        lastContent = event?.data?.content ?? "";
-
-        if (abortPromise && lastContent.includes(abortPromise)) {
-            session.log?.(`⏹ ralph_loop aborted after ${i} iterations (abort_promise hit).`);
-            return failure(
-                `ralph_loop aborted after ${i} iterations: assistant emitted abort_promise '${abortPromise}'.`,
-                { iterations: i, reason: "abort_promise", last_content_preview: previewOf(lastContent) },
-            );
-        }
-
-        if (lastContent.includes(completionPromise)) {
-            session.log?.(`✅ ralph_loop completed after ${i} iterations.`);
-            return success(
-                `ralph_loop completed successfully after ${i} iterations (completion_promise '${completionPromise}' found).`,
-                { iterations: i, reason: "completion_promise", last_content_preview: previewOf(lastContent) },
-            );
-        }
-
-        if (stagnationLimit > 0) {
-            if (prevContent !== null && lastContent === prevContent) {
-                stagnationStreak += 1;
-            } else {
-                stagnationStreak = 1;
-            }
-            if (stagnationStreak >= stagnationLimit) {
-                session.log?.(
-                    `⏹ ralph_loop aborted after ${i} iterations: ${stagnationStreak} identical responses in a row.`,
-                );
-                return failure(
-                    `ralph_loop aborted after ${i} iterations: ${stagnationStreak} consecutive identical responses (stagnation_limit=${stagnationLimit}). The agent appears to be stuck.`,
-                    { iterations: i, reason: "stagnation", last_content_preview: previewOf(lastContent) },
-                );
-            }
-            prevContent = lastContent;
-        }
-    }
-
-    session.log?.(`⏹ ralph_loop stopped after ${max} iterations without completion_promise.`);
-    return failure(
-        `ralph_loop stopped after ${max} iterations without completion_promise '${completionPromise}'. Consider increasing max_iterations or revising the prompt to make the agent emit the completion phrase.`,
-        { iterations: max, reason: "max_iterations", last_content_preview: previewOf(lastContent) },
-    );
-}
-
-export const TOOL_SPEC = {
-    name: "ralph_loop",
-    description:
-        "Run a Ralph Wiggum-style iterative loop: re-feed a prompt to this same session until the assistant's response contains the completion_promise string, or until max_iterations is reached. Useful for autonomous coding loops where the agent should keep working until a task is done. The loop runs IN-SESSION so conversation context is retained across iterations. Tip: instruct the agent in the prompt to emit the completion_promise (default 'COMPLETE') when finished, otherwise the loop only stops at max_iterations.",
-    parameters: {
-        type: "object",
-        properties: {
-            prompt: {
-                type: "string",
-                description:
-                    "The task prompt to re-feed each iteration. Should instruct the agent to emit the completion_promise when done.",
-            },
-            max_iterations: {
-                type: "integer",
-                description: `Maximum iterations before stopping (default ${DEFAULTS.max_iterations}, max ${MAX_ALLOWED_ITERATIONS}).`,
-                default: DEFAULTS.max_iterations,
-            },
-            completion_promise: {
-                type: "string",
-                description:
-                    "Substring that, when present in the assistant's response, signals completion (default 'COMPLETE').",
-                default: DEFAULTS.completion_promise,
-            },
-            abort_promise: {
-                type: "string",
-                description:
-                    "Optional substring that, when present in the assistant's response, aborts the loop early (e.g. when the agent signals a precondition failure).",
-            },
-            timeout_ms: {
-                type: "integer",
-                description: `Per-iteration timeout in milliseconds (default ${DEFAULTS.timeout_ms} = 10 min, min ${MIN_TIMEOUT_MS}).`,
-                default: DEFAULTS.timeout_ms,
-            },
-            stagnation_limit: {
-                type: "integer",
-                description: `Abort if the assistant returns N consecutive byte-identical responses (default ${DEFAULTS.stagnation_limit}, 0 to disable).`,
-                default: DEFAULTS.stagnation_limit,
-            },
-        },
-        required: ["prompt"],
-    },
-};
-
-export const __test__ = { DEFAULTS, MAX_ALLOWED_ITERATIONS, MIN_TIMEOUT_MS, PREVIEW_CHARS };
+export const __test__ = { DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, previewOf };

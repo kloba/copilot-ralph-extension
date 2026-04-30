@@ -13,16 +13,16 @@ Ralph Wiggum is an iterative-agent technique: re-feed the same prompt to a codin
 
 Existing Ralph implementations for Copilot CLI (open-ralph-wiggum, copilot-ralph-mode, etc.) are **shell wrappers** — they spawn `copilot -p "..."` as a subprocess for each iteration. Each iteration starts with a **fresh session**.
 
-This extension instead runs **in-session** using the Copilot CLI extension SDK (`joinSession()` + `session.sendAndWait()`). Conversation context is **retained** across iterations.
+This extension instead runs **in-session**, driven by the Copilot CLI extension SDK's `assistant.turn_end` event — the same architectural pattern as Anthropic's Claude Code [`ralph-wiggum`](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum) plugin (their `Stop` hook). Conversation context is **retained** across iterations and every iteration is a normal assistant turn the user sees.
 
-| | This extension | Shell wrappers |
-|---|---|---|
-| Context | Retained across iterations | Fresh each iteration |
-| Overhead | One in-session call | Full `copilot` CLI boot per iter |
-| Where it runs | Inside your active session | External process |
-| Use case | Refining within a coherent thread | Independent fresh attempts |
+| | This extension | Shell wrappers | Claude Code plugin |
+|---|---|---|---|
+| Agent | Copilot CLI | Copilot/Claude/Codex/etc. | Claude Code |
+| Context across iterations | Retained | Fresh each iter | Retained |
+| Where it runs | Inside your active session | External subprocess | Inside your active session |
+| Mechanism | `assistant.turn_end` event + `session.send` | Subprocess fork per iter | `Stop` hook + re-prompt |
 
-Both have legitimate use cases. If you want fresh-context iterations, use [open-ralph-wiggum](https://github.com/Th0rgal/open-ralph-wiggum). If you want the agent to keep its working memory, use this.
+If you want fresh-context iterations, use [open-ralph-wiggum](https://github.com/Th0rgal/open-ralph-wiggum). If you want the agent to keep its working memory inside Copilot CLI, use this.
 
 ## Install
 
@@ -67,30 +67,40 @@ In a Copilot CLI session, ask the agent to invoke `ralph_loop`:
 
 > *"Use ralph_loop to: create a REST API for todos with CRUD operations and tests. Run tests after each change. Output COMPLETE when all tests pass. max_iterations 20."*
 
+The tool **arms** the loop and returns immediately. Iterations then play out as normal assistant turns, each kicked off by an `assistant.turn_end` event re-injecting the prompt via `session.send`.
+
 ### Tool parameters
 
 | Param | Default | Purpose |
 |---|---|---|
 | `prompt` | _(required)_ | The task prompt re-fed each iteration |
-| `max_iterations` | `20` | Hard iteration cap (1–1000) |
+| `max_iterations` | `20` | Hard iteration cap (integer, 1–1000) |
 | `completion_promise` | `"COMPLETE"` | Substring in assistant response → stop |
-| `abort_promise` | _(none)_ | Substring → early abort (precondition fail) |
-| `timeout_ms` | `600000` | Per-iteration timeout (10 min, min 1000) |
+| `abort_promise` | _(none)_ | Substring → early abort. Must differ from `completion_promise` |
 | `stagnation_limit` | `3` | Abort after N consecutive byte-identical responses (0 disables) |
+
+### Companion tool
+
+`ralph_stop` cancels an active loop and returns the iteration count. No-op (failure) if nothing is running.
 
 ### Result shape
 
-`ralph_loop` returns a structured object:
+`ralph_loop` (the arming call) returns:
 
 ```js
 {
-  textResultForLlm: "ralph_loop completed successfully after 4 iterations …",
-  resultType: "success" | "failure",
-  iterations: 4,
-  reason: "completion_promise" | "abort_promise" | "stagnation" | "max_iterations" | "send_error",
-  last_content_preview: "…last 500 chars of the final assistant response…"
+  textResultForLlm: "ralph_loop armed (max=20). Iterations will run as conversation turns.",
+  resultType: "success",
+  armed: true,
+  max: 20
 }
 ```
+
+The actual loop **outcome** (iteration count, reason) is surfaced in two ways:
+- `session.log` markers visible in the timeline (`🔁 ralph_loop iter 4/20`, `✅ completed ralph_loop after 4 iterations (reason: completion_promise)`).
+- An `additionalContext` injection on the *next* `onUserPromptSubmitted` hook so the agent silently learns the loop finished and why (`[ralph_loop just finished — iterations=4, reason=completion_promise]`).
+
+`reason` ∈ `completion_promise` · `abort_promise` · `stagnation` · `max_iterations` · `send_error` · `aborted` · `user_stopped`.
 
 ### Tips
 
@@ -98,43 +108,38 @@ In a Copilot CLI session, ask the agent to invoke `ralph_loop`:
 - The prompt **must instruct the agent to emit the completion promise** when done, otherwise the loop only stops at `max_iterations`.
 - Use `abort_promise` for "stop early if the precondition fails" — e.g. `"PRECONDITION_FAILED"`.
 - `stagnation_limit` (default 3) catches stuck agents that keep returning identical responses; set to `0` to disable.
+- Only one loop runs per session at a time. A second `ralph_loop` while one is active returns a failure.
 - Each iteration is a **paid turn**. Budget accordingly.
 
 ## Development
 
 ```bash
-npm test    # runs the node:test suite under test/
+npm test    # runs the node:test suite under test/ (29 tests, no deps)
 ```
 
-The handler logic lives in [`extension/handler.mjs`](extension/handler.mjs) and is decoupled from the SDK so it can be unit-tested with a mocked session.
+The handler logic lives in [`extension/handler.mjs`](extension/handler.mjs) and is decoupled from the SDK so it can be unit-tested with a fake session that drives events deterministically.
 
 ## How it works
 
 ```js
 import { joinSession } from "@github/copilot-sdk/extension";
+import { createRalphController } from "./handler.mjs";
 
+const controller = createRalphController();
 const session = await joinSession({
-    tools: [{
-        name: "ralph_loop",
-        handler: async (args) => {
-            for (let i = 1; i <= args.max_iterations; i++) {
-                const event = await session.sendAndWait({ prompt: args.prompt });
-                if (event?.data?.content?.includes(args.completion_promise)) {
-                    return `Done after ${i} iterations.`;
-                }
-            }
-            return `Stopped after ${args.max_iterations} iterations.`;
-        },
-    }],
+    tools: controller.tools,   // ralph_loop + ralph_stop
+    hooks: controller.hooks,   // onUserPromptSubmitted carries the result forward
 });
+controller.attach(session);    // wires assistant.turn_end / assistant.message / abort listeners
 ```
 
-The full implementation lives in [`extension/handler.mjs`](extension/handler.mjs) (pure, testable) and [`extension/extension.mjs`](extension/extension.mjs) (thin SDK boot). It adds error handling, abort-promise support, configurable timeout, stagnation detection, and `session.log()` progress reporting.
+The first `assistant.turn_end` after arming fires iteration 1's prompt; subsequent turn_ends evaluate the assistant's response against `completion_promise` / `abort_promise` / stagnation / `max_iterations`, and either re-fire the prompt or finish the loop. This is the same architectural pattern as Anthropic's Claude Code `ralph-wiggum` plugin (which uses a `Stop` hook for the same purpose).
 
 ## Requirements
 
 - GitHub Copilot CLI (tested on `1.0.40-0`)
 - Copilot CLI Extension SDK (`@github/copilot-sdk/extension`) — bundled with Copilot CLI
+- No runtime npm dependencies. Tests use `node:test` (built-in); run them with `npm test`.
 
 ## Related
 

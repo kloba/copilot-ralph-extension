@@ -62,9 +62,12 @@ test("validateArgs: rejects bad max_iterations", () => {
     assert.ok(validateArgs({ prompt: "x", max_iterations: 5 }).value);
 });
 
-test("validateArgs: rejects empty completion/abort promise strings", () => {
+test("validateArgs: rejects empty/whitespace-only completion/abort promise strings", () => {
     assert.match(validateArgs({ prompt: "x", completion_promise: "" }).error, /completion_promise/);
+    assert.match(validateArgs({ prompt: "x", completion_promise: "   " }).error, /whitespace-only/);
+    assert.match(validateArgs({ prompt: "x", completion_promise: "\t\n" }).error, /whitespace-only/);
     assert.match(validateArgs({ prompt: "x", abort_promise: "" }).error, /abort_promise/);
+    assert.match(validateArgs({ prompt: "x", abort_promise: "  " }).error, /whitespace-only/);
 });
 
 test("validateArgs: rejects identical completion and abort promise", () => {

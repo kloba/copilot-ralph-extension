@@ -97,16 +97,16 @@ export function validateArgs(args) {
 
     let completionPromise = DEFAULTS.completion_promise;
     if (args.completion_promise !== undefined && args.completion_promise !== null) {
-        if (typeof args.completion_promise !== "string" || args.completion_promise.length === 0) {
-            return { error: "ralph_loop: completion_promise must be a non-empty string." };
+        if (typeof args.completion_promise !== "string" || args.completion_promise.trim().length === 0) {
+            return { error: "ralph_loop: completion_promise must be a non-empty, non-whitespace-only string." };
         }
         completionPromise = args.completion_promise;
     }
 
     let abortPromise = null;
     if (args.abort_promise !== undefined && args.abort_promise !== null) {
-        if (typeof args.abort_promise !== "string" || args.abort_promise.length === 0) {
-            return { error: "ralph_loop: abort_promise, when provided, must be a non-empty string." };
+        if (typeof args.abort_promise !== "string" || args.abort_promise.trim().length === 0) {
+            return { error: "ralph_loop: abort_promise, when provided, must be a non-empty, non-whitespace-only string." };
         }
         abortPromise = args.abort_promise;
     }

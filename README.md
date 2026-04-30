@@ -82,7 +82,11 @@ The tool **arms** the loop and returns immediately. Iterations then play out as 
 
 ### Companion tool
 
-`ralph_stop` cancels an active loop and returns the iteration count. No-op (failure) if nothing is running.
+`ralph_stop` cancels an active loop and returns the iteration count. No-op (failure) if nothing is running. Optionally takes a `reason` string (≤500 chars) which is recorded on the result as `note` and surfaced in the log line and `additionalContext` injection — handy when the agent (or user) wants to record *why* the loop was stopped manually.
+
+```js
+ralph_stop({ reason: "user changed plan" })
+```
 
 ### Result shape
 
@@ -93,13 +97,28 @@ The tool **arms** the loop and returns immediately. Iterations then play out as 
   textResultForLlm: "ralph_loop armed (max=20). Iterations will run as conversation turns.",
   resultType: "success",
   armed: true,
-  max: 20
+  max: 20,
+  min: 1
 }
 ```
 
-The actual loop **outcome** (iteration count, reason) is surfaced in two ways:
-- `session.log` markers visible in the timeline (`🔁 ralph_loop iter 4/20`, `✅ completed ralph_loop after 4 iterations (reason: completion_promise)`).
-- An `additionalContext` injection on the *next* `onUserPromptSubmitted` hook so the agent silently learns the loop finished and why (`[ralph_loop just finished — iterations=4, reason=completion_promise]`).
+The actual loop **outcome** (iteration count, reason, timing) is surfaced in two ways:
+- `session.log` markers visible in the timeline (`🔁 ralph_loop iter 4/20`, `✅ completed ralph_loop after 4 iterations (reason: completion_promise, 12345ms)`).
+- An `additionalContext` injection on the *next* `onUserPromptSubmitted` hook so the agent silently learns the loop finished and why (`[ralph_loop just finished — iterations=4, reason=completion_promise, durationMs=12345]`).
+
+The full structured result (available via `controller.state.lastResult` for embedders):
+
+```js
+{
+  reason: "completion_promise",
+  iterations: 4,
+  preview: "first 500 chars of last assistant content…",
+  startedAt: 1719000000000,
+  finishedAt: 1719000012345,
+  durationMs: 12345,
+  note: "user changed plan"          // present only when set via ralph_stop
+}
+```
 
 `reason` ∈ `completion_promise` · `abort_promise` · `stagnation` · `max_iterations` · `send_error` · `aborted` · `user_stopped` · `detached`.
 

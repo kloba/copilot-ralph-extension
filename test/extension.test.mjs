@@ -601,6 +601,12 @@ test("onUserPromptSubmitted injects additionalContext exactly once after a finis
     const r1 = await controller.hooks.onUserPromptSubmitted({ prompt: "next" });
     assert.match(r1.additionalContext, /ralph_loop just finished/);
     assert.match(r1.additionalContext, /reason=completion_promise/);
+    // Injection should be visible in the session log so users can see
+    // why the next prompt was rewritten.
+    assert.ok(
+        session.logs.some((l) => /injecting post-loop context/.test(l)),
+        "expected log line announcing the injection",
+    );
 
     const r2 = await controller.hooks.onUserPromptSubmitted({ prompt: "again" });
     assert.equal(r2, undefined);

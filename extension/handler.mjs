@@ -530,9 +530,9 @@ export function createRalphController() {
             // surfaced via send_error) doesn't break the bracketed context
             // line presented to the agent.
             const noteOneLine = collapseNote(r.note);
-            return {
-                additionalContext: `[ralph_loop just finished — iterations=${r.iterations}, reason=${r.reason}${noteOneLine ? `, note=${noteOneLine}` : ""}, durationMs=${r.durationMs}]`,
-            };
+            const ctx = `[ralph_loop just finished — iterations=${r.iterations}, reason=${r.reason}${noteOneLine ? `, note=${noteOneLine}` : ""}, durationMs=${r.durationMs}]`;
+            log(`ralph_loop: injecting post-loop context into next user prompt (reason=${r.reason}, iterations=${r.iterations})`);
+            return { additionalContext: ctx };
         },
     });
 

@@ -549,6 +549,16 @@ test("duplicate turn_end with same turnId is ignored (no double-count)", async (
     assert.equal(session.sent.length, 2);
 });
 
+test("turn_end with turnId=null is NOT mistaken for duplicate of initial sentinel", async () => {
+    // Regression: lastTurnId used to be initialized to null, so the very first
+    // turn_end carrying turnId:null would self-match and be dropped, leaving
+    // the loop stuck before iter 1 ever fired.
+    const { session, controller } = await arm({ max_iterations: 5, stagnation_limit: 0 });
+    session.emit("assistant.turn_end", { data: { turnId: null } });
+    assert.equal(controller.state.active.i, 1, "iter 1 must have armed despite turnId=null");
+    assert.equal(session.sent.length, 1, "prompt must have been sent");
+});
+
 test("multiple assistant.message events in one turn are accumulated", async () => {
     const { session, controller } = await arm({
         max_iterations: 5,

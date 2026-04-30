@@ -164,6 +164,10 @@ export function validateArgs(args) {
  * }} Controller. `attach` returns an unsubscribe function that detaches all listeners and finalizes any active loop with reason='detached'.
  */
 export function createRalphController() {
+    // Sentinel for "no turn_end has been processed yet" — using a fresh
+    // Symbol guarantees it can never compare equal to any value the SDK
+    // might emit (including null, undefined, "", 0, NaN).
+    const NO_TURN_ID = Symbol("ralph.no_turn_id");
     const state = {
         active: null,           // see arming below for shape
         lastAssistantContent: "",
@@ -364,7 +368,7 @@ export function createRalphController() {
                     streak: 0,
                     pendingFire: true,
                     startedAt: Date.now(),
-                    lastTurnId: null,
+                    lastTurnId: NO_TURN_ID,
                 };
                 state.lastAssistantContent = "";
                 state.lastResult = null;

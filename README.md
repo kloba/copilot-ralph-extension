@@ -154,7 +154,41 @@ const session = await joinSession({
 controller.attach(session);    // wires assistant.turn_end / assistant.message / abort listeners
 ```
 
-The first `assistant.turn_end` after arming fires iteration 1's prompt; subsequent turn_ends evaluate the assistant's response against `completion_promise` / `abort_promise` / stagnation / `max_iterations`, and either re-fire the prompt or finish the loop. This is the same architectural pattern as Anthropic's Claude Code `ralph-wiggum` plugin (which uses a `Stop` hook for the same purpose).
+### Arming
+
+`ralph_loop(...)` returns immediately with `{ armed: true }`. It does **not** loop synchronously. The validated arguments (`prompt`, `max`, `min`, `completion_promise`, `abort_promise`, `stagnation_limit`) are stored on `controller.state.active`; the loop is now driven entirely by SDK events.
+
+### Iterations are driven by events, not by a hook
+
+`controller.attach(session)` subscribes to three SDK events:
+
+| Event | Role |
+|---|---|
+| `assistant.message` | Accumulates the current turn's content into `state.lastAssistantContent` (capped at 1 MiB; tail preserved so completion phrases near the end aren't lost). |
+| `assistant.turn_end` | The heartbeat. The first `turn_end` after arming is the turn that *called* `ralph_loop` — that fires iteration 1's prompt. Each subsequent `turn_end` runs the decision ladder: completion → abort → stagnation → max → otherwise re-fire. |
+| `abort` | Finalizes the loop with `reason: "aborted"` (and `note` if the SDK supplies a reason). |
+
+Re-firing means calling `session.send({ prompt })` — fire-and-forget. Each call **enqueues a new user-turn** in the live conversation, which is why every iteration shows up in the timeline as a real user prompt followed by a real assistant turn (not some hidden background invocation).
+
+Decision ladder per `turn_end` (in order, first match wins):
+
+1. `i >= min` and `text.includes(completion_promise)` → finish `completion_promise`.
+2. `i >= min` and `abort_promise` set and `text.includes(abort_promise)` → finish `abort_promise`.
+3. Stagnation: N consecutive byte-identical responses → finish `stagnation` (overrides `min_iterations` as a safety floor).
+4. `i >= max` → finish `max_iterations`.
+5. Otherwise: increment `i`, clear the content accumulator, re-fire the prompt.
+
+A failed `session.send` (sync throw or async rejection) finishes with `reason: "send_error"` and the underlying message on `result.note`.
+
+### The one hook (post-loop, not iteration driver)
+
+`onUserPromptSubmitted` is the only hook the extension registers. It does **not** drive iterations. It runs on the *next* user prompt after the loop has finished and injects a single `additionalContext` line so the agent silently learns the outcome:
+
+```
+[ralph_loop just finished — iterations=4, reason=completion_promise, durationMs=12345]
+```
+
+This mirrors how Anthropic's Claude Code `ralph-wiggum` plugin uses the `Stop` hook to re-prompt — same architectural shape, just expressed via the Copilot CLI extension SDK.
 
 ## Limitations
 

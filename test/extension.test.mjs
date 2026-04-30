@@ -613,6 +613,6 @@ test("session.log records arming, iter markers, and finish reason", async () => 
     runTurn(session, "ok COMPLETE");
     const joined = session.logs.join("\n");
     assert.match(joined, /armed/);
-    assert.match(joined, /iter 1\/3/);
+    assert.match(joined, /iter 1\/3 \(elapsed \d+ms\)/);
     assert.match(joined, /completed.*1 iteration/);
 });

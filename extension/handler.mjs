@@ -219,7 +219,7 @@ export function createRalphController() {
         if (a.pendingFire) {
             a.pendingFire = false;
             a.i = 1;
-            log(`🔁 ralph_loop iter 1/${a.max}`);
+            log(`🔁 ralph_loop iter 1/${a.max} (elapsed ${Date.now() - a.startedAt}ms)`);
             // Clear before firing so a silent iteration (no assistant.message)
             // is correctly evaluated as empty content rather than the prior turn.
             state.lastAssistantContent = "";
@@ -244,7 +244,8 @@ export function createRalphController() {
         if (a.i >= a.max) return finish("max_iterations");
 
         a.i += 1;
-        log(`🔁 ralph_loop iter ${a.i}/${a.max}`);
+        const elapsed = Date.now() - a.startedAt;
+        log(`🔁 ralph_loop iter ${a.i}/${a.max} (elapsed ${elapsed}ms)`);
         state.lastAssistantContent = "";
         tryFire(a.prompt);
     };

@@ -481,6 +481,23 @@ test("ralph_stop accepts an optional reason and records it as note", async () =>
     assert.equal(controller.state.lastResult.note, "user changed plan");
 });
 
+test("ralph_stop rejects unknown keys (typo guard, mirrors ralph_loop)", async () => {
+    // Without this, `ralph_stop({ resaon: "..." })` would silently drop
+    // the user's note instead of surfacing it. The active loop must
+    // remain untouched on validation failure (no premature finish()).
+    const { stop, controller } = await arm({ max_iterations: 5 });
+    const r = await stop.handler({ resaon: "typo" });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /unknown argument/);
+    assert.match(r.textResultForLlm, /"resaon"/);
+    assert.match(r.textResultForLlm, /Valid keys: reason/);
+    assert.notEqual(controller.state.active, null, "loop must not be stopped when validation fails");
+    // A correctly-spelled call still works.
+    const ok = await stop.handler({ reason: "ok" });
+    assert.equal(ok.resultType, "success");
+    assert.equal(controller.state.lastResult.note, "ok");
+});
+
 test("ralph_stop with no active loop returns failure", async () => {
     const c = createRalphController();
     const stop = c.tools.find((t) => t.name === "ralph_stop");

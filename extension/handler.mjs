@@ -531,6 +531,15 @@ export function createRalphController() {
             },
             handler: async (args) => {
                 if (!state.active) return failure("ralph_stop: no ralph_loop is currently running.");
+                // Reject unknown keys to mirror ralph_loop's runtime guard
+                // (typos like `resaon` instead of `reason` would otherwise
+                // silently drop the user's note instead of surfacing it).
+                if (args !== null && args !== undefined && typeof args === "object" && !Array.isArray(args)) {
+                    const unknown = Object.keys(args).filter((k) => k !== "reason");
+                    if (unknown.length > 0) {
+                        return failure(`ralph_stop: unknown argument${unknown.length === 1 ? "" : "s"}: ${unknown.map((k) => JSON.stringify(k)).join(", ")}. Valid keys: reason.`);
+                    }
+                }
                 const i = state.active.i;
                 const max = state.active.max;
                 const reason = (args && typeof args === "object" && !Array.isArray(args)) ? args.reason : undefined;

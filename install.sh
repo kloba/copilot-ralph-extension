@@ -76,12 +76,18 @@ if [[ "$DRY_RUN" == "1" ]]; then
 fi
 
 mkdir -p "$TARGET_DIR"
-cp "$SOURCE_DIR/extension.mjs" "$SOURCE_DIR/handler.mjs" "$TARGET_DIR/"
+for f in "${FILES[@]}"; do
+  cp "$SOURCE_DIR/$f" "$TARGET_DIR/$f"
+done
 
-# Post-copy verification: every file must exist at the destination.
+# Post-copy verification: every file must exist AND be byte-identical to source.
 for f in "${FILES[@]}"; do
   if [[ ! -f "$TARGET_DIR/$f" ]]; then
     echo "Error: post-install verification failed; $TARGET_DIR/$f missing." >&2
+    exit 1
+  fi
+  if ! cmp -s "$SOURCE_DIR/$f" "$TARGET_DIR/$f"; then
+    echo "Error: post-install verification failed; $TARGET_DIR/$f differs from source (partial copy?)." >&2
     exit 1
   fi
 done

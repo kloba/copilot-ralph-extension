@@ -299,6 +299,11 @@ export function createRalphController() {
                 required: ["prompt"],
             },
             handler: async (args) => {
+                if (!sessionRef?.send) {
+                    return failure(
+                        "ralph_loop: session not attached — controller.attach(session) must be called before invoking ralph_loop.",
+                    );
+                }
                 if (state.active) {
                     return failure(
                         `ralph_loop is already running (iteration ${state.active.i}/${state.active.max}). Use ralph_stop first.`,

@@ -497,6 +497,15 @@ test("preview does not split UTF-16 surrogate pairs (no lone high surrogate)", a
 
 // ── attach/detach ─────────────────────────────────────────────────────────
 
+test("calling ralph_loop before attach fails fast with a clear error and does NOT arm", async () => {
+    const c = createRalphController();
+    // No attach() call.
+    const r = await c.tools[0].handler({ prompt: "go" });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /session not attached/);
+    assert.equal(c.state.active, null, "must not leave armed state behind");
+});
+
 test("attach returns a detach function that unsubscribes listeners and finalizes active loop", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

@@ -142,6 +142,62 @@ test("completion_promise on iteration 1 stops the loop", async () => {
     assert.equal(session.sent.length, 1);
 });
 
+test("min_iterations: completion_promise ignored before min reached", async () => {
+    const { session, controller } = await arm({ max_iterations: 5, min_iterations: 3 });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    runTurn(session, "early COMPLETE 1"); // iter 1: ignored
+    assert.equal(controller.state.active !== null, true, "still active after iter 1");
+    runTurn(session, "early COMPLETE 2"); // iter 2: ignored
+    assert.equal(controller.state.active !== null, true, "still active after iter 2");
+    runTurn(session, "now COMPLETE 3"); // iter 3: honored
+    assert.equal(controller.state.active, null);
+    assert.equal(controller.state.lastResult.reason, "completion_promise");
+    assert.equal(controller.state.lastResult.iterations, 3);
+    assert.equal(session.sent.length, 3);
+});
+
+test("min_iterations: abort_promise also ignored before min", async () => {
+    const { session, controller } = await arm({
+        max_iterations: 5,
+        min_iterations: 2,
+        abort_promise: "GIVE_UP",
+    });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    runTurn(session, "GIVE_UP early"); // iter 1: ignored
+    assert.equal(controller.state.active !== null, true);
+    runTurn(session, "GIVE_UP now"); // iter 2: honored
+    assert.equal(controller.state.lastResult.reason, "abort_promise");
+    assert.equal(controller.state.lastResult.iterations, 2);
+});
+
+test("min_iterations: stagnation still triggers before min (safety override)", async () => {
+    const { session, controller } = await arm({
+        max_iterations: 10,
+        min_iterations: 5,
+        stagnation_limit: 2,
+    });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    runTurn(session, "same");
+    runTurn(session, "same");
+    runTurn(session, "same");
+    assert.equal(controller.state.lastResult.reason, "stagnation");
+});
+
+test("min_iterations validation: must be >= 1 and <= max_iterations", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    let r = await c.tools[0].handler({ prompt: "x", min_iterations: 0 });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /min_iterations/);
+    r = await c.tools[0].handler({ prompt: "x", min_iterations: 5, max_iterations: 3 });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /min_iterations/);
+    r = await c.tools[0].handler({ prompt: "x", min_iterations: 1.5 });
+    assert.equal(r.resultType, "failure");
+    assert.equal(c.state.active, null);
+});
+
 test("completion_promise on iteration 3 stops the loop", async () => {
     const { session, controller } = await arm({ max_iterations: 5 });
     session.emit("assistant.turn_end", { data: { turnId: "t0" } });

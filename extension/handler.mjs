@@ -12,6 +12,7 @@
 
 const DEFAULTS = {
     max_iterations: 20,
+    min_iterations: 1,
     completion_promise: "COMPLETE",
     stagnation_limit: 3,
 };
@@ -38,6 +39,14 @@ export function validateArgs(args) {
     if (!Number.isInteger(max) || max < 1 || max > MAX_ALLOWED_ITERATIONS) {
         return {
             error: `ralph_loop: max_iterations must be an integer in [1, ${MAX_ALLOWED_ITERATIONS}] (got ${rawMax}).`,
+        };
+    }
+
+    const rawMin = args.min_iterations ?? DEFAULTS.min_iterations;
+    const min = Number(rawMin);
+    if (!Number.isInteger(min) || min < 1 || min > max) {
+        return {
+            error: `ralph_loop: min_iterations must be an integer in [1, max_iterations=${max}] (got ${rawMin}).`,
         };
     }
 
@@ -71,7 +80,7 @@ export function validateArgs(args) {
         };
     }
 
-    return { value: { prompt, max, completionPromise, abortPromise, stagnationLimit } };
+    return { value: { prompt, max, min, completionPromise, abortPromise, stagnationLimit } };
 }
 
 /**
@@ -133,8 +142,11 @@ export function createRalphController() {
 
         const text = state.lastAssistantContent;
 
-        if (text.includes(a.completionPromise)) return finish("completion_promise");
-        if (a.abortPromise && text.includes(a.abortPromise)) return finish("abort_promise");
+        // completion/abort only honored once min_iterations have completed
+        if (a.i >= a.min) {
+            if (text.includes(a.completionPromise)) return finish("completion_promise");
+            if (a.abortPromise && text.includes(a.abortPromise)) return finish("abort_promise");
+        }
 
         if (a.stagnationLimit > 0) {
             a.streak = a.prev !== null && text === a.prev ? a.streak + 1 : 1;
@@ -174,6 +186,11 @@ export function createRalphController() {
                         type: "integer",
                         description: `Maximum iterations before stopping (default ${DEFAULTS.max_iterations}, max ${MAX_ALLOWED_ITERATIONS}).`,
                         default: DEFAULTS.max_iterations,
+                    },
+                    min_iterations: {
+                        type: "integer",
+                        description: `Minimum iterations before completion_promise / abort_promise are honored (default ${DEFAULTS.min_iterations}). Use this to force the agent to run additional verification passes even if it declares completion early.`,
+                        default: DEFAULTS.min_iterations,
                     },
                     completion_promise: {
                         type: "string",
@@ -215,13 +232,13 @@ export function createRalphController() {
                 state.lastResult = null;
 
                 log(
-                    `🔁 ralph_loop armed — max=${parsed.value.max}, completion='${parsed.value.completionPromise}'${
+                    `🔁 ralph_loop armed — max=${parsed.value.max}${parsed.value.min > 1 ? `, min=${parsed.value.min}` : ""}, completion='${parsed.value.completionPromise}'${
                         parsed.value.abortPromise ? `, abort='${parsed.value.abortPromise}'` : ""
                     }${parsed.value.stagnationLimit > 0 ? `, stagnation_limit=${parsed.value.stagnationLimit}` : ""}`,
                 );
                 return success(
-                    `ralph_loop armed (max=${parsed.value.max}). Iterations will run as conversation turns. Use ralph_stop to cancel.`,
-                    { armed: true, max: parsed.value.max },
+                    `ralph_loop armed (max=${parsed.value.max}${parsed.value.min > 1 ? `, min=${parsed.value.min}` : ""}). Iterations will run as conversation turns. Use ralph_stop to cancel.`,
+                    { armed: true, max: parsed.value.max, min: parsed.value.min },
                 );
             },
         },

@@ -75,6 +75,7 @@ The tool **arms** the loop and returns immediately. Iterations then play out as 
 |---|---|---|
 | `prompt` | _(required)_ | The task prompt re-fed each iteration |
 | `max_iterations` | `20` | Hard iteration cap (integer, 1–1000) |
+| `min_iterations` | `1` | Minimum iterations before `completion_promise` / `abort_promise` are honored. Use this to force verification passes even if the agent declares completion early. |
 | `completion_promise` | `"COMPLETE"` | Substring in assistant response → stop |
 | `abort_promise` | _(none)_ | Substring → early abort. Must differ from `completion_promise` |
 | `stagnation_limit` | `3` | Abort after N consecutive byte-identical responses (0 disables) |
@@ -107,7 +108,8 @@ The actual loop **outcome** (iteration count, reason) is surfaced in two ways:
 - **Always set `max_iterations`** — runaway loops burn premium requests fast.
 - The prompt **must instruct the agent to emit the completion promise** when done, otherwise the loop only stops at `max_iterations`.
 - Use `abort_promise` for "stop early if the precondition fails" — e.g. `"PRECONDITION_FAILED"`.
-- `stagnation_limit` (default 3) catches stuck agents that keep returning identical responses; set to `0` to disable.
+- `stagnation_limit` (default 3) catches stuck agents that keep returning identical responses; set to `0` to disable. Stagnation always overrides `min_iterations` (safety).
+- `min_iterations` is useful when you want the agent to run additional verification or double-check passes even if the completion phrase appears early.
 - Only one loop runs per session at a time. A second `ralph_loop` while one is active returns a failure.
 - Each iteration is a **paid turn**. Budget accordingly.
 

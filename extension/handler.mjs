@@ -19,6 +19,11 @@ const DEFAULTS = {
 const MAX_ALLOWED_ITERATIONS = 1000;
 const PREVIEW_CHARS = 500;
 const MAX_PROMPT_CHARS = 65536;
+// Cap completion_promise / abort_promise length. These are short signals
+// (default "COMPLETE") that we substring-match against every assistant
+// turn's accumulated content; allowing megabyte-long signals would waste
+// memory in state.active and slow each `.includes()` check unnecessarily.
+const MAX_PROMISE_CHARS = 200;
 // Cap the per-iteration accumulated assistant content. We only need it for
 // substring matching (completion/abort/stagnation) and a 500-char preview;
 // extremely chatty turns shouldn't be allowed to consume unbounded memory.
@@ -145,6 +150,9 @@ export function validateArgs(args) {
         if (typeof args.completion_promise !== "string" || args.completion_promise.trim().length === 0) {
             return { error: "ralph_loop: completion_promise must be a non-empty, non-whitespace-only string." };
         }
+        if (args.completion_promise.length > MAX_PROMISE_CHARS) {
+            return { error: `ralph_loop: completion_promise exceeds ${MAX_PROMISE_CHARS} characters (got ${args.completion_promise.length}). Use a short signal phrase.` };
+        }
         completionPromise = args.completion_promise;
     }
 
@@ -152,6 +160,9 @@ export function validateArgs(args) {
     if (args.abort_promise !== undefined && args.abort_promise !== null) {
         if (typeof args.abort_promise !== "string" || args.abort_promise.trim().length === 0) {
             return { error: "ralph_loop: abort_promise, when provided, must be a non-empty, non-whitespace-only string." };
+        }
+        if (args.abort_promise.length > MAX_PROMISE_CHARS) {
+            return { error: `ralph_loop: abort_promise exceeds ${MAX_PROMISE_CHARS} characters (got ${args.abort_promise.length}). Use a short signal phrase.` };
         }
         abortPromise = args.abort_promise;
     }
@@ -427,15 +438,17 @@ export function createRalphController() {
                     completion_promise: {
                         type: "string",
                         description:
-                            "Substring that, when present in an assistant turn's response, signals completion (default 'COMPLETE').",
+                            `Substring that, when present in an assistant turn's response, signals completion (default 'COMPLETE'). Max ${MAX_PROMISE_CHARS} chars.`,
                         default: DEFAULTS.completion_promise,
                         minLength: 1,
+                        maxLength: MAX_PROMISE_CHARS,
                     },
                     abort_promise: {
                         type: "string",
                         description:
-                            "Optional substring that, when present in an assistant turn's response, aborts the loop early (e.g. when the agent signals a precondition failure).",
+                            `Optional substring that, when present in an assistant turn's response, aborts the loop early (e.g. when the agent signals a precondition failure). Max ${MAX_PROMISE_CHARS} chars.`,
                         minLength: 1,
+                        maxLength: MAX_PROMISE_CHARS,
                     },
                     stagnation_limit: {
                         type: "integer",
@@ -613,4 +626,4 @@ export function createRalphController() {
     };
 }
 
-export const __test__ = { DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_CONTENT_CHARS, previewOf };
+export const __test__ = { DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, previewOf };

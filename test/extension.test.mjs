@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
+const { MAX_PROMISE_CHARS } = __test__;
 
 function makeFakeSession({ failSend = false, rejectSend = false } = {}) {
     const sent = [];
@@ -103,6 +104,21 @@ test("validateArgs: rejects substring overlap between completion and abort promi
     assert.match(r2.error, /overlap/);
     // disjoint phrases pass
     assert.ok(validateArgs({ prompt: "x", completion_promise: "COMPLETE", abort_promise: "ABORT" }).value);
+});
+
+test("validateArgs: rejects oversized completion_promise / abort_promise", () => {
+    // These signals are substring-matched on every assistant turn's
+    // accumulated content; an unbounded length would waste memory and CPU.
+    const tooLong = "X".repeat(MAX_PROMISE_CHARS + 1);
+    const atLimit = "Y".repeat(MAX_PROMISE_CHARS);
+    const r1 = validateArgs({ prompt: "x", completion_promise: tooLong });
+    assert.match(r1.error, /completion_promise exceeds/, r1.error);
+    assert.match(r1.error, new RegExp(String(MAX_PROMISE_CHARS)));
+    const r2 = validateArgs({ prompt: "x", abort_promise: tooLong });
+    assert.match(r2.error, /abort_promise exceeds/, r2.error);
+    // Exactly at the cap is allowed.
+    assert.ok(validateArgs({ prompt: "x", completion_promise: atLimit }).value);
+    assert.ok(validateArgs({ prompt: "x", abort_promise: atLimit }).value);
 });
 
 test("validateArgs: rejects negative/non-integer/=1 stagnation_limit", () => {

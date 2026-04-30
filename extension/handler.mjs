@@ -240,7 +240,10 @@ export function createRalphController() {
             reason === "completion_promise" ? "✅ completed" :
             reason === "send_error" || reason === "aborted" ? "⚠️ ended" :
             "⏹ stopped";
-        log(`${verb} ralph_loop after ${result.iterations} iteration${result.iterations === 1 ? "" : "s"} (reason: ${reason}${result.note ? `, note: ${result.note}` : ""}, ${result.durationMs}ms)`);
+        // Collapse note whitespace for the single-line log format (a multi-
+        // line Error stack would otherwise break alignment in the timeline).
+        const noteForLog = result.note ? result.note.replace(/\s+/g, " ").trim() : "";
+        log(`${verb} ralph_loop after ${result.iterations} iteration${result.iterations === 1 ? "" : "s"} (reason: ${reason}${noteForLog ? `, note: ${noteForLog}` : ""}, ${result.durationMs}ms)`);
         state.active = null;
         state.lastResult = Object.freeze(result);
     };

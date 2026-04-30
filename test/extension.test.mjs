@@ -528,6 +528,19 @@ test("onUserPromptSubmitted collapses multi-line note into single line", async (
     assert.equal(r.additionalContext.includes("\n"), false);
 });
 
+test("finish log line collapses multi-line note (single-line timeline marker)", async () => {
+    // A note with newlines (e.g. an Error stack from send_error) must not
+    // break the timeline log into multiple lines.
+    const { session, controller, stop } = await arm({ max_iterations: 5 });
+    session.emit("assistant.turn_end", { data: { turnId: "t0" } });
+    await stop.handler({ reason: "line1\nline2\n  line3" });
+    // Find the finish log entry.
+    const finishLog = session.logs.find((l) => /ralph_loop after \d+ iteration/.test(l));
+    assert.ok(finishLog, "expected a finish log line");
+    assert.equal(finishLog.includes("\n"), false, `finish log contains newline: ${JSON.stringify(finishLog)}`);
+    assert.match(finishLog, /note: line1 line2 line3/);
+});
+
 // ── content tracking ──────────────────────────────────────────────────────
 
 test("missing assistant.message before turn_end is treated as empty content", async () => {

@@ -119,9 +119,9 @@ export function validateArgs(args) {
 
     const rawStagnation = args.stagnation_limit ?? DEFAULTS.stagnation_limit;
     const stagnationLimit = Number(rawStagnation);
-    if (!Number.isInteger(stagnationLimit) || stagnationLimit < 0) {
+    if (!Number.isInteger(stagnationLimit) || stagnationLimit < 0 || stagnationLimit === 1) {
         return {
-            error: `ralph_loop: stagnation_limit must be a non-negative integer (got ${rawStagnation}). Use 0 to disable.`,
+            error: `ralph_loop: stagnation_limit must be 0 (disabled) or an integer ≥ 2 (got ${rawStagnation}). 1 is meaningless because no comparison is possible after a single response.`,
         };
     }
 

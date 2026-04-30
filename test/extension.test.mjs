@@ -72,10 +72,12 @@ test("validateArgs: rejects identical completion and abort promise", () => {
     assert.match(r.error, /must differ/);
 });
 
-test("validateArgs: rejects negative/non-integer stagnation_limit", () => {
+test("validateArgs: rejects negative/non-integer/=1 stagnation_limit", () => {
     assert.match(validateArgs({ prompt: "x", stagnation_limit: -1 }).error, /stagnation_limit/);
     assert.match(validateArgs({ prompt: "x", stagnation_limit: 1.5 }).error, /stagnation_limit/);
+    assert.match(validateArgs({ prompt: "x", stagnation_limit: 1 }).error, /meaningless/);
     assert.ok(validateArgs({ prompt: "x", stagnation_limit: 0 }).value);
+    assert.ok(validateArgs({ prompt: "x", stagnation_limit: 2 }).value);
 });
 
 // ── tool spec ─────────────────────────────────────────────────────────────

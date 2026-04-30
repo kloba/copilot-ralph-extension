@@ -475,6 +475,21 @@ test("preview is truncated to PREVIEW_CHARS + ellipsis", async () => {
     assert.ok(controller.state.lastResult.preview.endsWith("…"));
 });
 
+test("preview does not split UTF-16 surrogate pairs (no lone high surrogate)", async () => {
+    // 499 'a's + "🎉" (D83C DF89) + filler. Naive slice(0, 500) would leave
+    // a lone high surrogate at index 499.
+    const content = "a".repeat(499) + "🎉" + "z".repeat(100);
+    const { session, controller } = await arm({ max_iterations: 1, stagnation_limit: 0 });
+    session.emit("assistant.turn_end", { data: { turnId: "t-init" } });
+    runTurn(session, content);
+    const preview = controller.state.lastResult.preview;
+    assert.ok(preview.endsWith("…"));
+    // No replacement char should appear (would indicate a lone surrogate).
+    assert.equal(preview.indexOf("\uFFFD"), -1, "preview contains replacement char");
+    // Round-trip via JSON should be loss-less.
+    assert.deepEqual(JSON.parse(JSON.stringify(preview)), preview);
+});
+
 // ── attach/detach ─────────────────────────────────────────────────────────
 
 test("attach returns a detach function that unsubscribes listeners and finalizes active loop", async () => {

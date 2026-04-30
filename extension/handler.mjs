@@ -22,7 +22,12 @@ const MAX_PROMPT_CHARS = 65536;
 
 function previewOf(text) {
     if (!text) return "";
-    return text.length > PREVIEW_CHARS ? text.slice(0, PREVIEW_CHARS) + "…" : text;
+    if (text.length <= PREVIEW_CHARS) return text;
+    let cut = PREVIEW_CHARS;
+    // Avoid splitting a UTF-16 surrogate pair (4-byte char like emoji).
+    const code = text.charCodeAt(cut - 1);
+    if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
+    return text.slice(0, cut) + "…";
 }
 function failure(message, extra = {}) {
     return { textResultForLlm: message, resultType: "failure", ...extra };

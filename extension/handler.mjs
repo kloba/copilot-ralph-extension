@@ -32,6 +32,9 @@ function success(message, extra = {}) {
 }
 
 export function validateArgs(args) {
+    if (args === null || args === undefined || typeof args !== "object") {
+        return { error: "ralph_loop: arguments object is required." };
+    }
     const prompt = String(args.prompt ?? "").trim();
     if (!prompt) return { error: "ralph_loop: prompt is required and must be non-empty." };
     if (prompt.length > MAX_PROMPT_CHARS) {

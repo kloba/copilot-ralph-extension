@@ -186,6 +186,20 @@ test("min_iterations: stagnation still triggers before min (safety override)", a
     assert.equal(controller.state.lastResult.reason, "stagnation");
 });
 
+test("validateArgs guards against null/undefined args", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const r1 = await c.tools[0].handler(null);
+    assert.equal(r1.resultType, "failure");
+    assert.match(r1.textResultForLlm, /arguments object is required/);
+    const r2 = await c.tools[0].handler(undefined);
+    assert.equal(r2.resultType, "failure");
+    const r3 = await c.tools[0].handler("not-an-object");
+    assert.equal(r3.resultType, "failure");
+    assert.equal(c.state.active, null);
+});
+
 test("prompt length cap: rejects prompts over 64KiB", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

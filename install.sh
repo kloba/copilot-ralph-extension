@@ -1,16 +1,33 @@
 #!/usr/bin/env bash
 # Install copilot-ralph-extension to user-scoped Copilot CLI extensions dir.
-# Usage: ./install.sh [--project] [--help]
-#   default: ~/.copilot/extensions/ralph
-#   --project: .github/extensions/ralph in current git repo
-#   --help:    show this message
+# Usage: ./install.sh [--project] [--dry-run] [--help]
+#   default:    ~/.copilot/extensions/ralph
+#   --project:  .github/extensions/ralph in current git repo
+#   --dry-run:  show what would be installed without writing anything
+#   --help:     show this message
 
 set -euo pipefail
 
-if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-  sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'
-  exit 0
-fi
+DRY_RUN=0
+TARGET_FLAG=""
+for arg in "$@"; do
+  case "$arg" in
+    --help|-h)
+      sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    --dry-run)
+      DRY_RUN=1
+      ;;
+    --project)
+      TARGET_FLAG="--project"
+      ;;
+    *)
+      echo "Error: unknown argument '$arg' (try --help)." >&2
+      exit 1
+      ;;
+  esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$SCRIPT_DIR/extension"
@@ -35,18 +52,27 @@ else
   echo "Warning: node not found; skipping syntax check." >&2
 fi
 
-if [[ "${1:-}" == "--project" ]]; then
+if [[ "$TARGET_FLAG" == "--project" ]]; then
   GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
   if [[ -z "$GIT_ROOT" ]]; then
     echo "Error: --project requires being inside a git repo." >&2
     exit 1
   fi
   TARGET_DIR="$GIT_ROOT/.github/extensions/ralph"
-elif [[ -n "${1:-}" ]]; then
-  echo "Error: unknown argument '$1' (try --help)." >&2
-  exit 1
 else
   TARGET_DIR="$HOME/.copilot/extensions/ralph"
+fi
+
+if [[ "$DRY_RUN" == "1" ]]; then
+  echo "DRY RUN — no files will be written."
+  echo "Source:    $SOURCE_DIR/"
+  echo "Target:    $TARGET_DIR/"
+  echo "Files:"
+  for f in "${FILES[@]}"; do
+    size=$(wc -c < "$SOURCE_DIR/$f" | tr -d ' ')
+    echo "  $f ($size bytes)"
+  done
+  exit 0
 fi
 
 mkdir -p "$TARGET_DIR"

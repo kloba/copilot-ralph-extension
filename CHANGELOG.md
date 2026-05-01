@@ -23,6 +23,13 @@
   post-loop `additionalContext` pipeline as `ralph_loop` via a
   shared private `armLoop(parsedValue, label)` helper — only the
   log line and success-result text differ in the leading label.
+- Every observable log line now carries the calling tool's label.
+  `state.active.label` and `state.lastResult.label` ("ralph_loop"
+  or "self_improve") flow into the per-iteration log line
+  (`🔁 self_improve iter N/M`), the send-error log, the idle-skip
+  log, the finish log, and the post-loop `additionalContext`
+  bracket (`[self_improve just finished — …]`). New `label`
+  property is documented on the `RalphResult` typedef.
 - Only one loop runs per session at a time, so calling
   `self_improve` while a `ralph_loop` is active fails fast with
   the existing `is already running` guard (and vice versa). Cancel

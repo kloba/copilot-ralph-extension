@@ -1190,6 +1190,20 @@ test("abort event falls back to top-level ev.reason when ev.data.reason is absen
     assert.equal(controller.state.lastResult.note, "network blip");
 });
 
+test("abort event prefers ev.data.reason over ev.reason when both are present", async () => {
+    // The handler's reason-resolution is `ev?.data?.reason ?? ev?.reason`.
+    // When both layers carry a string, ev.data.reason wins — pin the
+    // precedence so a refactor that flips the operands (or switches to
+    // `||` and tries to be "smarter") doesn't silently change which
+    // reason surfaces in result.note. Operators reading the timeline
+    // expect a stable ordering.
+    const { session, controller } = await arm({ max_iterations: 5 });
+    session.emit("session.idle", { data: {} });
+    session.emit("abort", { reason: "outer", data: { reason: "inner" } });
+    assert.equal(controller.state.lastResult.reason, "aborted");
+    assert.equal(controller.state.lastResult.note, "inner");
+});
+
 test("abort event with non-string reason ignores it (no note)", async () => {
     // Defensive: a numeric / object reason must not be stringified into the note.
     const { session, controller } = await arm({ max_iterations: 5 });

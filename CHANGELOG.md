@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Hardening (post-0.6.0)
+- `attach()` is now transactional: if `session.on()` throws partway
+  through subscribing the three required events (assistant.message,
+  session.idle, abort), any listeners attached before the throw are
+  rolled back via their unsubscribe handles before re-throwing. The
+  previous code lost those handles to the array literal it was
+  building when the throw fired, leaking listeners forever.
 - `durationMs` and the iter-log `elapsed` marker are clamped to ≥ 0 so
   a backward `Date.now()` step (NTP correction, RTC skew on resume,
   manual clock change) mid-loop can no longer surface negative time

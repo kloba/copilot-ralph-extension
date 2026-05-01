@@ -598,6 +598,10 @@ test("ralph_loop refuses when self_improve is already active", async () => {
     const r = await ralph.handler({ prompt: "go", max_iterations: 5 });
     assert.equal(r.resultType, "failure");
     assert.match(r.textResultForLlm, /already/i);
+    // Label-aware wording: the active loop was armed by self_improve, so
+    // the error should say "self_improve is already …" — not the previous
+    // hardcoded "ralph_loop is already …" which lied about who armed it.
+    assert.match(r.textResultForLlm, /^self_improve is already/);
 });
 
 test("ralph_stop tears down a self_improve-armed loop", async () => {

@@ -989,6 +989,19 @@ test("PROMPT_GROW_PROJECT references the gh-issue backlog + acceptance + demo co
     assert.match(p, /gh label create proposed/, "IDEATE must bootstrap proposed label");
     assert.match(p, /gh label create in-progress/, "IDEATE must bootstrap in-progress label");
     assert.match(p, /\|\| true/, "label create calls must be idempotent (|| true)");
+    // SELECT stage must transition the chosen issue from `proposed` to
+    // `in-progress` via gh issue edit. Without this label flip, the
+    // same issue gets re-picked every iter (the SELECT filter is
+    // `--label proposed`, oldest first), busy-looping on one feature.
+    // Pin both the add and the remove flag in the same regex so an
+    // edit that drops either half fails the suite.
+    assert.match(p, /gh issue edit[^\n]*--add-label\s+in-progress[^\n]*--remove-label\s+proposed/,
+        "SELECT must flip the chosen issue's label proposed → in-progress");
+    // Depends-on: #N lines in issue bodies must block selection until
+    // the dep issue is closed. Without this contract, an issue listing
+    // a dep (e.g. "#5 needs the schema added in #4 first") could be
+    // shipped out-of-order and break the build.
+    assert.match(p, /Depends-on/, "SELECT must respect Depends-on: #N body lines");
 });
 
 test("PROMPT_SELF_IMPROVE bakes the dual Co-authored-by trailer + RALPH_NO_ATTRIBUTION opt-out (issue #1)", () => {

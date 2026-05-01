@@ -2120,11 +2120,27 @@ test("lastResult exposes exactly the documented shape (no stray keys, no missing
     );
 });
 
+test("controller.state exposes exactly { active, lastAssistantContent, lastResult } (no internal scratch leaked)", () => {
+    // The state object is the public introspection surface for embedders
+    // (e.g. tests use `controller.state.lastResult`). The handler also
+    // uses internal scratch like `sessionRef`, the controller's
+    // `currentDetach`, and the closure-scope `_attachToken`/handler refs
+    // — none of which should ever bleed onto `state`. Pin the exact
+    // 3-key shape so a future refactor that accidentally promoted a
+    // private field via `state.foo = ...` would trip this test.
+    const c = createRalphController();
+    assert.deepEqual(
+        Object.keys(c.state).sort(),
+        ["active", "lastAssistantContent", "lastResult"],
+    );
+    assert.equal(c.state.active, null);
+    assert.equal(c.state.lastAssistantContent, "");
+    assert.equal(c.state.lastResult, null);
+});
+
+
 test("durationMs is clamped to ≥ 0 if the system clock jumps backward", async () => {
     // Stub Date.now so the second sample (finish time) reads earlier
-    // than the first (arm time) — simulates an NTP correction landing
-    // mid-loop. Without the Math.max(0, …) clamp, durationMs would be
-    // negative and confuse any downstream metric / log consumer.
     const realNow = Date.now;
     let calls = 0;
     Date.now = () => (calls++ === 0 ? 10_000 : 5_000);

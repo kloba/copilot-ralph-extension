@@ -206,6 +206,18 @@ function validatePromiseField(fieldName, raw, { whenProvided = false } = {}) {
     return { value: raw.trim() };
 }
 
+// Type-check + Number() coerce for the three integer-valued fields
+// (max_iterations / min_iterations / stagnation_limit). They all reject
+// any non-number/non-string input with the same `must be a number` error
+// shape; range validation stays at the call site since each field has
+// distinct constraints.
+function coerceNumberField(fieldName, raw) {
+    if (typeof raw !== "number" && typeof raw !== "string") {
+        return { error: `ralph_loop: ${fieldName} must be a number (got ${describeArgType(raw)}).` };
+    }
+    return { value: Number(raw) };
+}
+
 /**
  * Validate ralph_loop arguments.
  *
@@ -240,10 +252,9 @@ export function validateArgs(args) {
     }
 
     const rawMax = args.max_iterations ?? DEFAULTS.max_iterations;
-    if (typeof rawMax !== "number" && typeof rawMax !== "string") {
-        return { error: `ralph_loop: max_iterations must be a number (got ${describeArgType(rawMax)}).` };
-    }
-    const max = Number(rawMax);
+    const maxC = coerceNumberField("max_iterations", rawMax);
+    if (maxC.error) return maxC;
+    const max = maxC.value;
     if (!Number.isInteger(max) || max < 1 || max > MAX_ALLOWED_ITERATIONS) {
         return {
             error: `ralph_loop: max_iterations must be an integer in [1, ${MAX_ALLOWED_ITERATIONS}] (got ${displayValue(rawMax)}).`,
@@ -251,10 +262,9 @@ export function validateArgs(args) {
     }
 
     const rawMin = args.min_iterations ?? DEFAULTS.min_iterations;
-    if (typeof rawMin !== "number" && typeof rawMin !== "string") {
-        return { error: `ralph_loop: min_iterations must be a number (got ${describeArgType(rawMin)}).` };
-    }
-    const min = Number(rawMin);
+    const minC = coerceNumberField("min_iterations", rawMin);
+    if (minC.error) return minC;
+    const min = minC.value;
     if (!Number.isInteger(min) || min < 1 || min > max) {
         return {
             error: `ralph_loop: min_iterations must be an integer in [1, max_iterations=${max}] (got ${displayValue(rawMin)}).`,
@@ -289,10 +299,9 @@ export function validateArgs(args) {
     }
 
     const rawStagnation = args.stagnation_limit ?? DEFAULTS.stagnation_limit;
-    if (typeof rawStagnation !== "number" && typeof rawStagnation !== "string") {
-        return { error: `ralph_loop: stagnation_limit must be a number (got ${describeArgType(rawStagnation)}).` };
-    }
-    const stagnationLimit = Number(rawStagnation);
+    const stagC = coerceNumberField("stagnation_limit", rawStagnation);
+    if (stagC.error) return stagC;
+    const stagnationLimit = stagC.value;
     if (!Number.isInteger(stagnationLimit) || stagnationLimit < 0 || stagnationLimit === 1) {
         return {
             error: `ralph_loop: stagnation_limit must be 0 (disabled) or an integer ≥ 2 (got ${displayValue(rawStagnation)}). 1 is meaningless because no comparison is possible after a single response.`,

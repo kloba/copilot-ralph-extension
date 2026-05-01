@@ -926,6 +926,48 @@ test("self_improve schema declares max_iterations / min_iterations bounds matchi
     assert.equal(min.default, 5);
 });
 
+test("ralph_loop schema declares max/min/stagnation/completion/abort bounds matching runtime", () => {
+    // Mirror of the self_improve bounds tests: pin ralph_loop's
+    // numeric and string schema bounds so a future "harmless" tweak
+    // to MAX_ALLOWED_ITERATIONS, MAX_PROMISE_CHARS, MAX_PROMPT_CHARS
+    // or the DEFAULTS dict can't drift the schema away from the
+    // runtime validator without a loud test-suite failure.
+    const c = createRalphController();
+    const rl = c.tools.find((t) => t.name === "ralph_loop");
+    const p = rl.parameters.properties;
+
+    assert.equal(p.prompt.type, "string");
+    assert.equal(p.prompt.minLength, 1);
+    assert.equal(p.prompt.maxLength, 65536, "MAX_PROMPT_CHARS");
+
+    assert.equal(p.max_iterations.type, "integer");
+    assert.equal(p.max_iterations.default, 20, "DEFAULTS.max_iterations");
+    assert.equal(p.max_iterations.minimum, 1);
+    assert.equal(p.max_iterations.maximum, 1000, "MAX_ALLOWED_ITERATIONS");
+
+    assert.equal(p.min_iterations.type, "integer");
+    assert.equal(p.min_iterations.default, 1, "DEFAULTS.min_iterations");
+    assert.equal(p.min_iterations.minimum, 1);
+    assert.equal(p.min_iterations.maximum, 1000);
+
+    assert.equal(p.completion_promise.type, "string");
+    assert.equal(p.completion_promise.default, "COMPLETE");
+    assert.equal(p.completion_promise.minLength, 1);
+    assert.equal(p.completion_promise.maxLength, 200, "MAX_PROMISE_CHARS");
+
+    assert.equal(p.abort_promise.type, "string");
+    assert.equal(p.abort_promise.default, undefined, "abort_promise must NOT declare a default — opt-in only");
+    assert.equal(p.abort_promise.minLength, 1);
+    assert.equal(p.abort_promise.maxLength, 200);
+
+    assert.equal(p.stagnation_limit.type, "integer");
+    assert.equal(p.stagnation_limit.default, 3);
+    assert.equal(p.stagnation_limit.minimum, 0);
+    assert.deepEqual(p.stagnation_limit.not, { const: 1 });
+
+    assert.deepEqual(rl.parameters.required, ["prompt"], "prompt is the only required arg");
+});
+
 test("ralph_loop & ralph_stop schema properties match their KEYS sets", () => {
     // Mirror of the self_improve schema-vs-KEYS-set drift test
     // (above). Same rationale: a divergence between the

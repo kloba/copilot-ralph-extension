@@ -421,22 +421,23 @@ export function createRalphController() {
         // clampedElapsed (defined above) clamps Date.now() - startedAt to ≥ 0
         // so a backward clock jump mid-loop (NTP correction) reports 0 in
         // durationMs / log line instead of a negative number.
-        const startedAt = state.active.startedAt;
+        const { startedAt, i: iterations } = state.active;
         const finishedAt = Date.now();
+        const durationMs = clampedElapsed(startedAt);
         const result = {
             reason,
-            iterations: state.active.i,
+            iterations,
             preview: previewOf(state.lastAssistantContent),
             startedAt,
             finishedAt,
-            durationMs: clampedElapsed(startedAt),
+            durationMs,
         };
         if (note) result.note = truncateNote(note);
         const verb = VERB_BY_REASON[reason] ?? "⏹ stopped";
         // Collapse note whitespace for the single-line log format (a multi-
         // line Error stack would otherwise break alignment in the timeline).
         const noteForLog = collapseNote(result.note);
-        log(`${verb} ralph_loop after ${result.iterations} iteration${pluralS(result.iterations)} (reason: ${reason}${noteForLog ? `, note: ${noteForLog}` : ""}, ${result.durationMs}ms)`);
+        log(`${verb} ralph_loop after ${iterations} iteration${pluralS(iterations)} (reason: ${reason}${noteForLog ? `, note: ${noteForLog}` : ""}, ${durationMs}ms)`);
         state.active = null;
         state.lastResult = Object.freeze(result);
     };

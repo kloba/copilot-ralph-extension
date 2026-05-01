@@ -97,7 +97,7 @@ PER-ITERATION SDLC WORKFLOW (the smallest correct step is the right step):
 7. COMMIT.
    Short imperative subject prefixed with the SDLC category (\`fix:\`, \`feat:\`, \`test:\`, \`refactor:\`, \`docs:\`, \`chore:\`, \`ci:\`, \`perf:\`). Always include the trailer:
      Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
-   Write the commit message to a temp file in a SEPARATE shell call before running \`git commit -F\`; combining heredoc + commit in one call has historically failed silently. Avoid the literal word "interrupt"-trip phrases that some shells filter.
+   Write the commit message to a temp file in a SEPARATE shell call before running \`git commit -F\`; combining heredoc + commit in one call has historically failed silently. Prefer "cancel", "tear down", or "stop" in commit messages over forceful-action synonyms that some agent runtimes treat as trigger phrases.
 
 8. PUSH.
    \`git push\` to origin. If push fails (no remote, auth, conflict), log it and continue; do not abort the loop on push failure.

@@ -172,7 +172,8 @@ const session = await joinSession({
     tools: controller.tools,   // ralph_loop + ralph_stop
     hooks: controller.hooks,   // onUserPromptSubmitted carries the result forward
 });
-controller.attach(session);    // wires session.idle / assistant.message / abort listeners
+const detach = controller.attach(session);    // wires session.idle / assistant.message / abort listeners
+// detach() unsubscribes all listeners; if a loop is still active, it finishes with reason: "detached".
 ```
 
 ### Arming

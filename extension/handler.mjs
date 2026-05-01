@@ -34,7 +34,6 @@ const MAX_CONTENT_CHARS = 1_048_576; // 1 MiB
 // user_stopped, detached).
 //   ✅ completed — completion_promise
 //   ⚠️  ended   — send_error, aborted (something went wrong)
-//   ⏹ stopped   — everything else
 const VERB_BY_REASON = Object.freeze({
     completion_promise: "✅ completed",
     send_error: "⚠️ ended",

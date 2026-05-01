@@ -280,6 +280,20 @@ test("ralph_stop tool spec declares maxLength on optional reason", () => {
     assert.equal(t.parameters.properties.reason.maxLength, 500);
 });
 
+test("tool parameters round-trip through JSON.stringify without losing fields", () => {
+    // Some hosts ship the tool spec to remote LLM endpoints by serializing
+    // it as JSON. A non-JSON-serializable value (Symbol, BigInt, Function,
+    // undefined) sneaking into a schema would silently disappear on the
+    // wire and the LLM would see a constraint-less spec. Round-trip each
+    // tool's parameters and require the deserialized copy to deep-equal
+    // the original, so any non-JSON value gets caught at test time.
+    const c = createRalphController();
+    for (const t of c.tools) {
+        const round = JSON.parse(JSON.stringify(t.parameters));
+        assert.deepEqual(round, t.parameters, `${t.name}.parameters must be JSON-serializable without loss`);
+    }
+});
+
 test("ralph_loop tool description matches the actual refire trigger (session.idle)", () => {
     // Pin the user-facing description so a future refactor that changes the
     // event we listen on (or vice-versa, that re-introduces a stale "turn_end"

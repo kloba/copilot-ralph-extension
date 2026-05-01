@@ -739,14 +739,20 @@ export function createRalphController() {
         // ones we already wired before re-throwing. Without this the
         // first call's listener would leak indefinitely.
         const unsubs = [];
+        // Best-effort: walk every collected unsubscribe handle, swallowing
+        // throws so one buggy listener can't strand the rest. Used by the
+        // rollback path in subscribeOrFail and by detach.
+        const unsubscribeAll = () => {
+            for (const u of unsubs) {
+                try { u(); } catch { /* ignore */ }
+            }
+        };
         const subscribeOrFail = (evName, handler) => {
             let ret;
             try {
                 ret = session.on(evName, handler);
             } catch (err) {
-                for (const u of unsubs) {
-                    try { u(); } catch { /* ignore */ }
-                }
+                unsubscribeAll();
                 sessionRef = null;
                 throw err;
             }
@@ -766,9 +772,7 @@ export function createRalphController() {
             // since been superseded) must NOT touch state.active — that would
             // kill the loop running on the newer session.
             if (currentDetach === detach && state.active) finish("detached");
-            for (const u of unsubs) {
-                try { u(); } catch { /* ignore */ }
-            }
+            unsubscribeAll();
             if (currentDetach === detach) currentDetach = null;
             if (sessionRef === session) sessionRef = null;
         };

@@ -297,6 +297,28 @@ test("validateArgs: prompt at exactly MAX_PROMPT_CHARS is accepted (boundary)", 
     assert.match(validateArgs({ prompt: overLimit }).error, /exceeds/);
 });
 
+test("validateArgs: prompt-length cap measures TRIMMED length, not raw input length", () => {
+    // The cap is checked AFTER `.trim()`, so a prompt whose raw length
+    // exceeds the limit but whose trimmed length sits at-or-below the
+    // limit must be accepted. Without this contract, callers wrapping
+    // a prompt in extra whitespace (templating artifact, copy-paste
+    // padding) would see spurious "exceeds" errors that make no sense
+    // because the actual content fits comfortably.
+    const cap = __test__.MAX_PROMPT_CHARS;
+    // Trimmed length is exactly cap; raw length is cap + 200 padding.
+    const padded = "  ".repeat(50) + "x".repeat(cap) + "  ".repeat(50);
+    const r = validateArgs({ prompt: padded });
+    assert.ok(r.value, r.error);
+    assert.equal(r.value.prompt.length, cap);
+    // Now: trimmed length one over the cap (still padded) → rejected,
+    // and the error message reports the *trimmed* length, not the raw
+    // length, so operators don't get confused why a "cap+1" error
+    // shows when their input was much larger.
+    const tooLong = "  " + "x".repeat(cap + 1) + "  ";
+    const r2 = validateArgs({ prompt: tooLong });
+    assert.match(r2.error, new RegExp(`got ${cap + 1}`));
+});
+
 test("validateArgs: rejects unknown keys (typo guard)", () => {
     // Common typo for max_iterations — would silently use the default.
     const r1 = validateArgs({ prompt: "x", max_iter: 100 });

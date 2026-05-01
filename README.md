@@ -160,7 +160,7 @@ The full structured result (available via `controller.state.lastResult` for embe
 
 > *"Use self_improve to keep improving this project for 100 iterations."*
 
-Each iteration walks the agent through nine stages: **ORIENT** (read recent commits + project docs, detect the test command) → **IDEATE** (pick ONE concrete change, rotating across SDLC categories: bug fix, hardening, validation, tests, refactor, dependency hygiene, docs, release engineering) → **CRITIQUE** (rubber-duck pass) → **BASELINE** (run the existing test command) → **IMPLEMENT** (surgical edits only) → **TEST** (must stay green at same-or-higher count) → **COMMIT** (conventional-commit prefix + `Co-authored-by` trailer) → **PUSH** (non-fatal) → **END** (emit `COMPLETE` or `ABORT_NO_IMPROVEMENTS`).
+Each iteration walks the agent through nine stages: **ORIENT** (read recent commits + project docs, detect the test command) → **IDEATE** (pick ONE concrete change, rotating across SDLC categories: bug fix, hardening, validation, tests, refactor, dependency hygiene, docs, release engineering) → **CRITIQUE** (rubber-duck pass) → **BASELINE** (run the existing test command) → **IMPLEMENT** (surgical edits only) → **TEST** (must stay green at same-or-higher count) → **COMMIT** (conventional-commit prefix + dual `Co-authored-by` trailers; see [Commit attribution](#commit-attribution)) → **PUSH** (non-fatal) → **END** (emit `COMPLETE` or `ABORT_NO_IMPROVEMENTS`).
 
 | Param | Default | Purpose |
 |---|---|---|
@@ -181,7 +181,7 @@ Each iteration walks the agent through nine stages: **ORIENT** (read recent comm
 
 > *"Use grow_project to bootstrap and ship features for this project."*
 
-Each iteration walks the agent through thirteen stages: **ORIENT** (`gh issue list --label grow-project --state open` + recent commits + docs) → **IDEATE** (only on iter 1 with empty backlog: 5–10 well-scoped issues with spec, acceptance_criteria checkbox list, and demo_command) → **SELECT** (pick oldest `proposed` issue whose `Depends-on:` lines are all closed; re-label `in-progress`) → **CRITIQUE** (rubber-duck the spec) → **BASELINE** (run tests; bail if red) → **IMPLEMENT** (surgical edits in the file allowlist) → **TEST** (stay green at same-or-higher count) → **ACCEPTANCE** (execute every checkbox check) → **DEMO** (run the issue's `demo_command`, paste output as a comment) → **COMMIT** (conventional commit `feat(#N): <title>` with `Closes #N` + `Co-authored-by` trailers) → **PUSH** → **CLOSE** (`gh issue close N --reason completed`) → **END** (`COMPLETE`, or `ABORT_NO_BACKLOG` when no ready issues remain).
+Each iteration walks the agent through thirteen stages: **ORIENT** (`gh issue list --label grow-project --state open` + recent commits + docs) → **IDEATE** (only on iter 1 with empty backlog: 5–10 well-scoped issues with spec, acceptance_criteria checkbox list, and demo_command) → **SELECT** (pick oldest `proposed` issue whose `Depends-on:` lines are all closed; re-label `in-progress`) → **CRITIQUE** (rubber-duck the spec) → **BASELINE** (run tests; bail if red) → **IMPLEMENT** (surgical edits in the file allowlist) → **TEST** (stay green at same-or-higher count) → **ACCEPTANCE** (execute every checkbox check) → **DEMO** (run the issue's `demo_command`, paste output as a comment) → **COMMIT** (conventional commit `feat(#N): <title>` with `Closes #N` + dual `Co-authored-by` trailers; see [Commit attribution](#commit-attribution)) → **PUSH** → **CLOSE** (`gh issue close N --reason completed`) → **END** (`COMPLETE`, or `ABORT_NO_BACKLOG` when no ready issues remain).
 
 | Param | Default | Purpose |
 |---|---|---|
@@ -275,20 +275,14 @@ If you arm a new `ralph_loop` *before* the next user prompt fires, the prior run
 
 ## Commit attribution
 
-The baked `self_improve` and `grow_project` SDLC prompts instruct the agent to add a `Co-authored-by:` trailer to every commit so loop-driven changes are attributable. Today that's a single trailer:
-
-```
-Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
-```
-
-**Planned (see [issue #1](https://github.com/kloba/copilot-ralph-extension/issues/1)):** add a *second* `Co-authored-by:` trailer pointing at a dedicated `copilot-ralph` GitHub account so commits made via this extension are also passively searchable across public GitHub:
+The baked `self_improve` and `grow_project` SDLC prompts instruct the agent to add `Co-authored-by:` trailers to every commit so loop-driven changes are attributable. By default, every loop-driven commit ships **two** trailers (per [issue #1](https://github.com/kloba/copilot-ralph-extension/issues/1)):
 
 ```
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>
 ```
 
-Once the bot account is registered, `gh search commits "co-authored-by:copilot-ralph@users.noreply.github.com"` will surface every public-repo commit produced by a `self_improve` / `grow_project` run — a zero-infrastructure usage signal.
+The first identifies the agent. The second attributes the commit to a dedicated `copilot-ralph` GitHub account so commits made via this extension are passively searchable across public GitHub. Once the bot account is registered, `gh search commits "co-authored-by:copilot-ralph@users.noreply.github.com"` surfaces every public-repo commit produced by a `self_improve` / `grow_project` run — a zero-infrastructure usage signal.
 
 ### Opt-out
 

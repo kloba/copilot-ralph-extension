@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Features
+- `self_improve` and `grow_project` baked SDLC prompts now ship a
+  second `Co-authored-by: copilot-ralph
+  <copilot-ralph@users.noreply.github.com>` trailer on every
+  loop-driven commit, alongside the existing `Copilot` trailer
+  (issue #1). The new trailer attributes loop output to a
+  dedicated `copilot-ralph` GitHub account so usage is passively
+  searchable across public GitHub via `gh search commits
+  "co-authored-by:copilot-ralph@users.noreply.github.com"` —
+  zero-infrastructure analytics. Setting
+  `RALPH_NO_ATTRIBUTION=1` in the environment instructs the agent
+  to omit ONLY the `copilot-ralph` trailer; the `Copilot` trailer
+  (and `Closes #N` for `grow_project`) always ships. README adds a
+  new "Commit attribution" section disclosing the dual trailer,
+  the opt-out env var, and the caveats (public-repo-only
+  searchability via the GitHub commit-search API; opt-in-telemetry
+  framing; account-must-exist-first ordering). Two new prompt
+  pin-tests anchor the canonical noreply email and the opt-out
+  polarity ("omit" within 200 chars of `RALPH_NO_ATTRIBUTION=1`)
+  so a future edit can't silently drop the bot-account trailer or
+  invert the opt-out polarity.
+
 ### Fixes
 - README user-facing sections now name `grow_project` as the third
   loop tool throughout. Three stale spots still hardcoded the

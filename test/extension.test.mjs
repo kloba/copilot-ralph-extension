@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
-const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, SELF_IMPROVE_DEFAULTS, MAX_FOCUS_CHARS, previewOf } = __test__;
+const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_BACKLOG_ABORT_TOKEN, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf } = __test__;
 
 function makeFakeSession({ failSend = false, rejectSend = false, sendErrorMessage } = {}) {
     const sent = [];
@@ -824,6 +824,71 @@ test("self_improve actually arms with the real SDLC prompt", async () => {
     session.emit("session.idle", { data: {} });
     await new Promise((r) => setTimeout(r, 0));
     assert.equal(session.sent[0]?.prompt, PROMPT_SELF_IMPROVE);
+});
+
+test("PROMPT_GROW_PROJECT does not leak internal tool names (ralph_loop/ralph_stop/self_improve/grow_project)", () => {
+    // The baked SDLC prompt is fired into a sub-agent that has no
+    // notion of this extension's internal tool names. Leaking
+    // `ralph_loop` / `ralph_stop` / `self_improve` / `grow_project`
+    // into the prompt confuses the agent (it tries to invoke them)
+    // and couples the prompt body to extension internals. Mirror the
+    // PROMPT_SELF_IMPROVE leak guard.
+    const p = PROMPT_GROW_PROJECT;
+    assert.equal(/\bralph_loop\b/.test(p), false, "PROMPT_GROW_PROJECT must not mention ralph_loop");
+    assert.equal(/\bralph_stop\b/.test(p), false, "PROMPT_GROW_PROJECT must not mention ralph_stop");
+    assert.equal(/\bself_improve\b/.test(p), false, "PROMPT_GROW_PROJECT must not mention self_improve");
+    assert.equal(/\bgrow_project\b/.test(p), false, "PROMPT_GROW_PROJECT must not mention grow_project (it IS grow_project)");
+});
+
+test("PROMPT_GROW_PROJECT mentions every required 13-stage SDLC workflow", () => {
+    const p = PROMPT_GROW_PROJECT;
+    for (const stage of [
+        "ORIENT", "IDEATE", "SELECT", "CRITIQUE", "BASELINE",
+        "IMPLEMENT", "TEST", "ACCEPTANCE", "DEMO", "COMMIT",
+        "PUSH", "CLOSE",
+    ]) {
+        assert.match(p, new RegExp(stage), `missing stage: ${stage}`);
+    }
+    // END is the literal heading "END THE TURN"; assert the phrase
+    // explicitly so a typo in the stage label doesn't slip past the
+    // looser /END/ regex.
+    assert.match(p, /END THE TURN/, "missing END THE TURN stage heading");
+});
+
+test("PROMPT_GROW_PROJECT references the gh-issue backlog + acceptance + demo concepts", () => {
+    const p = PROMPT_GROW_PROJECT;
+    // gh CLI is the backlog substrate
+    assert.match(p, /gh issue list/, "must instruct the agent to list backlog with gh issue list");
+    assert.match(p, /gh issue create/, "must instruct the agent to create proposed issues");
+    assert.match(p, /gh issue close/, "must instruct the agent to close completed issues");
+    // Three-part completion gate
+    assert.match(p, /acceptance/i, "must reference the acceptance check");
+    assert.match(p, /demo/i, "must reference the demo invocation");
+    // Conventional-commit + Closes trailer + Co-authored-by trailer
+    assert.match(p, /Closes #/, "commit must include Closes #N trailer");
+    assert.match(p, /Co-authored-by: Copilot/, "commit must include Co-authored-by trailer");
+    // Rubber-duck stage explicitly named
+    assert.match(p, /rubber-duck/i, "CRITIQUE stage must name the rubber-duck pass");
+});
+
+test("PROMPT_GROW_PROJECT bakes COMPLETE and ABORT_NO_BACKLOG tokens + fits MAX_PROMPT_CHARS", () => {
+    const p = PROMPT_GROW_PROJECT;
+    assert.match(p, /\bCOMPLETE\b/, "must instruct agent to emit COMPLETE on success");
+    assert.match(p, new RegExp(`\\b${BAKED_BACKLOG_ABORT_TOKEN}\\b`), `must instruct agent to emit ${BAKED_BACKLOG_ABORT_TOKEN} on drained backlog`);
+    // Crucially must NOT bake the self_improve abort token; that
+    // would mis-train the agent on which signal means "no backlog"
+    // vs "no improvement".
+    assert.equal(/ABORT_NO_IMPROVEMENTS/.test(p), false, "PROMPT_GROW_PROJECT must not bake ABORT_NO_IMPROVEMENTS — that's the self_improve token");
+    assert.ok(p.length <= MAX_PROMPT_CHARS, `prompt is ${p.length} chars; cap is ${MAX_PROMPT_CHARS}`);
+});
+
+test("GROW_PROJECT_DEFAULTS exposes wider budget than self_improve", () => {
+    // Documented contract: max=200 (features take longer than polish
+    // iters), min=10 (small backlog drains naturally).
+    assert.equal(GROW_PROJECT_DEFAULTS.max_iterations, 200);
+    assert.equal(GROW_PROJECT_DEFAULTS.min_iterations, 10);
+    // Frozen so a future caller can't mutate the shared default.
+    assert.ok(Object.isFrozen(GROW_PROJECT_DEFAULTS), "GROW_PROJECT_DEFAULTS must be frozen");
 });
 
 test("self_improve appends focus text to the SDLC prompt", async () => {

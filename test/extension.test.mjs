@@ -694,6 +694,24 @@ test("grow_project refuses when grow_project is already active", async () => {
     assert.match(second.textResultForLlm, /^grow_project is already/);
 });
 
+test("self_improve refuses when self_improve is already active", async () => {
+    // Symmetry pin parallel to the grow_project self-block test above
+    // and the existing ralph_loop "arming twice" test. self_improve's
+    // handler must use the SAME activeLoopGuard plumbing — re-arming
+    // it without an intervening ralph_stop must fail with the
+    // label-aware "self_improve is already …" wording (proves armLoop's
+    // label propagation, mirroring the cross-tool tests above).
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const si = c.tools.find((x) => x.name === "self_improve");
+    const first = await si.handler({});
+    assert.equal(first.resultType, "success");
+    const second = await si.handler({});
+    assert.equal(second.resultType, "failure");
+    assert.match(second.textResultForLlm, /^self_improve is already/);
+});
+
 test("ralph_stop tears down a self_improve-armed loop", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

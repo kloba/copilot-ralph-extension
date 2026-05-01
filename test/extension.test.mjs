@@ -166,9 +166,18 @@ test("validateArgs: rejects substring overlap between completion and abort promi
     // abort contains completion → completion would always match first
     const r1 = validateArgs({ prompt: "x", completion_promise: "DONE", abort_promise: "DONE_FAIL" });
     assert.match(r1.error, /overlap/);
+    // Pin diagnosability: BOTH colliding values must appear in the message
+    // so the user can immediately see which two phrases need to change.
+    // (Same rationale as the identity-check test above.) Without this lock
+    // a future "simplification" of the message could silently drop one
+    // value and leave operators guessing which side to edit.
+    assert.match(r1.error, /"DONE"/);
+    assert.match(r1.error, /"DONE_FAIL"/);
     // completion contains abort → abort would always match too
     const r2 = validateArgs({ prompt: "x", completion_promise: "ALL_DONE", abort_promise: "DONE" });
     assert.match(r2.error, /overlap/);
+    assert.match(r2.error, /"ALL_DONE"/);
+    assert.match(r2.error, /"DONE"/);
     // disjoint phrases pass
     assert.ok(validateArgs({ prompt: "x", completion_promise: "COMPLETE", abort_promise: "ABORT" }).value);
 });

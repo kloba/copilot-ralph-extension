@@ -690,8 +690,7 @@ export function createRalphController() {
                     const shape = validateArgShape("ralph_stop", args, RALPH_STOP_KEYS);
                     if (shape) return failure(shape.error);
                 }
-                const i = state.active.i;
-                const max = state.active.max;
+                const { i, max } = state.active;
                 // args is now either null/undefined or a validated object
                 // (validateArgShape above rejected arrays and non-objects).
                 const reason = args?.reason;

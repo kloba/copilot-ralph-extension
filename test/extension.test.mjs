@@ -617,6 +617,25 @@ test("self_improve stamps state.active.label and lastResult.label", async () => 
     assert.equal(c.state.lastResult.label, "self_improve");
 });
 
+test("self_improve per-iteration log line uses self_improve label, not ralph_loop", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const si = c.tools.find((x) => x.name === "self_improve");
+    await si.handler({ max_iterations: 5 });
+    // Drive one iteration: arm-time idle fires iter 1.
+    session.emit("session.idle", { data: {} });
+    await new Promise((r) => setTimeout(r, 0));
+    assert.ok(
+        session.logs.some((l) => /^🔁 self_improve iter 1\/5/.test(l)),
+        `expected "🔁 self_improve iter 1/5" log line, got: ${JSON.stringify(session.logs)}`,
+    );
+    assert.ok(
+        !session.logs.some((l) => /^🔁 ralph_loop iter/.test(l)),
+        "must not leak ralph_loop label into a self_improve-armed iteration",
+    );
+});
+
 test("ralph_loop stamps state.active.label and lastResult.label", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

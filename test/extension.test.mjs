@@ -627,6 +627,73 @@ test("ralph_loop refuses when self_improve is already active", async () => {
     assert.match(r.textResultForLlm, /^self_improve is already/);
 });
 
+test("grow_project refuses when ralph_loop is already active", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const ralph = c.tools.find((x) => x.name === "ralph_loop");
+    const gp = c.tools.find((x) => x.name === "grow_project");
+    await ralph.handler({ prompt: "go", max_iterations: 5 });
+    const r = await gp.handler({});
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /^ralph_loop is already/);
+});
+
+test("grow_project refuses when self_improve is already active", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const si = c.tools.find((x) => x.name === "self_improve");
+    const gp = c.tools.find((x) => x.name === "grow_project");
+    await si.handler({});
+    const r = await gp.handler({});
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /^self_improve is already/);
+});
+
+test("ralph_loop refuses when grow_project is already active", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const ralph = c.tools.find((x) => x.name === "ralph_loop");
+    const gp = c.tools.find((x) => x.name === "grow_project");
+    const armed = await gp.handler({});
+    assert.equal(armed.resultType, "success");
+    const r = await ralph.handler({ prompt: "go", max_iterations: 5 });
+    assert.equal(r.resultType, "failure");
+    // Label-aware wording: the active loop was armed by grow_project, so
+    // the error must say "grow_project is already …" — proves armLoop's
+    // label propagates through the activeLoopGuard error message.
+    assert.match(r.textResultForLlm, /^grow_project is already/);
+});
+
+test("self_improve refuses when grow_project is already active", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const si = c.tools.find((x) => x.name === "self_improve");
+    const gp = c.tools.find((x) => x.name === "grow_project");
+    await gp.handler({});
+    const r = await si.handler({});
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /^grow_project is already/);
+});
+
+test("grow_project refuses when grow_project is already active", async () => {
+    // Re-arming the same loop tool must also fail: the second handler
+    // call sees the first as active and bails. Proves
+    // activeLoopGuard()'s symmetry across the new tool.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const gp = c.tools.find((x) => x.name === "grow_project");
+    const first = await gp.handler({});
+    assert.equal(first.resultType, "success");
+    const second = await gp.handler({});
+    assert.equal(second.resultType, "failure");
+    assert.match(second.textResultForLlm, /^grow_project is already/);
+});
+
 test("ralph_stop tears down a self_improve-armed loop", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

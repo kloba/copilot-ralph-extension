@@ -351,6 +351,29 @@ test("validateArgs success returns exactly the documented value shape (no stray 
     assert.equal(r2.value.abortPromise, null);
 });
 
+test("state.active: arming sets exactly the documented 13-field ActiveLoopState shape", async () => {
+    // The ActiveLoopState typedef enumerates 13 fields. Pin the exact
+    // key set and initial values so future refactors that add or rename
+    // a field have to update both the typedef and this test in lockstep.
+    const { session, controller } = await arm({ max_iterations: 7, min_iterations: 2, abort_promise: "FAIL", stagnation_limit: 4 });
+    const a = controller.state.active;
+    assert.deepEqual(Object.keys(a).sort(), [
+        "abortPromise", "completionPromise", "fireInFlight", "i",
+        "max", "min", "observedMessageThisFire", "pendingFire",
+        "prev", "prompt", "stagnationLimit", "startedAt", "streak",
+    ]);
+    assert.equal(a.i, 0);
+    assert.equal(a.prev, null);
+    assert.equal(a.streak, 0);
+    assert.equal(a.pendingFire, true);
+    assert.equal(a.fireInFlight, false);
+    assert.equal(a.observedMessageThisFire, false);
+    assert.equal(typeof a.startedAt, "number");
+    assert.ok(a.startedAt > 0);
+    void session;
+});
+
+
 test("controller exposes ralph_loop and ralph_stop tools and hooks", () => {
     const c = createRalphController();
     assert.deepEqual(c.tools.map((t) => t.name).sort(), ["ralph_loop", "ralph_stop"]);

@@ -797,9 +797,10 @@ export function createRalphController() {
             // A stale detach (e.g. one returned by a previous attach() that has
             // since been superseded) must NOT touch state.active — that would
             // kill the loop running on the newer session.
-            if (currentDetach === detach && state.active) finish("detached");
+            const isCurrent = currentDetach === detach;
+            if (isCurrent && state.active) finish("detached");
             unsubscribeAll();
-            if (currentDetach === detach) currentDetach = null;
+            if (isCurrent) currentDetach = null;
             if (sessionRef === session) sessionRef = null;
         };
         currentDetach = detach;

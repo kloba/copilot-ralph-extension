@@ -39,9 +39,8 @@ const VERB_BY_REASON = Object.freeze({
     aborted: "⚠️ ended",
 });
 
-// Find a slice length ≤ `cut` that doesn't split a UTF-16 surrogate
-// pair (4-byte chars like emoji). Used by both previewOf and truncateNote
-// so a string ending mid-emoji never produces an invalid lone surrogate.
+// Find a slice length ≤ `cut` that doesn't split a UTF-16 surrogate pair
+// (4-byte chars like emoji), so we never produce a lone-surrogate tail.
 function safeSliceEnd(s, cut) {
     const code = s.charCodeAt(cut - 1);
     return code >= 0xd800 && code <= 0xdbff ? cut - 1 : cut;

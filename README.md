@@ -122,7 +122,7 @@ If no loop is active it returns `resultType: "failure"` with the message `ralph_
 ```
 
 The actual loop **outcome** (iteration count, reason, timing) is surfaced in two ways:
-- `session.log` markers visible in the timeline (`🔁 ralph_loop iter 4/20 (elapsed 12345ms)`, `✅ completed ralph_loop after 4 iterations (reason: completion_promise, 12345ms)`).
+- `session.log` markers visible in the timeline (`🔁 ralph_loop iter 4/20 (elapsed 12345ms)`, `✅ completed ralph_loop after 4 iterations (reason: completion_promise, 12345ms)`). The closing-line verb depends on the finish reason: ✅ *completed* (`completion_promise`), ⚠️ *ended* (`send_error`, `aborted`), and ⏹ *stopped* for everything else (`max_iterations`, `abort_promise`, `stagnation`, `user_stopped`, `detached`).
 - An `additionalContext` injection on the *next* `onUserPromptSubmitted` hook so the agent silently learns the loop finished and why (`[ralph_loop just finished — iterations=4, reason=completion_promise, durationMs=12345]`).
 
 The full structured result (available via `controller.state.lastResult` for embedders):

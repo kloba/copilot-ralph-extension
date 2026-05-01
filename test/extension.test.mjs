@@ -917,6 +917,20 @@ test("ralph_stop accepts an optional reason and records it as note", async () =>
     assert.equal(controller.state.lastResult.note, "user changed plan");
 });
 
+test("ralph_stop trims surrounding whitespace from reason before storing as note", async () => {
+    // The trim happens at handler.mjs ~line 651 (`reason.trim()`). Without
+    // this pin, a future change that stored the raw value would surface
+    // padded notes ("  hello  ") in the additionalContext bracket and the
+    // single-line log marker — visually noisy and the `(  hello  )`
+    // suffix in the user-facing text would look like a formatting bug.
+    const { stop, controller, session } = await arm({ max_iterations: 5 });
+    runTurn(session, "still working");
+    const r = await stop.handler({ reason: "  hello world  \n" });
+    assert.equal(r.note, "hello world", "structured note must be trimmed");
+    assert.equal(controller.state.lastResult.note, "hello world");
+    assert.match(r.textResultForLlm, /\(hello world\)\.$/, "user-facing suffix must use the trimmed value verbatim");
+});
+
 test("ralph_stop with empty/whitespace-only reason silently drops it (note=undefined)", async () => {
     // The note path requires `reason.trim()` to be non-empty (handler.mjs
     // ~line 634). An empty-string or whitespace-only reason is treated

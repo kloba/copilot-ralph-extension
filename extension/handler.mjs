@@ -360,10 +360,9 @@ export function createRalphController() {
         }
         armedFor.fireInFlight = true;
         armedFor.observedMessageThisFire = false;
-        // kind: "rejected" (async rejection) or "failed" (sync throw). Both
-        // prefixes are part of the public log/note contract — operators rely
-        // on them to tell which code path produced the error. boundedNoteForLog
-        // caps the log line; finish() does its own truncate on result.note.
+        // kind: "rejected" (async rejection) or "failed" (sync throw) — both prefixes
+        // are part of the public log/note contract. boundedNoteForLog caps the log
+        // line; finish() does its own truncate on result.note.
         const handleSendFailure = (err, kind) => {
             if (state.active !== armedFor) return;
             armedFor.fireInFlight = false;

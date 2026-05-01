@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
-const { MAX_PROMISE_CHARS, PREVIEW_CHARS, previewOf } = __test__;
+const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, previewOf } = __test__;
 
 function makeFakeSession({ failSend = false, rejectSend = false, sendErrorMessage } = {}) {
     const sent = [];
@@ -397,29 +397,37 @@ test("ralph_loop tool spec declares numeric ranges (minimum/maximum) on integer 
     const c = createRalphController();
     const t = c.tools.find((x) => x.name === "ralph_loop");
     const p = t.parameters.properties;
-    // max_iterations: 1..1000
+    // max_iterations: 1..MAX_ALLOWED_ITERATIONS — bound to the runtime cap
+    // so a future bump to MAX_ALLOWED_ITERATIONS automatically widens the
+    // schema (or, if missed, fails this test loudly instead of silently
+    // letting the schema advertise a stale ceiling).
     assert.equal(p.max_iterations.minimum, 1);
-    assert.equal(p.max_iterations.maximum, 1000);
-    // min_iterations: 1..1000
+    assert.equal(p.max_iterations.maximum, MAX_ALLOWED_ITERATIONS);
+    // min_iterations: same bound (validateArgs further constrains to <= max)
     assert.equal(p.min_iterations.minimum, 1);
+    assert.equal(p.min_iterations.maximum, MAX_ALLOWED_ITERATIONS);
     // stagnation_limit: ≥ 0 (0 disables) AND not: const 1 (runtime rejects 1
     // because no comparison is possible after a single response — schema
     // guard surfaces this constraint to LLM clients up front).
     assert.equal(p.stagnation_limit.minimum, 0);
     assert.deepEqual(p.stagnation_limit.not, { const: 1 });
-    // completion_promise / abort_promise: minLength=1 (no empty strings)
+    // completion_promise / abort_promise: minLength=1 + maxLength locked
+    // to MAX_PROMISE_CHARS so a runtime cap change ripples to the schema.
     assert.equal(p.completion_promise.minLength, 1);
+    assert.equal(p.completion_promise.maxLength, MAX_PROMISE_CHARS);
     assert.equal(p.abort_promise.minLength, 1);
-    // prompt: minLength=1, maxLength=65536 (matches MAX_PROMPT_CHARS guard)
+    assert.equal(p.abort_promise.maxLength, MAX_PROMISE_CHARS);
+    // prompt: minLength=1, maxLength locked to MAX_PROMPT_CHARS guard
     assert.equal(p.prompt.minLength, 1);
-    assert.equal(p.prompt.maxLength, 65536);
+    assert.equal(p.prompt.maxLength, MAX_PROMPT_CHARS);
 });
 
 test("ralph_stop tool spec declares maxLength on optional reason", () => {
     const c = createRalphController();
     const t = c.tools.find((x) => x.name === "ralph_stop");
-    // Matches PREVIEW_CHARS / truncateNote cap so clients learn the bound up-front.
-    assert.equal(t.parameters.properties.reason.maxLength, 500);
+    // Locked to PREVIEW_CHARS / truncateNote cap so clients learn the bound up-front
+    // and a runtime cap change automatically updates the schema.
+    assert.equal(t.parameters.properties.reason.maxLength, PREVIEW_CHARS);
 });
 
 test("schema `default` fields stay in lockstep with the DEFAULTS source-of-truth", () => {

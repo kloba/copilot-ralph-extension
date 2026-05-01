@@ -209,9 +209,8 @@ function resolveOptionalPromise(fieldName, raw, fallback, opts) {
     return validatePromiseField(fieldName, raw, opts);
 }
 
-// Type-check + Number() coerce for the three integer-valued fields
-// (max_iterations / min_iterations / stagnation_limit). Range
-// validation stays at the call site since each field's bounds differ.
+// Type-check + Number() coerce for max/min_iterations and stagnation_limit.
+// Range validation stays at the call site since each field's bounds differ.
 function coerceNumberField(fieldName, raw) {
     if (typeof raw !== "number" && typeof raw !== "string") {
         return { error: `ralph_loop: ${fieldName} must be a number (got ${describeArgType(raw)}).` };

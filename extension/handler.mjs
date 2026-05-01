@@ -166,6 +166,26 @@ const RALPH_LOOP_KEYS = new Set([
 ]);
 const RALPH_STOP_KEYS = new Set(["reason"]);
 
+// Validate completion_promise / abort_promise once. Both fields share the
+// same shape rules (string, non-whitespace, ≤ MAX_PROMISE_CHARS, trimmed
+// before substring matching so a stray `"  COMPLETE\n"` still finds a
+// clean `COMPLETE` in the assistant's reply). The only difference is the
+// "when provided," interjection in the empty-string error for abort_promise,
+// since completion_promise has a default while abort_promise doesn't.
+function validatePromiseField(fieldName, raw, { whenProvided = false } = {}) {
+    if (typeof raw !== "string") {
+        return { error: `ralph_loop: ${fieldName} must be a string (got ${describeArgType(raw)}).` };
+    }
+    if (raw.trim().length === 0) {
+        const interjection = whenProvided ? ", when provided," : "";
+        return { error: `ralph_loop: ${fieldName}${interjection} must contain at least one non-whitespace character.` };
+    }
+    if (raw.length > MAX_PROMISE_CHARS) {
+        return { error: `ralph_loop: ${fieldName} exceeds ${MAX_PROMISE_CHARS} characters (got ${raw.length}). Use a short signal phrase.` };
+    }
+    return { value: raw.trim() };
+}
+
 /**
  * Validate ralph_loop arguments.
  *
@@ -219,34 +239,16 @@ export function validateArgs(args) {
 
     let completionPromise = DEFAULTS.completion_promise;
     if (args.completion_promise !== undefined && args.completion_promise !== null) {
-        if (typeof args.completion_promise !== "string") {
-            return { error: `ralph_loop: completion_promise must be a string (got ${describeArgType(args.completion_promise)}).` };
-        }
-        if (args.completion_promise.trim().length === 0) {
-            return { error: "ralph_loop: completion_promise must contain at least one non-whitespace character." };
-        }
-        if (args.completion_promise.length > MAX_PROMISE_CHARS) {
-            return { error: `ralph_loop: completion_promise exceeds ${MAX_PROMISE_CHARS} characters (got ${args.completion_promise.length}). Use a short signal phrase.` };
-        }
-        // Trim padding so a copy-paste artifact like `"  COMPLETE\n"` still
-        // matches a clean `COMPLETE` in the assistant's reply. Without this
-        // the substring check requires exact surrounding whitespace and the
-        // loop silently never terminates.
-        completionPromise = args.completion_promise.trim();
+        const r = validatePromiseField("completion_promise", args.completion_promise);
+        if (r.error) return r;
+        completionPromise = r.value;
     }
 
     let abortPromise = null;
     if (args.abort_promise !== undefined && args.abort_promise !== null) {
-        if (typeof args.abort_promise !== "string") {
-            return { error: `ralph_loop: abort_promise must be a string (got ${describeArgType(args.abort_promise)}).` };
-        }
-        if (args.abort_promise.trim().length === 0) {
-            return { error: "ralph_loop: abort_promise, when provided, must contain at least one non-whitespace character." };
-        }
-        if (args.abort_promise.length > MAX_PROMISE_CHARS) {
-            return { error: `ralph_loop: abort_promise exceeds ${MAX_PROMISE_CHARS} characters (got ${args.abort_promise.length}). Use a short signal phrase.` };
-        }
-        abortPromise = args.abort_promise.trim();
+        const r = validatePromiseField("abort_promise", args.abort_promise, { whenProvided: true });
+        if (r.error) return r;
+        abortPromise = r.value;
     }
 
     if (abortPromise !== null && abortPromise === completionPromise) {

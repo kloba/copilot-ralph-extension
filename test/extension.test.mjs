@@ -812,6 +812,26 @@ test("calling ralph_stop twice in a row: 2nd call reports no active loop", async
 
 // ── hook ──────────────────────────────────────────────────────────────────
 
+test("onUserPromptSubmitted surfaces send_error note (Error message) in additionalContext", async () => {
+    // After a send failure, the next user prompt's bracketed context must
+    // include both reason=send_error and note=<error message> so the agent
+    // learns *why* the loop ended rather than just "it ended". Pins the
+    // wiring from finish('send_error', err.message) → state.lastResult.note
+    // → onUserPromptSubmitted bracket.
+    const session = makeFakeSession({ failSend: true });
+    const c = createRalphController();
+    c.attach(session);
+    await c.tools[0].handler({ prompt: "go", max_iterations: 5 });
+    session.emit("session.idle", { data: {} });
+    assert.equal(c.state.lastResult.reason, "send_error");
+    const r = await c.hooks.onUserPromptSubmitted({ prompt: "next" });
+    assert.match(r.additionalContext, /reason=send_error/);
+    assert.match(r.additionalContext, /note=send failed: simulated send failure/);
+    // No raw newlines should make it into the bracket even if the underlying
+    // error stack had them — collapseNote flattens them.
+    assert.equal(r.additionalContext.includes("\n"), false);
+});
+
 test("onUserPromptSubmitted injects additionalContext exactly once after a finish", async () => {
     const { session, controller } = await arm({ max_iterations: 5 });
     session.emit("session.idle", { data: {} });

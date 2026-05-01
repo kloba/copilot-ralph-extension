@@ -755,10 +755,9 @@ export function createRalphController() {
                 sessionRef = null;
                 throw err;
             }
-            // Per SDK contract session.on() returns an unsubscribe fn.
-            // If it returns anything else we can't remove the listener
-            // on detach (a leak), but we can't crash the install either —
-            // log loudly with the event name so it's debuggable.
+            // Per SDK contract session.on() returns an unsubscribe fn. If
+            // we got something else we can't remove the listener on detach
+            // — log loudly so the leak is debuggable.
             if (typeof ret === "function") {
                 unsubs.push(ret);
             } else {

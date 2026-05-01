@@ -839,6 +839,20 @@ export function createRalphController() {
                 const prompt = focus
                     ? `${PROMPT_SELF_IMPROVE}\n\nFocus this run on: ${focus}`
                     : PROMPT_SELF_IMPROVE;
+                // Footgun guard: PROMPT_SELF_IMPROVE bakes in "emit COMPLETE"
+                // and "emit ABORT_NO_IMPROVEMENTS" as the literal signal
+                // tokens. If the caller overrides completion_promise /
+                // abort_promise to anything else, the prompt instructs the
+                // agent to emit one token while the runtime watches for
+                // another — silently running to max_iterations on an
+                // otherwise-successful loop. Emit a single arm-time warning
+                // so the mismatch is visible in the timeline.
+                if (typeof a.completion_promise === "string" && a.completion_promise.trim() && a.completion_promise.trim() !== DEFAULTS.completion_promise) {
+                    log(`self_improve: warning — completion_promise=${JSON.stringify(a.completion_promise.trim())} differs from the baked SDLC prompt's "${DEFAULTS.completion_promise}" emit instruction; loop may run to max_iterations.`);
+                }
+                if (typeof a.abort_promise === "string" && a.abort_promise.trim() && a.abort_promise.trim() !== "ABORT_NO_IMPROVEMENTS") {
+                    log(`self_improve: warning — abort_promise=${JSON.stringify(a.abort_promise.trim())} differs from the baked SDLC prompt's "ABORT_NO_IMPROVEMENTS" emit instruction; abort signal may never fire.`);
+                }
                 const parsed = validateArgs({
                     prompt,
                     max_iterations: a.max_iterations ?? SELF_IMPROVE_DEFAULTS.max_iterations,

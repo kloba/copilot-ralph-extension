@@ -403,6 +403,26 @@ test("state.active: arming sets exactly the documented 13-field ActiveLoopState 
 });
 
 
+test("controller instances are independent (state is closure-private, not module-level)", () => {
+    // createRalphController returns a NEW closure each call. Tests already
+    // exercise this implicitly by using two controllers in some scenarios,
+    // but a future refactor that hoisted `state` (or any of the closures
+    // it owns — `tools`, `hooks`, the active timer) to module scope would
+    // be undetectable except via cross-instance leakage. Pin it.
+    const a = createRalphController();
+    const b = createRalphController();
+    assert.notStrictEqual(a, b);
+    assert.notStrictEqual(a.state, b.state);
+    assert.notStrictEqual(a.tools, b.tools);
+    assert.notStrictEqual(a.hooks, b.hooks);
+    // Mutate a's state via the public path (arming requires a session, so
+    // poke the lastResult slot directly is enough — the freeze on
+    // lastResult is per-result, not on the state container).
+    a.state.lastAssistantContent = "tainted";
+    assert.equal(b.state.lastAssistantContent, "");
+});
+
+
 test("controller exposes ralph_loop and ralph_stop tools and hooks", () => {
     const c = createRalphController();
     assert.deepEqual(c.tools.map((t) => t.name).sort(), ["ralph_loop", "ralph_stop"]);

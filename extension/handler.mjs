@@ -710,10 +710,9 @@ export function createRalphController() {
             currentDetach = null;
         }
         sessionRef = session;
-        // Wire the three session events we care about. Subscribing
-        // one-at-a-time + tracking unsubs lets us roll back cleanly if
-        // session.on throws partway through — without rollback the
-        // earlier listeners would leak.
+        // Wire the three session events. Subscribing one-at-a-time + tracking
+        // unsubs lets us roll back if session.on throws partway through;
+        // without rollback the earlier listeners would leak.
         const unsubs = [];
         // Best-effort teardown: swallow per-unsub throws so one buggy listener
         // can't strand the rest. Shared by subscribeOrFail's rollback and detach.

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -4649,6 +4649,37 @@ test("ARCHITECTURE.md tool surface table lists every registered tool", () => {
             `docs/ARCHITECTURE.md must mention the registered tool ${tool.name} in the Tool surface table`,
         );
     }
+});
+
+test("install.sh FILES array matches actual extension/*.mjs on disk", () => {
+    // Drift guard. install.sh hardcodes
+    //   FILES=(extension.mjs handler.mjs events-emit.mjs)
+    // so each post-copy verification is targeted and refuses to ship a
+    // half-written tree. The downside: if a future contributor adds
+    // `extension/foo.mjs` without updating install.sh, the new file
+    // silently fails to install — the user-scoped Copilot CLI extension
+    // dir would be missing it, and Copilot would crash importing a
+    // non-existent module. (CI's `node --check` got the same drift bug
+    // fixed in b4c0ff1 — this is the install-time companion.)
+    //
+    // Cheap fix: assert the FILES list parsed out of install.sh matches
+    // the set of `*.mjs` files actually present under `extension/`.
+    const installSh = readFileSync(resolve(REPO_ROOT, "install.sh"), "utf8");
+    const m = installSh.match(/^FILES=\(([^)]*)\)/m);
+    assert.ok(m, "install.sh must declare FILES=(...) on its own line");
+    const declared = m[1]
+        .split(/\s+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .sort();
+    const onDisk = readdirSync(resolve(REPO_ROOT, "extension"))
+        .filter((f) => f.endsWith(".mjs"))
+        .sort();
+    assert.deepEqual(
+        declared,
+        onDisk,
+        "install.sh FILES list and extension/*.mjs disagree — update install.sh whenever you add or remove a sibling .mjs in extension/",
+    );
 });
 
 // ── token tracking (issue #7) ─────────────────────────────────────────────

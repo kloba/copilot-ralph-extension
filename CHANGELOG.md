@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Tests
+- Add a drift-guard test that asserts `install.sh`'s
+  hardcoded `FILES=(extension.mjs handler.mjs
+  events-emit.mjs)` array matches the actual set of
+  `*.mjs` files under `extension/` on disk. Closes
+  the install-time half of the same drift class CI's
+  `node --check` got fixed for in b4c0ff1: today, if
+  a contributor adds `extension/foo.mjs` without also
+  updating `install.sh`, the new module silently
+  fails to install — the user-scoped Copilot CLI
+  extension dir would be missing it and Copilot would
+  crash on import. The test parses the literal
+  `FILES=(...)` declaration out of `install.sh` and
+  compares to `readdirSync('extension')` filtered to
+  `.mjs`. Surgical: the install script keeps its
+  explicit list (so post-copy verification stays
+  targeted) but is now mechanically guarded against
+  going stale.
+
 ### Fixes
 - `packages/tui/src/writer.mjs` — harden `pruneRuns`
   against the same path-traversal class

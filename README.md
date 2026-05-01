@@ -185,7 +185,7 @@ controller.attach(session);    // wires session.idle / assistant.message / abort
 | `session.idle` | The heartbeat. The first idle after arming is the turn that *called* `ralph_loop` — that fires iteration 1's prompt. Each subsequent idle runs the decision ladder: completion → abort → stagnation → max → otherwise re-fire. |
 | `abort` | Finalizes the loop with `reason: "aborted"` (and `note` if the SDK supplies a reason). |
 
-Re-firing means calling `session.send({ prompt })` — fire-and-forget. Each call **enqueues a new user-turn** in the live conversation, which is why every iteration shows up in the timeline as a real user prompt followed by a real assistant turn (not some hidden background invocation).
+Re-firing means calling `session.send({ prompt })` and not awaiting the response synchronously — the next iteration is driven by the next `session.idle`. The returned promise *is* still observed for rejection: an async send-failure finishes the loop with `reason: "send_error"` rather than silently dropping the iteration. Each call **enqueues a new user-turn** in the live conversation, which is why every iteration shows up in the timeline as a real user prompt followed by a real assistant turn (not some hidden background invocation).
 
 Decision ladder per `session.idle` (in order, first match wins):
 

@@ -543,6 +543,14 @@ test("self_improve tool is exposed (stub)", () => {
     assert.ok(t.parameters && t.parameters.type === "object");
 });
 
+test("self_improve description tells the LLM about ralph_stop and single-loop guard", () => {
+    const c = createRalphController();
+    const t = c.tools.find((x) => x.name === "self_improve");
+    assert.match(t.description, /ralph_stop/, "must point users at ralph_stop for cancellation");
+    assert.match(t.description, /one loop|single loop/i, "must mention single-loop-per-session");
+    assert.match(t.description, /SDLC/i);
+});
+
 test("self_improve arms with max=100 min=5 defaults", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

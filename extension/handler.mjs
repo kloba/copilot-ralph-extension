@@ -720,7 +720,7 @@ export function createRalphController() {
         {
             name: "self_improve",
             description:
-                "Arms ralph_loop with a baked-in, project-agnostic SDLC self-improvement prompt (orient → ideate → critique → baseline → implement → test → commit → push → COMPLETE). Optional `focus` string narrows the run to a specific area without altering the SDLC scaffolding.",
+                "Arms ralph_loop with a baked-in, project-agnostic SDLC self-improvement prompt (orient → ideate → critique → baseline → implement → test → commit → push → COMPLETE), suitable for any repo. Optional `focus` string narrows the run to a specific area without altering the SDLC scaffolding. Only one loop runs per session; cancel with ralph_stop. Returns failure if a ralph_loop or self_improve is already active.",
             parameters: {
                 type: "object",
                 properties: {

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Documentation
+- `docs/ARCHITECTURE.md` — fix three drift points so the
+  contributor-facing architecture doc matches reality:
+  (1) the **Source layout** tree was missing
+  `extension/events-emit.mjs`, `test/events-emit.test.mjs`,
+  `test/handler-events.test.mjs`, and the entire
+  `packages/tui/` directory; (2) the **Tool surface**
+  table was missing the `ralph_pause` and `ralph_resume`
+  rows even though both tools have shipped (issue #3);
+  (3) the **Notable fields** list omitted the pause-state
+  fields (`paused` / `pauseReason` / `pausedAt` /
+  `totalPausedMs`) and how `ralph_resume` zeroes the
+  streak detector and folds `pausedFor` into
+  `totalPausedMs`. Add a load-time test
+  (`ARCHITECTURE.md tool surface table lists every
+  registered tool`) that walks `controller.tools` and
+  asserts every registered tool name appears in the
+  table — preventing this kind of drift on future tool
+  additions.
+
 ### Tests
 - Add 7 direct unit tests for `aggregateRuns` in
   `packages/tui/test/writer.test.mjs`. Until now this

@@ -4631,6 +4631,26 @@ test("README documents both Co-authored-by trailers and RALPH_NO_ATTRIBUTION opt
     assert.ok(copilotIdx < ralphIdx, `README must list Copilot trailer (idx ${copilotIdx}) BEFORE copilot-ralph trailer (idx ${ralphIdx}) — GitHub UI surfaces the first co-author more prominently`);
 });
 
+test("ARCHITECTURE.md tool surface table lists every registered tool", () => {
+    // Pin the docs↔code agreement: the ARCHITECTURE.md "Tool surface"
+    // table is the canonical map of what this extension exposes for
+    // contributors and future-self maintenance. If a new tool ever
+    // ships without a row here, contributors won't know it exists;
+    // if a tool is renamed without updating the table, the docs go
+    // stale on day one. This test fails fast in either case.
+    const arch = readFileSync(resolve(REPO_ROOT, "docs/ARCHITECTURE.md"), "utf8");
+    const c = createRalphController();
+    for (const tool of c.tools) {
+        // Each row uses backtick-wrapped tool name in the leading cell,
+        // e.g. `| \`ralph_pause\` | …`.
+        const needle = `\`${tool.name}\``;
+        assert.ok(
+            arch.includes(needle),
+            `docs/ARCHITECTURE.md must mention the registered tool ${tool.name} in the Tool surface table`,
+        );
+    }
+});
+
 // ── token tracking (issue #7) ─────────────────────────────────────────────
 
 function emitUsage(session, { input, output, model = "claude-opus-4.7", content = "ok" }) {

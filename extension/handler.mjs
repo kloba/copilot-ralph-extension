@@ -649,9 +649,8 @@ export function createRalphController() {
             if (!state.lastResult) return;
             const { iterations, reason, note, durationMs } = state.lastResult;
             state.lastResult = null;
-            // Collapse whitespace so a multi-line note (e.g. an Error stack
-            // surfaced via send_error) doesn't break the bracketed context
-            // line presented to the agent.
+            // Collapse whitespace so a multi-line note (e.g. an Error stack from
+            // send_error) doesn't break the bracketed context line.
             const noteOneLine = collapseNote(note);
             const ctx = `[ralph_loop just finished — iterations=${iterations}, reason=${reason}${noteOneLine ? `, note=${noteOneLine}` : ""}, durationMs=${durationMs}]`;
             log(`ralph_loop: injecting post-loop context into next user prompt (reason=${reason}, iterations=${iterations})`);

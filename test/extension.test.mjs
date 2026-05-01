@@ -1084,6 +1084,26 @@ test("PROMPT_GROW_PROJECT references the gh-issue backlog + acceptance + demo co
     //     soften either side.
     assert.match(p, /checkbox list/i, "IDEATE acceptance criteria must be specified as a checkbox list");
     assert.match(p, /machine-checkable/i, "IDEATE acceptance criteria must be machine-checkable, not subjective");
+    // Multi-language ORIENT — grow_project is meant to run on
+    // any project, not just JS. Without explicit examples of
+    // non-JS manifests (pyproject.toml/Cargo.toml/go.mod), an
+    // iter could simplify the orient stage to "skim README and
+    // package.json", silently neutering the tool for Rust /
+    // Python / Go projects (it would orient on README only,
+    // missing the dependency / build context). Pin at least
+    // the three non-JS manifests by name.
+    assert.match(p, /pyproject\.toml/i, "ORIENT must reference pyproject.toml for Python project parity");
+    assert.match(p, /Cargo\.toml/i, "ORIENT must reference Cargo.toml for Rust project parity");
+    assert.match(p, /go\.mod/i, "ORIENT must reference go.mod for Go project parity");
+    // Multi-language TEST-command detection — same parity
+    // concern at the test-runner level. Without explicit
+    // examples (pytest, cargo test, go test), the prompt could
+    // be read as JS-only and shipped features on a Python
+    // project would never run their actual test suite. Pin at
+    // least the three non-npm runners.
+    assert.match(p, /pytest/i, "ORIENT must reference pytest as a detectable test runner");
+    assert.match(p, /cargo test/i, "ORIENT must reference cargo test as a detectable test runner");
+    assert.match(p, /go test/i, "ORIENT must reference go test as a detectable test runner");
 });
 
 test("both baked prompts retain the cwd guardrail and the trigger-phrase footgun caveat", () => {

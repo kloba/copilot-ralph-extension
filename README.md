@@ -6,6 +6,7 @@
 [![Inspired by](https://img.shields.io/badge/inspired_by-Anthropic_Ralph_Wiggum-blue)](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)
 
 **Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [Inspecting a running loop](#inspecting-a-running-loop-ralph_status-tool) · [Adaptive budget](#adaptive-iteration-budget) · [Documentation](#documentation) · [How it works](#how-it-works) · [Commit attribution](#commit-attribution) · [Keep system awake](#keep-system-awake-caffeinate-macos) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)
+**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [Pause/resume](#pause-and-resume) · [How it works](#how-it-works) · [Commit attribution](#commit-attribution) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)
 
 ## What is Ralph Wiggum?
 
@@ -322,6 +323,22 @@ ralph_loop({
 ```
 
 Each granted extension is logged (`adaptive budget extended N → M (reason: …)`) and surfaced on the loop's final `RalphResult` as `result.adaptive = { enabled, originalMax, effectiveMax, extensions, history }`.
+## Pause and resume
+
+Long autonomous runs sometimes need a manual checkpoint — to read a diff, run tests by hand, fix something, then continue. `ralph_pause` and `ralph_resume` (issue [#3](https://github.com/kloba/copilot-ralph-extension/issues/3)) let you do that without losing iteration count or conversation context:
+
+```js
+ralph_pause({ reason: "manual review of the refactor" });
+// …chat freely with the agent. Those turns do NOT count toward max_iterations.
+ralph_resume();
+```
+
+- The currently-running iteration finishes normally; subsequent `session.idle` events are short-circuited until `ralph_resume`.
+- Iteration counter, prompt, and full conversation context are preserved across the pause.
+- `ralph_resume` resets the stagnation streak (manual intervention almost always changes context, so a post-resume identical-to-pre-pause turn must NOT be misclassified as stuck).
+- `ralph_pause` is idempotent: pausing an already-paused loop is a no-op success.
+- `ralph_stop` works while paused and terminates the loop.
+- `ralph_resume` on a non-paused loop is a failure (use `ralph_pause` first).
 
 ## How it works
 

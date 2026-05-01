@@ -68,9 +68,8 @@ function pluralS(n) {
     return n === 1 ? "" : "s";
 }
 
-// Truncate `note` to PREVIEW_CHARS without splitting a surrogate pair —
-// same risk as previewOf since notes can carry user-supplied or error
-// strings containing emoji or other 4-byte chars.
+// Truncate `note` to PREVIEW_CHARS without splitting a surrogate pair (notes
+// can carry user-supplied or error strings containing 4-byte chars like emoji).
 function truncateNote(text) {
     const s = String(text);
     if (s.length <= PREVIEW_CHARS) return s;

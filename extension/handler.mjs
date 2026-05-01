@@ -459,9 +459,8 @@ export function createRalphController() {
         // Accumulate across multiple assistant.message events within the same
         // turn (the SDK can emit several distinct messages per turn). The
         // accumulator is reset on each iteration fire-out.
-        const next = state.lastAssistantContent
-            ? state.lastAssistantContent + "\n" + text
-            : text;
+        const prev = state.lastAssistantContent;
+        const next = prev ? `${prev}\n${text}` : text;
         // Bound memory: drop oldest content past the cap. The completion /
         // abort / stagnation checks only ever inspect this string, and a
         // 1 MiB tail is more than enough to find any reasonable signal.

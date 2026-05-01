@@ -419,9 +419,8 @@ export function createRalphController() {
     const onAssistantMessage = (ev) => {
         const text = ev?.data?.content;
         if (typeof text !== "string") return;
-        // Ignore sub-agent messages — they're not part of the root
-        // agent's response to our queued prompt and would otherwise
-        // be checked for completion_promise / abort_promise tokens.
+        // Ignore sub-agent messages — see isSubAgentEvent() rationale.
+        // Otherwise their content would be checked for completion/abort tokens.
         if (isSubAgentEvent(ev)) return;
         // Mark the in-flight fire as "consumed by the agent" so the next
         // idle is treated as a real response cycle rather than a spurious

@@ -353,24 +353,23 @@ export function createRalphController() {
         // (giant JSON, multi-line stack) doesn't dump megabytes into the
         // timeline. result.note is already truncated by finish(); mirror
         // the same cap on the pre-finish log line via boundedNoteForLog.
-        const formatErrForLog = (err) => boundedNoteForLog(err?.message ?? String(err));
+        // kind = "rejected" for async rejection, "failed" for sync throw.
+        // Both prefixes are part of the public log/note contract — keep them
+        // distinct so operators can tell which code path produced the error.
+        const handleSendFailure = (err, kind) => {
+            if (state.active !== armedFor) return;
+            armedFor.fireInFlight = false;
+            const raw = err?.message ?? String(err);
+            log(`ralph_loop: send ${kind}: ${boundedNoteForLog(raw)}`);
+            finish("send_error", `send ${kind}: ${raw}`);
+        };
         try {
             const r = sendPrompt(prompt);
             if (r && typeof r.then === "function") {
-                r.then(undefined, (err) => {
-                    if (state.active !== armedFor) return;
-                    armedFor.fireInFlight = false;
-                    const msg = err?.message ?? String(err);
-                    log(`ralph_loop: send rejected: ${formatErrForLog(err)}`);
-                    finish("send_error", `send rejected: ${msg}`);
-                });
+                r.then(undefined, (err) => handleSendFailure(err, "rejected"));
             }
         } catch (err) {
-            if (state.active !== armedFor) return;
-            armedFor.fireInFlight = false;
-            const msg = err?.message ?? String(err);
-            log(`ralph_loop: send failed: ${formatErrForLog(err)}`);
-            finish("send_error", `send failed: ${msg}`);
+            handleSendFailure(err, "failed");
         }
     };
 

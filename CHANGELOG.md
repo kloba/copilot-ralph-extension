@@ -25,7 +25,8 @@
   log line and success-result text differ in the leading label.
 - Every observable log line now carries the calling tool's label.
   `state.active.label` and `state.lastResult.label` ("ralph_loop"
-  or "self_improve") flow into the per-iteration log line
+  or "self_improve") flow into the **arm-time log line**
+  (`🔁 self_improve armed — max=…`), the per-iteration log line
   (`🔁 self_improve iter N/M`), the send-error log, the idle-skip
   log, the finish log, the **session-abort log**
   (`⏹ self_improve interrupted by session abort …`), and the

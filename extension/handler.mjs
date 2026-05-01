@@ -179,7 +179,7 @@ function validateArgShape(toolName, args, knownKeys) {
         return { error: `${toolName}: arguments must be an object (got ${describeArgType(args)}).` };
     }
     const unknown = Object.keys(args).filter((k) => !knownKeys.has(k));
-    if (unknown.length > 0) {
+    if (unknown.length) {
         return {
             error: `${toolName}: unknown argument${pluralS(unknown.length)}: ${unknown.map((k) => JSON.stringify(k)).join(", ")}. Valid keys: ${[...knownKeys].join(", ")}.`,
         };

@@ -249,11 +249,9 @@ test("ralph_loop arm result has the documented shape (textResultForLlm + extras)
     // example doesn't drift from reality. This caught one such drift
     // (the trailing "Use ralph_stop to cancel." sentence had been
     // added to the handler but the README example wasn't updated).
-    const { session, controller } = await arm({ max_iterations: 20 });
-    void session; void controller;
-    // The most recent log entry is the "armed" line; look up the actual
-    // returned envelope by re-arming a fresh controller without going
-    // through arm() helper so we can inspect the raw return value.
+    //
+    // We don't use the arm() helper here because we need the raw arming
+    // return value, not the {session, controller} envelope arm() returns.
     const c = createRalphController();
     c.attach(makeFakeSession());
     const r = await c.tools.find((t) => t.name === "ralph_loop").handler({

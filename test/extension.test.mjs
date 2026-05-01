@@ -1226,6 +1226,40 @@ test("sub-agent abort event does NOT terminate the root ralph_loop", async () =>
 });
 
 
+test("isSubAgentEvent treats agentId='' as sub-agent (presence, not truthiness)", async () => {
+    // The guard intentionally checks `agentId !== undefined && agentId !== null`
+    // rather than truthiness. An empty-string agentId is malformed per the
+    // SDK schema (sub-agent ids should be UUID strings) but if it ever
+    // happens, the safer default is to TREAT IT AS A SUB-AGENT EVENT —
+    // i.e. skip it — rather than refire the root loop on a possibly-bogus
+    // event. A future refactor that simplifies the guard to `if (ev?.agentId)`
+    // (truthy) would silently flip empty-string events from "sub-agent
+    // (ignored)" to "root (act on)", which is the riskier direction.
+    //
+    // Pin all three event handlers (idle / assistant.message / abort)
+    // against agentId="".
+    const { session, controller } = await arm({
+        max_iterations: 5,
+        completion_promise: "DONE",
+        stagnation_limit: 0,
+    });
+    session.emit("session.idle", { data: {} }); // fire iter 1
+    assert.equal(session.sent.length, 1);
+
+    // 1. assistant.message with agentId="" containing completion phrase —
+    //    must NOT trigger completion (treated as sub-agent → ignored).
+    session.emit("assistant.message", { agentId: "", data: { content: "DONE" } });
+    // 2. idle with agentId="" — must NOT advance the iter or queue a fire.
+    session.emit("session.idle", { agentId: "", data: {} });
+    assert.equal(controller.state.active.i, 1, "agentId='' idle must be ignored");
+    assert.equal(session.sent.length, 1, "no extra fire queued by agentId='' idle");
+    // 3. abort with agentId="" — must NOT tear down the root loop.
+    session.emit("abort", { agentId: "", data: { reason: "spurious" } });
+    assert.notEqual(controller.state.active, null, "agentId='' abort must not finish loop");
+    assert.equal(controller.state.lastResult, null);
+});
+
+
 test("multiple session.idle events without intervening assistant.message do not bloat queue", async () => {
     // Regression for the user-reported `Queued (N)` bug: even if the SDK
     // emits several spurious idle events in quick succession before the

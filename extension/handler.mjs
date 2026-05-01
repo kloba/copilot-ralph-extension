@@ -695,8 +695,7 @@ export function createRalphController() {
         if (!session || typeof session !== "object") {
             throw new TypeError("ralph: attach(session) requires a session object.");
         }
-        // Both required-method checks share an identical shape; bundle them
-        // so adding a third (e.g. session.off) is a one-line addition.
+        // Bundled so adding a third required method (e.g. session.off) stays a one-liner.
         const requireMethod = (name, signature) => {
             if (typeof session[name] !== "function") {
                 throw new TypeError(`ralph: attached session is missing required method '${signature}'.`);

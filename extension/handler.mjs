@@ -457,9 +457,8 @@ export function createRalphController() {
         // queue an extra copy of our prompt.
         if (isSubAgentEvent(ev)) return;
 
-        // The turn that *called* ralph_loop will go idle before any
-        // iteration runs. Use that first idle to fire iteration 1's
-        // prompt; only evaluate completion/abort on subsequent idles.
+        // The turn that *called* ralph_loop goes idle before any iteration runs.
+        // Use that idle to fire iteration 1; evaluate completion/abort on later ones.
         if (a.pendingFire) {
             a.pendingFire = false;
             a.i = 1;

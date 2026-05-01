@@ -25,9 +25,8 @@ const MAX_PROMPT_CHARS = 65536;
 // substring signals matched against accumulated assistant content;
 // megabyte-long signals would waste memory and slow `.includes()`.
 const MAX_PROMISE_CHARS = 200;
-// Cap the per-iteration accumulated assistant content. We only need it for
-// substring matching (completion/abort/stagnation) and a 500-char preview;
-// extremely chatty turns shouldn't be allowed to consume unbounded memory.
+// Cap the per-iteration accumulated assistant content. Only used for
+// substring matching (completion/abort/stagnation) and the preview.
 const MAX_CONTENT_CHARS = 1_048_576; // 1 MiB
 
 // Map finish reason → log-line verb. Reasons not listed fall through

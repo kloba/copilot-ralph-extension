@@ -21,9 +21,8 @@ const DEFAULTS = Object.freeze({
 const MAX_ALLOWED_ITERATIONS = 1000;
 const PREVIEW_CHARS = 500;
 const MAX_PROMPT_CHARS = 65536;
-// Cap completion_promise / abort_promise length. These are short
-// substring signals matched against accumulated assistant content;
-// megabyte-long signals would waste memory and slow `.includes()`.
+// Cap completion_promise / abort_promise — short substring signals; megabyte-
+// long signals would waste memory and slow `.includes()` matching.
 const MAX_PROMISE_CHARS = 200;
 // Cap the per-iteration accumulated assistant content. Only used for
 // substring matching (completion/abort/stagnation) and the preview.

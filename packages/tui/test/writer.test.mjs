@@ -9,6 +9,7 @@ import {
     readRunIndex,
     resolveRunEventsPath,
     resolveRunsRoot,
+    aggregateRuns,
 } from "../src/writer.mjs";
 import { makeRunId } from "../src/events.mjs";
 
@@ -207,4 +208,108 @@ test("readRunIndex: skips malformed lines, keeps good ones", () => {
     ].join("\n") + "\n");
     const entries = readRunIndex({ env: { RALPH_EVENTS_DIR: root } });
     assert.deepEqual(entries.map((e) => e.runId), ["ok-2", "ok-1"]);
+});
+
+// ---- aggregateRuns ----
+
+function writeRun(root, runId, label, lines) {
+    fs.mkdirSync(path.join(root, runId), { recursive: true });
+    fs.writeFileSync(path.join(root, runId, "events.jsonl"), lines.map((o) => JSON.stringify(o)).join("\n") + "\n");
+    fs.appendFileSync(path.join(root, "index.jsonl"),
+        JSON.stringify({ type: "armed", ts: lines[0]?.ts ?? 0, runId, label }) + "\n");
+}
+
+test("aggregateRuns: empty index yields zero totals", () => {
+    const root = mkTmp();
+    const r = aggregateRuns({ env: { RALPH_EVENTS_DIR: root } });
+    assert.equal(r.total, 0);
+    assert.deepEqual(r.byTool, {});
+    assert.deepEqual(r.byReason, {});
+    assert.equal(r.iters.max, 0);
+    assert.equal(r.iters.mean, 0);
+});
+
+test("aggregateRuns: run with no terminal event counts toward total + byTool but not byReason", () => {
+    const root = mkTmp();
+    writeRun(root, "ralph_loop-1", "ralph_loop", [
+        { type: "armed", ts: 1, runId: "ralph_loop-1", label: "ralph_loop" },
+        { type: "iteration_start", ts: 2, runId: "ralph_loop-1", iteration: 1 },
+        { type: "iteration_end", ts: 3, runId: "ralph_loop-1", iteration: 1 },
+    ]);
+    const r = aggregateRuns({ env: { RALPH_EVENTS_DIR: root } });
+    assert.equal(r.total, 1);
+    assert.deepEqual(r.byTool, { ralph_loop: 1 });
+    assert.deepEqual(r.byReason, {});
+    assert.equal(r.iters.max, 1);
+    assert.equal(r.iters.mean, 1);
+});
+
+test("aggregateRuns: last terminal event wins when multiple are present", () => {
+    const root = mkTmp();
+    // Pathological but possible: a writer somehow appended both abort and
+    // complete. The aggregator should bucket the LAST one (complete).
+    writeRun(root, "self_improve-1", "self_improve", [
+        { type: "armed", ts: 1, runId: "self_improve-1", label: "self_improve" },
+        { type: "abort", ts: 2, runId: "self_improve-1", reason: "stagnation", iteration: 3 },
+        { type: "complete", ts: 3, runId: "self_improve-1", reason: "completion_promise", iteration: 5 },
+    ]);
+    const r = aggregateRuns({ env: { RALPH_EVENTS_DIR: root } });
+    assert.deepEqual(r.byReason, { "complete:completion_promise": 1 });
+    assert.equal(r.iters.max, 5);
+});
+
+test("aggregateRuns: skips runs whose events.jsonl is missing", () => {
+    const root = mkTmp();
+    // Index claims a run exists, but no events.jsonl on disk.
+    fs.writeFileSync(path.join(root, "index.jsonl"),
+        JSON.stringify({ type: "armed", ts: 1, runId: "ghost-1", label: "ralph_loop" }) + "\n");
+    const r = aggregateRuns({ env: { RALPH_EVENTS_DIR: root } });
+    assert.equal(r.total, 1);
+    assert.deepEqual(r.byTool, { ralph_loop: 1 });
+    assert.deepEqual(r.byReason, {});
+    assert.equal(r.iters.max, 0);
+});
+
+test("aggregateRuns: malformed JSONL lines are skipped silently", () => {
+    const root = mkTmp();
+    fs.mkdirSync(path.join(root, "rl-1"), { recursive: true });
+    fs.writeFileSync(path.join(root, "rl-1", "events.jsonl"), [
+        JSON.stringify({ type: "armed", ts: 1, runId: "rl-1", label: "ralph_loop" }),
+        "{not-json",
+        "",
+        JSON.stringify({ type: "iteration_end", ts: 2, runId: "rl-1", iteration: 4 }),
+        JSON.stringify({ type: "complete", ts: 3, runId: "rl-1", reason: "completion_promise", iteration: 4 }),
+    ].join("\n") + "\n");
+    fs.writeFileSync(path.join(root, "index.jsonl"),
+        JSON.stringify({ type: "armed", ts: 1, runId: "rl-1", label: "ralph_loop" }) + "\n");
+    const r = aggregateRuns({ env: { RALPH_EVENTS_DIR: root } });
+    assert.equal(r.total, 1);
+    assert.deepEqual(r.byReason, { "complete:completion_promise": 1 });
+    assert.equal(r.iters.max, 4);
+});
+
+test("aggregateRuns: terminal event without reason buckets under bare type", () => {
+    const root = mkTmp();
+    writeRun(root, "rl-2", "ralph_loop", [
+        { type: "armed", ts: 1, runId: "rl-2", label: "ralph_loop" },
+        { type: "abort", ts: 2, runId: "rl-2", iteration: 2 },
+    ]);
+    const r = aggregateRuns({ env: { RALPH_EVENTS_DIR: root } });
+    assert.deepEqual(r.byReason, { abort: 1 });
+});
+
+test("aggregateRuns: mean is arithmetic over runs with iterations", () => {
+    const root = mkTmp();
+    writeRun(root, "a-1", "ralph_loop", [
+        { type: "armed", ts: 1, runId: "a-1", label: "ralph_loop" },
+        { type: "complete", ts: 2, runId: "a-1", reason: "completion_promise", iteration: 2 },
+    ]);
+    writeRun(root, "a-2", "ralph_loop", [
+        { type: "armed", ts: 3, runId: "a-2", label: "ralph_loop" },
+        { type: "complete", ts: 4, runId: "a-2", reason: "completion_promise", iteration: 8 },
+    ]);
+    const r = aggregateRuns({ env: { RALPH_EVENTS_DIR: root } });
+    assert.equal(r.total, 2);
+    assert.equal(r.iters.max, 8);
+    assert.equal(r.iters.mean, 5);
 });

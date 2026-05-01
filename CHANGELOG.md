@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Tests
+- Add 7 direct unit tests for `aggregateRuns` in
+  `packages/tui/test/writer.test.mjs`. Until now this
+  helper was only exercised end-to-end via the
+  `bin stats` CLI test. The new tests pin its contract on
+  edge cases the bin test never touched: empty index, run
+  with no terminal event, multiple terminal events (last
+  wins), missing events.jsonl on disk (skipped), malformed
+  JSONL lines (skipped silently), terminal event with no
+  `reason` (buckets under bare type), and arithmetic mean
+  across multiple runs.
+
 ### Fixes
 - `packages/tui/bin/tui.mjs` — render `TypeError` validation
   failures (e.g. `resolveRunEventsPath` rejecting a

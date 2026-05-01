@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Fixes
+- `self_improve` `focus` schema description now discloses the
+  steering semantics ("Steers ideation and improvement selection
+  without altering the SDLC stages") matching the parallel callout
+  on `grow_project.focus`. Previously the `self_improve.focus`
+  description was bare ("Optional focus area appended to the SDLC
+  prompt …"), letting callers reasonably assume `focus` was a
+  free-form addendum that might skip stages — when in fact it only
+  narrows what the agent picks at IDEATE/SELECT time.
 - `ralph_loop` and `ralph_stop` schema descriptions now name all
   three loop tools (`ralph_loop`, `self_improve`, `grow_project`)
   symmetric with the runtime `activeLoopGuard`. Previously

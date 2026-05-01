@@ -668,7 +668,7 @@ export function createRalphController() {
             if (typeof ret === "function") {
                 unsubs.push(ret);
             } else {
-                log(`ralph: warning — session.on(${JSON.stringify(evName)}) did not return an unsubscribe function (got ${ret === null ? "null" : typeof ret}); listener may leak on detach.`);
+                log(`ralph: warning — session.on(${JSON.stringify(evName)}) did not return an unsubscribe function (got ${describeArgType(ret)}); listener may leak on detach.`);
             }
         }
         const detach = () => {

@@ -882,6 +882,21 @@ test("PROMPT_SELF_IMPROVE mentions every required SDLC category and stage", () =
     assert.ok(p.length <= MAX_PROMPT_CHARS, `prompt is ${p.length} chars; cap is ${MAX_PROMPT_CHARS}`);
 });
 
+test("PROMPT_SELF_IMPROVE + max-sized focus suffix fits under MAX_PROMPT_CHARS", () => {
+    // Mirror of the grow_project worst-case budget test. Focus is
+    // independently capped at MAX_FOCUS_CHARS, but PROMPT_SELF_IMPROVE
+    // can grow over time. Without this pin, a contributor adding ~62
+    // KiB of new prompt content would only discover the overflow when
+    // a user happened to pass a max-sized focus and hit the runtime
+    // "prompt exceeds 65536 characters" guard.
+    const SUFFIX_OVERHEAD = " Focus this run on: ".length;
+    const worstCase = PROMPT_SELF_IMPROVE.length + SUFFIX_OVERHEAD + MAX_FOCUS_CHARS;
+    assert.ok(
+        worstCase <= MAX_PROMPT_CHARS,
+        `PROMPT_SELF_IMPROVE (${PROMPT_SELF_IMPROVE.length}) + max focus suffix (${SUFFIX_OVERHEAD + MAX_FOCUS_CHARS}) = ${worstCase}; cap is ${MAX_PROMPT_CHARS}. Trim PROMPT_SELF_IMPROVE.`,
+    );
+});
+
 test("self_improve actually arms with the real SDLC prompt", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

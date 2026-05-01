@@ -269,9 +269,6 @@ export function validateArgs(args) {
  * }} Controller. `attach` returns an unsubscribe function that detaches all listeners and finalizes any active loop with reason='detached'.
  */
 export function createRalphController() {
-    // Sentinel for "no turn_end has been processed yet" — using a fresh
-    // Symbol guarantees it can never compare equal to any value the SDK
-    // might emit (including null, undefined, "", 0, NaN).
     const state = {
         active: null,           // see arming below for shape
         lastAssistantContent: "",

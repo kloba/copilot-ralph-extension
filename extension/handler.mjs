@@ -107,12 +107,10 @@ function success(message, extra = {}) {
     return { ...extra, textResultForLlm: message, resultType: "success" };
 }
 
-// Per the SDK schema, every session event carries an optional `agentId`
-// field — absent on root-agent events, a string on sub-agent events
-// (task / explore / code-review / rubber-duck …). Sub-agent events
-// bubble up the same bus, so handlers that should only fire for the
-// root must filter them out (otherwise sub-agents trigger spurious
-// refires or interrupt the loop).
+// Every session event carries an optional `agentId` — string on sub-agent
+// events (task / explore / code-review / rubber-duck …), absent on root.
+// Sub-agent events bubble on the same bus, so root-only handlers must
+// filter — else sub-agents trigger spurious refires or interrupt the loop.
 function isSubAgentEvent(ev) {
     return ev != null && ev.agentId !== undefined && ev.agentId !== null;
 }

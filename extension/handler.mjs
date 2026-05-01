@@ -169,8 +169,7 @@ function displayValue(v) {
 // valid, otherwise `{ error: <message> }`. Centralising this logic keeps
 // ralph_loop and ralph_stop's validation in lockstep.
 function validateArgShape(toolName, args, knownKeys) {
-    // `typeof null === "object"` so null needs an explicit check; undefined
-    // is already caught by the typeof branch (typeof undefined === "undefined").
+    // typeof null === "object" so null needs an explicit check.
     if (args === null || typeof args !== "object" || Array.isArray(args)) {
         return { error: `${toolName}: arguments must be an object (got ${describeArgType(args)}).` };
     }

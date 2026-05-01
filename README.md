@@ -150,7 +150,6 @@ The full structured result (available via `controller.state.lastResult` for embe
 - Use `abort_promise` for "stop early if the precondition fails" — e.g. `"PRECONDITION_FAILED"`.
 - `stagnation_limit` (default 3) catches stuck agents that keep returning identical responses; set to `0` to disable. Stagnation always overrides `min_iterations` (safety).
 - `min_iterations` is useful when you want the agent to run additional verification or double-check passes even if the completion phrase appears early.
-- Only one loop runs per session at a time. A second `ralph_loop` while one is active returns a failure.
 - Each iteration is a **paid turn**. Budget accordingly.
 
 ## Development

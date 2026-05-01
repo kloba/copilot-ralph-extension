@@ -8,11 +8,17 @@ import { createRalphController } from "./handler.mjs";
 const controller = createRalphController();
 
 // joinSession can fail (SDK version mismatch, malformed manifest, no live
-// session). Without a try/catch the rejection becomes an unhandled
-// promise rejection at module-load and the extension fails silently —
-// the user sees neither ralph_loop in /extensions nor any clue why.
-// Emit a clear stderr line and rethrow so the runtime still treats it
-// as a load failure.
+// session) and attach() can fail (missing session methods). Without a
+// try/catch either rejection becomes an unhandled promise rejection at
+// module-load and the extension fails silently — the user sees neither
+// ralph_loop in /extensions nor any clue why. Emit a clear stderr line
+// and rethrow so the runtime still treats it as a load failure.
+function fatal(stage, err) {
+    const msg = err && err.message ? err.message : String(err);
+    process.stderr.write(`ralph extension: failed to ${stage}: ${msg}\n`);
+    throw err;
+}
+
 let session;
 try {
     session = await joinSession({
@@ -20,15 +26,11 @@ try {
         hooks: controller.hooks,
     });
 } catch (err) {
-    const msg = err && err.message ? err.message : String(err);
-    process.stderr.write(`ralph extension: failed to join Copilot session: ${msg}\n`);
-    throw err;
+    fatal("join Copilot session", err);
 }
 
 try {
     controller.attach(session);
 } catch (err) {
-    const msg = err && err.message ? err.message : String(err);
-    process.stderr.write(`ralph extension: failed to attach controller: ${msg}\n`);
-    throw err;
+    fatal("attach controller", err);
 }

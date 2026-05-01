@@ -360,10 +360,8 @@ export function createRalphController() {
     // Captures the active-loop identity at fire-time so a late rejection from
     // a previous arming can't poison a freshly-armed loop.
     //
-    // Queue-bloat protection: refuse to fire if a previously-fired prompt
-    // hasn't been picked up yet (no assistant.message observed since the
-    // last fire). Without this, back-to-back signals would queue duplicate
-    // prompts — visible to the user as `Queued (3)` of identical messages.
+    // Queue-bloat protection: back-to-back signals would otherwise queue
+    // duplicate prompts — visible as `Queued (3)` of identical messages.
     const tryFire = (prompt) => {
         const armedFor = state.active;
         if (!armedFor) return;

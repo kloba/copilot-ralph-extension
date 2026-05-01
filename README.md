@@ -125,8 +125,8 @@ If no loop is active it returns `resultType: "failure"` with the message `ralph_
 ```
 
 The actual loop **outcome** (iteration count, reason, timing) is surfaced in two ways:
-- `session.log` markers visible in the timeline (`🔁 ralph_loop iter 4/20 (elapsed 12345ms)`, `✅ completed ralph_loop after 4 iterations (reason: completion_promise, 12345ms)`). The closing-line verb depends on the finish reason: ✅ *completed* (`completion_promise`), ⚠️ *ended* (`send_error`, `aborted`), and ⏹ *stopped* for everything else (`max_iterations`, `abort_promise`, `stagnation`, `user_stopped`, `detached`).
-- An `additionalContext` injection on the *next* `onUserPromptSubmitted` hook so the agent silently learns the loop finished and why (`[ralph_loop just finished — iterations=4, reason=completion_promise, durationMs=12345]`).
+- `session.log` markers visible in the timeline (`🔁 ralph_loop iter 4/20 (elapsed 12345ms)`, `✅ completed ralph_loop after 4 iterations (reason: completion_promise, 12345ms)`). The leading label (`ralph_loop` or `self_improve`) reflects which tool armed the loop, so a `self_improve`-armed run shows `🔁 self_improve iter 4/20`. The closing-line verb depends on the finish reason: ✅ *completed* (`completion_promise`), ⚠️ *ended* (`send_error`, `aborted`), and ⏹ *stopped* for everything else (`max_iterations`, `abort_promise`, `stagnation`, `user_stopped`, `detached`).
+- An `additionalContext` injection on the *next* `onUserPromptSubmitted` hook so the agent silently learns the loop finished and why (`[ralph_loop just finished — iterations=4, reason=completion_promise, durationMs=12345]`, or `[self_improve just finished — …]` when armed via `self_improve`).
 
 The full structured result (available via `controller.state.lastResult` for embedders):
 
@@ -134,6 +134,7 @@ The full structured result (available via `controller.state.lastResult` for embe
 {
   reason: "completion_promise",
   iterations: 4,
+  label: "ralph_loop",                 // "ralph_loop" or "self_improve" — which tool armed the loop
   preview: "first 500 chars of last assistant content…",
   startedAt: 1719000000000,
   finishedAt: 1719000012345,

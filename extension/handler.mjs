@@ -77,8 +77,7 @@ function truncateNote(text) {
 }
 
 // Collapse whitespace (newlines, tabs, runs of spaces) into single spaces and
-// trim. Used to flatten a multi-line note (e.g. an Error stack) into the
-// single-line log marker and additionalContext bracket.
+// trim — flattens multi-line notes (e.g. Error stacks) to single-line markers.
 function collapseNote(text) {
     return text ? String(text).replace(/\s+/g, " ").trim() : "";
 }

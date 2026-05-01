@@ -499,15 +499,15 @@ test("validateArgs success returns exactly the documented value shape (no stray 
     assert.equal(r2.value.abortPromise, null);
 });
 
-test("state.active: arming sets exactly the documented 18-field ActiveLoopState shape", async () => {
-    // The ActiveLoopState typedef enumerates 18 fields. Pin the exact
+test("state.active: arming sets exactly the documented 20-field ActiveLoopState shape", async () => {
+    // The ActiveLoopState typedef enumerates 20 fields. Pin the exact
     // key set and initial values so future refactors that add or rename
     // a field have to update both the typedef and this test in lockstep.
     const { session, controller } = await arm({ max_iterations: 7, min_iterations: 2, abort_promise: "FAIL", stagnation_limit: 4 });
     const a = controller.state.active;
     assert.deepEqual(Object.keys(a).sort(), [
-        "abortPromise", "completionPromise", "fireInFlight", "i",
-        "label", "max", "maxTokens", "min", "observedMessageThisFire", "pendingFire",
+        "abortPromise", "armedGit", "completionPromise", "fireInFlight", "i",
+        "label", "lastIterationAt", "max", "maxTokens", "min", "observedMessageThisFire", "pendingFire",
         "prev", "prompt", "stagnationLimit", "startedAt", "stopCaffeinate", "streak", "tokens", "warnAtPct",
     ]);
     assert.equal(a.i, 0);
@@ -547,9 +547,9 @@ test("controller instances are independent (state is closure-private, not module
 });
 
 
-test("controller exposes ralph_loop, ralph_stop, self_improve, and grow_project tools and hooks", () => {
+test("controller exposes ralph_loop, ralph_stop, ralph_status, self_improve, and grow_project tools and hooks", () => {
     const c = createRalphController();
-    assert.deepEqual(c.tools.map((t) => t.name).sort(), ["grow_project", "ralph_loop", "ralph_stop", "self_improve"]);
+    assert.deepEqual(c.tools.map((t) => t.name).sort(), ["grow_project", "ralph_loop", "ralph_status", "ralph_stop", "self_improve"]);
     assert.equal(typeof c.hooks.onUserPromptSubmitted, "function");
     assert.equal(typeof c.attach, "function");
     // Pin the EXACT hook surface — if a future change leaks an internal
@@ -565,9 +565,10 @@ test("controller exposes ralph_loop, ralph_stop, self_improve, and grow_project 
     // assertion instead of a cascade of cryptic ones.
     assert.equal(c.tools[0].name, "ralph_loop", "tools[0] must be ralph_loop");
     assert.equal(c.tools[1].name, "ralph_stop", "tools[1] must be ralph_stop");
-    assert.equal(c.tools[2].name, "self_improve", "tools[2] must be self_improve");
-    assert.equal(c.tools[3].name, "grow_project", "tools[3] must be grow_project");
-    assert.equal(c.tools.length, 4, "tools array must have exactly four entries");
+    assert.equal(c.tools[2].name, "ralph_status", "tools[2] must be ralph_status");
+    assert.equal(c.tools[3].name, "self_improve", "tools[3] must be self_improve");
+    assert.equal(c.tools[4].name, "grow_project", "tools[4] must be grow_project");
+    assert.equal(c.tools.length, 5, "tools array must have exactly five entries");
 });
 
 test("self_improve tool is exposed (stub)", () => {
@@ -4754,4 +4755,150 @@ test("caffeinate: README documents env vars and macOS-only scope", () => {
     assert.ok(readme.includes("RALPH_CAFFEINATE"), "README must mention RALPH_CAFFEINATE env var");
     assert.ok(readme.includes("RALPH_CAFFEINATE_SCOPE"), "README must mention RALPH_CAFFEINATE_SCOPE env var");
     assert.match(readme, /macOS only|darwin/i, "README must clarify macOS-only scope");
+});
+
+// ── ralph_status tool (issue #5) ──────────────────────────────────────────
+
+function makeGitStub(scripts = {}) {
+    // scripts: map "first-arg" → { ok, stdout } or full handler fn(args)
+    const calls = [];
+    return {
+        calls,
+        exec: (args) => {
+            calls.push(args);
+            const key = args.join(" ");
+            const handler = scripts[key] ?? scripts[args[0]];
+            if (typeof handler === "function") return handler(args);
+            if (handler) return { ok: true, stdout: "", stderr: "", code: 0, ...handler };
+            return { ok: false, stdout: "", stderr: "not stubbed", code: 1 };
+        },
+    };
+}
+
+async function armStatusable({ git } = {}) {
+    const session = makeFakeSession();
+    const controller = createRalphController(git ? { git: { exec: git.exec, cwd: "/tmp/fake" } } : undefined);
+    controller.attach(session);
+    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
+    const status = controller.tools.find((t) => t.name === "ralph_status");
+    return { session, controller, ralph, status };
+}
+
+test("ralph_status: with no active loop and no prior run returns { active: false }", async () => {
+    const { status } = await armStatusable();
+    const r = await status.handler({});
+    assert.equal(r.resultType, "success");
+    assert.equal(r.status.active, false);
+    assert.equal(r.status.last, undefined);
+});
+
+test("ralph_status: rejects unknown args", async () => {
+    const { status } = await armStatusable();
+    const r = await status.handler({ verbose: true });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /unknown/i);
+});
+
+test("ralph_status: during active loop reports iteration, elapsed, promises", async () => {
+    const git = makeGitStub({
+        "rev-parse HEAD": { ok: false }, // not a repo
+    });
+    const { ralph, status, session } = await armStatusable({ git });
+    await ralph.handler({ prompt: "go", max_iterations: 5, min_iterations: 2, abort_promise: "FAIL", stagnation_limit: 0 });
+    runTurn(session, "iteration 1 work");
+    const r = await status.handler({});
+    assert.equal(r.resultType, "success");
+    assert.equal(r.status.active, true);
+    assert.equal(r.status.label, "ralph_loop");
+    assert.equal(r.status.max_iterations, 5);
+    assert.equal(r.status.min_iterations, 2);
+    assert.equal(r.status.completion_promise, "COMPLETE");
+    assert.equal(r.status.abort_promise, "FAIL");
+    assert.equal(r.status.stagnation_limit, 0);
+    assert.equal(typeof r.status.elapsed_ms, "number");
+    assert.equal(typeof r.status.elapsed_seconds, "number");
+    assert.match(r.status.started_at, /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(r.status.git, null, "no git block when cwd isn't a git repo");
+    assert.equal(r.status.files_changed, undefined);
+    assert.match(r.textResultForLlm, /iteration \d+\/5/);
+});
+
+test("ralph_status: includes git block + files_changed when armedGit.isRepo", async () => {
+    const git = makeGitStub({
+        "rev-parse HEAD": { ok: true, stdout: "abc1234\n" },
+        "rev-parse --abbrev-ref HEAD": { ok: true, stdout: "feature/x\n" },
+        "rev-list --left-right --count @{u}...HEAD": { ok: true, stdout: "0\t3\n" },
+        "diff --shortstat HEAD": { ok: true, stdout: " 2 files changed, 12 insertions(+), 3 deletions(-)\n" },
+        "diff --name-status -z abc1234..HEAD": {
+            ok: true,
+            // STATUS\0path\0
+            stdout: "A\0src/new.ts\0M\0src/app.ts\0D\0src/old.ts\0",
+        },
+        "status --porcelain": { ok: true, stdout: "?? scratch.txt\n M README.md\n" },
+    });
+    const { ralph, status } = await armStatusable({ git });
+    await ralph.handler({ prompt: "go", max_iterations: 5 });
+    const r = await status.handler({});
+    assert.equal(r.status.active, true);
+    assert.deepEqual(r.status.git, {
+        branch: "feature/x",
+        armed_head: "abc1234",
+        head: "abc1234",
+        ahead: 3,
+        behind: 0,
+        uncommitted_lines: 15,
+    });
+    assert.deepEqual(r.status.files_changed.added.sort(), ["scratch.txt", "src/new.ts"]);
+    assert.deepEqual(r.status.files_changed.modified.sort(), ["README.md", "src/app.ts"]);
+    assert.deepEqual(r.status.files_changed.deleted, ["src/old.ts"]);
+});
+
+test("ralph_status: never mutates loop state (read-only)", async () => {
+    const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
+    const { ralph, status, controller } = await armStatusable({ git });
+    await ralph.handler({ prompt: "go", max_iterations: 5 });
+    const before = { ...controller.state.active };
+    await status.handler({});
+    await status.handler({});
+    const after = controller.state.active;
+    // Same iteration counter, same pendingFire flag, same startedAt timestamp.
+    assert.equal(after.i, before.i);
+    assert.equal(after.pendingFire, before.pendingFire);
+    assert.equal(after.startedAt, before.startedAt);
+});
+
+test("ralph_status: after loop finishes, returns { active: false } + last summary", async () => {
+    const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
+    const { ralph, status, session } = await armStatusable({ git });
+    await ralph.handler({ prompt: "go", max_iterations: 3 });
+    runTurn(session, "iter 1");
+    runTurn(session, "iter 2 COMPLETE");
+    const r = await status.handler({});
+    assert.equal(r.status.active, false);
+    assert.ok(r.status.last, "must include last-run summary");
+    assert.equal(r.status.last.label, "ralph_loop");
+    assert.equal(r.status.last.reason, "completion_promise");
+    assert.match(r.status.last.started_at, /^\d{4}-\d{2}-\d{2}T/);
+    assert.match(r.status.last.finished_at, /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(typeof r.status.last.duration_ms, "number");
+});
+
+test("ralph_status: last_iteration_at advances each iteration", async () => {
+    const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
+    const { ralph, status, session } = await armStatusable({ git });
+    await ralph.handler({ prompt: "go", max_iterations: 5, stagnation_limit: 0 });
+    runTurn(session, "iter 1");
+    const a = (await status.handler({})).status.last_iteration_at;
+    // Force a different timestamp (Date.now ticks naturally; sleep a tick)
+    await new Promise((r) => setTimeout(r, 5));
+    runTurn(session, "iter 2");
+    const b = (await status.handler({})).status.last_iteration_at;
+    assert.ok(a, "first iter timestamp set");
+    assert.ok(b, "second iter timestamp set");
+    assert.notEqual(a, b);
+});
+
+test("ralph_status: README documents the tool", () => {
+    const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf8");
+    assert.match(readme, /\bralph_status\b/, "README must mention the ralph_status tool");
 });

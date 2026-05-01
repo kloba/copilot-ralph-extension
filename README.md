@@ -5,7 +5,7 @@
 [![CI](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml)
 [![Inspired by](https://img.shields.io/badge/inspired_by-Anthropic_Ralph_Wiggum-blue)](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)
 
-**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [Documentation](#documentation) · [How it works](#how-it-works) · [Commit attribution](#commit-attribution) · [Keep system awake](#keep-system-awake-caffeinate-macos) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)
+**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [Inspecting a running loop](#inspecting-a-running-loop-ralph_status-tool) · [Documentation](#documentation) · [How it works](#how-it-works) · [Commit attribution](#commit-attribution) · [Keep system awake](#keep-system-awake-caffeinate-macos) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)
 
 ## What is Ralph Wiggum?
 
@@ -247,6 +247,58 @@ Contributor and design docs live under [`docs/`](docs/) so this README can stay 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — design notes on the `session.idle` event-driven loop, the `extension.mjs`/`handler.mjs` split, the baked-prompt pattern, and the tool surface.
 - [`docs/RELEASING.md`](docs/RELEASING.md) — manual release checklist for tagged GitHub Releases.
 - [`SECURITY.md`](SECURITY.md) — how to report a vulnerability and the supported-versions policy.
+## Inspecting a running loop (`ralph_status` tool)
+
+`ralph_status` returns a structured live snapshot of the active loop — iteration count, elapsed time, configured promises, last response excerpt, and (when running inside a git repo) the files touched since the loop was armed. It's read-only and cheap (typically <10ms), so call it as often as you like.
+
+```bash
+> ralph_status
+```
+
+Sample structured payload (`status` key on the tool result):
+
+```jsonc
+{
+  "active": true,
+  "label": "self_improve",
+  "iteration": 7,
+  "max_iterations": 20,
+  "min_iterations": 1,
+  "elapsed_ms": 142318,
+  "elapsed_seconds": 142,
+  "started_at": "2025-05-01T18:30:00.000Z",
+  "last_iteration_at": "2025-05-01T18:32:22.000Z",
+  "now": "2025-05-01T18:32:22.318Z",
+  "completion_promise": "COMPLETE",
+  "abort_promise": null,
+  "stagnation_limit": 3,
+  "stagnation_streak": 0,
+  "pending_first_iteration": false,
+  "last_response_excerpt": "Implemented the GET /todos endpoint and added 3 tests…",
+  "git": {
+    "branch": "main",
+    "armed_head": "abc1234…",
+    "head": "def5678…",
+    "ahead": 0,
+    "behind": 0,
+    "uncommitted_lines": 142
+  },
+  "files_changed": {
+    "added": ["src/routes/todos.ts"],
+    "modified": ["src/app.ts", "test/todos.test.ts"],
+    "deleted": [],
+    "renamed": []
+  }
+}
+```
+
+When no loop is active, `ralph_status` returns `{ active: false }` plus a `last` summary of the most recent run in this session (label, reason, iteration count, duration, and preview), or just `{ active: false }` if no loop has run yet.
+
+Behaviour notes:
+
+- **Read-only.** Never mutates loop state — calling it during a loop never advances iterations, resets stagnation, or moves any timer.
+- **Files-changed window.** Computed by diffing the current working tree (`git status --porcelain`) plus `git diff --name-status` against the HEAD captured at arm-time. Untracked files surface in `added`. Outside a git repo the entire `git` block is `null` and `files_changed` is omitted.
+- **No external API calls.** Only synchronous local `git` invocations with a 2-second timeout each; if any individual call fails, the corresponding field is `null` and the rest of the snapshot still returns.
 
 ## How it works
 

@@ -14,8 +14,9 @@
 
 import { createRequire } from "node:module";
 
-// Lazy-resolved sync `require` so we can pull child_process only when caffeinate
-// is actually enabled, avoiding the import cost for the common (disabled) path.
+// Lazy-resolved sync `require` so we can pull child_process only when needed
+// (caffeinate when enabled, git for ralph_status, etc.) without paying the
+// import cost up front.
 const moduleRequire = createRequire(import.meta.url);
 
 const DEFAULTS = Object.freeze({
@@ -449,6 +450,160 @@ function startCaffeinate({ env, platform, pid, spawnFn, log, label }) {
     };
 }
 
+// git snapshot / status helpers (issue #5)
+//
+// `ralph_status` needs to report files changed since the loop was armed.
+// We capture HEAD at arm-time and diff against it on demand. All git calls
+// are best-effort: if the repo isn't a git repo, the binary is missing, or
+// any individual call fails, the corresponding status field is omitted with
+// an explanatory note rather than the whole tool aborting.
+// ---------------------------------------------------------------------------
+
+const GIT_TIMEOUT_MS = 2000;
+
+/**
+ * Default git executor — runs `git <args>` synchronously with a tight timeout
+ * and never throws. Returns { ok, stdout, stderr, code }.
+ *
+ * @returns {{ ok: boolean, stdout: string, stderr: string, code: number|null }}
+ */
+function defaultGitExec(args, cwd) {
+    let spawnSync;
+    try {
+        ({ spawnSync } = moduleRequire("node:child_process"));
+    } catch {
+        return { ok: false, stdout: "", stderr: "child_process unavailable", code: null };
+    }
+    let res;
+    try {
+        res = spawnSync("git", args, {
+            cwd,
+            timeout: GIT_TIMEOUT_MS,
+            encoding: "utf8",
+            // Suppress the user's interactive credential helpers / pagers so
+            // the call stays cheap and never blocks on a TTY.
+            env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_PAGER: "cat" },
+        });
+    } catch (err) {
+        return { ok: false, stdout: "", stderr: err?.message ?? String(err), code: null };
+    }
+    if (res.error) {
+        return { ok: false, stdout: "", stderr: res.error.message ?? String(res.error), code: res.status ?? null };
+    }
+    return {
+        ok: res.status === 0,
+        stdout: typeof res.stdout === "string" ? res.stdout : "",
+        stderr: typeof res.stderr === "string" ? res.stderr : "",
+        code: res.status ?? null,
+    };
+}
+
+function captureGitArmSnapshot(gitExec, cwd) {
+    const head = gitExec(["rev-parse", "HEAD"], cwd);
+    if (!head.ok) return { isRepo: false };
+    const branch = gitExec(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
+    return {
+        isRepo: true,
+        head: head.stdout.trim(),
+        branch: branch.ok ? branch.stdout.trim() : null,
+    };
+}
+
+/**
+ * Categorize a porcelain v1 status line into added/modified/deleted/renamed.
+ * Untracked files surface as "added" so the user sees new files they may have
+ * forgotten to `git add`.
+ */
+function classifyPorcelainLine(line) {
+    if (line.length < 4) return null;
+    const x = line[0];
+    const y = line[1];
+    const rest = line.slice(3);
+    // Renames carry " -> " in the path portion: "old -> new".
+    let path = rest;
+    if (x === "R" || y === "R") {
+        const arrow = rest.indexOf(" -> ");
+        if (arrow >= 0) path = rest.slice(arrow + 4);
+        return { kind: "renamed", path };
+    }
+    if (x === "?" && y === "?") return { kind: "added", path };
+    if (x === "A" || y === "A") return { kind: "added", path };
+    if (x === "D" || y === "D") return { kind: "deleted", path };
+    if (x === "M" || y === "M" || x === "T" || y === "T") return { kind: "modified", path };
+    return { kind: "modified", path };
+}
+
+function buildFilesChangedSinceArm(gitExec, cwd, armedHead) {
+    // 1) committed changes since arm-time HEAD via diff --name-status
+    // 2) uncommitted (working tree + index) via status --porcelain
+    const out = { added: new Set(), modified: new Set(), deleted: new Set(), renamed: new Set() };
+    if (armedHead) {
+        const diff = gitExec(["diff", "--name-status", "-z", `${armedHead}..HEAD`], cwd);
+        if (diff.ok && diff.stdout) {
+            // -z output: STATUS\0path\0  (or for renames: STATUS\0old\0new\0)
+            const tokens = diff.stdout.split("\0").filter(Boolean);
+            for (let i = 0; i < tokens.length; i++) {
+                const status = tokens[i];
+                if (!status) continue;
+                if (status.startsWith("R") || status.startsWith("C")) {
+                    const _old = tokens[++i];
+                    const newp = tokens[++i];
+                    if (newp) out.renamed.add(newp);
+                    void _old;
+                } else if (status.startsWith("A")) {
+                    const p = tokens[++i]; if (p) out.added.add(p);
+                } else if (status.startsWith("D")) {
+                    const p = tokens[++i]; if (p) out.deleted.add(p);
+                } else {
+                    const p = tokens[++i]; if (p) out.modified.add(p);
+                }
+            }
+        }
+    }
+    const status = gitExec(["status", "--porcelain"], cwd);
+    if (status.ok) {
+        for (const line of status.stdout.split("\n")) {
+            if (!line) continue;
+            const c = classifyPorcelainLine(line);
+            if (!c) continue;
+            // Don't double-count: if a path is already tracked in another bucket
+            // (committed delta), the porcelain entry just confirms current state.
+            if (out.added.has(c.path) || out.modified.has(c.path) || out.deleted.has(c.path) || out.renamed.has(c.path)) continue;
+            out[c.kind].add(c.path);
+        }
+    }
+    return {
+        added: [...out.added].sort(),
+        modified: [...out.modified].sort(),
+        deleted: [...out.deleted].sort(),
+        renamed: [...out.renamed].sort(),
+    };
+}
+
+function gitAheadBehind(gitExec, cwd) {
+    const r = gitExec(["rev-list", "--left-right", "--count", "@{u}...HEAD"], cwd);
+    if (!r.ok) return null;
+    const m = r.stdout.trim().split(/\s+/);
+    if (m.length !== 2) return null;
+    const behind = Number.parseInt(m[0], 10);
+    const ahead = Number.parseInt(m[1], 10);
+    if (Number.isNaN(ahead) || Number.isNaN(behind)) return null;
+    return { ahead, behind };
+}
+
+function gitUncommittedLines(gitExec, cwd) {
+    const r = gitExec(["diff", "--shortstat", "HEAD"], cwd);
+    if (!r.ok) return null;
+    // Sample: " 2 files changed, 12 insertions(+), 3 deletions(-)"
+    const txt = r.stdout;
+    let total = 0;
+    const ins = /(\d+) insertion/.exec(txt);
+    const del = /(\d+) deletion/.exec(txt);
+    if (ins) total += Number.parseInt(ins[1], 10) || 0;
+    if (del) total += Number.parseInt(del[1], 10) || 0;
+    return total;
+}
+
 function failure(message, extra = {}) {
     return { ...extra, textResultForLlm: message, resultType: "failure" };
 }
@@ -749,6 +904,8 @@ export function validateArgs(args) {
  * @property {number} warnAtPct - Issue #7: first context-window warning threshold (default 80, range 1..99). 95% second-threshold is hard-coded.
  * @property {{ input: number, output: number, byIteration: Array<object>, byModel: Object<string, {input:number, output:number}>, currentModel: string|null, warnedThresholds: number[], unknownModelLogged: boolean }} tokens - Issue #7: cumulative token bookkeeping. Initialized empty at arm-time; mutated in onAssistantMessage as usage events arrive.
  * @property {(() => void) | null} stopCaffeinate - Idempotent killer for the optional caffeinate child (issue #8); null when sleep prevention is disabled or unsupported.
+ * @property {number|null} lastIterationAt - Epoch ms of the most recent iteration fire (issue #5); null until the first iteration starts.
+ * @property {{isRepo: boolean, head?: string, branch?: string|null}} armedGit - Snapshot of git HEAD/branch at arm-time (issue #5); `isRepo: false` when the cwd isn't a git repo.
  */
 
 /**
@@ -776,6 +933,12 @@ export function createRalphController(opts = {}) {
         pid: opts.caffeinate?.pid ?? process.pid,
         spawnFn: opts.caffeinate?.spawnFn ?? null,
     };
+    // Git dependency injection (issue #5). `ralph_status` calls gitExec(args)
+    // synchronously; tests replace it with a stub that returns canned results.
+    // `cwd` is captured at controller-build time so tests can pin a fake root.
+    const gitCwd = opts.git?.cwd ?? process.cwd();
+    const gitExecRaw = opts.git?.exec ?? ((args) => defaultGitExec(args, gitCwd));
+    const gitExec = (args) => gitExecRaw(args);
     const state = {
         active: null,           // ActiveLoopState; null when no loop is armed.
         lastAssistantContent: "",
@@ -1001,6 +1164,7 @@ export function createRalphController(opts = {}) {
         if (a.pendingFire) {
             a.pendingFire = false;
             a.i = 1;
+            a.lastIterationAt = Date.now();
             fireIteration(a);
             return;
         }
@@ -1047,6 +1211,7 @@ export function createRalphController(opts = {}) {
         }
 
         a.i += 1;
+        a.lastIterationAt = Date.now();
         fireIteration(a);
     };
 
@@ -1112,6 +1277,10 @@ export function createRalphController(opts = {}) {
             log,
             label,
         });
+        // Snapshot git HEAD/branch at arm-time for ralph_status's
+        // "files changed since loop started" diff. Best-effort — a non-git
+        // cwd just means status reports null for the git block.
+        const armedGit = captureGitArmSnapshot(gitExec, gitCwd);
         state.active = {
             ...parsedValue,
             label,
@@ -1132,6 +1301,8 @@ export function createRalphController(opts = {}) {
                 unknownModelLogged: false,
             },
             stopCaffeinate,
+            lastIterationAt: null,
+            armedGit,
         };
         state.lastAssistantContent = "";
         state.lastResult = null;
@@ -1149,6 +1320,67 @@ export function createRalphController(opts = {}) {
             `${label} armed (max=${max}${min > 1 ? `, min=${min}` : ""}). Iterations will run as conversation turns. Use ralph_stop to cancel.`,
             { armed: true, max, min },
         );
+    }
+
+    function buildStatusSnapshot() {
+        const now = Date.now();
+        if (!state.active) {
+            const out = { active: false };
+            if (state.lastResult) {
+                const r = state.lastResult;
+                out.last = {
+                    label: r.label,
+                    reason: r.reason,
+                    iterations: r.iterations,
+                    started_at: new Date(r.startedAt).toISOString(),
+                    finished_at: new Date(r.finishedAt).toISOString(),
+                    duration_ms: r.durationMs,
+                    preview: r.preview,
+                };
+                if (r.note) out.last.note = r.note;
+            }
+            return out;
+        }
+        const a = state.active;
+        const elapsed = clampedElapsed(a.startedAt);
+        const status = {
+            active: true,
+            label: a.label,
+            iteration: a.i,
+            max_iterations: a.max,
+            min_iterations: a.min,
+            elapsed_ms: elapsed,
+            elapsed_seconds: Math.floor(elapsed / 1000),
+            started_at: new Date(a.startedAt).toISOString(),
+            last_iteration_at: a.lastIterationAt ? new Date(a.lastIterationAt).toISOString() : null,
+            now: new Date(now).toISOString(),
+            completion_promise: a.completionPromise,
+            abort_promise: a.abortPromise,
+            stagnation_limit: a.stagnationLimit,
+            stagnation_streak: a.streak,
+            pending_first_iteration: a.pendingFire,
+            last_response_excerpt: previewOf(state.lastAssistantContent),
+        };
+        // Git block — best effort. Whole block is omitted when not in a repo.
+        if (a.armedGit?.isRepo) {
+            const head = gitExec(["rev-parse", "HEAD"]);
+            const branchRes = gitExec(["rev-parse", "--abbrev-ref", "HEAD"]);
+            const ab = gitAheadBehind(gitExec);
+            const uncommitted = gitUncommittedLines(gitExec);
+            const files = buildFilesChangedSinceArm(gitExec, gitCwd, a.armedGit.head);
+            status.git = {
+                branch: branchRes.ok ? branchRes.stdout.trim() : a.armedGit.branch,
+                armed_head: a.armedGit.head,
+                head: head.ok ? head.stdout.trim() : null,
+                ahead: ab?.ahead ?? null,
+                behind: ab?.behind ?? null,
+                uncommitted_lines: uncommitted,
+            };
+            status.files_changed = files;
+        } else {
+            status.git = null;
+        }
+        return status;
     }
 
     const tools = [
@@ -1264,6 +1496,31 @@ export function createRalphController(opts = {}) {
                     `${label} stopped after ${i}/${max} iterations${note ? ` (${note})` : ""}.`,
                     { iterations: i, note },
                 );
+            },
+        },
+        {
+            name: "ralph_status",
+            description:
+                "Return a structured live snapshot of the active ralph_loop / self_improve / grow_project (iteration count, elapsed time, configured promises, last response excerpt, files changed since arm-time). Read-only — never mutates loop state. When no loop is active, returns { active: false } plus the previous run's summary if available. Cheap (<10ms typically); safe to call repeatedly.",
+            parameters: {
+                type: "object",
+                properties: {},
+                additionalProperties: false,
+            },
+            handler: async (args) => {
+                const bad = validateOptionalArgShape("ralph_status", args, new Set());
+                if (bad) return bad;
+                const snapshot = buildStatusSnapshot();
+                // The structured payload is the primary product. The
+                // textResultForLlm string is a one-line summary so a model
+                // reading the result still gets a useful summary even if it
+                // doesn't introspect the JSON.
+                const summary = snapshot.active
+                    ? `${snapshot.label}: iteration ${snapshot.iteration}/${snapshot.max_iterations}, elapsed ${snapshot.elapsed_ms}ms`
+                    : snapshot.last
+                        ? `no active loop; last ${snapshot.last.label} ${snapshot.last.reason} after ${snapshot.last.iterations} iterations`
+                        : "no active loop and no prior run in this session";
+                return success(summary, { status: snapshot });
             },
         },
         {

@@ -5,7 +5,9 @@ name: Release
 #   2. Verifies CHANGELOG.md has a section for that version.
 #   3. Runs `npm test` on the tagged commit.
 #   4. Creates a GitHub Release with the CHANGELOG section as body and
-#      both extension/*.mjs files attached as standalone downloadable assets.
+#      every extension/*.mjs file attached as standalone downloadable
+#      assets. The asset list MUST stay in sync with install.sh's FILES
+#      array — see test/extension.test.mjs for the drift guard.
 #
 # All three pre-flight checks fail fast so a malformed tag never produces
 # a half-baked release. See docs/RELEASING.md for the manual checklist.
@@ -121,5 +123,6 @@ jobs:
           gh release create "${TAG}" \
             extension/extension.mjs \
             extension/handler.mjs \
+            extension/events-emit.mjs \
             --title "${TAG}" \
             --notes-file "${NOTES_FILE}"

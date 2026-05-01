@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Fixes
+- `.github/workflows/release.yml` — release tarball
+  now also includes `extension/events-emit.mjs`. The
+  workflow previously attached only `extension.mjs`
+  and `handler.mjs` as release assets, but
+  `handler.mjs` imports `./events-emit.mjs` (added in
+  the events-emit feature). Anyone who downloaded a
+  release tarball got a broken three-quarters
+  extension that crashed at module-load time. Added
+  a `test/extension.test.mjs` drift guard that
+  parses `release.yml` for `extension/*.mjs` lines
+  under `gh release create` and asserts the set
+  matches the actual `.mjs` files on disk — so a new
+  module can never silently land without a release
+  asset entry again.
+
 ### Tests
 - `test/extension.test.mjs` — three new behavioural
   tests for `install.sh` that actually spawn `bash`

@@ -4705,6 +4705,39 @@ test("install.sh FILES array matches actual extension/*.mjs on disk", () => {
     );
 });
 
+test("release.yml asset list matches extension/*.mjs on disk", () => {
+    // Drift guard for the release workflow. release.yml hardcodes the
+    // list of .mjs files attached to each GitHub Release tarball:
+    //   gh release create "${TAG}" \
+    //     extension/extension.mjs \
+    //     extension/handler.mjs \
+    //     ...
+    // This list MUST stay in sync with the actual modules under
+    // extension/, otherwise users who download the release assets get
+    // a half-shipped extension that crashes at import time. (Real
+    // historical bug: events-emit.mjs was added but the workflow's
+    // asset list wasn't updated until this drift guard caught it.)
+    const releaseYml = readFileSync(
+        resolve(REPO_ROOT, ".github/workflows/release.yml"),
+        "utf8",
+    );
+    // Match every `    extension/<name>.mjs \` line under the
+    // `gh release create` invocation.
+    const declared = [
+        ...releaseYml.matchAll(/^\s+extension\/([A-Za-z0-9._-]+\.mjs)\s*\\?\s*$/gm),
+    ]
+        .map((m) => m[1])
+        .sort();
+    const onDisk = readdirSync(resolve(REPO_ROOT, "extension"))
+        .filter((f) => f.endsWith(".mjs"))
+        .sort();
+    assert.deepEqual(
+        declared,
+        onDisk,
+        "release.yml asset list and extension/*.mjs disagree — update .github/workflows/release.yml whenever you add or remove a sibling .mjs in extension/",
+    );
+});
+
 test("install.sh: --help prints the leading comment block", () => {
     // Smoke test: the script must be syntactically valid bash (otherwise
     // bash would crash before reaching the --help branch) and the awk

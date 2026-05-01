@@ -13,7 +13,10 @@ TARGET_FLAG=""
 for arg in "$@"; do
   case "$arg" in
     --help|-h)
-      sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+      # Print the leading comment block (lines 2..first non-comment),
+      # decoupling --help from a hard-coded line range so refactors of
+      # the header (adding/removing a flag description) don't desync.
+      awk '/^[^#]/{exit} NR>1{print}' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     --dry-run)

@@ -265,3 +265,28 @@ test("bin stats: aggregates by tool, reason and iterations", () => {
     assert.match(r.stdout, /max: 7/);
     rmSync(dir, { recursive: true, force: true });
 });
+
+import { readFileSync as readFileSync2 } from "node:fs";
+
+test("parseArgv: --version and -V set flags.version", () => {
+    assert.equal(parseArgv(["--version"]).flags.version, true);
+    assert.equal(parseArgv(["-V"]).flags.version, true);
+});
+
+test("bin --version: prints version matching package.json", () => {
+    const r = runBin(["--version"]);
+    assert.equal(r.status, 0);
+    const pkg = JSON.parse(readFileSync2(resolve(REPO_ROOT, "package.json"), "utf8"));
+    assert.equal(r.stdout.trim(), `ralph-tui ${pkg.version}`);
+});
+
+test("bin -V: same as --version", () => {
+    const r = runBin(["-V"]);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /^ralph-tui \d/);
+});
+
+test("bin --help: mentions --version", () => {
+    const r = runBin(["--help"]);
+    assert.match(r.stdout, /--version/);
+});

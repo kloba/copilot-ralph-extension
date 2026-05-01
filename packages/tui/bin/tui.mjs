@@ -46,6 +46,7 @@ OPTIONS
               DURATION (e.g. 30d, 12h, 5m). Default 30d.
   --dry-run   For \`prune\`: list what would be removed; delete nothing.
   --help, -h  Show this help.
+  --version, -V  Print the ralph-tui package version and exit.
 
 ENV
   RALPH_EVENTS_DIR  Override the runs root (default ~/.copilot/ralph/runs).
@@ -61,6 +62,7 @@ export function parseArgv(argv) {
     while (args.length) {
         const a = args.shift();
         if (a === "--help" || a === "-h") { out.flags.help = true; continue; }
+        if (a === "--version" || a === "-V") { out.flags.version = true; continue; }
         if (a === "--plain") { out.flags.plain = true; continue; }
         if (a === "--no-plain") { out.flags.plain = false; continue; }
         if (a.startsWith("--")) {
@@ -276,8 +278,26 @@ export function cmdStats() {
     return 0;
 }
 
+export function readTuiVersion() {
+    try {
+        const pkgPath = nodePath.resolve(
+            nodePath.dirname(fileURLToPath(import.meta.url)),
+            "..",
+            "package.json",
+        );
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+        return pkg.version || "unknown";
+    } catch {
+        return "unknown";
+    }
+}
+
 export async function main(argv = process.argv.slice(2)) {
     const { cmd, positional, flags } = parseArgv(argv);
+    if (flags.version) {
+        process.stdout.write(`ralph-tui ${readTuiVersion()}\n`);
+        return 0;
+    }
     if (flags.help || cmd === "help" || (!cmd && !positional.length)) {
         process.stdout.write(USAGE);
         return 0;

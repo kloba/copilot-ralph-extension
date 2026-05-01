@@ -3,6 +3,21 @@
 ## Unreleased
 
 ### Fixes
+- `self_improve` `completion_promise` and `abort_promise` schema
+  descriptions now disclose the baked-SDLC-prompt drift footgun.
+  Previously the descriptions were generic copies of `ralph_loop`'s
+  ("Substring that, when present in an assistant turn's response,
+  signals completion"), with no mention of the SDLC prompt body.
+  An LLM dispatcher reading the schema before calling had no
+  warning that overriding either field without also editing the
+  prompt body silently runs the loop to `max_iterations`. The
+  runtime `warnPromiseDrift` log line still fires, but only AT
+  arm-time — by which point the wrong promise was already chosen.
+  The `abort_promise` description also now references the literal
+  baked token (`ABORT_NO_IMPROVEMENTS`) and notes the field has no
+  default, so callers know to supply the token explicitly to honor
+  the abort signal. (`grow_project` already had the parallel
+  callout.)
 - `grow_project` `focus` validation errors now carry the
   `grow_project:` prefix instead of `self_improve:`. The shared
   `parseFocus` helper hardcoded the latter, so a too-big or

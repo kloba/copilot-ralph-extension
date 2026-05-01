@@ -354,8 +354,7 @@ export function createRalphController() {
 
     // Clamp `Date.now() - start` to ≥ 0 so a backward clock jump (NTP
     // correction mid-loop) never surfaces a negative elapsed time in
-    // logs or in result.durationMs. Same defense in two places — keep
-    // them in lockstep via a single helper so future tweaks don't drift.
+    // logs or result.durationMs.
     const clampedElapsed = (start) => Math.max(0, Date.now() - start);
 
     const log = (msg) => {

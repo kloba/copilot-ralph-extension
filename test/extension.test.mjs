@@ -3590,3 +3590,59 @@ test("finish log line carries the self_improve label for ⏹/✅/⚠️ verbs", 
         assert.match(session.logs.join("\n"), /⚠️ ended self_improve.*reason: send_error/);
     }
 });
+
+test("finish log line carries the grow_project label for ⏹/✅/⚠️ verbs", async () => {
+    // Mirror of the self_improve verb-ladder test above, exercised
+    // through grow_project so a regression that hardcodes "ralph_loop"
+    // (or "self_improve") back into the finish log line — bypassing
+    // state.active.label — is caught for the new tool too. Three
+    // branches cover all three verbs in VERB_BY_REASON's fallback
+    // ladder. Use min_iterations:1 so completion_promise can fire on
+    // iter 1 (the grow_project default of 10 would defer it).
+    // user_stopped → ⏹ stopped grow_project
+    {
+        const session = makeFakeSession();
+        const c = createRalphController();
+        c.attach(session);
+        const gp = c.tools.find((t) => t.name === "grow_project");
+        const stop = c.tools.find((t) => t.name === "ralph_stop");
+        await gp.handler({ max_iterations: 5, min_iterations: 1 });
+        session.emit("session.idle", { data: {} });
+        await stop.handler({});
+        assert.match(session.logs.join("\n"), /⏹ stopped grow_project.*reason: user_stopped/);
+    }
+    // completion_promise → ✅ completed grow_project
+    {
+        const session = makeFakeSession();
+        const c = createRalphController();
+        c.attach(session);
+        const gp = c.tools.find((t) => t.name === "grow_project");
+        await gp.handler({ max_iterations: 5, min_iterations: 1 });
+        session.emit("session.idle", { data: {} });
+        runTurn(session, "all done COMPLETE");
+        assert.match(session.logs.join("\n"), /✅ completed grow_project.*reason: completion_promise/);
+    }
+    // abort_promise → ⏹ stopped grow_project (using ABORT_NO_BACKLOG,
+    // which is the new tool's default abort_promise — proves the
+    // default plumbing all the way through to the runtime watcher).
+    {
+        const session = makeFakeSession();
+        const c = createRalphController();
+        c.attach(session);
+        const gp = c.tools.find((t) => t.name === "grow_project");
+        await gp.handler({ max_iterations: 5, min_iterations: 1 });
+        session.emit("session.idle", { data: {} });
+        runTurn(session, "no work left ABORT_NO_BACKLOG");
+        assert.match(session.logs.join("\n"), /⏹ stopped grow_project.*reason: abort_promise/);
+    }
+    // send_error → ⚠️ ended grow_project
+    {
+        const session = makeFakeSession({ failSend: true });
+        const c = createRalphController();
+        c.attach(session);
+        const gp = c.tools.find((t) => t.name === "grow_project");
+        await gp.handler({ max_iterations: 5, min_iterations: 1 });
+        session.emit("session.idle", { data: {} });
+        assert.match(session.logs.join("\n"), /⚠️ ended grow_project.*reason: send_error/);
+    }
+});

@@ -32,9 +32,7 @@ function makeFakeSession({ failSend = false, rejectSend = false, sendErrorMessag
     };
 }
 
-let _turnCounter = 0;
 function runTurn(session, content) {
-    _turnCounter += 1;
     session.emit("assistant.message", { data: { content } });
     session.emit("session.idle", { data: {} });
 }

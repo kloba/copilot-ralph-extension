@@ -402,8 +402,9 @@ export function createRalphController() {
             if (state.active !== armedFor) return;
             armedFor.fireInFlight = false;
             const raw = err?.message ?? String(err);
-            log(`ralph_loop: send ${kind}: ${boundedNoteForLog(raw)}`);
-            finish("send_error", `send ${kind}: ${raw}`);
+            const prefix = `send ${kind}`;
+            log(`ralph_loop: ${prefix}: ${boundedNoteForLog(raw)}`);
+            finish("send_error", `${prefix}: ${raw}`);
         };
         try {
             const r = sendPrompt(prompt);

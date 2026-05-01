@@ -398,14 +398,19 @@ export function createRalphController() {
         };
         if (note) result.note = truncateNote(note);
         // Differentiate the log marker by category so an error finish doesn't
-        // visually read like a clean cancellation:
-        //   ✅ completed  — completion_promise
-        //   ⚠️  ended    — send_error, aborted (something went wrong)
-        //   ⏹ stopped    — everything else (max_iter, abort_promise, stagnation, user_stopped, detached)
-        const verb =
-            reason === "completion_promise" ? "✅ completed" :
-            reason === "send_error" || reason === "aborted" ? "⚠️ ended" :
-            "⏹ stopped";
+        // visually read like a clean cancellation. Lookup table mirrors the
+        // mapping in the comment below; everything not listed falls through
+        // to "⏹ stopped" (max_iter, abort_promise, stagnation, user_stopped,
+        // detached).
+        //   ✅ completed — completion_promise
+        //   ⚠️  ended   — send_error, aborted (something went wrong)
+        //   ⏹ stopped   — everything else
+        const VERB_BY_REASON = {
+            completion_promise: "✅ completed",
+            send_error: "⚠️ ended",
+            aborted: "⚠️ ended",
+        };
+        const verb = VERB_BY_REASON[reason] ?? "⏹ stopped";
         // Collapse note whitespace for the single-line log format (a multi-
         // line Error stack would otherwise break alignment in the timeline).
         const noteForLog = collapseNote(result.note);

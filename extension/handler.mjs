@@ -547,11 +547,10 @@ export function createRalphController() {
         const reasonRaw = ev?.data?.reason ?? ev?.reason;
         const trimmed = typeof reasonRaw === "string" ? reasonRaw.trim() : "";
         const note = trimmed || undefined;
-        // Bound the log line: boundedNoteForLog so a pathologically large
-        // SDK abort reason doesn't dump megabytes into the timeline. The
-        // structured note on the result is also truncated by finish(),
-        // but the pre-finish log line was previously printing the raw
-        // value uncapped — fix that.
+        // Bound the log line via boundedNoteForLog so a pathologically
+        // large SDK abort reason doesn't dump megabytes into the timeline.
+        // The structured note on the result is independently truncated
+        // by finish() → truncateNote.
         const noteForLog = note ? boundedNoteForLog(note) : "";
         log(`⏹ ralph_loop interrupted by session abort${noteForLog ? ` (${noteForLog})` : ""}.`);
         finish("aborted", note);

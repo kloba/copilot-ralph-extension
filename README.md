@@ -6,11 +6,11 @@
 
 ## What is Ralph Wiggum?
 
-Ralph Wiggum is an iterative-agent technique: re-feed the same prompt to a coding agent in a loop until it emits a "completion promise" (e.g. `COMPLETE`) or hits an iteration cap. Originally a Claude Code plugin by Anthropic, popularized by [Th0rgal/open-ralph-wiggum](https://github.com/Th0rgal/open-ralph-wiggum) for multiple agents.
+Ralph Wiggum is an iterative-agent technique: re-feed the same prompt to a coding agent in a loop until it emits a "completion promise" (e.g. `COMPLETE`) or hits an iteration cap. Originally a Claude Code plugin by Anthropic.
 
 ## What's different here?
 
-Existing Ralph implementations for Copilot CLI (open-ralph-wiggum, copilot-ralph-mode, etc.) are **shell wrappers** — they spawn `copilot -p "..."` as a subprocess for each iteration. Each iteration starts with a **fresh session**.
+Existing Ralph implementations for Copilot CLI (e.g. copilot-ralph-mode) are **shell wrappers** — they spawn `copilot -p "..."` as a subprocess for each iteration. Each iteration starts with a **fresh session**.
 
 This extension instead runs **in-session**, driven by the Copilot CLI extension SDK's `session.idle` event — the same architectural pattern as Anthropic's Claude Code [`ralph-wiggum`](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum) plugin (their `Stop` hook). Conversation context is **retained** across iterations and every iteration is a normal assistant turn the user sees.
 
@@ -21,7 +21,7 @@ This extension instead runs **in-session**, driven by the Copilot CLI extension 
 | Where it runs | Inside your active session | External subprocess | Inside your active session |
 | Mechanism | `session.idle` event + `session.send` | Subprocess fork per iter | `Stop` hook + re-prompt |
 
-If you want fresh-context iterations, use [open-ralph-wiggum](https://github.com/Th0rgal/open-ralph-wiggum). If you want the agent to keep its working memory inside Copilot CLI, use this.
+If you want fresh-context iterations, use a shell-wrapper implementation. If you want the agent to keep its working memory inside Copilot CLI, use this.
 
 ## Install
 
@@ -240,7 +240,6 @@ If you arm a new `ralph_loop` *before* the next user prompt fires, the prior run
 ## Related
 
 - **[anthropics/claude-code/plugins/ralph-wiggum](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)** — original plugin for Claude Code
-- **[Th0rgal/open-ralph-wiggum](https://github.com/Th0rgal/open-ralph-wiggum)** — multi-agent shell wrapper (Claude Code, Codex, Copilot CLI, Cursor, OpenCode)
 - **[sepehrbayat/copilot-ralph-mode](https://github.com/sepehrbayat/copilot-ralph-mode)** — Python wrapper for Copilot CLI
 - **[mihaiLucian/copilot-ralph](https://github.com/mihaiLucian/copilot-ralph)** — PowerShell wrapper for Copilot CLI
 - **[michaelstonis/ImInDanger](https://github.com/michaelstonis/ImInDanger)** — C# CLI using GitHub.Copilot.SDK (.NET)

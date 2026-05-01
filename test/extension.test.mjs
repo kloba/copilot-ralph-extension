@@ -781,6 +781,36 @@ test("self_improve rejects 'prompt' arg — users cannot override the SDLC promp
     assert.equal(c.state.active, null);
 });
 
+test("self_improve rejects array/primitive args; accepts null/undefined", async () => {
+    // The handler explicitly skips validateArgShape for null/undefined
+    // (treats them as "use defaults"). Non-object shapes (array, number,
+    // string, boolean) must still be rejected with a self_improve-prefixed
+    // error so a caller passing `self_improve([])` doesn't silently arm
+    // with defaults.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+
+    for (const bad of [[], [1, 2], 0, 1, "go", true]) {
+        const r = await t.handler(bad);
+        assert.equal(r.resultType, "failure", `bad arg ${JSON.stringify(bad)} should fail`);
+        assert.match(r.textResultForLlm, /^self_improve:/);
+        assert.match(r.textResultForLlm, /must be an object/);
+        assert.equal(c.state.active, null, `bad arg ${JSON.stringify(bad)} must not arm a loop`);
+    }
+    // null and undefined are the documented "use all defaults" path.
+    const ok1 = await t.handler(null);
+    assert.equal(ok1.resultType, "success");
+    assert.equal(c.state.active.label, "self_improve");
+    // Tear down before re-arming to satisfy the single-loop guard.
+    const stop = c.tools.find((x) => x.name === "ralph_stop");
+    await stop.handler({});
+    const ok2 = await t.handler(undefined);
+    assert.equal(ok2.resultType, "success");
+    assert.equal(c.state.active.label, "self_improve");
+});
+
 test("self_improve rejects focus over 500 chars", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

@@ -768,22 +768,15 @@ export function createRalphController() {
             currentDetach = null;
         }
         sessionRef = session;
-        // Subscribe to the three events we care about. Per the SDK
-        // contract `session.on()` returns an unsubscribe function — if a
-        // session implementation returns anything else we'd have no way
-        // to remove the listener on detach (memory/listener leak). Warn
-        // loudly with the event name so the issue is debuggable, then
-        // drop the bogus value so detach doesn't crash.
-        //
-        // Subscribe one-at-a-time and collect unsubs eagerly so a throw
-        // mid-subscribe (e.g. session.on for "abort" rejects an unknown
-        // event) leaves NO orphaned listeners behind: we roll back the
-        // ones we already wired before re-throwing. Without this the
-        // first call's listener would leak indefinitely.
+        // Wire the three session events we care about. Subscribing
+        // one-at-a-time + tracking unsubs lets us roll back cleanly if
+        // the SDK throws partway through (e.g. session.on rejects an
+        // unknown event name) — without rollback the earlier listeners
+        // would leak indefinitely.
         const unsubs = [];
-        // Best-effort: walk every collected unsubscribe handle, swallowing
-        // throws so one buggy listener can't strand the rest. Used by the
-        // rollback path in subscribeOrFail and by detach.
+        // Best-effort teardown: swallow per-unsub throws so one buggy
+        // listener can't strand the rest. Shared by subscribeOrFail's
+        // rollback path and by detach.
         const unsubscribeAll = () => {
             for (const u of unsubs) {
                 try { u(); } catch { /* ignore */ }
@@ -798,6 +791,10 @@ export function createRalphController() {
                 sessionRef = null;
                 throw err;
             }
+            // Per SDK contract session.on() returns an unsubscribe fn.
+            // If it returns anything else we can't remove the listener
+            // on detach (a leak), but we can't crash the install either —
+            // log loudly with the event name so it's debuggable.
             if (typeof ret === "function") {
                 unsubs.push(ret);
             } else {

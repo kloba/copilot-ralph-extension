@@ -34,6 +34,32 @@
   bound symbolically and stay drift-proof through future bumps.
 
 ### Features
+- **New `grow_project` tool.** Third long-running loop tool,
+  parallel to `self_improve`. Where `self_improve` polishes an
+  existing codebase, `grow_project` *grows* one: on the first
+  iteration it ideates a backlog of small, well-scoped features
+  and persists them as **GitHub issues** (`gh issue create
+  --label grow-project --label proposed`); subsequent iterations
+  each pick one proposed issue, implement it, and close it. The
+  per-feature completion gate is **three-part**: tests stay
+  green, every checkbox in the issue's `acceptance_criteria`
+  block passes, and the issue's `demo_command` is executed and
+  its output pasted back as a comment. Reuses all existing
+  `armLoop` / `createRalphController` plumbing — only new
+  surface is `PROMPT_GROW_PROJECT`, `GROW_PROJECT_DEFAULTS`
+  (`max_iterations: 200`, `min_iterations: 10`),
+  `GROW_PROJECT_KEYS`, the handler block, and the schema
+  registration. Inherits `warnPromiseDrift`, `parseFocus`,
+  `requireAttachedSession`, `activeLoopGuard`,
+  `validateOptionalArgShape`, and the error-prefix rewrite from
+  the same pattern as `self_improve`. The agent emits
+  `ABORT_NO_BACKLOG` (a new token, distinct from
+  `self_improve`'s `ABORT_NO_IMPROVEMENTS`) when the backlog is
+  exhausted; `abort_promise` defaults to that token so the
+  signal is wired by default. Active-loop guard is symmetric
+  across all three tools — only one loop runs per session at a
+  time.
+
 - **New `self_improve` tool.** Thin wrapper that arms `ralph_loop`
   with a baked-in, project-agnostic SDLC self-improvement prompt
   walking the agent through nine stages — ORIENT (read recent

@@ -4095,3 +4095,29 @@ test("finish log line carries the grow_project label for ⏹/✅/⚠️ verbs", 
         assert.match(session.logs.join("\n"), /⚠️ ended grow_project.*reason: send_error/);
     }
 });
+
+test("dual Co-authored-by trailers are baked in canonical order: Copilot first, copilot-ralph second (issue #1)", () => {
+    // The order of Co-authored-by trailers is observable: GitHub's
+    // commit UI surfaces the first co-author more prominently, and
+    // any downstream tooling that splits on the first trailer would
+    // attribute the commit differently if Copilot and copilot-ralph
+    // swap. Pin "Copilot first, copilot-ralph second" in BOTH baked
+    // prompts so a refactor that re-orders the COMMIT block can't
+    // silently invert attribution. Use indexOf to compare positions
+    // explicitly — a single regex matching "Copilot…copilot-ralph"
+    // across newlines could backtrack through the inverted order
+    // and falsely pass.
+    for (const [label, p] of [
+        ["PROMPT_SELF_IMPROVE", PROMPT_SELF_IMPROVE],
+        ["PROMPT_GROW_PROJECT", PROMPT_GROW_PROJECT],
+    ]) {
+        const copilotIdx = p.indexOf("Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>");
+        const ralphIdx = p.indexOf("Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>");
+        assert.notEqual(copilotIdx, -1, `${label} must contain the Copilot trailer`);
+        assert.notEqual(ralphIdx, -1, `${label} must contain the copilot-ralph trailer`);
+        assert.ok(
+            copilotIdx < ralphIdx,
+            `${label} must list Copilot trailer BEFORE copilot-ralph (Copilot@${copilotIdx}, copilot-ralph@${ralphIdx}). Inverting order changes which co-author GitHub surfaces first in the commit UI.`,
+        );
+    }
+});

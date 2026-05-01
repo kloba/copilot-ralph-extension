@@ -1025,6 +1025,28 @@ test("PROMPT_GROW_PROJECT references the gh-issue backlog + acceptance + demo co
     assert.match(p, /git commit -F/, "COMMIT must use the -F temp-file ritual, not -m heredoc");
 });
 
+test("both baked prompts retain the cwd guardrail and the trigger-phrase footgun caveat", () => {
+    // Two HARD RULES baked into BOTH prompts that nothing else
+    // tests:
+    //   1. "Stay in cwd; do not edit unrelated repos." — without
+    //      this, a self_improve / grow_project agent could
+    //      destructively edit a sibling clone if the IDE's open
+    //      workspace differs from the cwd. The rule is the only
+    //      thing keeping every loop-driven commit scoped.
+    //   2. "Prefer cancel/tear down/stop over forceful-action
+    //      synonyms" — some agent runtimes (and shell histories)
+    //      treat the obfuscated k-i-l-l word as a trigger phrase
+    //      that aborts the turn mid-commit. Loop-driven commits
+    //      have historically been silently dropped this way.
+    // Pin both rules on each prompt so a "tighten the prompt"
+    // refactor can't strip them.
+    for (const [name, prompt] of [["PROMPT_SELF_IMPROVE", PROMPT_SELF_IMPROVE], ["PROMPT_GROW_PROJECT", PROMPT_GROW_PROJECT]]) {
+        assert.match(prompt, /Stay in cwd/i, `${name}: must retain the "Stay in cwd" hard rule`);
+        assert.match(prompt, /\b(cancel|tear down|stop)\b/i, `${name}: must offer cancel/tear down/stop as preferred wording`);
+        assert.match(prompt, /trigger phrase/i, `${name}: must explain WHY (trigger-phrase risk) rather than just listing alternatives`);
+    }
+});
+
 test("PROMPT_SELF_IMPROVE bakes the dual Co-authored-by trailer + RALPH_NO_ATTRIBUTION opt-out (issue #1)", () => {
     // Issue #1: every loop-driven commit ships TWO Co-authored-by
     // trailers — the existing Copilot trailer for agent attribution,

@@ -729,12 +729,15 @@ export function createRalphController() {
         if (!session || typeof session !== "object") {
             throw new TypeError("ralph: attach(session) requires a session object.");
         }
-        if (typeof session.send !== "function") {
-            throw new TypeError("ralph: attached session is missing required method 'send(message)'.");
-        }
-        if (typeof session.on !== "function") {
-            throw new TypeError("ralph: attached session is missing required method 'on(event, handler)'.");
-        }
+        // Both required-method checks share an identical shape; bundle them
+        // so adding a third (e.g. session.off) is a one-line addition.
+        const requireMethod = (name, signature) => {
+            if (typeof session[name] !== "function") {
+                throw new TypeError(`ralph: attached session is missing required method '${signature}'.`);
+            }
+        };
+        requireMethod("send", "send(message)");
+        requireMethod("on", "on(event, handler)");
         // Idempotent re-attach: if we're already wired (possibly to a
         // different session), tear that down first so we don't end up with
         // duplicate listeners that would double-count every event.

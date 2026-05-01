@@ -1095,6 +1095,20 @@ test("self_improve rejects focus over MAX_FOCUS_CHARS", async () => {
     assert.match(r.textResultForLlm, new RegExp(`self_improve: focus exceeds ${MAX_FOCUS_CHARS}`));
 });
 
+test("self_improve accepts focus of exactly MAX_FOCUS_CHARS (boundary)", async () => {
+    // The handler check is `trimmed.length > MAX_FOCUS_CHARS`, so a
+    // value of exactly the cap must pass. Pin the boundary because an
+    // off-by-one regression to `>=` would be invisible without it: the
+    // existing "rejects over the cap" test only proves cap+1 fails.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({ focus: "x".repeat(MAX_FOCUS_CHARS), max_iterations: 1, min_iterations: 1 });
+    assert.equal(r.resultType, "success", r.textResultForLlm);
+    assert.equal(r.armed, true);
+});
+
 test("self_improve rejects whitespace-only focus", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

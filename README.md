@@ -103,7 +103,7 @@ ralph_stop({ reason: "user changed plan" })
 }
 ```
 
-If no loop is active it returns `resultType: "failure"` with the message `ralph_stop: no ralph_loop is currently running.` — the loop's structured outcome (with `reason: "user_stopped"`) is still surfaced via the next `additionalContext` injection, exactly as for any other finish reason.
+If no loop is active it returns `resultType: "failure"` with the message `ralph_stop: no ralph_loop is currently running.` and does nothing else — there's no new outcome to surface. (When `ralph_stop` *does* succeed, the resulting `user_stopped` outcome flows through the `additionalContext` injection on the next `onUserPromptSubmitted` hook, exactly as for any other finish reason.)
 
 ### Result shape
 

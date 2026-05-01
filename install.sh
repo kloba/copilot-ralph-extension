@@ -85,7 +85,12 @@ mkdir -p "$TARGET_DIR"
 # new file, never a torn copy.
 TMP_FILES=()
 cleanup() {
-  for tmp in "${TMP_FILES[@]}"; do
+  # Safely expand a potentially-empty array under `set -u` (macOS bash 3.2
+  # treats `"${TMP_FILES[@]}"` as an unbound variable when the array is
+  # empty). The `${arr[@]+"${arr[@]}"}` idiom only expands if at least one
+  # element is set, so the trap is robust if it fires before the first
+  # temp file is pushed (e.g. SIGINT between trap install and the loop).
+  for tmp in ${TMP_FILES[@]+"${TMP_FILES[@]}"}; do
     [[ -e "$tmp" ]] && rm -f "$tmp"
   done
 }

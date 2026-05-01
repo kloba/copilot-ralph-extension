@@ -1057,6 +1057,36 @@ test("empty assistant.message content still flips observedMessageThisFire (next 
     assert.equal(session.sent.length, 2);
 });
 
+test("pre-arm assistant content is discarded — does not satisfy iter-1 completion check", async () => {
+    // The turn that *calls* ralph_loop is itself an assistant turn that
+    // can have already emitted text before the tool call resolved. If
+    // the agent happened to mention the completion_promise in that
+    // pre-arm content (e.g. quoting the user "I'll loop until DONE"),
+    // we must NOT count that as a satisfied completion the moment the
+    // first iteration's idle arrives. onIdle clears the buffer right
+    // before firing iter 1 specifically so iter 1 is evaluated against
+    // its OWN response, not the arming-turn carryover. Pin that
+    // contract here so a future refactor that drops the clear-on-arm
+    // line silently regresses.
+    const { session, controller } = await arm({
+        max_iterations: 5,
+        completion_promise: "DONE",
+        stagnation_limit: 0,
+    });
+    // Simulate an assistant.message during the arming turn (before the
+    // first idle) that already contains the completion phrase.
+    session.emit("assistant.message", { data: { content: "I'll loop until DONE" } });
+    // First idle: fires iter 1, must clear the pre-arm content.
+    session.emit("session.idle", { data: {} });
+    assert.equal(controller.state.active.i, 1, "iter 1 should have fired");
+    assert.equal(controller.state.lastAssistantContent, "", "pre-arm content must be cleared");
+    // Iter 1's response does NOT contain DONE → completion must not fire.
+    session.emit("assistant.message", { data: { content: "still working" } });
+    session.emit("session.idle", { data: {} });
+    assert.equal(controller.state.lastResult, null, "loop must not have finished — pre-arm DONE was discarded");
+    assert.equal(controller.state.active.i, 2, "loop should have advanced to iter 2");
+});
+
 test("session.idle with empty data fires iter 1 (no turnId required)", async () => {
     // Regression: the older implementation tracked lastTurnId and used a
     // sentinel because turnId:null could self-match. session.idle has no

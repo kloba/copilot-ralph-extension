@@ -254,10 +254,8 @@ export function validateArgs(args) {
     }
     const prompt = (args.prompt ?? "").trim();
     if (!prompt) {
-        // Distinguish "you forgot to pass a prompt" from "you passed a
-        // string but it's only whitespace" — the second case is usually
-        // a templating bug (variable interpolated to empty), and saying
-        // so loudly helps the agent fix the right layer.
+        // Distinguish "missing" from "whitespace-only" — the latter
+        // usually signals a templating bug (variable interpolated to "").
         if (!args.prompt) {
             return { error: "ralph_loop: prompt is required and must be non-empty." };
         }

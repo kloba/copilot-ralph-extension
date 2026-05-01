@@ -251,7 +251,7 @@ If you arm a new `ralph_loop` *before* the next user prompt fires, the prior run
 ## Troubleshooting
 
 - **`/extensions` doesn't list `ralph`.** Confirm `extension.mjs` and `handler.mjs` are present in `~/.copilot/extensions/ralph/` (user-scoped) or `.github/extensions/ralph/` (project-scoped, only visible from inside that repo) and restart Copilot CLI. `./install.sh` from source double-checks both files with `node --check` before writing.
-- **`ralph_loop is already armed/running` failure.** Only one loop runs per session at a time — call `ralph_stop` before re-arming.
+- **`ralph_loop is already armed/running` failure.** Only one loop runs per session at a time — call `ralph_stop` before re-arming. The same message fires when `ralph_loop` and `self_improve` collide either way.
 - **`abort_promise … overlap as substrings`.** `completion_promise` and `abort_promise` must be disjoint phrases (e.g. `"DONE"` and `"DONE_FAIL"` is rejected because one contains the other). Pick non-overlapping tokens.
 - **Loop ends immediately with `reason: send_error`.** The first `session.send` call rejected — usually because `controller.attach(session)` was not called or the session is no longer live. Check `result.note` for the underlying error.
 - **Loop runs N+ times instead of stopping.** Check that the prompt actually instructs the agent to emit the `completion_promise` literally; with a quoted/paraphrased completion phrase the loop only stops at `max_iterations`.
@@ -263,7 +263,8 @@ If you arm a new `ralph_loop` *before* the next user prompt fires, the prior run
 - **Prompt is re-injected verbatim every iteration.** The loop has no concept of progress — the agent must derive what's already done from its own conversation history. This is intentional (it matches the Anthropic plugin) but means a vague prompt yields vague iteration.
 - **Stagnation always overrides `min_iterations`.** Identical responses fire stagnation regardless of `min_iterations` — this is a safety floor, not a configurable behavior.
 - **Iteration timing is loop-arm-relative.** The `(elapsed Xms)` value in iter logs and the final `durationMs` measure time from arming, not per-turn latency. Per-turn timing isn't tracked.
-- **One loop per session.** Arming a second `ralph_loop` while one is active fails fast — you must `ralph_stop` the active loop first.
+- **One loop per session.** Arming a second `ralph_loop` (or a `self_improve`) while one is active fails fast — you must `ralph_stop` the active loop first. The same guard applies in both directions: a `ralph_loop` while `self_improve` is active is also rejected.
+- **`self_improve` keeps re-iterating with no commits.** The baked SDLC prompt instructs the agent to emit `COMPLETE` when the staircase is done. Until that token appears in an iteration, the loop runs to `max_iterations`. To stop early, either `ralph_stop` it manually or prepend a tighter `focus` so each iteration converges faster.
 
 ## Requirements
 

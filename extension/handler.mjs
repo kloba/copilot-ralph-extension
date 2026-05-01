@@ -14,12 +14,12 @@
 //
 // Inspired by the Stop-hook re-injection pattern.
 
-const DEFAULTS = {
+const DEFAULTS = Object.freeze({
     max_iterations: 20,
     min_iterations: 1,
     completion_promise: "COMPLETE",
     stagnation_limit: 3,
-};
+});
 const MAX_ALLOWED_ITERATIONS = 1000;
 const PREVIEW_CHARS = 500;
 const MAX_PROMPT_CHARS = 65536;

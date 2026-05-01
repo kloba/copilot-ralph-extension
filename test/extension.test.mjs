@@ -362,6 +362,25 @@ test("public tools and hooks surface is frozen (defensive against accidental mut
     assert.throws(() => { stopTool.parameters.properties.reason.maxLength = 9999; }, TypeError);
 });
 
+test("DEFAULTS object is frozen — defaults cannot be mutated at runtime", () => {
+    // DEFAULTS is the single source of truth for default arg values across
+    // validateArgs (lines 196/207/218/261), the JSON schema's `default`
+    // hints, and the on-arm log line. A consumer mutating it (e.g.
+    // `__test__.DEFAULTS.max_iterations = 9999`) would silently change
+    // validation behavior for the rest of the process, bypassing the
+    // hardcoded MAX_ALLOWED_ITERATIONS cap. Freeze prevents that.
+    const { DEFAULTS } = __test__;
+    assert.ok(Object.isFrozen(DEFAULTS));
+    assert.throws(() => { DEFAULTS.max_iterations = 9999; }, TypeError);
+    assert.throws(() => { DEFAULTS.completion_promise = "X"; }, TypeError);
+    // Sanity-check the actual values so a refactor that swaps the freeze in
+    // can't simultaneously change a default without surfacing here.
+    assert.equal(DEFAULTS.max_iterations, 20);
+    assert.equal(DEFAULTS.min_iterations, 1);
+    assert.equal(DEFAULTS.completion_promise, "COMPLETE");
+    assert.equal(DEFAULTS.stagnation_limit, 3);
+});
+
 test("ralph_loop tool spec includes stagnation_limit and required prompt", () => {
     const c = createRalphController();
     const t = c.tools.find((x) => x.name === "ralph_loop");

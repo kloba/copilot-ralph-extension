@@ -1002,6 +1002,19 @@ test("PROMPT_GROW_PROJECT references the gh-issue backlog + acceptance + demo co
     // a dep (e.g. "#5 needs the schema added in #4 first") could be
     // shipped out-of-order and break the build.
     assert.match(p, /Depends-on/, "SELECT must respect Depends-on: #N body lines");
+    // COMMIT stage: subject MUST reference the chosen issue via
+    // `feat(#N): <title>` shape. A commit with just "feat: <title>"
+    // (no #N) and no `Closes #N` trailer would not auto-close the
+    // issue, leaving the in-progress issue label stuck and SELECT
+    // unable to advance. Pin the example shape so a refactor that
+    // drops the `(#N)` reference fails the suite.
+    assert.match(p, /feat\(#\d+\)|feat\(#N\)/i, "COMMIT subject example must reference the issue with feat(#N)");
+    // Temp-file commit ritual — the prompt explicitly warns that
+    // heredoc + commit in one shell call has historically failed
+    // silently. Pin the `git commit -F` instruction so a refactor
+    // that simplifies it back to `git commit -m` re-introduces the
+    // bug-trail.
+    assert.match(p, /git commit -F/, "COMMIT must use the -F temp-file ritual, not -m heredoc");
 });
 
 test("PROMPT_SELF_IMPROVE bakes the dual Co-authored-by trailer + RALPH_NO_ATTRIBUTION opt-out (issue #1)", () => {

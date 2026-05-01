@@ -42,6 +42,25 @@ test("resolveRunEventsPath rejects empty runId", () => {
     assert.throws(() => resolveRunEventsPath("", {}), /non-empty string/);
 });
 
+test("resolveRunEventsPath rejects path-traversal runIds", () => {
+    const env = { RALPH_EVENTS_DIR: "/tmp/r" };
+    for (const bad of ["..", ".", "../etc", "foo/../bar", "foo/bar", "foo\\bar", "..\\etc", "foo\0bar"]) {
+        assert.throws(
+            () => resolveRunEventsPath(bad, { env }),
+            /path separators or traversal segments/,
+            `expected ${JSON.stringify(bad)} to be rejected`,
+        );
+    }
+});
+
+test("resolveRunEventsPath accepts legitimately-shaped runIds", () => {
+    const env = { RALPH_EVENTS_DIR: "/tmp/r" };
+    // Emitter-produced shape: [A-Za-z0-9_-]+
+    for (const ok of ["ralph_loop-1", "self_improve-1700000000000", "grow_project-42", "a-b_c-1"]) {
+        assert.doesNotThrow(() => resolveRunEventsPath(ok, { env }));
+    }
+});
+
 test("createEventWriter: emits a valid armed line and creates the run dir", () => {
     const root = mkTmp();
     const runId = makeRunId("ralph_loop", 1700000000000);

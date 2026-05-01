@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Fixes
+- `packages/tui/src/writer.mjs` — `resolveRunEventsPath` now
+  rejects runIds containing path separators (`/`, `\`),
+  null bytes, or `..` traversal segments with a clear
+  `TypeError`. Emitter-produced runIds (`[A-Za-z0-9_-]+`)
+  are unaffected; the guard is a safety net for the
+  user-supplied `runId` argument on `ralph-tui replay`,
+  `ralph-tui watch`, and any future subcommand that takes a
+  runId from the command line. Without it, a stray
+  `replay ../../etc/passwd` would happily build a path
+  outside the runs root and surface a confusing
+  "ENOENT" instead of an actionable validation error.
+
 ### Refactor
 - `packages/tui/bin/tui.mjs` — `cmdDoctor` now calls the
   existing `readTuiVersion()` helper instead of re-implementing

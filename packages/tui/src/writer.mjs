@@ -44,6 +44,14 @@ export function resolveRunEventsPath(runId, deps = {}) {
     if (typeof runId !== "string" || !runId) {
         throw new TypeError("resolveRunEventsPath: runId must be a non-empty string");
     }
+    // Reject path-traversal payloads so a stray `replay ../../etc/passwd`
+    // (or a hostile runId surfaced via shell completion / autofill) cannot
+    // escape the runs root. Legitimately emitted runIds are produced by
+    // `makeRunId` and only contain `[A-Za-z0-9_-]`, so this is purely a
+    // safety net for user-supplied input on the TUI subcommands.
+    if (runId.includes("/") || runId.includes("\\") || runId.includes("\0") || runId === "." || runId === ".." || runId.includes("..")) {
+        throw new TypeError(`resolveRunEventsPath: runId ${JSON.stringify(runId)} contains path separators or traversal segments`);
+    }
     const path = deps.path ?? pathDefault;
     return path.join(resolveRunsRoot(deps), runId, "events.jsonl");
 }

@@ -189,7 +189,7 @@ import { createRalphController } from "./handler.mjs";
 
 const controller = createRalphController();
 const session = await joinSession({
-    tools: controller.tools,   // ralph_loop + ralph_stop
+    tools: controller.tools,   // ralph_loop + ralph_stop + self_improve
     hooks: controller.hooks,   // onUserPromptSubmitted carries the result forward
 });
 const detach = controller.attach(session);    // wires session.idle / assistant.message / abort listeners

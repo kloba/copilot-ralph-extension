@@ -1493,6 +1493,30 @@ test("stale detach after re-attach does NOT kill the new session's active loop",
     assert.equal(c.state.lastResult, null);
 });
 
+test("re-attach unsubscribes prior session's listeners (no cross-session refires)", async () => {
+    // A stale session whose attach() has been superseded must NOT be able
+    // to refire iterations on the controller. If re-attach forgot to call
+    // currentDetach() first, sessionA's handlers would still be live and
+    // a session.idle on sessionA would push another prompt onto sessionB.
+    const sessionA = makeFakeSession();
+    const sessionB = makeFakeSession();
+    const c = createRalphController();
+    c.attach(sessionA);
+    c.attach(sessionB);                    // supersedes — should clear A
+    await c.tools[0].handler({ prompt: "go", max_iterations: 5 });
+    sessionB.emit("session.idle", { data: {} });
+    assert.equal(sessionB.sent.length, 1, "expected exactly one fire to B");
+
+    // Now blast events at the stale session — none of these should
+    // perturb the controller's loop on sessionB.
+    sessionA.emit("session.idle", { data: {} });
+    sessionA.emit("assistant.message", { data: { content: "stray COMPLETE" } });
+    sessionA.emit("abort", { data: { reason: "should be ignored" } });
+    assert.equal(sessionB.sent.length, 1, "stale-session events must not refire");
+    assert.equal(c.state.active?.i, 1, "loop should still be on its original iter");
+    assert.equal(c.state.lastResult, null, "stray events must not finish the loop");
+});
+
 test("result includes durationMs, startedAt, finishedAt", async () => {
     const { session, controller } = await arm({ max_iterations: 3 });
     session.emit("session.idle", { data: {} });

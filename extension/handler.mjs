@@ -256,7 +256,7 @@ const SELF_IMPROVE_KEYS = new Set([
     "abort_promise",
     "stagnation_limit",
 ]);
-const MAX_FOCUS_CHARS = 500;
+const MAX_FOCUS_CHARS = 2000;
 
 // Validate completion_promise / abort_promise: string, non-whitespace,
 // ≤ MAX_PROMISE_CHARS, trimmed before matching. `whenProvided` injects
@@ -942,4 +942,4 @@ export function createRalphController() {
     };
 }
 
-export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, PROMPT_SELF_IMPROVE, previewOf };
+export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, previewOf };

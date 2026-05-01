@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Changes
+- `self_improve` `focus` length cap raised from 500 → 2000 characters.
+  The previous 500-char cap was tight enough that real-world focus
+  strings (a sentence on the goal + a sentence each on test command,
+  commit conventions, allowed file paths) routinely tripped the limit
+  and forced callers to abbreviate. 2000 chars still fits comfortably
+  in `MAX_PROMPT_CHARS` (65536) alongside the baked SDLC prompt.
+  `MAX_FOCUS_CHARS` is now exported via `__test__` so tests pin the
+  bound symbolically and stay drift-proof through future bumps.
+
 ### Features
 - **New `self_improve` tool.** Thin wrapper that arms `ralph_loop`
   with a baked-in, project-agnostic SDLC self-improvement prompt

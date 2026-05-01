@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
-const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, SELF_IMPROVE_DEFAULTS, previewOf } = __test__;
+const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, SELF_IMPROVE_DEFAULTS, MAX_FOCUS_CHARS, previewOf } = __test__;
 
 function makeFakeSession({ failSend = false, rejectSend = false, sendErrorMessage } = {}) {
     const sent = [];
@@ -1071,28 +1071,28 @@ test("self_improve schema declares completion/abort/stagnation bounds matching r
 });
 
 test("self_improve schema declares focus bounds matching runtime validation", () => {
-    // The runtime focus validator caps length at MAX_FOCUS_CHARS (500)
-    // and rejects empty strings; the JSON-schema MUST mirror those
-    // bounds so a schema-validating client (LLM tool dispatcher,
-    // contract test, OpenAPI generator) catches the same offences as
-    // the handler. A drift here = silent acceptance at the schema
-    // layer with a runtime rejection, surprising callers.
+    // The runtime focus validator caps length at MAX_FOCUS_CHARS and
+    // rejects empty strings; the JSON-schema MUST mirror those bounds
+    // so a schema-validating client (LLM tool dispatcher, contract
+    // test, OpenAPI generator) catches the same offences as the
+    // handler. A drift here = silent acceptance at the schema layer
+    // with a runtime rejection, surprising callers.
     const c = createRalphController();
     const si = c.tools.find((t) => t.name === "self_improve");
     const focus = si.parameters.properties.focus;
     assert.equal(focus.type, "string");
     assert.equal(focus.minLength, 1);
-    assert.equal(focus.maxLength, 500);
+    assert.equal(focus.maxLength, MAX_FOCUS_CHARS);
 });
 
-test("self_improve rejects focus over 500 chars", async () => {
+test("self_improve rejects focus over MAX_FOCUS_CHARS", async () => {
     const session = makeFakeSession();
     const c = createRalphController();
     c.attach(session);
     const t = c.tools.find((x) => x.name === "self_improve");
-    const r = await t.handler({ focus: "x".repeat(501) });
+    const r = await t.handler({ focus: "x".repeat(MAX_FOCUS_CHARS + 1) });
     assert.equal(r.resultType, "failure");
-    assert.match(r.textResultForLlm, /self_improve: focus exceeds 500/);
+    assert.match(r.textResultForLlm, new RegExp(`self_improve: focus exceeds ${MAX_FOCUS_CHARS}`));
 });
 
 test("self_improve rejects whitespace-only focus", async () => {

@@ -166,7 +166,7 @@ Each iteration walks the agent through nine stages: **ORIENT** (read recent comm
 |---|---|---|
 | `max_iterations` | `100` | Hard iteration cap (1–1000) |
 | `min_iterations` | `5` | Honors completion / abort phrases only after N iterations |
-| `focus` | _(none)_ | Optional ≤500-char string. Appended verbatim as `Focus this run on: <focus>` after the SDLC scaffolding — narrows the run to one area without altering the SDLC stages. |
+| `focus` | _(none)_ | Optional ≤2000-char string. Appended verbatim as `Focus this run on: <focus>` after the SDLC scaffolding — narrows the run to one area without altering the SDLC stages. |
 | `completion_promise` | `"COMPLETE"` | Substring → stop. Trimmed; max 200 chars. |
 | `abort_promise` | _(none)_ | Substring → early abort. Same disjoint-substring rule as `ralph_loop`. |
 | `stagnation_limit` | `3` | Same rules as `ralph_loop` (≥ 2 or `0` to disable; `1` is rejected). |

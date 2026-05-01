@@ -3219,3 +3219,46 @@ test("finish log marker differentiates by reason category", async () => {
     runTurn(s4, "all done COMPLETE");
     assert.match(s4.logs.join("\n"), /✅ completed ralph_loop.*reason: completion_promise/);
 });
+
+test("finish log line carries the self_improve label for ⏹/✅/⚠️ verbs", async () => {
+    // Mirror of the ralph_loop verb-ladder test above, exercised through
+    // self_improve so a regression that hardcodes "ralph_loop" back into
+    // the finish log line — bypassing state.active.label — is caught.
+    // Three branches: user_stopped (⏹), completion_promise (✅), and
+    // send_error (⚠️) cover all three verbs in VERB_BY_REASON's fallback
+    // ladder. Use min_iterations:1 so completion_promise can fire on
+    // iter 1 (the baked SDLC default would defer it past iter 1).
+    // user_stopped → ⏹ stopped self_improve
+    {
+        const session = makeFakeSession();
+        const c = createRalphController();
+        c.attach(session);
+        const si = c.tools.find((t) => t.name === "self_improve");
+        const stop = c.tools.find((t) => t.name === "ralph_stop");
+        await si.handler({ max_iterations: 5, min_iterations: 1 });
+        session.emit("session.idle", { data: {} });
+        await stop.handler({});
+        assert.match(session.logs.join("\n"), /⏹ stopped self_improve.*reason: user_stopped/);
+    }
+    // completion_promise → ✅ completed self_improve
+    {
+        const session = makeFakeSession();
+        const c = createRalphController();
+        c.attach(session);
+        const si = c.tools.find((t) => t.name === "self_improve");
+        await si.handler({ max_iterations: 5, min_iterations: 1 });
+        session.emit("session.idle", { data: {} });
+        runTurn(session, "all done COMPLETE");
+        assert.match(session.logs.join("\n"), /✅ completed self_improve.*reason: completion_promise/);
+    }
+    // send_error → ⚠️ ended self_improve
+    {
+        const session = makeFakeSession({ failSend: true });
+        const c = createRalphController();
+        c.attach(session);
+        const si = c.tools.find((t) => t.name === "self_improve");
+        await si.handler({ max_iterations: 5, min_iterations: 1 });
+        session.emit("session.idle", { data: {} });
+        assert.match(session.logs.join("\n"), /⚠️ ended self_improve.*reason: send_error/);
+    }
+});

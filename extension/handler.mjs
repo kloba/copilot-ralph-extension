@@ -188,6 +188,7 @@ function isSubAgentEvent(ev) {
  * @typedef {Object} RalphResult
  * @property {string} reason - One of: completion_promise, abort_promise, stagnation, max_iterations, send_error, aborted, user_stopped, detached.
  * @property {number} iterations - Number of iterations completed (post-fire count).
+ * @property {string} label - Tool that armed the loop ("ralph_loop" or "self_improve"). Used for the post-loop additionalContext bracket and the "<verb> <label> after N iterations" finish log line.
  * @property {string} preview - Up to PREVIEW_CHARS (500) chars of the LAST iteration's accumulated assistant content. If the content was longer, an ellipsis ("…") is appended (so the truncated form is 501 chars). If finish runs before any iteration produced output (e.g. send_error before iter 1, or ralph_stop right after arm), this is the empty string. Surrogate-safe — never ends on a lone high surrogate.
  * @property {number} startedAt - Epoch ms when the loop was armed.
  * @property {number} finishedAt - Epoch ms when the loop finished.
@@ -366,6 +367,7 @@ export function validateArgs(args) {
 /**
  * @typedef {Object} ActiveLoopState
  * @property {string} prompt - Validated, trimmed prompt re-fired each iteration.
+ * @property {string} label - Tool that armed the loop ("ralph_loop" or "self_improve"). Stamps every per-iteration log line and the finish() log line with the calling tool's name.
  * @property {number} max - Hard iteration cap (1..MAX_ALLOWED_ITERATIONS).
  * @property {number} min - Iterations that must complete before completion/abort phrases are honored (1..max).
  * @property {string} completionPromise - Trimmed substring whose presence finishes with reason "completion_promise".
@@ -421,7 +423,7 @@ export function createRalphController() {
         const armedFor = state.active;
         if (!armedFor) return;
         if (armedFor.fireInFlight) {
-            log("ralph_loop: skipping refire — previous prompt still queued (no assistant.message observed yet)");
+            log(`${armedFor.label}: skipping refire — previous prompt still queued (no assistant.message observed yet)`);
             return;
         }
         armedFor.fireInFlight = true;
@@ -434,7 +436,7 @@ export function createRalphController() {
             armedFor.fireInFlight = false;
             const raw = err?.message ?? String(err);
             const prefix = `send ${kind}`;
-            log(`ralph_loop: ${prefix}: ${boundedNoteForLog(raw)}`);
+            log(`${armedFor.label}: ${prefix}: ${boundedNoteForLog(raw)}`);
             finish("send_error", `${prefix}: ${raw}`);
         };
         try {
@@ -450,12 +452,13 @@ export function createRalphController() {
 
     const finish = (reason, note) => {
         if (!state.active) return;
-        const { startedAt, i: iterations } = state.active;
+        const { startedAt, i: iterations, label } = state.active;
         const finishedAt = Date.now();
         const durationMs = clampedElapsed(startedAt);
         const result = {
             reason,
             iterations,
+            label,
             preview: previewOf(state.lastAssistantContent),
             startedAt,
             finishedAt,
@@ -466,7 +469,7 @@ export function createRalphController() {
         // Single-line log format: collapse newlines/tabs in note (Error
         // stacks would otherwise break alignment in the timeline).
         const noteForLog = collapseNote(result.note);
-        log(`${verb} ralph_loop after ${iterations} iteration${pluralS(iterations)} (reason: ${reason}${noteForLog ? `, note: ${noteForLog}` : ""}, ${durationMs}ms)`);
+        log(`${verb} ${label} after ${iterations} iteration${pluralS(iterations)} (reason: ${reason}${noteForLog ? `, note: ${noteForLog}` : ""}, ${durationMs}ms)`);
         state.active = null;
         state.lastResult = Object.freeze(result);
     };
@@ -498,7 +501,7 @@ export function createRalphController() {
     // iteration is evaluated as empty rather than the prior turn), and
     // fire the prompt. Caller is responsible for incrementing `a.i`.
     const fireIteration = (a) => {
-        log(`🔁 ralph_loop iter ${a.i}/${a.max} (elapsed ${clampedElapsed(a.startedAt)}ms)`);
+        log(`🔁 ${a.label} iter ${a.i}/${a.max} (elapsed ${clampedElapsed(a.startedAt)}ms)`);
         state.lastAssistantContent = "";
         tryFire(a.prompt);
     };
@@ -524,7 +527,7 @@ export function createRalphController() {
         // Queue-bloat protection: if the prompt we previously fired hasn't
         // produced any assistant.message yet, this idle is a stale signal.
         if (a.fireInFlight && !a.observedMessageThisFire) {
-            log("ralph_loop: skipping idle — previous prompt not yet picked up by agent");
+            log(`${a.label}: skipping idle — previous prompt not yet picked up by agent`);
             return;
         }
         // Consume the in-flight marker now that the agent has fully
@@ -577,6 +580,7 @@ export function createRalphController() {
     function armLoop(parsedValue, label = "ralph_loop") {
         state.active = {
             ...parsedValue,
+            label,
             i: 0,
             prev: null,
             streak: 0,
@@ -829,13 +833,14 @@ export function createRalphController() {
     const hooks = Object.freeze({
         onUserPromptSubmitted: async () => {
             if (!state.lastResult) return;
-            const { iterations, reason, note, durationMs } = state.lastResult;
+            const { iterations, reason, note, durationMs, label } = state.lastResult;
             state.lastResult = null;
             // Collapse whitespace so a multi-line note (e.g. an Error stack from
             // send_error) doesn't break the bracketed context line.
             const noteOneLine = collapseNote(note);
-            const ctx = `[ralph_loop just finished — iterations=${iterations}, reason=${reason}${noteOneLine ? `, note=${noteOneLine}` : ""}, durationMs=${durationMs}]`;
-            log(`ralph_loop: injecting post-loop context into next user prompt (reason=${reason}, iterations=${iterations})`);
+            const lbl = label ?? "ralph_loop";
+            const ctx = `[${lbl} just finished — iterations=${iterations}, reason=${reason}${noteOneLine ? `, note=${noteOneLine}` : ""}, durationMs=${durationMs}]`;
+            log(`${lbl}: injecting post-loop context into next user prompt (reason=${reason}, iterations=${iterations})`);
             return { additionalContext: ctx };
         },
     });

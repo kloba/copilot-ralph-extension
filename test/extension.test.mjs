@@ -470,15 +470,15 @@ test("validateArgs success returns exactly the documented value shape (no stray 
     assert.equal(r2.value.abortPromise, null);
 });
 
-test("state.active: arming sets exactly the documented 13-field ActiveLoopState shape", async () => {
-    // The ActiveLoopState typedef enumerates 13 fields. Pin the exact
+test("state.active: arming sets exactly the documented 14-field ActiveLoopState shape", async () => {
+    // The ActiveLoopState typedef enumerates 14 fields. Pin the exact
     // key set and initial values so future refactors that add or rename
     // a field have to update both the typedef and this test in lockstep.
     const { session, controller } = await arm({ max_iterations: 7, min_iterations: 2, abort_promise: "FAIL", stagnation_limit: 4 });
     const a = controller.state.active;
     assert.deepEqual(Object.keys(a).sort(), [
         "abortPromise", "completionPromise", "fireInFlight", "i",
-        "max", "min", "observedMessageThisFire", "pendingFire",
+        "label", "max", "min", "observedMessageThisFire", "pendingFire",
         "prev", "prompt", "stagnationLimit", "startedAt", "streak",
     ]);
     assert.equal(a.i, 0);
@@ -487,6 +487,7 @@ test("state.active: arming sets exactly the documented 13-field ActiveLoopState 
     assert.equal(a.pendingFire, true);
     assert.equal(a.fireInFlight, false);
     assert.equal(a.observedMessageThisFire, false);
+    assert.equal(a.label, "ralph_loop");
     assert.equal(typeof a.startedAt, "number");
     assert.ok(a.startedAt > 0);
     void session;
@@ -602,6 +603,30 @@ test("ralph_stop tears down a self_improve-armed loop", async () => {
     // Re-arming after stop must be allowed (state.active cleared).
     const rearm = await si.handler({ max_iterations: 5 });
     assert.equal(rearm.resultType, "success");
+});
+
+test("self_improve stamps state.active.label and lastResult.label", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const si = c.tools.find((x) => x.name === "self_improve");
+    const stop = c.tools.find((x) => x.name === "ralph_stop");
+    await si.handler({ max_iterations: 5 });
+    assert.equal(c.state.active.label, "self_improve");
+    await stop.handler({ reason: "test" });
+    assert.equal(c.state.lastResult.label, "self_improve");
+});
+
+test("ralph_loop stamps state.active.label and lastResult.label", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const ralph = c.tools.find((x) => x.name === "ralph_loop");
+    const stop = c.tools.find((x) => x.name === "ralph_stop");
+    await ralph.handler({ prompt: "go", max_iterations: 5 });
+    assert.equal(c.state.active.label, "ralph_loop");
+    await stop.handler({ reason: "test" });
+    assert.equal(c.state.lastResult.label, "ralph_loop");
 });
 
 test("PROMPT_SELF_IMPROVE mentions every required SDLC category and stage", () => {
@@ -2534,8 +2559,8 @@ test("lastResult exposes exactly the documented shape (no stray keys, no missing
     const completion = controller.state.lastResult;
     assert.deepEqual(
         Object.keys(completion).sort(),
-        ["durationMs", "finishedAt", "iterations", "preview", "reason", "startedAt"],
-        "completion result must have exactly these 6 keys",
+        ["durationMs", "finishedAt", "iterations", "label", "preview", "reason", "startedAt"],
+        "completion result must have exactly these 7 keys",
     );
 
     const a2 = await arm({ max_iterations: 3 });
@@ -2544,13 +2569,13 @@ test("lastResult exposes exactly the documented shape (no stray keys, no missing
     const stopped = a2.controller.state.lastResult;
     assert.deepEqual(
         Object.keys(stopped).sort(),
-        ["durationMs", "finishedAt", "iterations", "note", "preview", "reason", "startedAt"],
-        "user_stopped result must add exactly `note` to the 6-key base",
+        ["durationMs", "finishedAt", "iterations", "label", "note", "preview", "reason", "startedAt"],
+        "user_stopped result must add exactly `note` to the 7-key base",
     );
 
     // Stagnation finishes with NO note (the "reason" itself encodes the
     // diagnostic — there's no additional context to attach). Pin the
-    // 6-key base for this path so a future change that injected a
+    // 7-key base for this path so a future change that injected a
     // diagnostic note (e.g. the duplicated text fragment) into stagnation
     // results would have to update both the typedef and this test.
     const a3 = await arm({ max_iterations: 10, stagnation_limit: 2 });
@@ -2560,12 +2585,12 @@ test("lastResult exposes exactly the documented shape (no stray keys, no missing
     assert.equal(a3.controller.state.lastResult.reason, "stagnation");
     assert.deepEqual(
         Object.keys(a3.controller.state.lastResult).sort(),
-        ["durationMs", "finishedAt", "iterations", "preview", "reason", "startedAt"],
-        "stagnation result must have exactly the 6-key base (no note)",
+        ["durationMs", "finishedAt", "iterations", "label", "preview", "reason", "startedAt"],
+        "stagnation result must have exactly the 7-key base (no note)",
     );
 
     // send_error finishes WITH a note (the underlying Error message) — the
-    // 7-key shape mirrors user_stopped's. Pin this so a future change
+    // 8-key shape mirrors user_stopped's. Pin this so a future change
     // that dropped the note from error finishes (or renamed it to
     // "errorMessage") wouldn't slip through.
     const session4 = makeFakeSession({ failSend: true });
@@ -2576,7 +2601,7 @@ test("lastResult exposes exactly the documented shape (no stray keys, no missing
     assert.equal(c4.state.lastResult.reason, "send_error");
     assert.deepEqual(
         Object.keys(c4.state.lastResult).sort(),
-        ["durationMs", "finishedAt", "iterations", "note", "preview", "reason", "startedAt"],
+        ["durationMs", "finishedAt", "iterations", "label", "note", "preview", "reason", "startedAt"],
         "send_error result must include `note` (the Error message)",
     );
 });

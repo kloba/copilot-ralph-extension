@@ -1041,6 +1041,24 @@ test("PROMPT_GROW_PROJECT references the gh-issue backlog + acceptance + demo co
     // can't quietly drop it.
     assert.match(p, /baseline is broken[\s\S]*ABORT_NO_BACKLOG/i,
         "BASELINE must bail with ABORT_NO_BACKLOG if entry baseline is red");
+    // ACCEPTANCE stage must instruct the agent to tick checkboxes
+    // in the issue body via `gh issue edit` AS each criterion
+    // passes — not "all at the end". Without per-criterion ticking,
+    // a mid-iter crash leaves the issue body showing zero progress
+    // even when 4 of 5 criteria already passed; the next iter
+    // can't tell what's already verified and re-runs everything
+    // (or worse, skips re-verification and trusts a stale tick).
+    assert.match(p, /gh issue edit[\s\S]*checkbox|checkbox[\s\S]*gh issue edit/i,
+        "ACCEPTANCE must tick checkboxes in the issue body via gh issue edit as each criterion passes");
+    // DEMO stage must persist the demo command's output as a
+    // durable comment on the issue (`gh issue comment`). Without
+    // this, the demo trace lives only in the agent's transient
+    // terminal scrollback and is lost the moment the session
+    // ends — making future audit ("what did this iter actually
+    // demonstrate?") impossible. Pin the gh issue comment
+    // instruction so a refactor can't quietly drop the durable
+    // trace and reduce DEMO to "I ran it, trust me".
+    assert.match(p, /gh issue comment/, "DEMO must persist demo output as a durable gh issue comment");
 });
 
 test("both baked prompts retain the cwd guardrail and the trigger-phrase footgun caveat", () => {

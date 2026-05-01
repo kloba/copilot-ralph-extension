@@ -97,6 +97,23 @@ test("success/failure helpers: extra cannot override message or resultType", () 
     assert.equal(s.iterations, 7);
 });
 
+test("success/failure helpers: default-extra return is exactly { textResultForLlm, resultType }", () => {
+    // Pin the "no extra" closed shape so a future refactor that adds
+    // an implicit field (e.g. a timestamp, debug breadcrumb, or a
+    // sentinel like `_ralph: true`) is caught loudly. Embedders that
+    // serialize the result over a wire protocol (RPC, JSON-over-stdin)
+    // depend on this minimal shape.
+    const c = createRalphController();
+    const f = c._internal.failure("oops");
+    assert.deepEqual(Object.keys(f).sort(), ["resultType", "textResultForLlm"]);
+    assert.equal(f.resultType, "failure");
+    assert.equal(f.textResultForLlm, "oops");
+    const s = c._internal.success("yay");
+    assert.deepEqual(Object.keys(s).sort(), ["resultType", "textResultForLlm"]);
+    assert.equal(s.resultType, "success");
+    assert.equal(s.textResultForLlm, "yay");
+});
+
 test("validateArgs: rejects bad max_iterations", () => {
     assert.match(validateArgs({ prompt: "x", max_iterations: 0 }).error, /max_iterations/);
     assert.match(validateArgs({ prompt: "x", max_iterations: -1 }).error, /max_iterations/);

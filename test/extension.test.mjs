@@ -402,6 +402,25 @@ test("ralph_loop arm result has the documented shape (textResultForLlm + extras)
     assert.equal(r2.min, 3);
 });
 
+test("ralph_loop arm result has exactly { textResultForLlm, resultType, armed, max, min } — no stray keys", () => {
+    // The arm-success object is constructed via `success(message, {armed, max, min})`,
+    // and `success()`'s contract is `{...extra, textResultForLlm, resultType}` with
+    // extra unable to override the latter two. Pin the EXACT key set so a future
+    // refactor can't silently leak internal scratch (sessionRef, parsed.value,
+    // controller closures, etc.) into the LLM-facing return — which would both
+    // bloat the response and risk exposing private state.
+    const c = createRalphController();
+    c.attach(makeFakeSession());
+    return c.tools.find((t) => t.name === "ralph_loop").handler({
+        prompt: "go", max_iterations: 7, min_iterations: 1,
+    }).then((r) => {
+        assert.deepEqual(
+            Object.keys(r).sort(),
+            ["armed", "max", "min", "resultType", "textResultForLlm"],
+        );
+    });
+});
+
 test("validateArgs success returns exactly the documented value shape (no stray keys)", () => {
     // state.active is built via `{...parsed.value, i:0, prev:null, ...}`
     // — so any stray field in the parsed value bleeds straight into the

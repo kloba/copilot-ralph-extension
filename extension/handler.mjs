@@ -291,7 +291,8 @@ export function createRalphController() {
     const state = {
         active: null,           // see arming below for shape
         lastAssistantContent: "",
-        lastResult: null,       // { reason, iterations, preview }
+        // Shape: see the RalphResult typedef. Frozen on assignment.
+        lastResult: null,
     };
     let sessionRef = null;
 

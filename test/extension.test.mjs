@@ -1574,6 +1574,39 @@ test("result includes durationMs, startedAt, finishedAt", async () => {
     assert.equal(r.durationMs, r.finishedAt - r.startedAt);
 });
 
+test("lastResult exposes exactly the documented shape (no stray keys, no missing keys)", async () => {
+    // The RalphResult typedef pins which keys downstream consumers can
+    // rely on. Each individual field is asserted by other tests, but
+    // none of them pin the SET of keys, so a future refactor that
+    // accidentally adds an internal field to the frozen object (e.g.
+    // copying state.active in via spread) or drops a documented one
+    // (e.g. forgets to populate preview on a synchronous early-finish
+    // path) wouldn't fail any existing test.
+    //
+    // Pin both:
+    //   1. completion path → no `note` (note is optional).
+    //   2. user_stopped with reason → `note` present.
+    const { session, controller } = await arm({ max_iterations: 3 });
+    session.emit("session.idle", { data: {} });
+    runTurn(session, "all done COMPLETE");
+    const completion = controller.state.lastResult;
+    assert.deepEqual(
+        Object.keys(completion).sort(),
+        ["durationMs", "finishedAt", "iterations", "preview", "reason", "startedAt"],
+        "completion result must have exactly these 6 keys",
+    );
+
+    const a2 = await arm({ max_iterations: 3 });
+    const r2 = await a2.stop.handler({ reason: "manual" });
+    assert.equal(r2.resultType, "success");
+    const stopped = a2.controller.state.lastResult;
+    assert.deepEqual(
+        Object.keys(stopped).sort(),
+        ["durationMs", "finishedAt", "iterations", "note", "preview", "reason", "startedAt"],
+        "user_stopped result must add exactly `note` to the 6-key base",
+    );
+});
+
 test("durationMs is clamped to ≥ 0 if the system clock jumps backward", async () => {
     // Stub Date.now so the second sample (finish time) reads earlier
     // than the first (arm time) — simulates an NTP correction landing

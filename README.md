@@ -3,7 +3,6 @@
 > Ralph Wiggum-style autonomous iterative loop for **GitHub Copilot CLI**, implemented as an in-session extension.
 
 [![Inspired by](https://img.shields.io/badge/inspired_by-Anthropic_Ralph_Wiggum-blue)](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)
-[![Also see](https://img.shields.io/badge/see_also-open--ralph--wiggum-green)](https://github.com/Th0rgal/open-ralph-wiggum)
 
 ## What is Ralph Wiggum?
 

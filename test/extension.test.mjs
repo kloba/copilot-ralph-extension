@@ -671,6 +671,31 @@ test("self_improve rejects non-string focus", async () => {
     assert.match(r.textResultForLlm, /self_improve: focus must be a string/);
 });
 
+test("self_improve rewrites delegated bound errors with self_improve prefix", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const tooBig = await t.handler({ max_iterations: 99999 });
+    assert.equal(tooBig.resultType, "failure");
+    assert.match(tooBig.textResultForLlm, /^self_improve:/);
+    assert.doesNotMatch(tooBig.textResultForLlm, /ralph_loop:/);
+    const tooSmall = await t.handler({ max_iterations: 0 });
+    assert.equal(tooSmall.resultType, "failure");
+    assert.match(tooSmall.textResultForLlm, /^self_improve:/);
+});
+
+test("self_improve rejects stagnation_limit=1 with self_improve prefix", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({ stagnation_limit: 1 });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /^self_improve:/);
+    assert.doesNotMatch(r.textResultForLlm, /ralph_loop:/);
+});
+
 test("public tools and hooks surface is frozen (defensive against accidental mutation)", () => {
     const c = createRalphController();
     assert.ok(Object.isFrozen(c.tools));

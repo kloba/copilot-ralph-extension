@@ -652,16 +652,16 @@ export function createRalphController() {
 
                 // Build the arm log line as an array of "key=value" parts
                 // so optional fields drop out cleanly without nested ternaries.
-                const v = parsed.value;
-                const armParts = [`max=${v.max}`];
-                if (v.min > 1) armParts.push(`min=${v.min}`);
-                armParts.push(`completion=${JSON.stringify(v.completionPromise)}`);
-                if (v.abortPromise) armParts.push(`abort=${JSON.stringify(v.abortPromise)}`);
-                if (v.stagnationLimit > 0) armParts.push(`stagnation_limit=${v.stagnationLimit}`);
+                const { max, min, completionPromise, abortPromise, stagnationLimit } = parsed.value;
+                const armParts = [`max=${max}`];
+                if (min > 1) armParts.push(`min=${min}`);
+                armParts.push(`completion=${JSON.stringify(completionPromise)}`);
+                if (abortPromise) armParts.push(`abort=${JSON.stringify(abortPromise)}`);
+                if (stagnationLimit > 0) armParts.push(`stagnation_limit=${stagnationLimit}`);
                 log(`🔁 ralph_loop armed — ${armParts.join(", ")}`);
                 return success(
-                    `ralph_loop armed (max=${v.max}${v.min > 1 ? `, min=${v.min}` : ""}). Iterations will run as conversation turns. Use ralph_stop to cancel.`,
-                    { armed: true, max: v.max, min: v.min },
+                    `ralph_loop armed (max=${max}${min > 1 ? `, min=${min}` : ""}). Iterations will run as conversation turns. Use ralph_stop to cancel.`,
+                    { armed: true, max, min },
                 );
             },
         },

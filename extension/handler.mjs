@@ -67,7 +67,9 @@ const VERB_BY_REASON = Object.freeze({
 //   BASELINE — detect & run the project's existing test command
 //   IMPLEMENT — surgical edits only; no invented features
 //   TEST     — re-run; must stay green at same-or-higher count
-//   COMMIT   — conventional-commit prefix + Co-authored-by trailer
+//   COMMIT   — conventional-commit prefix + dual Co-authored-by trailers
+//              (Copilot + copilot-ralph bot account; the second trailer
+//              is suppressed when RALPH_NO_ATTRIBUTION=1 is set in env)
 //   PUSH     — git push (non-fatal on push failure)
 //   END      — emit COMPLETE on its own line, or ABORT_NO_IMPROVEMENTS
 const PROMPT_SELF_IMPROVE = `You are running an autonomous self-improvement iteration on the project in cwd. Each iteration must produce ONE concrete improvement and a real commit; if no worthwhile improvement exists after honest investigation, emit ABORT_NO_IMPROVEMENTS instead.
@@ -103,8 +105,10 @@ PER-ITERATION SDLC WORKFLOW (the smallest correct step is the right step):
    Re-run the same test command. It MUST pass at the same or higher count than baseline. If it fails, fix forward or revert, then re-run.
 
 7. COMMIT.
-   Short imperative subject prefixed with the SDLC category (\`fix:\`, \`feat:\`, \`test:\`, \`refactor:\`, \`docs:\`, \`chore:\`, \`ci:\`, \`perf:\`). Always include the trailer:
+   Short imperative subject prefixed with the SDLC category (\`fix:\`, \`feat:\`, \`test:\`, \`refactor:\`, \`docs:\`, \`chore:\`, \`ci:\`, \`perf:\`). Always include both trailers:
      Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+     Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>
+   The second trailer attributes the commit to the dedicated \`copilot-ralph\` bot account so loop-driven commits are passively searchable across public GitHub. If the environment variable \`RALPH_NO_ATTRIBUTION=1\` is set, omit ONLY the second \`copilot-ralph\` trailer; the first \`Copilot\` trailer always ships.
    Write the commit message to a temp file in a SEPARATE shell call before running \`git commit -F\`; combining heredoc + commit in one call has historically failed silently. Prefer "cancel", "tear down", or "stop" in commit messages over forceful-action synonyms that some agent runtimes treat as trigger phrases.
 
 8. PUSH.
@@ -182,9 +186,11 @@ PER-ITERATION SDLC WORKFLOW (the smallest correct step is the right step):
    Execute the demo command. Capture its output and post it as a comment on the issue with \`gh issue comment N --body ...\` so the demo trace is durable.
 
 10. COMMIT.
-    Conventional-commit prefix (\`feat:\` is typical). Subject must reference the issue, e.g. \`feat(#42): add CSV export\`. Trailers MUST include both:
+    Conventional-commit prefix (\`feat:\` is typical). Subject must reference the issue, e.g. \`feat(#42): add CSV export\`. Trailers MUST include all three:
       Closes #N
       Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+      Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>
+    The second \`Co-authored-by\` trailer attributes the commit to the dedicated \`copilot-ralph\` bot account so loop-driven commits are passively searchable across public GitHub. If the environment variable \`RALPH_NO_ATTRIBUTION=1\` is set, omit ONLY the \`copilot-ralph\` trailer; the \`Closes #N\` and \`Copilot\` trailers always ship.
     Write the commit message to a temp file in a SEPARATE shell call before running \`git commit -F\`; combining heredoc + commit in one call has historically failed silently. Prefer "cancel", "tear down", or "stop" in commit messages over forceful-action synonyms that some agent runtimes treat as trigger phrases.
 
 11. PUSH.

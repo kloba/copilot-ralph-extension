@@ -972,6 +972,33 @@ test("PROMPT_GROW_PROJECT references the gh-issue backlog + acceptance + demo co
     assert.match(p, /rubber-duck/i, "CRITIQUE stage must name the rubber-duck pass");
 });
 
+test("PROMPT_SELF_IMPROVE bakes the dual Co-authored-by trailer + RALPH_NO_ATTRIBUTION opt-out (issue #1)", () => {
+    // Issue #1: every loop-driven commit ships TWO Co-authored-by
+    // trailers — the existing Copilot trailer for agent attribution,
+    // plus a copilot-ralph bot-account trailer for passive usage
+    // analytics across public GitHub. RALPH_NO_ATTRIBUTION=1 in env
+    // suppresses ONLY the second trailer; the Copilot trailer always
+    // ships. Pin both literals so a future edit can't silently drop
+    // the bot-account trailer or invert the opt-out polarity.
+    const p = PROMPT_SELF_IMPROVE;
+    assert.match(p, /Co-authored-by: Copilot <223556219\+Copilot@users\.noreply\.github\.com>/, "must keep the canonical Copilot trailer");
+    assert.match(p, /Co-authored-by: copilot-ralph <copilot-ralph@users\.noreply\.github\.com>/, "must bake the copilot-ralph bot-account trailer (issue #1)");
+    assert.match(p, /RALPH_NO_ATTRIBUTION=1/, "must document the RALPH_NO_ATTRIBUTION=1 opt-out env var");
+    // Opt-out polarity: setting the var SUPPRESSES, not enables.
+    assert.match(p, /RALPH_NO_ATTRIBUTION=1[\s\S]{0,200}\bomit\b/i, "RALPH_NO_ATTRIBUTION=1 must instruct the agent to OMIT the second trailer");
+});
+
+test("PROMPT_GROW_PROJECT bakes the dual Co-authored-by trailer + RALPH_NO_ATTRIBUTION opt-out (issue #1)", () => {
+    // Mirror of the PROMPT_SELF_IMPROVE pin. grow_project also commits
+    // per iter and must carry the same dual-trailer + opt-out contract
+    // so the two loop tools stay symmetric on the attribution surface.
+    const p = PROMPT_GROW_PROJECT;
+    assert.match(p, /Co-authored-by: Copilot <223556219\+Copilot@users\.noreply\.github\.com>/, "must keep the canonical Copilot trailer");
+    assert.match(p, /Co-authored-by: copilot-ralph <copilot-ralph@users\.noreply\.github\.com>/, "must bake the copilot-ralph bot-account trailer (issue #1)");
+    assert.match(p, /RALPH_NO_ATTRIBUTION=1/, "must document the RALPH_NO_ATTRIBUTION=1 opt-out env var");
+    assert.match(p, /RALPH_NO_ATTRIBUTION=1[\s\S]{0,200}\bomit\b/i, "RALPH_NO_ATTRIBUTION=1 must instruct the agent to OMIT the copilot-ralph trailer");
+});
+
 test("PROMPT_GROW_PROJECT bakes COMPLETE and ABORT_NO_BACKLOG tokens + fits MAX_PROMPT_CHARS", () => {
     const p = PROMPT_GROW_PROJECT;
     assert.match(p, /\bCOMPLETE\b/, "must instruct agent to emit COMPLETE on success");
@@ -1661,6 +1688,29 @@ test("grow_project arms with abortPromise=ABORT_NO_BACKLOG when caller omits abo
     assert.equal(c.state.active.abortPromise, "ABORT_NO_BACKLOG");
     assert.notEqual(c.state.active.abortPromise, BAKED_ABORT_TOKEN,
         "grow_project must not arm with self_improve's abort token");
+});
+
+test("all three tools arm with completionPromise='COMPLETE' when caller omits completion_promise", async () => {
+    // Schema declares completion_promise.default='COMPLETE' for all three
+    // tools, but JSON-schema defaults aren't auto-applied — the runtime
+    // path goes through resolveOptionalPromise(…, DEFAULTS.completion_promise)
+    // inside validateArgs. A refactor that bypassed validateArgs (or that
+    // changed DEFAULTS.completion_promise) would silently mis-arm: the
+    // baked PROMPT_* prompts emit "COMPLETE" but the loop watcher would
+    // be looking for something else, so completion would never fire.
+    for (const name of ["ralph_loop", "self_improve", "grow_project"]) {
+        const session = makeFakeSession();
+        const c = createRalphController();
+        c.attach(session);
+        const t = c.tools.find((x) => x.name === name);
+        const args = name === "ralph_loop"
+            ? { prompt: "x", max_iterations: 1, min_iterations: 1 }
+            : { max_iterations: 1, min_iterations: 1 };
+        const r = await t.handler(args);
+        assert.equal(r.resultType, "success", `${name} must arm`);
+        assert.equal(c.state.active.completionPromise, "COMPLETE",
+            `${name} must arm with completionPromise='COMPLETE' (got ${JSON.stringify(c.state.active.completionPromise)})`);
+    }
 });
 
 test("grow_project rewrites delegated bound errors with grow_project prefix", async () => {

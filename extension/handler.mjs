@@ -264,14 +264,17 @@ export function createRalphController() {
     };
     let sessionRef = null;
 
+    // Clamp `Date.now() - start` to ≥ 0 so a backward clock jump (NTP
+    // correction mid-loop) never surfaces a negative elapsed time in
+    // logs or in result.durationMs. Same defense in two places — keep
+    // them in lockstep via a single helper so future tweaks don't drift.
+    const clampedElapsed = (start) => Math.max(0, Date.now() - start);
+
     const log = (msg) => {
         try { sessionRef?.log?.(msg); } catch { /* swallow */ }
     };
     const logIterStart = (a) => {
-        // Math.max(0, …) so a backward clock jump (NTP correction) doesn't
-        // surface a confusing negative elapsed time in the timeline log
-        // — same defense as the durationMs clamp in finish().
-        log(`🔁 ralph_loop iter ${a.i}/${a.max} (elapsed ${Math.max(0, Date.now() - a.startedAt)}ms)`);
+        log(`🔁 ralph_loop iter ${a.i}/${a.max} (elapsed ${clampedElapsed(a.startedAt)}ms)`);
     };
     const sendPrompt = (prompt) => {
         if (!sessionRef?.send) throw new Error("session not attached");
@@ -332,7 +335,7 @@ export function createRalphController() {
             preview: previewOf(state.lastAssistantContent),
             startedAt,
             finishedAt,
-            durationMs: Math.max(0, finishedAt - startedAt),
+            durationMs: clampedElapsed(startedAt),
         };
         if (note) result.note = truncateNote(note);
         // Differentiate the log marker by category so an error finish doesn't

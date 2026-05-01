@@ -101,7 +101,7 @@ ralph_stop({ reason: "user changed plan" })
 
 ```js
 {
-  textResultForLlm: "ralph_loop stopped after 4/20 iterations (user changed plan).",   // leading "ralph_loop" reflects the calling tool's label — a self_improve-armed loop reads "self_improve stopped after …"
+  textResultForLlm: "ralph_loop stopped after 4/20 iterations (user changed plan).",   // leading "ralph_loop" reflects the calling tool's label — a self_improve-armed loop reads "self_improve stopped after …", and a grow_project-armed loop reads "grow_project stopped after …"
   resultType: "success",
   iterations: 4,
   note: "user changed plan"   // omitted when no reason was supplied
@@ -125,8 +125,8 @@ If no loop is active it returns `resultType: "failure"` with the message `ralph_
 ```
 
 The actual loop **outcome** (iteration count, reason, timing) is surfaced in two ways:
-- `session.log` markers visible in the timeline (`🔁 ralph_loop iter 4/20 (elapsed 12345ms)`, `✅ completed ralph_loop after 4 iterations (reason: completion_promise, 12345ms)`). The leading label (`ralph_loop` or `self_improve`) reflects which tool armed the loop, so a `self_improve`-armed run shows `🔁 self_improve iter 4/20`. The closing-line verb depends on the finish reason: ✅ *completed* (`completion_promise`), ⚠️ *ended* (`send_error`, `aborted`), and ⏹ *stopped* for everything else (`max_iterations`, `abort_promise`, `stagnation`, `user_stopped`, `detached`).
-- An `additionalContext` injection on the *next* `onUserPromptSubmitted` hook so the agent silently learns the loop finished and why (`[ralph_loop just finished — iterations=4, reason=completion_promise, durationMs=12345]`, or `[self_improve just finished — …]` when armed via `self_improve`).
+- `session.log` markers visible in the timeline (`🔁 ralph_loop iter 4/20 (elapsed 12345ms)`, `✅ completed ralph_loop after 4 iterations (reason: completion_promise, 12345ms)`). The leading label (`ralph_loop`, `self_improve`, or `grow_project`) reflects which tool armed the loop, so a `self_improve`-armed run shows `🔁 self_improve iter 4/20` and a `grow_project`-armed run shows `🔁 grow_project iter 4/200`. The closing-line verb depends on the finish reason: ✅ *completed* (`completion_promise`), ⚠️ *ended* (`send_error`, `aborted`), and ⏹ *stopped* for everything else (`max_iterations`, `abort_promise`, `stagnation`, `user_stopped`, `detached`).
+- An `additionalContext` injection on the *next* `onUserPromptSubmitted` hook so the agent silently learns the loop finished and why (`[ralph_loop just finished — iterations=4, reason=completion_promise, durationMs=12345]`, or `[self_improve just finished — …]` / `[grow_project just finished — …]` when armed via the corresponding tool).
 
 The full structured result (available via `controller.state.lastResult` for embedders):
 
@@ -134,7 +134,7 @@ The full structured result (available via `controller.state.lastResult` for embe
 {
   reason: "completion_promise",
   iterations: 4,
-  label: "ralph_loop",                 // "ralph_loop" or "self_improve" — which tool armed the loop
+  label: "ralph_loop",                 // "ralph_loop", "self_improve", or "grow_project" — which tool armed the loop
   preview: "first 500 chars of last assistant content…",
   startedAt: 1719000000000,
   finishedAt: 1719000012345,
@@ -171,7 +171,7 @@ Each iteration walks the agent through nine stages: **ORIENT** (read recent comm
 | `abort_promise` | _(none)_ | Substring → early abort. Same disjoint-substring rule as `ralph_loop`. |
 | `stagnation_limit` | `3` | Same rules as `ralph_loop` (≥ 2 or `0` to disable; `1` is rejected). |
 
-`self_improve` reuses the same internal state machine as `ralph_loop` — the same `controller.state.active` shape, the same `finish()` pipeline, the same timeline log line (just with `self_improve` as the label), and the same `additionalContext` post-loop hook. Only one loop runs per session at a time, so a `self_improve` while a `ralph_loop` is active fails fast (and vice versa). Cancel with `ralph_stop` exactly as you would for any `ralph_loop`.
+`self_improve` reuses the same internal state machine as `ralph_loop` — the same `controller.state.active` shape, the same `finish()` pipeline, the same timeline log line (just with `self_improve` as the label), and the same `additionalContext` post-loop hook. Only one loop runs per session at a time, so a `self_improve` while a `ralph_loop` (or `grow_project`) is active fails fast (and vice versa). Cancel with `ralph_stop` exactly as you would for any `ralph_loop`.
 
 > ⚠️ **The baked SDLC prompt instructs the agent to emit `COMPLETE` at the end of every iteration.** That means `completion_promise` would fire on iter 1 if `min_iterations` allowed it. The default `min_iterations: 5` defers honoring `COMPLETE` until iter 5 (so a 100-iter call usually stops there). To run the full budget, set `min_iterations` equal to `max_iterations` — e.g. `self_improve({ max_iterations: 100, min_iterations: 100 })`. Use `ralph_stop` to tear down a long-running session early.
 

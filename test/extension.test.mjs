@@ -442,7 +442,7 @@ test("ralph_loop arm result has exactly { textResultForLlm, resultType, armed, m
     }).then((r) => {
         assert.deepEqual(
             Object.keys(r).sort(),
-            ["armed", "max", "min", "resultType", "textResultForLlm"],
+            ["adaptive_budget", "adaptive_extension", "adaptive_max_total", "armed", "max", "min", "resultType", "textResultForLlm"],
         );
     });
 });
@@ -458,7 +458,7 @@ test("self_improve arm result has the same shape as ralph_loop's — no stray ke
     const r = await c.tools.find((t) => t.name === "self_improve").handler({ max_iterations: 7 });
     assert.deepEqual(
         Object.keys(r).sort(),
-        ["armed", "max", "min", "resultType", "textResultForLlm"],
+        ["adaptive_budget", "adaptive_extension", "adaptive_max_total", "armed", "max", "min", "resultType", "textResultForLlm"],
     );
     assert.equal(r.armed, true);
     assert.equal(r.max, 7);
@@ -481,7 +481,8 @@ test("validateArgs success returns exactly the documented value shape (no stray 
     });
     assert.ok(r.value);
     assert.deepEqual(Object.keys(r.value).sort(), [
-        "abortPromise", "completionPromise", "max", "maxTokens", "min", "prompt", "stagnationLimit", "warnAtPct",
+        "abortPromise", "adaptiveBudget", "adaptiveExtension", "adaptiveMaxTotal",
+        "completionPromise", "max", "maxTokens", "min", "prompt", "stagnationLimit", "warnAtPct",
     ]);
     assert.equal(r.value.prompt, "go");
     assert.equal(r.value.max, 10);
@@ -491,24 +492,52 @@ test("validateArgs success returns exactly the documented value shape (no stray 
     assert.equal(r.value.stagnationLimit, 4);
     assert.equal(r.value.maxTokens, null);
     assert.equal(r.value.warnAtPct, 80);
+    assert.equal(r.value.adaptiveBudget, false);
     // With abort_promise omitted the key is still present, valued null.
     const r2 = validateArgs({ prompt: "go" });
     assert.deepEqual(Object.keys(r2.value).sort(), [
-        "abortPromise", "completionPromise", "max", "maxTokens", "min", "prompt", "stagnationLimit", "warnAtPct",
+        "abortPromise", "adaptiveBudget", "adaptiveExtension", "adaptiveMaxTotal",
+        "completionPromise", "max", "maxTokens", "min", "prompt", "stagnationLimit", "warnAtPct",
     ]);
     assert.equal(r2.value.abortPromise, null);
 });
 
-test("state.active: arming sets exactly the documented 20-field ActiveLoopState shape", async () => {
-    // The ActiveLoopState typedef enumerates 20 fields. Pin the exact
-    // key set and initial values so future refactors that add or rename
+test("state.active: arming sets exactly the documented 26-field ActiveLoopState shape", async () => {
+    // The ActiveLoopState typedef enumerates 26 fields: 14 base
+    // + 6 token/caffeinate/git fields (issues #5/#7/#8) + 6 adaptive-budget
+    // fields (issue #4: adaptiveBudget, adaptiveExtension, adaptiveMaxTotal,
+    // originalMax, adaptiveContentHashes, adaptiveExtensionHistory). Pin the
+    // exact key set and initial values so future refactors that add or rename
     // a field have to update both the typedef and this test in lockstep.
     const { session, controller } = await arm({ max_iterations: 7, min_iterations: 2, abort_promise: "FAIL", stagnation_limit: 4 });
     const a = controller.state.active;
     assert.deepEqual(Object.keys(a).sort(), [
-        "abortPromise", "armedGit", "completionPromise", "fireInFlight", "i",
-        "label", "lastIterationAt", "max", "maxTokens", "min", "observedMessageThisFire", "pendingFire",
-        "prev", "prompt", "stagnationLimit", "startedAt", "stopCaffeinate", "streak", "tokens", "warnAtPct",
+        "abortPromise",
+        "adaptiveBudget",
+        "adaptiveContentHashes",
+        "adaptiveExtension",
+        "adaptiveExtensionHistory",
+        "adaptiveMaxTotal",
+        "armedGit",
+        "completionPromise",
+        "fireInFlight",
+        "i",
+        "label",
+        "lastIterationAt",
+        "max",
+        "maxTokens",
+        "min",
+        "observedMessageThisFire",
+        "originalMax",
+        "pendingFire",
+        "prev",
+        "prompt",
+        "stagnationLimit",
+        "startedAt",
+        "stopCaffeinate",
+        "streak",
+        "tokens",
+        "warnAtPct",
     ]);
     assert.equal(a.i, 0);
     assert.equal(a.prev, null);
@@ -523,6 +552,10 @@ test("state.active: arming sets exactly the documented 20-field ActiveLoopState 
     assert.equal(a.warnAtPct, 80);
     assert.equal(a.tokens.input, 0);
     assert.equal(a.tokens.output, 0);
+    assert.equal(a.adaptiveBudget, false);
+    assert.equal(a.originalMax, 7);
+    assert.deepEqual(a.adaptiveContentHashes, []);
+    assert.deepEqual(a.adaptiveExtensionHistory, []);
     void session;
 });
 
@@ -1650,6 +1683,9 @@ test("ralph_loop & ralph_stop schema properties match their KEYS sets", () => {
     const rl = c.tools.find((t) => t.name === "ralph_loop");
     assert.deepEqual(Object.keys(rl.parameters.properties).sort(), [
         "abort_promise",
+        "adaptive_budget",
+        "adaptive_extension",
+        "adaptive_max_total",
         "completion_promise",
         "max_iterations",
         "max_tokens",
@@ -4901,4 +4937,126 @@ test("ralph_status: last_iteration_at advances each iteration", async () => {
 test("ralph_status: README documents the tool", () => {
     const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf8");
     assert.match(readme, /\bralph_status\b/, "README must mention the ralph_status tool");
+});
+
+// ── adaptive iteration budget (issue #4) ─────────────────────────────────
+
+function makeAdaptiveGitStub({ shortstat = "", porcelain = "" } = {}) {
+    const calls = [];
+    const exec = (args) => {
+        calls.push(args.join(" "));
+        if (args[0] === "diff" && args[1] === "--shortstat") {
+            return { ok: true, stdout: shortstat, stderr: "" };
+        }
+        if (args[0] === "status" && args[1] === "--porcelain") {
+            return { ok: true, stdout: porcelain, stderr: "" };
+        }
+        return { ok: false, stdout: "", stderr: "unknown" };
+    };
+    return { exec, calls };
+}
+
+async function armAdaptive(args = {}, gitStub) {
+    const session = makeFakeSession();
+    const controller = createRalphController(gitStub ? { adaptive: { gitExec: gitStub.exec } } : {});
+    controller.attach(session);
+    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
+    const armResult = await ralph.handler({ prompt: "go", max_iterations: 2, adaptive_budget: true, adaptive_extension: 2, adaptive_max_total: 6, ...args });
+    return { session, controller, armResult };
+}
+
+test("adaptive_budget: defaults to false; arm result echoes feature flags", async () => {
+    const { armResult } = await arm({ max_iterations: 5 });
+    assert.equal(armResult.adaptive_budget, false);
+    assert.equal(typeof armResult.adaptive_extension, "number");
+    assert.equal(typeof armResult.adaptive_max_total, "number");
+});
+
+test("adaptive_budget: progressing loop extends max past original", async () => {
+    const git = makeAdaptiveGitStub({ shortstat: " 1 file changed, 2 insertions(+)\n" });
+    const { session, controller } = await armAdaptive({}, git);
+    // pendingFire consumes the first idle; need 1 + max = 3 idles to reach
+    // the adaptive check (which fires when i >= max BEFORE the i-increment).
+    runTurn(session, "boot");
+    runTurn(session, "first");
+    runTurn(session, "second — different");
+    const a = controller.state.active;
+    assert.ok(a, "loop must still be active after extension");
+    assert.equal(a.max, 4, "max should be extended by adaptive_extension=2");
+    assert.equal(a.originalMax, 2);
+    assert.equal(a.adaptiveExtensionHistory.length, 1);
+    assert.equal(a.adaptiveExtensionHistory[0].from, 2);
+    assert.equal(a.adaptiveExtensionHistory[0].to, 4);
+    assert.match(a.adaptiveExtensionHistory[0].reason, /uncommitted changes|distinct responses/);
+});
+
+test("adaptive_budget: stuck loop (no progress signals) does NOT extend; finishes at max", async () => {
+    const git = makeAdaptiveGitStub({ shortstat: "", porcelain: "" });
+    // stagnation_limit=0 disables stagnation so we exercise the adaptive
+    // path purely with a clean tree and identical-hash content.
+    const { session, controller } = await armAdaptive({ stagnation_limit: 0 }, git);
+    runTurn(session, "boot");
+    runTurn(session, "same");
+    runTurn(session, "same");
+    const r = controller.state.lastResult;
+    assert.ok(r, "loop should have finished");
+    assert.equal(r.reason, "max_iterations");
+    assert.equal(r.iterations, 2);
+});
+
+test("adaptive_budget: hard ceiling adaptive_max_total is respected", async () => {
+    const git = makeAdaptiveGitStub({ shortstat: " 1 file changed\n" });
+    const { session, controller } = await armAdaptive({ adaptive_max_total: 3 }, git);
+    runTurn(session, "boot");
+    runTurn(session, "a");
+    runTurn(session, "b");
+    const a = controller.state.active;
+    assert.ok(a, "still active after first extension");
+    assert.equal(a.max, 3, "should clamp to adaptive_max_total");
+    runTurn(session, "c");
+    const r = controller.state.lastResult;
+    assert.ok(r, "loop should have finished at the hard ceiling");
+    assert.equal(r.reason, "max_iterations");
+    assert.equal(r.iterations, 3);
+});
+
+test("adaptive_budget: completion_promise still wins over an available extension", async () => {
+    const git = makeAdaptiveGitStub({ shortstat: " 1 file changed\n" });
+    const { session, controller } = await armAdaptive({ max_iterations: 2, min_iterations: 1 }, git);
+    runTurn(session, "boot");
+    runTurn(session, "now COMPLETE token");
+    const r = controller.state.lastResult;
+    assert.ok(r, "loop must finish");
+    assert.equal(r.reason, "completion_promise", "completion wins over adaptive extension");
+});
+
+test("adaptive_budget: validateArgs rejects adaptive_extension < 1 and adaptive_max_total < max", () => {
+    assert.match(validateArgs({ prompt: "go", adaptive_budget: true, adaptive_extension: 0 }).error, /adaptive_extension/);
+    assert.match(validateArgs({ prompt: "go", max_iterations: 10, adaptive_budget: true, adaptive_max_total: 5 }).error, /adaptive_max_total/);
+});
+
+test("adaptive_budget: finish() result surfaces adaptive history when feature was enabled", async () => {
+    const git = makeAdaptiveGitStub({ shortstat: " 1 file changed\n" });
+    const { session, controller } = await armAdaptive({ adaptive_max_total: 3 }, git);
+    runTurn(session, "boot");
+    runTurn(session, "a");
+    runTurn(session, "b");
+    runTurn(session, "c");
+    const r = controller.state.lastResult;
+    assert.ok(r);
+    assert.ok(r.adaptive, "finish result must include adaptive block");
+    assert.equal(r.adaptive.enabled, true);
+    assert.equal(r.adaptive.originalMax, 2);
+    assert.equal(r.adaptive.effectiveMax, 3);
+    assert.equal(r.adaptive.extensions, 1);
+    assert.equal(r.adaptive.history.length, 1);
+});
+
+test("adaptive_budget: when feature is OFF, finish() result has no adaptive block", async () => {
+    const { session, controller } = await arm({ max_iterations: 1 });
+    runTurn(session, "boot");
+    runTurn(session, "x");
+    const r = controller.state.lastResult;
+    assert.ok(r);
+    assert.equal(r.adaptive, undefined, "no adaptive block when adaptive_budget is false");
 });

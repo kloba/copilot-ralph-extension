@@ -1114,6 +1114,27 @@ test("PROMPT_GROW_PROJECT references the gh-issue backlog + acceptance + demo co
     // (e.g. "pick a proposed issue" without ordering) fails the
     // suite.
     assert.match(p, /oldest first/i, "SELECT must pick proposed issues oldest first (FIFO, not LIFO)");
+    // ORIENT must skim AGENTS.md — the agent-conventions file
+    // format respected by Copilot's coding agent (and now by
+    // many other agent runtimes). Without explicitly listing
+    // it in ORIENT, the agent could skim only README and miss
+    // project-specific contribution rules (e.g. "use single
+    // quotes", "no semicolons", "follow `npm run lint:fix`
+    // before commit") that the project author embedded
+    // specifically for agent consumption. Pin the literal
+    // filename so a "tighten orient" refactor can't quietly
+    // drop the agent-conventions skim.
+    assert.match(p, /AGENTS\.md/, "ORIENT must reference AGENTS.md as a source of agent-targeted project conventions");
+    // IMPLEMENT must forbid scope creep — "no invented features
+    // beyond the issue's spec". Without this rule, an iter
+    // could ship its assigned issue PLUS opportunistic side
+    // refactors ("while I'm here…"), bloating the diff,
+    // diluting the COMMIT subject's `feat(#N): <title>` claim,
+    // and making git bisect significantly harder when a future
+    // regression's true root cause is the side change rather
+    // than the headline feature. Pin the no-invention rule.
+    assert.match(p, /No invented features|beyond the issue's spec/i,
+        "IMPLEMENT must forbid features beyond the issue's spec (anti-scope-creep guard)");
 });
 
 test("both baked prompts retain the cwd guardrail and the trigger-phrase footgun caveat", () => {

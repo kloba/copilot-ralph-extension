@@ -27,6 +27,14 @@ const SELF_IMPROVE_DEFAULTS = Object.freeze({
     max_iterations: 100,
     min_iterations: 5,
 });
+// grow_project budgets are wider: features take longer to ship than
+// polish iters, so allow more iterations by default; min stays low so
+// the loop can naturally drain a small backlog without forced extra
+// passes.
+const GROW_PROJECT_DEFAULTS = Object.freeze({
+    max_iterations: 200,
+    min_iterations: 10,
+});
 const MAX_ALLOWED_ITERATIONS = 1000;
 const PREVIEW_CHARS = 500;
 const MAX_PROMPT_CHARS = 65536;
@@ -356,6 +364,14 @@ const RALPH_LOOP_KEYS = new Set([
 ]);
 const RALPH_STOP_KEYS = new Set(["reason"]);
 const SELF_IMPROVE_KEYS = new Set([
+    "max_iterations",
+    "min_iterations",
+    "focus",
+    "completion_promise",
+    "abort_promise",
+    "stagnation_limit",
+]);
+const GROW_PROJECT_KEYS = new Set([
     "max_iterations",
     "min_iterations",
     "focus",
@@ -1083,4 +1099,4 @@ export function createRalphController() {
     };
 }
 
-export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, previewOf };
+export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_BACKLOG_ABORT_TOKEN, previewOf };

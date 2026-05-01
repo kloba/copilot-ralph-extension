@@ -204,7 +204,11 @@ export function validateArgs(args) {
         // string but it's only whitespace" — the second case is usually
         // a templating bug (variable interpolated to empty), and saying
         // so loudly helps the agent fix the right layer.
-        if (args.prompt === undefined || args.prompt === null || args.prompt === "") {
+        // !args.prompt catches undefined, null, and "" — the three "no
+        // prompt at all" cases. The whitespace-only branch handles a
+        // raw input like "   " or "\t\n" (also falsy after trim() but
+        // truthy as a raw string).
+        if (!args.prompt) {
             return { error: "ralph_loop: prompt is required and must be non-empty." };
         }
         return { error: "ralph_loop: prompt must contain at least one non-whitespace character (got a whitespace-only string)." };
@@ -515,7 +519,7 @@ export function createRalphController() {
             // capture it so it shows up in the log line and additionalContext.
             const reasonRaw = ev?.data?.reason ?? ev?.reason;
             const trimmed = typeof reasonRaw === "string" ? reasonRaw.trim() : "";
-            const note = trimmed ? trimmed : undefined;
+            const note = trimmed || undefined;
             // Bound the log line: boundedNoteForLog so a pathologically large
             // SDK abort reason doesn't dump megabytes into the timeline. The
             // structured note on the result is also truncated by finish(),

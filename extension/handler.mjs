@@ -709,14 +709,14 @@ export function createRalphController() {
                     const shape = validateArgShape("ralph_stop", args, RALPH_STOP_KEYS);
                     if (shape) return failure(shape.error);
                 }
-                const { i, max } = state.active;
+                const { i, max, label } = state.active;
                 // truncateNote caps the stored value so a giant user-supplied
                 // reason can't pollute the LLM context.
                 const reason = typeof args?.reason === "string" ? args.reason.trim() : "";
                 const note = reason ? truncateNote(reason) : undefined;
                 finish("user_stopped", note);
                 return success(
-                    `ralph_loop stopped after ${i}/${max} iterations${note ? ` (${note})` : ""}.`,
+                    `${label} stopped after ${i}/${max} iterations${note ? ` (${note})` : ""}.`,
                     { iterations: i, note },
                 );
             },

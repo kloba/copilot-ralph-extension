@@ -617,6 +617,41 @@ test("self_improve stamps state.active.label and lastResult.label", async () => 
     assert.equal(c.state.lastResult.label, "self_improve");
 });
 
+test("ralph_stop success-text uses calling tool's label (self_improve / ralph_loop)", async () => {
+    // The ralph_stop success message used to hardcode "ralph_loop
+    // stopped after N/M iterations …" regardless of which tool armed
+    // the loop. After label propagation it must read
+    // "<state.active.label> stopped after …" so a self_improve-armed
+    // loop reports "self_improve stopped after …".
+    // self_improve-armed branch:
+    {
+        const session = makeFakeSession();
+        const c = createRalphController();
+        c.attach(session);
+        const si = c.tools.find((x) => x.name === "self_improve");
+        const stop = c.tools.find((x) => x.name === "ralph_stop");
+        await si.handler({ max_iterations: 5 });
+        const r = await stop.handler({ reason: "done" });
+        assert.equal(r.resultType, "success");
+        assert.match(r.textResultForLlm, /^self_improve stopped after 0\/5 iterations/);
+        assert.doesNotMatch(r.textResultForLlm, /^ralph_loop stopped/);
+    }
+    // ralph_loop-armed branch (regression guard for the original
+    // wording — must still say "ralph_loop stopped …"):
+    {
+        const session = makeFakeSession();
+        const c = createRalphController();
+        c.attach(session);
+        const ralph = c.tools.find((x) => x.name === "ralph_loop");
+        const stop = c.tools.find((x) => x.name === "ralph_stop");
+        await ralph.handler({ prompt: "go", max_iterations: 7 });
+        const r = await stop.handler({});
+        assert.equal(r.resultType, "success");
+        assert.match(r.textResultForLlm, /^ralph_loop stopped after 0\/7 iterations/);
+        assert.doesNotMatch(r.textResultForLlm, /^self_improve stopped/);
+    }
+});
+
 test("self_improve per-iteration log line uses self_improve label, not ralph_loop", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

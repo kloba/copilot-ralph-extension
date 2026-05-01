@@ -432,9 +432,8 @@ export function createRalphController() {
         // be checked for completion_promise / abort_promise tokens.
         if (isSubAgentEvent(ev)) return;
         // Mark the in-flight fire as "consumed by the agent" so the next
-        // turn_end is treated as a real response cycle rather than a
-        // spurious sub-turn boundary that would otherwise queue another
-        // copy of the prompt.
+        // idle is treated as a real response cycle rather than a spurious
+        // signal that would queue another copy of the prompt.
         if (state.active?.fireInFlight) {
             state.active.observedMessageThisFire = true;
         }

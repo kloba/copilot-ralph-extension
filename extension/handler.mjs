@@ -698,12 +698,10 @@ export function createRalphController() {
      * listeners first, so duplicate listeners can never double-count events.
      *
      * @param {object} session - SDK session with .send(message) and .on(event, handler).
-     * @returns {() => void} A detach function that unsubscribes all listeners
-     *   and, if a loop is currently active on THIS attachment, finishes it
-     *   with reason="detached". A stale detach (one returned by an earlier
-     *   attach() that has since been superseded by a later attach()) is a
-     *   no-op against state — calling it will not kill a loop running on
-     *   the newer session.
+     * @returns {() => void} Detach function: unsubscribes all listeners and,
+     *   if a loop is currently active on THIS attachment, finishes it with
+     *   reason="detached". Stale detaches (superseded by a later attach())
+     *   are no-ops against state.
      */
     function attach(session) {
         if (!session || typeof session !== "object") {

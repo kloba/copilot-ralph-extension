@@ -930,6 +930,27 @@ test("duplicate session.idle is naturally idempotent (no double-count)", async (
     assert.equal(session.sent.length, 2);
 });
 
+test("empty assistant.message content still flips observedMessageThisFire (next idle advances, not skipped)", async () => {
+    // The queue-bloat guard skips an idle when fireInFlight is set
+    // and observedMessageThisFire is still false. An assistant.message
+    // event with content === "" must still flip the flag — otherwise
+    // a turn that produced no actual output (e.g. an aborted sub-call
+    // that still emitted a final empty assistant.message) would wedge
+    // the loop on the very next idle. The flag is a "did the agent
+    // hand back the turn?" marker, not a "did it produce content?"
+    // marker.
+    const { session, controller } = await arm({ max_iterations: 4, stagnation_limit: 0 });
+    session.emit("session.idle", { data: {} }); // iter 1 prompt fires
+    assert.equal(controller.state.active.i, 1);
+    assert.equal(session.sent.length, 1);
+    // Empty content still has typeof "string" → flag flips.
+    session.emit("assistant.message", { data: { content: "" } });
+    assert.equal(controller.state.active.observedMessageThisFire, true);
+    session.emit("session.idle", { data: {} });
+    assert.equal(controller.state.active.i, 2, "next idle must advance to iter 2 even after empty response");
+    assert.equal(session.sent.length, 2);
+});
+
 test("session.idle with empty data fires iter 1 (no turnId required)", async () => {
     // Regression: the older implementation tracked lastTurnId and used a
     // sentinel because turnId:null could self-match. session.idle has no

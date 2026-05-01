@@ -1198,6 +1198,27 @@ test("result includes durationMs, startedAt, finishedAt", async () => {
     assert.equal(r.durationMs, r.finishedAt - r.startedAt);
 });
 
+test("durationMs is clamped to ≥ 0 if the system clock jumps backward", async () => {
+    // Stub Date.now so the second sample (finish time) reads earlier
+    // than the first (arm time) — simulates an NTP correction landing
+    // mid-loop. Without the Math.max(0, …) clamp, durationMs would be
+    // negative and confuse any downstream metric / log consumer.
+    const realNow = Date.now;
+    let calls = 0;
+    Date.now = () => (calls++ === 0 ? 10_000 : 5_000);
+    try {
+        const { session, controller } = await arm({ max_iterations: 3 });
+        session.emit("session.idle", { data: {} });
+        runTurn(session, "done COMPLETE");
+        const r = controller.state.lastResult;
+        assert.equal(r.startedAt, 10_000);
+        assert.equal(r.finishedAt, 5_000);
+        assert.equal(r.durationMs, 0, "must clamp negative duration to 0, never report negative time");
+    } finally {
+        Date.now = realNow;
+    }
+});
+
 test("arming a fresh ralph_loop clears stale lastResult from prior run", async () => {
     // First loop completes and records a result.
     const { session, controller, ralph } = await arm({ max_iterations: 2 });

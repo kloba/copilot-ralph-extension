@@ -307,7 +307,12 @@ export function createRalphController() {
 
     const finish = (reason, note) => {
         if (!state.active) return;
-        const startedAt = state.active.startedAt ?? Date.now();
+        // state.active.startedAt is always set at arming time (see the
+        // `state.active = { ...startedAt: Date.now() }` block in the
+        // ralph_loop handler), so the `??` fallback is dead — but clamp
+        // durationMs to ≥ 0 in case the system clock jumps backward
+        // mid-loop (NTP correction) and finishedAt < startedAt.
+        const startedAt = state.active.startedAt;
         const finishedAt = Date.now();
         const result = {
             reason,
@@ -315,7 +320,7 @@ export function createRalphController() {
             preview: previewOf(state.lastAssistantContent),
             startedAt,
             finishedAt,
-            durationMs: finishedAt - startedAt,
+            durationMs: Math.max(0, finishedAt - startedAt),
         };
         if (note) result.note = truncateNote(note);
         // Differentiate the log marker by category so an error finish doesn't

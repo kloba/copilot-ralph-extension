@@ -752,10 +752,9 @@ export function createRalphController() {
         subscribeOrFail("abort", onAbort);
         const detach = () => {
             // If THIS detach is still the current wiring AND a loop is in flight,
-            // finish it gracefully instead of leaving orphaned state behind.
-            // A stale detach (e.g. one returned by a previous attach() that has
-            // since been superseded) must NOT touch state.active — that would
-            // kill the loop running on the newer session.
+            // finish it gracefully. A stale detach (one whose attach() has since
+            // been superseded) must NOT touch state.active — that would interrupt
+            // the loop running on the newer session.
             const isCurrent = currentDetach === detach;
             if (isCurrent && state.active) finish("detached");
             unsubscribeAll();

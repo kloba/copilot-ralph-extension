@@ -235,6 +235,11 @@ test("controller exposes ralph_loop and ralph_stop tools and hooks", () => {
     assert.deepEqual(c.tools.map((t) => t.name).sort(), ["ralph_loop", "ralph_stop"]);
     assert.equal(typeof c.hooks.onUserPromptSubmitted, "function");
     assert.equal(typeof c.attach, "function");
+    // Pin the EXACT hook surface — if a future change leaks an internal
+    // helper into c.hooks (e.g. an onTurnEnd debugging hook), Copilot CLI
+    // will treat it as a registered hook and start invoking it. The
+    // shipping contract is exactly one hook: onUserPromptSubmitted.
+    assert.deepEqual(Object.keys(c.hooks), ["onUserPromptSubmitted"]);
 });
 
 test("public tools and hooks surface is frozen (defensive against accidental mutation)", () => {

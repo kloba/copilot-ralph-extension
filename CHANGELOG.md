@@ -43,7 +43,23 @@
   `BAKED_COPILOT_TRAILER`, `BAKED_RALPH_TRAILER`, and
   `BAKED_ATTRIBUTION_OPT_OUT` literals are exported through
   `__test__` for symmetric pinning with the existing
-  `BAKED_*_ABORT_TOKEN` constants.
+  `BAKED_*_ABORT_TOKEN` constants. Follow-up commits widened the
+  invariant outward to two more surfaces: a README pin test reads
+  `README.md` from disk and asserts both canonical trailer
+  literals, the opt-out env var, and the public-repo-only
+  searchability caveat are present (and that Copilot precedes
+  copilot-ralph in the example block); and an armLoop runtime
+  pin asserts the prompt the executing agent actually receives
+  via `session.send` contains all three baked literals — closing
+  the loophole where a "minimize tokens" / "strip example block"
+  pass between `PROMPT_*` and `session.send` could silently
+  break attribution while leaving body-level pins intact. Two
+  narrow regex pins on the canonical-literals test (noreply
+  domain ends with `@users.noreply.github.com>`, header starts
+  with the exact `Co-authored-by: ` prefix) defend against the
+  silent-typo failure mode where a misspelled domain or
+  miscased header ships valid commits whose trailers do not
+  link to any GitHub user.
 
 ### Fixes
 - README user-facing sections now name `grow_project` as the third

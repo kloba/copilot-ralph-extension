@@ -4153,3 +4153,26 @@ test("dual Co-authored-by trailers are baked in canonical order: Copilot first, 
         );
     }
 });
+
+test("README documents both Co-authored-by trailers and RALPH_NO_ATTRIBUTION opt-out (issue #1)", () => {
+    // The user-facing README "Commit attribution" section is the
+    // canonical disclosure surface for issue #1. Pin its presence
+    // so a future README rewrite can't quietly drop:
+    //   - the "Commit attribution" section heading
+    //   - either of the two canonical Co-authored-by trailer lines
+    //     (Copilot agent + copilot-ralph bot account)
+    //   - the RALPH_NO_ATTRIBUTION=1 opt-out env var
+    //   - the public-only-searchability caveat
+    //
+    // Also pin that the trailer literals in the README match the
+    // BAKED_*_TRAILER constants exported from handler.mjs — the
+    // README and the prompt are independent surfaces that must
+    // never disagree on the canonical noreply email.
+    const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf8");
+    assert.match(readme, /^## Commit attribution\b/m, "README must have a '## Commit attribution' section");
+    assert.ok(readme.includes(BAKED_COPILOT_TRAILER), "README must spell out the canonical Copilot Co-authored-by trailer");
+    assert.ok(readme.includes(BAKED_RALPH_TRAILER), "README must spell out the canonical copilot-ralph Co-authored-by trailer");
+    assert.ok(readme.includes(BAKED_ATTRIBUTION_OPT_OUT), `README must document the ${BAKED_ATTRIBUTION_OPT_OUT} opt-out env var`);
+    // The public-only caveat is a required disclosure per the issue.
+    assert.match(readme, /\bpublic[-\s]?repo[-\s]?(commits|only)\b/i, "README must disclose the public-repo-only searchability caveat");
+});

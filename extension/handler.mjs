@@ -637,6 +637,22 @@ export function createRalphController() {
     });
 
     let currentDetach = null;
+    /**
+     * Wire the controller to a Copilot CLI session. Subscribes to the three
+     * events the controller needs (assistant.message, session.idle, abort).
+     * Idempotent: calling attach(s2) after attach(s1) tears down s1's
+     * listeners first, so duplicate listeners can never double-count
+     * events. Calling attach() before any session is fatal — ralph_loop
+     * fails fast with a clear error.
+     *
+     * @param {object} session - SDK session with .send(message) and .on(event, handler).
+     * @returns {() => void} A detach function that unsubscribes all listeners
+     *   and, if a loop is currently active on THIS attachment, finishes it
+     *   with reason="detached". A stale detach (one returned by an earlier
+     *   attach() that has since been superseded by a later attach()) is a
+     *   no-op against state — calling it will not kill a loop running on
+     *   the newer session.
+     */
     function attach(session) {
         if (!session || typeof session !== "object") {
             throw new TypeError("ralph: attach(session) requires a session object.");

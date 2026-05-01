@@ -76,8 +76,25 @@ if [[ "$DRY_RUN" == "1" ]]; then
 fi
 
 mkdir -p "$TARGET_DIR"
+# Atomic per-file install: write to a sibling temp file in the target dir
+# (so it's on the same filesystem as the destination — required for
+# rename(2) atomicity), then mv. A naive `cp src dst` does open+write,
+# which can momentarily leave a half-written handler.mjs that a concurrent
+# Copilot CLI reload might import and crash on. The temp+mv pattern
+# guarantees readers always see either the old file or the fully-written
+# new file, never a torn copy.
+TMP_FILES=()
+cleanup() {
+  for tmp in "${TMP_FILES[@]}"; do
+    [[ -e "$tmp" ]] && rm -f "$tmp"
+  done
+}
+trap cleanup EXIT
 for f in "${FILES[@]}"; do
-  cp "$SOURCE_DIR/$f" "$TARGET_DIR/$f"
+  TMP="$TARGET_DIR/.$f.tmp.$$"
+  TMP_FILES+=("$TMP")
+  cp "$SOURCE_DIR/$f" "$TMP"
+  mv "$TMP" "$TARGET_DIR/$f"
 done
 
 # Post-copy verification: every file must exist AND be byte-identical to source.

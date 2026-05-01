@@ -110,6 +110,21 @@ test("validateArgs: range error displays empty/string raw values clearly (got \"
     assert.match(validateArgs({ prompt: "x", max_iterations: 1.5 }).error, /\(got 1\.5\)/);
 });
 
+test("validateArgs: NaN / Infinity render as themselves, not 'null' (displayValue contract)", () => {
+    // displayValue uses String(v) for non-strings specifically so
+    // NaN/Infinity surface in the error as `NaN` / `Infinity` instead
+    // of JSON.stringify's `null` — which would be a misleading
+    // "the value you passed was null" when the user actually passed
+    // a non-finite number. A future refactor that switches to
+    // JSON.stringify would silently regress this.
+    assert.match(validateArgs({ prompt: "x", max_iterations: NaN }).error, /\(got NaN\)/);
+    assert.match(validateArgs({ prompt: "x", max_iterations: Infinity }).error, /\(got Infinity\)/);
+    assert.match(validateArgs({ prompt: "x", max_iterations: -Infinity }).error, /\(got -Infinity\)/);
+    // Same defense for the other numeric fields that go through displayValue.
+    assert.match(validateArgs({ prompt: "x", min_iterations: NaN }).error, /\(got NaN\)/);
+    assert.match(validateArgs({ prompt: "x", stagnation_limit: NaN }).error, /\(got NaN\)/);
+});
+
 test("validateArgs: rejects empty/whitespace-only completion/abort promise strings", () => {
     // Empty string is technically zero-length so it falls into the
     // whitespace branch (trim().length === 0 with no chars to trim).

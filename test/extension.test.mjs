@@ -417,6 +417,26 @@ test("ralph_stop tool spec declares maxLength on optional reason", () => {
     assert.equal(t.parameters.properties.reason.maxLength, 500);
 });
 
+test("schema `default` fields stay in lockstep with the DEFAULTS source-of-truth", () => {
+    // The JSON schema advertises defaults to LLM clients via
+    // `parameters.properties.X.default`. validateArgs reads them from the
+    // runtime DEFAULTS object. If these drift (e.g. someone bumps
+    // DEFAULTS.max_iterations from 20 to 50 but forgets the schema), the
+    // LLM sees one number and the runtime applies another — the user gets
+    // mysterious "expected default" surprises. Pin the equality.
+    const c = createRalphController();
+    const p = c.tools.find((x) => x.name === "ralph_loop").parameters.properties;
+    const { DEFAULTS } = __test__;
+    assert.equal(p.max_iterations.default, DEFAULTS.max_iterations);
+    assert.equal(p.min_iterations.default, DEFAULTS.min_iterations);
+    assert.equal(p.completion_promise.default, DEFAULTS.completion_promise);
+    assert.equal(p.stagnation_limit.default, DEFAULTS.stagnation_limit);
+    // abort_promise has no default (it's optional with no implicit fallback).
+    assert.equal(p.abort_promise.default, undefined);
+    // prompt is required, so no default field is appropriate.
+    assert.equal(p.prompt.default, undefined);
+});
+
 test("tool parameters round-trip through JSON.stringify without losing fields", () => {
     // Some hosts ship the tool spec to remote LLM endpoints by serializing
     // it as JSON. A non-JSON-serializable value (Symbol, BigInt, Function,

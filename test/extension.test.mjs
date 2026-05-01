@@ -52,7 +52,15 @@ async function arm(args = {}) {
 
 test("validateArgs: rejects empty prompt", () => {
     assert.match(validateArgs({}).error, /prompt is required/);
-    assert.match(validateArgs({ prompt: "   " }).error, /prompt is required/);
+    assert.match(validateArgs({ prompt: "" }).error, /prompt is required/);
+});
+
+test("validateArgs: whitespace-only prompt gets a distinct, more actionable error", () => {
+    // "prompt is required" is misleading when the prompt was provided —
+    // the user almost certainly hit a templating/interpolation bug. A
+    // separate message points the agent at the actual layer to fix.
+    assert.match(validateArgs({ prompt: "   " }).error, /whitespace-only/);
+    assert.match(validateArgs({ prompt: "\t\n" }).error, /whitespace-only/);
 });
 
 test("validateArgs: explicit prompt:null is treated as missing (not 'wrong type')", () => {

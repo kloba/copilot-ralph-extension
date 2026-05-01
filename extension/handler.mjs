@@ -149,7 +149,16 @@ export function validateArgs(args) {
         return { error: `ralph_loop: prompt must be a string (got ${describeArgType(args.prompt)}).` };
     }
     const prompt = (args.prompt ?? "").trim();
-    if (!prompt) return { error: "ralph_loop: prompt is required and must be non-empty." };
+    if (!prompt) {
+        // Distinguish "you forgot to pass a prompt" from "you passed a
+        // string but it's only whitespace" — the second case is usually
+        // a templating bug (variable interpolated to empty), and saying
+        // so loudly helps the agent fix the right layer.
+        if (args.prompt === undefined || args.prompt === null || args.prompt === "") {
+            return { error: "ralph_loop: prompt is required and must be non-empty." };
+        }
+        return { error: "ralph_loop: prompt must contain at least one non-whitespace character (got a whitespace-only string)." };
+    }
     if (prompt.length > MAX_PROMPT_CHARS) {
         return {
             error: `ralph_loop: prompt exceeds ${MAX_PROMPT_CHARS} characters (got ${prompt.length}). Shorten the prompt or split the work.`,

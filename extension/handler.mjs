@@ -249,10 +249,6 @@ export function validateArgs(args) {
         // string but it's only whitespace" — the second case is usually
         // a templating bug (variable interpolated to empty), and saying
         // so loudly helps the agent fix the right layer.
-        // !args.prompt catches undefined, null, and "" — the three "no
-        // prompt at all" cases. The whitespace-only branch handles a
-        // raw input like "   " or "\t\n" (also falsy after trim() but
-        // truthy as a raw string).
         if (!args.prompt) {
             return { error: "ralph_loop: prompt is required and must be non-empty." };
         }

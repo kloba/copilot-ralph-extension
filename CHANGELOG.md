@@ -27,8 +27,9 @@
   defaults: `max_iterations` 100 (cap 1000), `min_iterations` 5,
   `completion_promise` `"COMPLETE"`, optional `abort_promise`,
   `stagnation_limit` 3 (≥ 2 or 0), plus a new optional `focus`
-  string (≤500 chars) appended verbatim as
-  `Focus this run on: <focus>` after the SDLC scaffolding.
+  string (≤2000 chars; see the Changes section above for the cap
+  bump rationale) appended verbatim as `Focus this run on: <focus>`
+  after the SDLC scaffolding.
 - `self_improve` reuses the same `state.active` / `finish()` /
   post-loop `additionalContext` pipeline as `ralph_loop` via a
   shared private `armLoop(parsedValue, label)` helper — only the

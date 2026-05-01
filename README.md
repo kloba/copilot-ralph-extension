@@ -322,6 +322,7 @@ RALPH_NO_ATTRIBUTION=1 copilot   # subsequent self_improve/grow_project loops om
 - Copilot CLI Extension SDK (`@github/copilot-sdk/extension`) — bundled with Copilot CLI
 - Node.js ≥ 20 (only required for running the test suite; the installed extension uses the Node runtime bundled with Copilot CLI)
 - No runtime npm dependencies. Tests use `node:test` (built-in); run them with `npm test`.
+- **`gh` CLI** (≥ 2.0) authenticated via `gh auth login` — *only* required when arming `grow_project`. The baked SDLC prompt drives `gh issue list/create/edit/close` calls every iteration; without auth, the very first call fails and the agent burns iterations trying to recover. `ralph_loop` and `self_improve` do not invoke `gh` and have no such requirement.
 
 ## Changelog
 

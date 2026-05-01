@@ -220,6 +220,34 @@ if (!PROMPT_GROW_PROJECT.includes(DEFAULTS.completion_promise) ||
     );
 }
 
+// Issue #1: every loop-driven commit ships TWO Co-authored-by trailers
+// (Copilot agent + copilot-ralph bot account, with RALPH_NO_ATTRIBUTION=1
+// suppressing the second). Bake the canonical trailer literals here so a
+// future edit to either prompt that drops the bot-account trailer or
+// inverts the order fails at module-load time, not at the next CI run.
+// The order-pin (Copilot first, copilot-ralph second) matters because
+// GitHub's commit UI surfaces the first co-author more prominently.
+const BAKED_COPILOT_TRAILER = "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>";
+const BAKED_RALPH_TRAILER = "Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>";
+const BAKED_ATTRIBUTION_OPT_OUT = "RALPH_NO_ATTRIBUTION=1";
+for (const [label, prompt] of [
+    ["PROMPT_SELF_IMPROVE", PROMPT_SELF_IMPROVE],
+    ["PROMPT_GROW_PROJECT", PROMPT_GROW_PROJECT],
+]) {
+    const copilotIdx = prompt.indexOf(BAKED_COPILOT_TRAILER);
+    const ralphIdx = prompt.indexOf(BAKED_RALPH_TRAILER);
+    if (copilotIdx === -1 || ralphIdx === -1 || copilotIdx >= ralphIdx) {
+        throw new Error(
+            `handler.mjs: ${label} must contain both Co-authored-by trailers in canonical order (Copilot first, copilot-ralph second). Got Copilot@${copilotIdx}, copilot-ralph@${ralphIdx}. Issue #1 attribution invariant.`,
+        );
+    }
+    if (!prompt.includes(BAKED_ATTRIBUTION_OPT_OUT)) {
+        throw new Error(
+            `handler.mjs: ${label} must document the "${BAKED_ATTRIBUTION_OPT_OUT}" opt-out env var alongside the dual Co-authored-by trailers. Issue #1 attribution invariant.`,
+        );
+    }
+}
+
 // Find a slice length ≤ `cut` that doesn't split a UTF-16 surrogate pair
 // (4-byte chars like emoji), so we never produce a lone-surrogate tail.
 function safeSliceEnd(s, cut) {

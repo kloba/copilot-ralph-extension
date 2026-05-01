@@ -2167,4 +2167,17 @@ test("finish log marker differentiates by reason category", async () => {
     s2.emit("session.idle", { data: {} });
     await stop.handler({});
     assert.match(s2.logs.join("\n"), /⏹ stopped ralph_loop.*reason: user_stopped/);
+
+    // aborted (SDK abort event) → ⚠️ ended (mirrors send_error: something went wrong).
+    // Pins the second branch of the verb ladder, which previously had no
+    // dedicated test — only send_error covered it.
+    const { session: s3 } = await arm({ max_iterations: 5 });
+    s3.emit("abort", { data: { reason: "user_cancelled" } });
+    assert.match(s3.logs.join("\n"), /⚠️ ended ralph_loop.*reason: aborted/);
+
+    // completion_promise → ✅ completed
+    const { session: s4 } = await arm({ max_iterations: 5 });
+    s4.emit("session.idle", { data: {} });
+    runTurn(s4, "all done COMPLETE");
+    assert.match(s4.logs.join("\n"), /✅ completed ralph_loop.*reason: completion_promise/);
 });

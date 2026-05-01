@@ -1054,6 +1054,18 @@ test("both baked prompts retain the cwd guardrail and the trigger-phrase footgun
         // "killer feature" mentioned in unrelated examples wouldn't
         // also fail.
         assert.doesNotMatch(prompt, /\bkill\b/i, `${name}: prompt must not contain the literal trigger-phrase word it warns against`);
+        // License/README/CHANGELOG wholesale-rewrite ban — legal +
+        // narrative risk. A self_improve iter that "polished docs"
+        // and rewrote the LICENSE would silently change the
+        // project's OSS licensing. The rule is baked into both
+        // prompts; pin it so a refactor can't quietly drop the
+        // surgical-edits-only safeguard.
+        assert.match(prompt, /surgical edits only/i, `${name}: must keep the "surgical edits only" license/README/CHANGELOG ban`);
+        // No-new-dependencies rule — an iter that ran
+        // `npm install lodash` to "fix" a one-liner would silently
+        // expand the supply-chain footprint. Pin the rule with
+        // its escape hatch (rubber-duck-justified introductions).
+        assert.match(prompt, /new (top-level )?dependencies/i, `${name}: must keep the no-new-dependencies hard rule`);
     }
 });
 

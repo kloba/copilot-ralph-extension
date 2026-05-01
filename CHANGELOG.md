@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Documentation
+- README + `docs/RELEASING.md` — install / pin
+  snippets now include `events-emit.mjs` in their
+  curl loops. The previous snippets fetched only
+  `extension.mjs` and `handler.mjs`, so anyone
+  following Option A (user-scoped), Option B
+  (project-scoped), Option C (pinned release), or
+  the manual release checklist's `gh release create`
+  invocation ended up with a partially copied
+  extension that crashes at module-load with
+  `Cannot find module './events-emit.mjs'`. The
+  Windows note and the Troubleshooting "/extensions
+  doesn't list ralph" entry have been refreshed to
+  match. `docs/RELEASING.md` no longer describes
+  the tag-driven workflow as "tracked in #10 until
+  that ships" — it ships at
+  `.github/workflows/release.yml`. Added a
+  `test/extension.test.mjs` drift guard that scans
+  every `for f in <list>; do` loop in README.md and
+  RELEASING.md and asserts the file list matches
+  `extension/*.mjs` — mirrors the existing
+  install.sh + release.yml drift guards.
+
 ### Fixes
 - `.github/workflows/release.yml` — release tarball
   now also includes `extension/events-emit.mjs`. The

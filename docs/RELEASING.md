@@ -2,7 +2,7 @@
 
 `copilot-ralph-extension` ships as a small set of `.mjs` files copied into `~/.copilot/extensions/ralph` (or `.github/extensions/ralph` for project-scoped installs). There is **no npm publish**; releases are tagged commits on `main` plus an annotated GitHub Release page.
 
-A formal tag-driven release-automation workflow is tracked in issue [#10](https://github.com/kloba/copilot-ralph-extension/issues/10). Until that ships, the steps below are the manual checklist.
+A formal tag-driven release-automation workflow now ships at [`.github/workflows/release.yml`](../.github/workflows/release.yml) (see issue [#10](https://github.com/kloba/copilot-ralph-extension/issues/10) for the rationale). Pushing a `vX.Y.Z` tag verifies `package.json` matches the tag, asserts a matching `CHANGELOG.md` section exists, runs `npm test`, and creates the GitHub Release with every `extension/*.mjs` attached as an asset. The manual checklist below is the fallback when the workflow is unavailable or you need to cut a release out-of-band.
 
 ## Manual release checklist
 
@@ -15,9 +15,12 @@ A formal tag-driven release-automation workflow is tracked in issue [#10](https:
 4. **Create a GitHub Release**:
    - Title: `vX.Y.Z`.
    - Body: paste the new `## [vX.Y.Z]` section from `CHANGELOG.md` verbatim.
-   - Attach `extension/extension.mjs` and `extension/handler.mjs` as release assets so users can pin a specific revision without cloning the repo:
+   - Attach every `.mjs` module under `extension/` as a release asset so users can pin a specific revision without cloning the repo. The full set is the same one `install.sh` copies — currently `extension.mjs`, `handler.mjs`, and `events-emit.mjs`. A drift guard in `test/extension.test.mjs` keeps `release.yml`'s asset list in sync with the directory; mirror that list here when invoking `gh release create` manually:
      ```bash
-     gh release create vX.Y.Z extension/extension.mjs extension/handler.mjs \
+     gh release create vX.Y.Z \
+       extension/extension.mjs \
+       extension/handler.mjs \
+       extension/events-emit.mjs \
        --title "vX.Y.Z" --notes-file <(awk '/^## \[vX.Y.Z\]/,/^## \[/' CHANGELOG.md | sed '$d')
      ```
 
@@ -33,15 +36,15 @@ The package has zero runtime dependencies, so dependency-driven version bumps do
 
 ## Pinning a specific version (for end users)
 
-Once a release exists with assets attached, end users can pin a specific revision:
+Once a release exists with assets attached, end users can pin a specific revision. Mirror `install.sh`'s FILES list — every `.mjs` under `extension/` must be downloaded; the extension imports its modules by relative path, so a partial download will crash at module-load time:
 
 ```bash
 # Project-scoped pin
 mkdir -p .github/extensions/ralph
-curl -L -o .github/extensions/ralph/extension.mjs \
-  https://github.com/kloba/copilot-ralph-extension/releases/download/vX.Y.Z/extension.mjs
-curl -L -o .github/extensions/ralph/handler.mjs \
-  https://github.com/kloba/copilot-ralph-extension/releases/download/vX.Y.Z/handler.mjs
+for f in extension.mjs handler.mjs events-emit.mjs; do
+  curl -L -o ".github/extensions/ralph/$f" \
+    "https://github.com/kloba/copilot-ralph-extension/releases/download/vX.Y.Z/$f"
+done
 ```
 
 For the user-scoped equivalent, swap `.github/extensions/ralph` for `~/.copilot/extensions/ralph`.

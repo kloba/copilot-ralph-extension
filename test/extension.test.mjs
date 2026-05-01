@@ -4738,6 +4738,40 @@ test("release.yml asset list matches extension/*.mjs on disk", () => {
     );
 });
 
+test("README + RELEASING install loops list every extension/*.mjs file", () => {
+    // Drift guard for the user-facing install snippets. Both README.md
+    // (Option A user-scoped, Option B project-scoped, Option C pinned
+    // release) and docs/RELEASING.md ship `for f in <list>; do curl …`
+    // loops that fetch a hardcoded set of `.mjs` files. Anyone who
+    // follows a snippet whose <list> is stale ends up with a partially
+    // copied extension that crashes at module-load
+    // (`Cannot find module './events-emit.mjs'`). Mirrors the
+    // install.sh + release.yml drift guards.
+    const onDisk = readdirSync(resolve(REPO_ROOT, "extension"))
+        .filter((f) => f.endsWith(".mjs"))
+        .sort();
+    for (const docPath of ["README.md", "docs/RELEASING.md"]) {
+        const text = readFileSync(resolve(REPO_ROOT, docPath), "utf8");
+        const matches = [...text.matchAll(/for f in ([^;\n]+); do/g)];
+        assert.ok(
+            matches.length > 0,
+            `${docPath} must contain at least one \`for f in …; do\` install loop — drift guard relies on it`,
+        );
+        for (const m of matches) {
+            const declared = m[1]
+                .split(/\s+/)
+                .map((s) => s.trim())
+                .filter(Boolean)
+                .sort();
+            assert.deepEqual(
+                declared,
+                onDisk,
+                `${docPath} install loop \`for f in ${m[1]}; do\` is missing or has extra files vs extension/*.mjs — update the snippet whenever you add or remove a sibling .mjs in extension/`,
+            );
+        }
+    }
+});
+
 test("install.sh: --help prints the leading comment block", () => {
     // Smoke test: the script must be syntactically valid bash (otherwise
     // bash would crash before reaching the --help branch) and the awk

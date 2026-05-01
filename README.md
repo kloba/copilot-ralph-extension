@@ -82,7 +82,7 @@ The tool **arms** the loop and returns immediately. Iterations then play out as 
 
 | Param | Default | Purpose |
 |---|---|---|
-| `prompt` | _(required)_ | The task prompt re-fed each iteration |
+| `prompt` | _(required)_ | The task prompt re-fed each iteration. Max 65536 chars. |
 | `max_iterations` | `20` | Hard iteration cap (integer, 1–1000) |
 | `min_iterations` | `1` | Minimum iterations before `completion_promise` / `abort_promise` are honored. Use this to force verification passes even if the agent declares completion early. |
 | `completion_promise` | `"COMPLETE"` | Substring in assistant response → stop. Trimmed; max 200 chars. |

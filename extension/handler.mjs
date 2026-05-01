@@ -198,8 +198,11 @@ export function validateArgs(args) {
 
     let completionPromise = DEFAULTS.completion_promise;
     if (args.completion_promise !== undefined && args.completion_promise !== null) {
-        if (typeof args.completion_promise !== "string" || args.completion_promise.trim().length === 0) {
-            return { error: "ralph_loop: completion_promise must be a non-empty, non-whitespace-only string." };
+        if (typeof args.completion_promise !== "string") {
+            return { error: `ralph_loop: completion_promise must be a string (got ${describeArgType(args.completion_promise)}).` };
+        }
+        if (args.completion_promise.trim().length === 0) {
+            return { error: "ralph_loop: completion_promise must contain at least one non-whitespace character." };
         }
         if (args.completion_promise.length > MAX_PROMISE_CHARS) {
             return { error: `ralph_loop: completion_promise exceeds ${MAX_PROMISE_CHARS} characters (got ${args.completion_promise.length}). Use a short signal phrase.` };
@@ -213,8 +216,11 @@ export function validateArgs(args) {
 
     let abortPromise = null;
     if (args.abort_promise !== undefined && args.abort_promise !== null) {
-        if (typeof args.abort_promise !== "string" || args.abort_promise.trim().length === 0) {
-            return { error: "ralph_loop: abort_promise, when provided, must be a non-empty, non-whitespace-only string." };
+        if (typeof args.abort_promise !== "string") {
+            return { error: `ralph_loop: abort_promise must be a string (got ${describeArgType(args.abort_promise)}).` };
+        }
+        if (args.abort_promise.trim().length === 0) {
+            return { error: "ralph_loop: abort_promise, when provided, must contain at least one non-whitespace character." };
         }
         if (args.abort_promise.length > MAX_PROMISE_CHARS) {
             return { error: `ralph_loop: abort_promise exceeds ${MAX_PROMISE_CHARS} characters (got ${args.abort_promise.length}). Use a short signal phrase.` };

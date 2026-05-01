@@ -110,11 +110,25 @@ test("validateArgs: range error displays empty/string raw values clearly (got \"
 });
 
 test("validateArgs: rejects empty/whitespace-only completion/abort promise strings", () => {
-    assert.match(validateArgs({ prompt: "x", completion_promise: "" }).error, /completion_promise/);
-    assert.match(validateArgs({ prompt: "x", completion_promise: "   " }).error, /whitespace-only/);
-    assert.match(validateArgs({ prompt: "x", completion_promise: "\t\n" }).error, /whitespace-only/);
-    assert.match(validateArgs({ prompt: "x", abort_promise: "" }).error, /abort_promise/);
-    assert.match(validateArgs({ prompt: "x", abort_promise: "  " }).error, /whitespace-only/);
+    // Empty string is technically zero-length so it falls into the
+    // whitespace branch (trim().length === 0 with no chars to trim).
+    assert.match(validateArgs({ prompt: "x", completion_promise: "" }).error, /completion_promise must contain at least one non-whitespace/);
+    assert.match(validateArgs({ prompt: "x", completion_promise: "   " }).error, /completion_promise must contain at least one non-whitespace/);
+    assert.match(validateArgs({ prompt: "x", completion_promise: "\t\n" }).error, /completion_promise must contain at least one non-whitespace/);
+    assert.match(validateArgs({ prompt: "x", abort_promise: "" }).error, /abort_promise.*must contain at least one non-whitespace/);
+    assert.match(validateArgs({ prompt: "x", abort_promise: "  " }).error, /abort_promise.*must contain at least one non-whitespace/);
+});
+
+test("validateArgs: rejects non-string completion/abort promise with typed error", () => {
+    // Splitting non-string vs whitespace-only mirrors the prompt
+    // validation: a 42 / [] / {} arg gets a "must be a string (got X)"
+    // diagnostic instead of being lumped into the generic
+    // "non-empty, non-whitespace-only" message that was previously
+    // misleading for type errors.
+    assert.match(validateArgs({ prompt: "x", completion_promise: 42 }).error, /completion_promise must be a string \(got number\)/);
+    assert.match(validateArgs({ prompt: "x", completion_promise: ["A"] }).error, /completion_promise must be a string \(got array\)/);
+    assert.match(validateArgs({ prompt: "x", abort_promise: false }).error, /abort_promise must be a string \(got boolean\)/);
+    assert.match(validateArgs({ prompt: "x", abort_promise: { x: 1 } }).error, /abort_promise must be a string \(got object\)/);
 });
 
 test("validateArgs: rejects identical completion and abort promise", () => {

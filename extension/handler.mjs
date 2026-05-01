@@ -650,7 +650,9 @@ export function createRalphController() {
                 }
                 const i = state.active.i;
                 const max = state.active.max;
-                const reason = args && typeof args === "object" && !Array.isArray(args) ? args.reason : undefined;
+                // args is now either null/undefined or a validated object
+                // (validateArgShape above rejected arrays and non-objects).
+                const reason = args?.reason;
                 const trimmed = typeof reason === "string" && reason.trim() ? reason.trim() : undefined;
                 // Cap before surfacing in the response or storing in result.note
                 // so a giant user-supplied reason can't pollute the LLM context.

@@ -88,11 +88,10 @@ function collapseNote(text) {
     return text ? String(text).replace(/\s+/g, " ").trim() : "";
 }
 
-// Bound an arbitrary user/SDK-supplied string for embedding in a single-line
-// log message: cap length at PREVIEW_CHARS (surrogate-safely) and flatten
-// whitespace. Used by every log site that interpolates an external value
-// (abort reason, send-error message) so the timeline can't be flooded by a
-// pathological payload.
+// Cap length at PREVIEW_CHARS (surrogate-safely) and flatten whitespace.
+// Used by every log site that embeds an external string (abort reason,
+// send-error message) so the timeline can't be flooded by a pathological
+// payload.
 function boundedNoteForLog(text) {
     return collapseNote(truncateNote(text));
 }

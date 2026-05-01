@@ -97,7 +97,7 @@ function isSubAgentEvent(ev) {
  * @property {string} preview - First 500 chars of the final assistant content.
  * @property {number} startedAt - Epoch ms when the loop was armed.
  * @property {number} finishedAt - Epoch ms when the loop finished.
- * @property {number} durationMs - finishedAt - startedAt.
+ * @property {number} durationMs - Elapsed wall-clock ms from arming to finish, clamped to ≥ 0 (a backward clock jump mid-loop reports 0 instead of a negative).
  * @property {string} [note] - Optional human-readable context: caller-supplied via ralph_stop({reason}), or the underlying error message on send_error, or the SDK abort reason on aborted. Truncated to 500 chars (surrogate-safe).
  */
 

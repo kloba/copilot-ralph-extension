@@ -15,6 +15,10 @@
   that honor `not` now see the constraint up front).
 - Shape + unknown-keys validation deduplicated into a shared
   `validateArgShape` helper used by both tools.
+- Surrogate-safe head-trim of the 1 MiB rolling assistant-content
+  buffer: when overflow slicing lands inside a UTF-16 surrogate pair,
+  bump the start forward by 1 so the kept buffer never begins with a
+  lone low surrogate (would otherwise print as a replacement char).
 
 ### Tests / docs
 - Regression test pinning the `prompt: null/undefined` → "prompt is

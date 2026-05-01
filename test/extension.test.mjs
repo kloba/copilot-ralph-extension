@@ -712,6 +712,27 @@ test("ralph_stop accepts an optional reason and records it as note", async () =>
     assert.equal(controller.state.lastResult.note, "user changed plan");
 });
 
+test("ralph_stop with empty/whitespace-only reason silently drops it (note=undefined)", async () => {
+    // The note path requires `reason.trim()` to be non-empty (handler.mjs
+    // ~line 634). An empty-string or whitespace-only reason is treated
+    // the same as omitting it: loop stops, no note attached, no quote
+    // appended to the user-facing message. This mirrors the abort-event
+    // handler's whitespace-only reason guard so callers see consistent
+    // behavior across both stop paths.
+    const cases = ["", " ", "   ", "\t\n", "\u00A0\u00A0"];
+    for (const reason of cases) {
+        const { stop, controller, session } = await arm({ max_iterations: 5 });
+        const r = await stop.handler({ reason });
+        assert.equal(r.resultType, "success", `reason=${JSON.stringify(reason)}: expected success`);
+        assert.equal(r.note, undefined, `reason=${JSON.stringify(reason)}: structured note must be undefined`);
+        assert.doesNotMatch(r.textResultForLlm, /\(\s*\)/, "user-facing text must not show empty '(...)' note suffix");
+        assert.equal(controller.state.lastResult.reason, "user_stopped");
+        assert.equal(controller.state.lastResult.note, undefined);
+        // Detach for next iteration
+        session.emit("session.idle", { data: {} });
+    }
+});
+
 test("ralph_stop with non-string reason silently drops it (note=undefined, loop still stops)", async () => {
     // ralph_stop's `reason` arg accepts the loose contract "string or
     // missing"; passing a number / object / array is treated the same

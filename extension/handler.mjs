@@ -183,10 +183,9 @@ const RALPH_LOOP_KEYS = new Set([
 ]);
 const RALPH_STOP_KEYS = new Set(["reason"]);
 
-// Shared rules for completion_promise / abort_promise: string,
-// non-whitespace, ≤ MAX_PROMISE_CHARS, trimmed before substring
-// matching. `whenProvided` adds a ", when provided," to the
-// empty-string error for abort_promise (which has no default).
+// Validate completion_promise / abort_promise: string, non-whitespace,
+// ≤ MAX_PROMISE_CHARS, trimmed before matching. `whenProvided` injects
+// ", when provided," into abort_promise's empty error (it has no default).
 function validatePromiseField(fieldName, raw, { whenProvided = false } = {}) {
     if (typeof raw !== "string") {
         return { error: `ralph_loop: ${fieldName} must be a string (got ${describeArgType(raw)}).` };

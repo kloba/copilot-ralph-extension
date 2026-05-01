@@ -9,6 +9,9 @@
 set -euo pipefail
 
 DRY_RUN=0
+# These sentinels are set in the --dry-run / --project arms below and
+# read indirectly via reject_duplicate's `${!sentinel}` lookup. Keep
+# them declared up front so `set -u` doesn't trip on first read.
 SEEN_DRY_RUN=0
 SEEN_PROJECT=0
 # Reject duplicates so a copy-paste typo (`./install.sh --dry-run --dry-run`)
@@ -33,6 +36,7 @@ for arg in "$@"; do
       ;;
     --dry-run)
       reject_duplicate --dry-run SEEN_DRY_RUN
+      # shellcheck disable=SC2034
       SEEN_DRY_RUN=1
       DRY_RUN=1
       ;;

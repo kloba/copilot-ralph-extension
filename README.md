@@ -409,7 +409,7 @@ If you arm a new `ralph_loop` *before* the next user prompt fires, the prior run
 
 ## Commit attribution
 
-The baked `self_improve` and `grow_project` SDLC prompts instruct the agent to add `Co-authored-by:` trailers to every commit so loop-driven changes are attributable. By default, every loop-driven commit ships **two** trailers (per [issue #1](https://github.com/kloba/copilot-ralph-extension/issues/1)):
+The baked `self_improve` and `grow_project` SDLC prompts instruct the agent to add `Co-authored-by:` trailers to every commit so loop-driven changes are attributable. `ralph_loop` reaches parity by appending a small commit-attribution rider to the user-supplied prompt at arm time — so any commit produced during a `ralph_loop` iteration carries the same dual trailer. By default, every loop-driven commit ships **two** trailers (per [issue #1](https://github.com/kloba/copilot-ralph-extension/issues/1)):
 
 ```
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
@@ -420,10 +420,10 @@ The first identifies the agent. The second attributes the commit to a dedicated 
 
 ### Opt-out
 
-Set `RALPH_NO_ATTRIBUTION=1` in the environment before arming the loop to suppress the second `copilot-ralph` trailer. The first `Copilot` trailer still ships, since it identifies the agent that made the change. The opt-out is **honored by the baked prompt**, not by the extension code path — the agent reads the env var during the COMMIT stage and omits the trailer accordingly.
+Set `RALPH_NO_ATTRIBUTION=1` in the environment before arming the loop to suppress the second `copilot-ralph` trailer. The first `Copilot` trailer still ships, since it identifies the agent that made the change. The opt-out is **honored by the prompt** (baked SDLC prompt for `self_improve` / `grow_project`; appended rider for `ralph_loop`), not by the extension code path — the agent reads the env var during the COMMIT stage and omits the trailer accordingly.
 
 ```bash
-RALPH_NO_ATTRIBUTION=1 copilot   # subsequent self_improve/grow_project loops omit the copilot-ralph trailer
+RALPH_NO_ATTRIBUTION=1 copilot   # subsequent ralph_loop / self_improve / grow_project loops omit the copilot-ralph trailer
 ```
 
 ### Caveats
@@ -467,12 +467,12 @@ Behaviour:
 
 - **Substring-match completion can self-trigger.** Both `completion_promise` and `abort_promise` use plain substring matching against the assistant's accumulated turn output. If the agent quotes the trigger phrase mid-thought (e.g. *"I'll mark this COMPLETE when done"*), the loop will finish on that turn. Pick a phrase the agent is unlikely to mention casually; emoji or unusual tokens (e.g. `RALPH_DONE_42`) work well.
 - **Multi-message turns join with newlines.** When the SDK emits multiple `assistant.message` events within a single turn, Ralph concatenates them with `\n`. A trigger phrase that lands *split* exactly across the boundary (e.g. one message ends with `"DO"` and the next starts with `"NE"` while looking for `"DONE"`) becomes `"DO\nNE"` and won't match. In practice the SDK emits whole responses or large multi-paragraph chunks, so this rarely bites — but choose phrases that won't realistically straddle a chunk boundary.
-- **Prompt is re-injected verbatim every iteration.** The loop has no concept of progress — the agent must derive what's already done from its own conversation history. This is intentional (it matches the Anthropic plugin) but means a vague prompt yields vague iteration.
+- **Prompt is re-injected verbatim every iteration.** The loop has no concept of progress — the agent must derive what's already done from its own conversation history. This is intentional (it matches the Anthropic plugin) but means a vague prompt yields vague iteration. Note: `ralph_loop` augments the user-supplied prompt once at arm time with a small commit-attribution rider (see [Commit attribution](#commit-attribution)); after that augmentation, the same composed prompt is what gets re-injected verbatim each iteration.
 - **Stagnation always overrides `min_iterations`.** Identical responses fire stagnation regardless of `min_iterations` — this is a safety floor, not a configurable behavior.
 - **Iteration timing is loop-arm-relative.** The `(elapsed Xms)` value in iter logs and the final `durationMs` measure time from arming, not per-turn latency. Per-turn timing isn't tracked.
 - **One loop per session.** Arming a second `ralph_loop` (or a `self_improve`, or a `grow_project`) while one is active fails fast — you must `ralph_stop` the active loop first. The guard applies symmetrically across all three tools: a `ralph_loop` while `self_improve` or `grow_project` is active is also rejected, and vice versa.
 - **`self_improve` keeps re-iterating with no commits.** The baked SDLC prompt instructs the agent to emit `COMPLETE` when the staircase is done. Until that token appears in an iteration, the loop runs to `max_iterations`. To stop early, either `ralph_stop` it manually or prepend a tighter `focus` so each iteration converges faster.
-- **Attribution opt-out is honored by the prompt, not enforced by the runtime.** [`RALPH_NO_ATTRIBUTION=1`](#opt-out) suppresses the second `copilot-ralph` `Co-authored-by:` trailer only because the baked SDLC prompt instructs the agent to read the env var during the COMMIT stage and omit the trailer. The extension does not rewrite commits — if a sub-agent ignores the env var (or runs in a context where `process.env` isn't visible), the trailer can still ship. Audit a commit afterwards with `git log -1 --pretty=%B` if attribution must be guaranteed off.
+- **Attribution opt-out is honored by the prompt, not enforced by the runtime.** [`RALPH_NO_ATTRIBUTION=1`](#opt-out) suppresses the second `copilot-ralph` `Co-authored-by:` trailer only because the prompt instructs the agent to read the env var during the COMMIT stage and omit the trailer (baked into `self_improve` / `grow_project` SDLC prompts; appended as a rider to user prompts on `ralph_loop`). The extension does not rewrite commits — if a sub-agent ignores the env var (or runs in a context where `process.env` isn't visible), the trailer can still ship. Audit a commit afterwards with `git log -1 --pretty=%B` if attribution must be guaranteed off.
 
 ## Requirements
 

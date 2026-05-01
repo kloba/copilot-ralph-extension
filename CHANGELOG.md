@@ -3,6 +3,22 @@
 ## Unreleased
 
 ### Features
+- `ralph_loop` now appends a small commit-attribution rider to the
+  user-supplied prompt at arm time, reaching parity with
+  `self_improve` and `grow_project` (issue #1). Any git commit
+  produced during a `ralph_loop` iteration carries the same dual
+  `Co-authored-by:` trailer (Copilot + copilot-ralph) and honors
+  the same `RALPH_NO_ATTRIBUTION=1` env-var opt-out. The rider is
+  inert when an iteration produces no commit, so generic
+  `ralph_loop` tasks (log analysis, exploration) are unaffected.
+  The new `BAKED_RALPH_LOOP_RIDER` literal participates in the
+  module-load attribution invariant (both trailers in canonical
+  order + opt-out env var documented) so a future edit can't
+  silently break the parity. README "Commit attribution" and
+  "Limitations" sections updated; tool description discloses the
+  augmentation; the new helper `composeRalphLoopPrompt` rejects
+  user prompts that would push the composed length past
+  `MAX_PROMPT_CHARS` with a clear error.
 - Tag-driven release workflow at `.github/workflows/release.yml`
   (issue #10). Pushing a `v*.*.*` tag verifies that
   `package.json#version` matches the tag, that `CHANGELOG.md` has a

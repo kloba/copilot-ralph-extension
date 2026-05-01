@@ -295,9 +295,28 @@ if (!PROMPT_GROW_PROJECT.includes(DEFAULTS.completion_promise) ||
 const BAKED_COPILOT_TRAILER = "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>";
 const BAKED_RALPH_TRAILER = "Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>";
 const BAKED_ATTRIBUTION_OPT_OUT = "RALPH_NO_ATTRIBUTION=1";
+
+// Issue #1 (ralph_loop parity): unlike self_improve / grow_project which
+// embed the COMMIT stage in their full baked SDLC prompt, ralph_loop takes
+// a user-supplied `prompt` and re-injects it verbatim every iteration. To
+// keep the dual-trailer attribution contract symmetric across all three
+// loop tools, the ralph_loop handler appends this rider to the user's
+// prompt at arm time. The rider is short on purpose — it ships once per
+// re-injected message and adds to context on every iteration. Worded as
+// a "Controller requirement" so a user prompt that omits commit
+// instructions does not appear to override it; explicitly inert when no
+// commit is created so generic ralph_loop tasks (e.g. log analysis) are
+// unaffected.
+const BAKED_RALPH_LOOP_RIDER = `---
+CONTROLLER REQUIREMENT — commit attribution: if this iteration produces any git commit, append BOTH Co-authored-by trailers in this exact order at the end of the commit message (separated from the body by a blank line):
+  ${BAKED_COPILOT_TRAILER}
+  ${BAKED_RALPH_TRAILER}
+The second trailer attributes loop-driven commits to the dedicated copilot-ralph bot account so they are passively searchable across public GitHub. If the environment variable ${BAKED_ATTRIBUTION_OPT_OUT} is set, omit ONLY the second copilot-ralph trailer; the first Copilot trailer always ships. If this iteration creates no commit, ignore this requirement.`;
+
 for (const [label, prompt] of [
     ["PROMPT_SELF_IMPROVE", PROMPT_SELF_IMPROVE],
     ["PROMPT_GROW_PROJECT", PROMPT_GROW_PROJECT],
+    ["BAKED_RALPH_LOOP_RIDER", BAKED_RALPH_LOOP_RIDER],
 ]) {
     const copilotIdx = prompt.indexOf(BAKED_COPILOT_TRAILER);
     const ralphIdx = prompt.indexOf(BAKED_RALPH_TRAILER);
@@ -311,6 +330,24 @@ for (const [label, prompt] of [
             `handler.mjs: ${label} must document the "${BAKED_ATTRIBUTION_OPT_OUT}" opt-out env var alongside the dual Co-authored-by trailers. Issue #1 attribution invariant.`,
         );
     }
+}
+
+// Append the dual-trailer commit-attribution rider to a user-supplied
+// ralph_loop prompt. Returns `{value}` on success or `{error}` when the
+// composed prompt would exceed MAX_PROMPT_CHARS — the rider eats roughly
+// 600 of the 65 536-char budget, so callers near the cap need a clear
+// signal instead of a silent overshoot. The separator is part of the
+// rider so a future tweak to spacing only edits one place.
+function composeRalphLoopPrompt(userPrompt) {
+    const separator = "\n\n";
+    const composed = `${userPrompt}${separator}${BAKED_RALPH_LOOP_RIDER}`;
+    if (composed.length > MAX_PROMPT_CHARS) {
+        const reserved = separator.length + BAKED_RALPH_LOOP_RIDER.length;
+        return {
+            error: `ralph_loop: prompt + commit-attribution rider exceeds ${MAX_PROMPT_CHARS} characters (got ${composed.length}; ~${reserved} chars reserved for the rider). Shorten the prompt.`,
+        };
+    }
+    return { value: composed };
 }
 
 // Find a slice length ≤ `cut` that doesn't split a UTF-16 surrogate pair
@@ -1627,7 +1664,7 @@ export function createRalphController(opts = {}) {
         {
             name: "ralph_loop",
             description:
-                `Run a Ralph Wiggum-style autonomous iterative loop. The tool returns immediately after arming the loop; iterations are driven by reacting to each session.idle (root-agent agentic-loop completion) and re-injecting the prompt as a new user message. Each iteration is a real conversation turn — context is retained, and progress is visible inline. Use ralph_stop to cancel an active loop. Tip: instruct the agent in the prompt to emit the completion_promise (default '${DEFAULTS.completion_promise}') when finished, otherwise the loop only stops at max_iterations. Only one loop runs per session; returns failure if a ralph_loop, self_improve, or grow_project loop is already active.`,
+                `Run a Ralph Wiggum-style autonomous iterative loop. The tool returns immediately after arming the loop; iterations are driven by reacting to each session.idle (root-agent agentic-loop completion) and re-injecting the prompt as a new user message. Each iteration is a real conversation turn — context is retained, and progress is visible inline. Use ralph_stop to cancel an active loop. Tip: instruct the agent in the prompt to emit the completion_promise (default '${DEFAULTS.completion_promise}') when finished, otherwise the loop only stops at max_iterations. Only one loop runs per session; returns failure if a ralph_loop, self_improve, or grow_project loop is already active. Note: the user-supplied prompt is augmented at arm time with a small commit-attribution rider that adds dual Co-authored-by trailers (Copilot + copilot-ralph) to any git commit produced during the loop; set RALPH_NO_ATTRIBUTION=1 in the environment to suppress the second trailer.`,
             parameters: {
                 type: "object",
                 properties: {
@@ -1719,6 +1756,9 @@ export function createRalphController(opts = {}) {
                 if (guard) return guard;
                 const parsed = validateArgs(args);
                 if (parsed.error) return failure(parsed.error);
+                const composed = composeRalphLoopPrompt(parsed.value.prompt);
+                if (composed.error) return failure(composed.error);
+                parsed.value.prompt = composed.value;
                 return armLoop(parsed.value);
             },
         },
@@ -2169,4 +2209,4 @@ export function createRalphController(opts = {}) {
     };
 }
 
-export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, previewOf };
+export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, previewOf };

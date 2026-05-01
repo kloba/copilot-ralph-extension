@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
-const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf } = __test__;
+const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf } = __test__;
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -253,13 +253,14 @@ test("ralph_loop: re-fires the trimmed prompt to session.send (not the raw padde
     controller.attach(session);
     const ralph = controller.tools.find((t) => t.name === "ralph_loop");
     await ralph.handler({ prompt: "  go\n  ", max_iterations: 3 });
-    assert.equal(controller.state.active.prompt, "go");
+    const expected = composeRalphLoopPrompt("go").value;
+    assert.equal(controller.state.active.prompt, expected);
     session.emit("session.idle", { data: {} });
     runTurn(session, "still working");
     runTurn(session, "still working again");
-    // Every send must use the trimmed prompt verbatim.
+    // Every send must use the trimmed prompt + rider verbatim.
     assert.ok(session.sent.length >= 2);
-    for (const s of session.sent) assert.equal(s.prompt, "go");
+    for (const s of session.sent) assert.equal(s.prompt, expected);
 });
 
 
@@ -1267,6 +1268,74 @@ test("PROMPT_GROW_PROJECT bakes the dual Co-authored-by trailer + RALPH_NO_ATTRI
     // so a future edit can't degrade to "omit BOTH" trailers.
     assert.match(p, /\bomit\b[\s\S]{0,80}\bonly\b/i, "must instruct OMIT ONLY the copilot-ralph trailer (Copilot trailer + Closes #N always ship)");
     assert.match(p, /\balways\s+ship/i, "must promise the Copilot trailer (and Closes #N) always ship");
+});
+
+test("BAKED_RALPH_LOOP_RIDER bakes the dual Co-authored-by trailer + RALPH_NO_ATTRIBUTION opt-out (issue #1, ralph_loop parity)", () => {
+    // ralph_loop parity with self_improve / grow_project: every
+    // loop-driven commit must carry the dual trailer. Because
+    // ralph_loop's prompt is user-supplied, the rider is appended
+    // at arm time. Pin the same invariants the SDLC prompts enforce
+    // so a future edit can't silently drop the bot-account trailer
+    // or invert the opt-out polarity.
+    const r = BAKED_RALPH_LOOP_RIDER;
+    assert.match(r, /Co-authored-by: Copilot <223556219\+Copilot@users\.noreply\.github\.com>/, "must keep the canonical Copilot trailer");
+    assert.match(r, /Co-authored-by: copilot-ralph <copilot-ralph@users\.noreply\.github\.com>/, "must bake the copilot-ralph bot-account trailer");
+    assert.match(r, /RALPH_NO_ATTRIBUTION=1/, "must document the RALPH_NO_ATTRIBUTION=1 opt-out env var");
+    assert.match(r, /RALPH_NO_ATTRIBUTION=1[\s\S]{0,200}\bomit\b/i, "RALPH_NO_ATTRIBUTION=1 must instruct the agent to OMIT the copilot-ralph trailer");
+    assert.match(r, /\bomit\b[\s\S]{0,80}\bonly\b/i, "must instruct OMIT ONLY the copilot-ralph trailer");
+    assert.match(r, /\balways\s+ship/i, "must promise the Copilot trailer always ships");
+    // Order pin: Copilot must precede copilot-ralph (GitHub UI
+    // surfaces the first co-author more prominently).
+    assert.ok(r.indexOf(BAKED_COPILOT_TRAILER) < r.indexOf(BAKED_RALPH_TRAILER), "Copilot trailer must appear before copilot-ralph in the rider");
+    // Rider must be inert when no commit is created — generic
+    // ralph_loop tasks (log analysis, etc.) shouldn't be forced
+    // to invent a commit just to satisfy the trailer policy.
+    assert.match(r, /no commit|creates no commit|does not commit|do(?: not|n't) commit/i, "rider must explicitly opt out when the iteration creates no commit");
+});
+
+test("composeRalphLoopPrompt appends the rider with both trailers + opt-out env var", () => {
+    const composed = composeRalphLoopPrompt("do the thing");
+    assert.equal(composed.error, undefined, "composing a small prompt must succeed");
+    assert.ok(composed.value.startsWith("do the thing"), "user prompt must lead the composed message");
+    assert.ok(composed.value.includes(BAKED_COPILOT_TRAILER), "composed prompt must include the Copilot trailer");
+    assert.ok(composed.value.includes(BAKED_RALPH_TRAILER), "composed prompt must include the copilot-ralph trailer");
+    assert.ok(composed.value.includes(BAKED_ATTRIBUTION_OPT_OUT), "composed prompt must document the opt-out env var");
+    // Order pin extends to the composed result.
+    assert.ok(composed.value.indexOf(BAKED_COPILOT_TRAILER) < composed.value.indexOf(BAKED_RALPH_TRAILER));
+});
+
+test("composeRalphLoopPrompt rejects a user prompt that would push the composed length past MAX_PROMPT_CHARS", () => {
+    // Reserve room for rider + separator; anything that takes the total
+    // past the cap must surface a clear error rather than silently
+    // exceeding the bound.
+    const reserved = BAKED_RALPH_LOOP_RIDER.length + "\n\n".length;
+    const bigUser = "x".repeat(MAX_PROMPT_CHARS - reserved + 1);
+    const r = composeRalphLoopPrompt(bigUser);
+    assert.equal(r.value, undefined);
+    assert.match(r.error ?? "", /commit-attribution rider/);
+    assert.match(r.error ?? "", new RegExp(`exceeds ${MAX_PROMPT_CHARS}`));
+});
+
+test("ralph_loop handler appends the rider to the user-supplied prompt before re-injection", async () => {
+    // Behavioral test: arm ralph_loop with a generic prompt and assert
+    // that the prompt ACTUALLY sent via session.send each iteration
+    // contains both trailers + the opt-out env var. This closes the
+    // loophole where a future refactor could compute the rider but
+    // forget to wire it into armLoop.
+    const session = makeFakeSession();
+    const controller = createRalphController();
+    controller.attach(session);
+    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
+    await ralph.handler({ prompt: "investigate the logs", max_iterations: 3 });
+    session.emit("session.idle", { data: {} });
+    runTurn(session, "still working");
+    assert.ok(session.sent.length >= 1);
+    for (const s of session.sent) {
+        assert.ok(s.prompt.startsWith("investigate the logs"), "user prompt must lead each re-injected message");
+        assert.ok(s.prompt.includes(BAKED_COPILOT_TRAILER), "every re-injected prompt must carry the Copilot trailer");
+        assert.ok(s.prompt.includes(BAKED_RALPH_TRAILER), "every re-injected prompt must carry the copilot-ralph trailer");
+        assert.ok(s.prompt.includes(BAKED_ATTRIBUTION_OPT_OUT), "every re-injected prompt must document the opt-out env var");
+    }
 });
 
 test("PROMPT_GROW_PROJECT bakes COMPLETE and ABORT_NO_BACKLOG tokens + fits MAX_PROMPT_CHARS", () => {
@@ -2499,7 +2568,7 @@ test("first turn_end after arming fires iter 1 prompt; subsequent turn_ends eval
     const { session, controller } = await arm({ max_iterations: 3 });
     session.emit("session.idle", { data: {} });
     assert.equal(session.sent.length, 1);
-    assert.equal(session.sent[0].prompt, "go");
+    assert.equal(session.sent[0].prompt, composeRalphLoopPrompt("go").value);
     assert.equal(controller.state.active.i, 1);
 
     runTurn(session, "still working");

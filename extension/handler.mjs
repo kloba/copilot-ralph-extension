@@ -140,12 +140,9 @@ function isSubAgentEvent(ev) {
  * @property {string} [note] - Optional human-readable context: caller-supplied via ralph_stop({reason}), or the underlying error message on send_error, or the SDK abort reason on aborted. Truncated silently to 500 chars (surrogate-safe) — no "…" indicator is appended (unlike `preview`). Notes are flowed inline into single-line log markers and the post-loop additionalContext bracket, where a trailing "…" would be misread as part of the message.
  */
 
-// Shared helper: every tool handler that accepts an args object should
-// (a) reject malformed shapes (null/array/primitive) and (b) reject
-// unknown keys — so a typo like `resaon` or `max_iter` surfaces loudly
-// instead of being silently dropped. Returns `null` when the shape is
-// valid, otherwise `{ error: <message> }`. Centralising this logic keeps
-// ralph_loop and ralph_stop's validation in lockstep.
+// Render the JSON-ish "type" name of a raw arg value for error messages.
+// Distinguishes null and array from generic "object", so a user whose
+// args is `[]` sees "array" rather than the misleading "object".
 function describeArgType(args) {
     if (args === null) return "null";
     if (Array.isArray(args)) return "array";
@@ -161,6 +158,12 @@ function displayValue(v) {
     return String(v);
 }
 
+// Shared helper: every tool handler that accepts an args object should
+// (a) reject malformed shapes (null/array/primitive) and (b) reject
+// unknown keys — so a typo like `resaon` or `max_iter` surfaces loudly
+// instead of being silently dropped. Returns `null` when the shape is
+// valid, otherwise `{ error: <message> }`. Centralising this logic keeps
+// ralph_loop and ralph_stop's validation in lockstep.
 function validateArgShape(toolName, args, knownKeys) {
     // `typeof null === "object"` so null needs an explicit check; undefined
     // is already caught by the typeof branch (typeof undefined === "undefined").

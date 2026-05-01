@@ -696,6 +696,18 @@ test("self_improve rejects stagnation_limit=1 with self_improve prefix", async (
     assert.doesNotMatch(r.textResultForLlm, /ralph_loop:/);
 });
 
+test("self_improve rejects overlapping completion/abort phrases with self_improve prefix", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({ completion_promise: "DONE", abort_promise: "DONE_NOW" });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /^self_improve:/);
+    assert.match(r.textResultForLlm, /overlap/i);
+    assert.doesNotMatch(r.textResultForLlm, /ralph_loop:/);
+});
+
 test("public tools and hooks surface is frozen (defensive against accidental mutation)", () => {
     const c = createRalphController();
     assert.ok(Object.isFrozen(c.tools));

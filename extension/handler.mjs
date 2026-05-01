@@ -72,6 +72,13 @@ function previewOf(text) {
     return text.slice(0, safeSliceEnd(text, PREVIEW_CHARS)) + "…";
 }
 
+// English pluralization for log lines: "" / "s". Centralized so the next
+// caller (e.g. a future "N attachment(s)" log) doesn't reinvent the
+// `=== 1 ? "" : "s"` ternary.
+function pluralS(n) {
+    return n === 1 ? "" : "s";
+}
+
 // Truncate `note` to PREVIEW_CHARS without splitting a surrogate pair —
 // same risk as previewOf since notes can carry user-supplied or error
 // strings containing emoji or other 4-byte chars.
@@ -163,7 +170,7 @@ function validateArgShape(toolName, args, knownKeys) {
     const unknown = Object.keys(args).filter((k) => !knownKeys.has(k));
     if (unknown.length > 0) {
         return {
-            error: `${toolName}: unknown argument${unknown.length === 1 ? "" : "s"}: ${unknown.map((k) => JSON.stringify(k)).join(", ")}. Valid keys: ${[...knownKeys].join(", ")}.`,
+            error: `${toolName}: unknown argument${pluralS(unknown.length)}: ${unknown.map((k) => JSON.stringify(k)).join(", ")}. Valid keys: ${[...knownKeys].join(", ")}.`,
         };
     }
     return null;
@@ -414,7 +421,7 @@ export function createRalphController() {
         // Collapse note whitespace for the single-line log format (a multi-
         // line Error stack would otherwise break alignment in the timeline).
         const noteForLog = collapseNote(result.note);
-        log(`${verb} ralph_loop after ${result.iterations} iteration${result.iterations === 1 ? "" : "s"} (reason: ${reason}${noteForLog ? `, note: ${noteForLog}` : ""}, ${result.durationMs}ms)`);
+        log(`${verb} ralph_loop after ${result.iterations} iteration${pluralS(result.iterations)} (reason: ${reason}${noteForLog ? `, note: ${noteForLog}` : ""}, ${result.durationMs}ms)`);
         state.active = null;
         state.lastResult = Object.freeze(result);
     };

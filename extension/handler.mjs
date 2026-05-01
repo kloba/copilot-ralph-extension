@@ -631,12 +631,12 @@ export function createRalphController() {
                     );
                 }
                 if (state.active) {
-                    const a = state.active;
+                    const { pendingFire, i, max } = state.active;
                     // Both branches share the same "— call ralph_stop first" tail;
                     // only the iteration counter and arm-vs-run verb differ.
-                    const status = a.pendingFire
-                        ? `armed (iteration 1/${a.max} pending`
-                        : `running (iteration ${a.i}/${a.max}`;
+                    const status = pendingFire
+                        ? `armed (iteration 1/${max} pending`
+                        : `running (iteration ${i}/${max}`;
                     return failure(`ralph_loop is already ${status} — call ralph_stop first).`);
                 }
                 const parsed = validateArgs(args);

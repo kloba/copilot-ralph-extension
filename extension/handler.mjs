@@ -695,9 +695,7 @@ export function createRalphController() {
      * Wire the controller to a Copilot CLI session. Subscribes to the three
      * events the controller needs (assistant.message, session.idle, abort).
      * Idempotent: calling attach(s2) after attach(s1) tears down s1's
-     * listeners first, so duplicate listeners can never double-count
-     * events. Calling attach() before any session is fatal — ralph_loop
-     * fails fast with a clear error.
+     * listeners first, so duplicate listeners can never double-count events.
      *
      * @param {object} session - SDK session with .send(message) and .on(event, handler).
      * @returns {() => void} A detach function that unsubscribes all listeners

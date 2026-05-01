@@ -686,10 +686,9 @@ export function createRalphController() {
             },
         },
     ];
-    // Deep-freeze the public tool surface so consumers can't accidentally
-    // mutate tool descriptors, swap out handlers, OR tweak the JSON schema
-    // (which would break clients that introspected our parameters and
-    // would silently desync runtime validation from declared bounds).
+    // Deep-freeze the public tool surface so consumers can't mutate
+    // descriptors, swap handlers, or desync the JSON schema from runtime
+    // validation by tweaking declared bounds.
     for (const t of tools) deepFreeze(t);
     Object.freeze(tools);
 

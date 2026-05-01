@@ -410,11 +410,16 @@ test("arming validates args and rejects without changing state", async () => {
 });
 
 test("arming twice while active is rejected", async () => {
-    const { ralph, controller, session } = await arm();
+    const { ralph, controller, session } = await arm({ max_iterations: 9 });
     runTurn(session, "ack");
     const r = await ralph.handler({ prompt: "again" });
     assert.equal(r.resultType, "failure");
     assert.match(r.textResultForLlm, /already running/);
+    // Mirror the "already armed" test: pin the iteration counter format
+    // ("iteration N/max") so a regression that renders 0 / drops the
+    // counter / shows max as a different number is caught loudly. After
+    // one runTurn we're on iteration 1 of 9.
+    assert.match(r.textResultForLlm, /iteration 1\/9/);
     assert.equal(controller.state.active.i, 1);
 });
 

@@ -1104,6 +1104,16 @@ test("PROMPT_GROW_PROJECT references the gh-issue backlog + acceptance + demo co
     assert.match(p, /pytest/i, "ORIENT must reference pytest as a detectable test runner");
     assert.match(p, /cargo test/i, "ORIENT must reference cargo test as a detectable test runner");
     assert.match(p, /go test/i, "ORIENT must reference go test as a detectable test runner");
+    // SELECT must pick proposed issues OLDEST FIRST. Without
+    // this rule, the agent could pick the newest proposed issue
+    // (gh's default `gh issue list` order), giving the backlog
+    // LIFO semantics — newer issues always preempt older ones,
+    // and an unlucky old issue might never ship even with
+    // the loop running indefinitely. Pin the literal "oldest
+    // first" wording so a refactor that drops the ordering rule
+    // (e.g. "pick a proposed issue" without ordering) fails the
+    // suite.
+    assert.match(p, /oldest first/i, "SELECT must pick proposed issues oldest first (FIFO, not LIFO)");
 });
 
 test("both baked prompts retain the cwd guardrail and the trigger-phrase footgun caveat", () => {

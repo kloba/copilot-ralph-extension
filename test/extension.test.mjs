@@ -559,6 +559,23 @@ test("ralph_stop accepts an optional reason and records it as note", async () =>
     assert.equal(controller.state.lastResult.note, "user changed plan");
 });
 
+test("ralph_stop with non-string reason silently drops it (note=undefined, loop still stops)", async () => {
+    // ralph_stop's `reason` arg accepts the loose contract "string or
+    // missing"; passing a number / object / array is treated the same
+    // as omitting it. This is intentional leniency — a buggy caller
+    // that miscoerces should still be able to stop the loop rather
+    // than wedging it. Lock in the contract so a future tightening
+    // (e.g. rejecting non-string loudly) is a deliberate decision.
+    const { stop, controller } = await arm({ max_iterations: 5 });
+    const r = await stop.handler({ reason: 42 });
+    assert.equal(r.resultType, "success");
+    assert.equal(r.note, undefined, "non-string reason must NOT be coerced into the note");
+    assert.doesNotMatch(r.textResultForLlm, /\(42\)/, "the numeric value must not leak into the user-facing message");
+    assert.equal(controller.state.lastResult.reason, "user_stopped");
+    assert.equal(controller.state.lastResult.note, undefined);
+    assert.equal(controller.state.active, null);
+});
+
 test("ralph_stop rejects unknown keys (typo guard, mirrors ralph_loop)", async () => {
     // Without this, `ralph_stop({ resaon: "..." })` would silently drop
     // the user's note instead of surfacing it. The active loop must

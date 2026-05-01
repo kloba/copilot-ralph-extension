@@ -427,7 +427,7 @@ export function createRalphController() {
         // turn_end is treated as a real response cycle rather than a
         // spurious sub-turn boundary that would otherwise queue another
         // copy of the prompt.
-        if (state.active && state.active.fireInFlight) {
+        if (state.active?.fireInFlight) {
             state.active.observedMessageThisFire = true;
         }
         // Accumulate across multiple assistant.message events within the same

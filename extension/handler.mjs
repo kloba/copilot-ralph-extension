@@ -343,9 +343,10 @@ function validateArgShape(toolName, args, knownKeys) {
 }
 
 // Variant of validateArgShape used by tools where "no args" is a valid
-// call (ralph_stop, self_improve — both have only optional fields).
-// Treats null/undefined as "use defaults" and returns a ready-to-return
-// `failure(...)` result on bad shape, so the caller's call site is just
+// call (ralph_stop, self_improve, grow_project — all three have only
+// optional fields). Treats null/undefined as "use defaults" and returns
+// a ready-to-return `failure(...)` result on bad shape, so the caller's
+// call site is just
 // `const bad = validateOptionalArgShape(...); if (bad) return bad;` —
 // keeping the "null/undefined = not supplied" decision in one place.
 function validateOptionalArgShape(label, args, knownKeys) {
@@ -381,10 +382,13 @@ const GROW_PROJECT_KEYS = new Set([
 ]);
 const MAX_FOCUS_CHARS = 2000;
 
-// Validate self_improve's optional `focus` argument. Treats null/undefined
-// as "not supplied" (returns {value: undefined}); for strings, requires
-// non-whitespace content and ≤ MAX_FOCUS_CHARS after trim. Centralizes the
-// three error messages so the handler call site stays one line.
+// Validate the optional `focus` argument shared by self_improve and
+// grow_project. Treats null/undefined as "not supplied" (returns
+// {value: undefined}); for strings, requires non-whitespace content
+// and ≤ MAX_FOCUS_CHARS after trim. Centralizes the three error
+// messages so the handler call site stays one line. The toolName
+// parameter scopes error prefixes correctly per call site (default
+// preserves backwards-compat for the original self_improve caller).
 function parseFocus(raw, toolName = "self_improve") {
     if (raw === undefined || raw === null) return { value: undefined };
     if (typeof raw !== "string") {

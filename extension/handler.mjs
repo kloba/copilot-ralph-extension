@@ -208,14 +208,15 @@ function validatePromiseField(fieldName, raw, { whenProvided = false } = {}) {
     if (typeof raw !== "string") {
         return { error: `ralph_loop: ${fieldName} must be a string (got ${describeArgType(raw)}).` };
     }
-    if (raw.trim().length === 0) {
+    const trimmed = raw.trim();
+    if (!trimmed) {
         const interjection = whenProvided ? ", when provided," : "";
         return { error: `ralph_loop: ${fieldName}${interjection} must contain at least one non-whitespace character.` };
     }
     if (raw.length > MAX_PROMISE_CHARS) {
         return { error: `ralph_loop: ${fieldName} exceeds ${MAX_PROMISE_CHARS} characters (got ${raw.length}). Use a short signal phrase.` };
     }
-    return { value: raw.trim() };
+    return { value: trimmed };
 }
 
 // Wrap validatePromiseField with the "if not supplied, fall back to a

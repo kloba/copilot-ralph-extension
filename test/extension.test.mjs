@@ -442,6 +442,24 @@ test("ralph_loop arm result has exactly { textResultForLlm, resultType, armed, m
     });
 });
 
+test("self_improve arm result has the same shape as ralph_loop's — no stray keys", async () => {
+    // Mirror of the ralph_loop arm-result shape pin. self_improve flows
+    // through the same armLoop() helper and the same success(...) call,
+    // so the LLM-facing shape MUST match: any divergence (e.g. an extra
+    // "label" or "focus" key leaking through) is a code smell that would
+    // make the two tools' return contracts drift. Pin them identical.
+    const c = createRalphController();
+    c.attach(makeFakeSession());
+    const r = await c.tools.find((t) => t.name === "self_improve").handler({ max_iterations: 7 });
+    assert.deepEqual(
+        Object.keys(r).sort(),
+        ["armed", "max", "min", "resultType", "textResultForLlm"],
+    );
+    assert.equal(r.armed, true);
+    assert.equal(r.max, 7);
+    assert.equal(r.resultType, "success");
+});
+
 test("validateArgs success returns exactly the documented value shape (no stray keys)", () => {
     // state.active is built via `{...parsed.value, i:0, prev:null, ...}`
     // — so any stray field in the parsed value bleeds straight into the

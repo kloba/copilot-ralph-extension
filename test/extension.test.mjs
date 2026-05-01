@@ -636,6 +636,27 @@ test("self_improve per-iteration log line uses self_improve label, not ralph_loo
     );
 });
 
+test("ralph_loop per-iteration log line uses ralph_loop label, not self_improve", async () => {
+    // Mirror of the self_improve label test above — when armed via
+    // ralph_loop, the iter-log line must read "🔁 ralph_loop iter N/M"
+    // and never carry a "🔁 self_improve" prefix.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const ralph = c.tools.find((x) => x.name === "ralph_loop");
+    await ralph.handler({ prompt: "go", max_iterations: 5 });
+    session.emit("session.idle", { data: {} });
+    await new Promise((r) => setTimeout(r, 0));
+    assert.ok(
+        session.logs.some((l) => /^🔁 ralph_loop iter 1\/5/.test(l)),
+        `expected "🔁 ralph_loop iter 1/5" log line, got: ${JSON.stringify(session.logs)}`,
+    );
+    assert.ok(
+        !session.logs.some((l) => /^🔁 self_improve iter/.test(l)),
+        "must not leak self_improve label into a ralph_loop-armed iteration",
+    );
+});
+
 test("ralph_loop stamps state.active.label and lastResult.label", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

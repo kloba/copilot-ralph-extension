@@ -139,9 +139,8 @@ function isSubAgentEvent(ev) {
  * @property {string} [note] - Optional human-readable context: caller-supplied via ralph_stop({reason}), or the underlying error message on send_error, or the SDK abort reason on aborted. Truncated silently to PREVIEW_CHARS (500) (surrogate-safe) — no "…" indicator is appended (unlike `preview`). Notes are flowed inline into single-line log markers and the post-loop additionalContext bracket, where a trailing "…" would be misread as part of the message.
  */
 
-// Render the JSON-ish "type" name of a raw arg value for error messages.
-// Distinguishes null and array from generic "object", so a user whose
-// args is `[]` sees "array" rather than the misleading "object".
+// Type name for error messages: distinguishes null/array from generic
+// "object" (so `[]` shows as "array" instead of the misleading "object").
 function describeArgType(args) {
     if (args === null) return "null";
     if (Array.isArray(args)) return "array";

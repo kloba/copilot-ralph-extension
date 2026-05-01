@@ -132,3 +132,37 @@ test("bin: unknown subcommand fails", () => {
     assert.equal(r.status, 2);
     assert.match(r.stderr, /unknown command/);
 });
+
+import { chmodSync } from "node:fs";
+
+test("bin doctor: healthy case exits 0 and prints all sections", () => {
+    const dir = tmp();
+    const r = runBin(["doctor"], { RALPH_EVENTS_DIR: dir });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /runs root:/);
+    assert.match(r.stdout, /run index:/);
+    assert.match(r.stdout, /runs found:/);
+    assert.match(r.stdout, /node:/);
+    assert.match(r.stdout, /tui version:/);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("bin doctor: unwritable runs root exits non-zero with path", () => {
+    const dir = tmp();
+    chmodSync(dir, 0o500);
+    try {
+        const r = runBin(["doctor"], { RALPH_EVENTS_DIR: dir });
+        assert.notEqual(r.status, 0, "should exit non-zero on unwritable root");
+        assert.match(r.stdout + r.stderr, new RegExp(dir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+        assert.match(r.stdout, /UNWRITABLE/);
+    } finally {
+        chmodSync(dir, 0o700);
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("bin --help mentions doctor", () => {
+    const r = runBin(["--help"]);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /doctor/);
+});

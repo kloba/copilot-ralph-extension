@@ -17,6 +17,9 @@
 // command will dynamically import that module.
 
 import process from "node:process";
+import fs from "node:fs";
+import nodePath from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { readRunIndex, resolveRunsRoot, resolveRunEventsPath } from "../src/writer.mjs";
 import { readEventsFile, tailEventsFile } from "../src/tail.mjs";
@@ -29,6 +32,7 @@ USAGE
   ralph-tui list [--json]
   ralph-tui replay <runId>
   ralph-tui watch [runId] [--plain]
+  ralph-tui doctor
   ralph-tui --help | -h
 
 OPTIONS
@@ -131,6 +135,84 @@ async function cmdWatch(runId, opts) {
     return 0;
 }
 
+export function cmdDoctor() {
+    const root = resolveRunsRoot();
+    const indexPath = nodePath.join(root, "index.jsonl");
+    let healthy = true;
+    const lines = [];
+
+    // runs root
+    let rootStatus;
+    let rootWritable = false;
+    if (!fs.existsSync(root)) {
+        rootStatus = "missing (will be created on first run)";
+    } else {
+        try {
+            fs.accessSync(root, fs.constants.W_OK);
+            rootStatus = "ok (writable)";
+            rootWritable = true;
+        } catch {
+            rootStatus = "UNWRITABLE";
+            healthy = false;
+        }
+    }
+    lines.push(`runs root: ${root}`);
+    lines.push(`           ${rootStatus}`);
+
+    // run index
+    let indexStatus;
+    let runCount = 0;
+    if (!fs.existsSync(indexPath)) {
+        indexStatus = "missing (no runs recorded yet)";
+    } else {
+        try {
+            fs.accessSync(indexPath, fs.constants.R_OK);
+            indexStatus = "ok (readable)";
+        } catch {
+            indexStatus = "UNREADABLE";
+            healthy = false;
+        }
+    }
+    lines.push(`run index: ${indexPath}`);
+    lines.push(`           ${indexStatus}`);
+
+    // runs found
+    if (rootWritable || (fs.existsSync(indexPath) && healthy)) {
+        try {
+            runCount = readRunIndex().length;
+        } catch {
+            runCount = 0;
+        }
+    }
+    lines.push(`runs found: ${runCount}`);
+
+    // node + tui version
+    lines.push(`node: ${process.version}`);
+    let tuiVersion = "unknown";
+    try {
+        const pkgPath = nodePath.resolve(
+            nodePath.dirname(fileURLToPath(import.meta.url)),
+            "..",
+            "package.json",
+        );
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+        tuiVersion = pkg.version || "unknown";
+    } catch {
+        // best-effort; leave as "unknown"
+    }
+    lines.push(`tui version: ${tuiVersion}`);
+
+    process.stdout.write(lines.join("\n") + "\n");
+    if (!healthy) {
+        process.stderr.write(
+            `ralph-tui doctor: critical problem detected (root=${root}). `
+            + `Check filesystem permissions and RALPH_EVENTS_DIR.\n`,
+        );
+        return 1;
+    }
+    return 0;
+}
+
 export async function main(argv = process.argv.slice(2)) {
     const { cmd, positional, flags } = parseArgv(argv);
     if (flags.help || cmd === "help" || (!cmd && !positional.length)) {
@@ -141,6 +223,7 @@ export async function main(argv = process.argv.slice(2)) {
         case "list": return cmdList({ json: Boolean(flags.json) });
         case "replay": return cmdReplay(positional[0]);
         case "watch": return await cmdWatch(positional[0], { plain: flags.plain });
+        case "doctor": return cmdDoctor();
         default:
             fail(`unknown command: ${cmd}\n${USAGE}`);
             return 2;

@@ -319,6 +319,38 @@ test("ralph_loop arm result has the documented shape (textResultForLlm + extras)
     assert.equal(r2.min, 3);
 });
 
+test("validateArgs success returns exactly the documented value shape (no stray keys)", () => {
+    // state.active is built via `{...parsed.value, i:0, prev:null, ...}`
+    // — so any stray field in the parsed value bleeds straight into the
+    // active-loop state and could collide with internal counters
+    // (e.g. a future `streak` arg key would silently overwrite the
+    // initial streak=0 set by the spread). Lock the shape down.
+    const r = validateArgs({
+        prompt: "go",
+        max_iterations: 10,
+        min_iterations: 2,
+        completion_promise: "DONE",
+        abort_promise: "FAIL",
+        stagnation_limit: 4,
+    });
+    assert.ok(r.value);
+    assert.deepEqual(Object.keys(r.value).sort(), [
+        "abortPromise", "completionPromise", "max", "min", "prompt", "stagnationLimit",
+    ]);
+    assert.equal(r.value.prompt, "go");
+    assert.equal(r.value.max, 10);
+    assert.equal(r.value.min, 2);
+    assert.equal(r.value.completionPromise, "DONE");
+    assert.equal(r.value.abortPromise, "FAIL");
+    assert.equal(r.value.stagnationLimit, 4);
+    // With abort_promise omitted the key is still present, valued null.
+    const r2 = validateArgs({ prompt: "go" });
+    assert.deepEqual(Object.keys(r2.value).sort(), [
+        "abortPromise", "completionPromise", "max", "min", "prompt", "stagnationLimit",
+    ]);
+    assert.equal(r2.value.abortPromise, null);
+});
+
 test("controller exposes ralph_loop and ralph_stop tools and hooks", () => {
     const c = createRalphController();
     assert.deepEqual(c.tools.map((t) => t.name).sort(), ["ralph_loop", "ralph_stop"]);

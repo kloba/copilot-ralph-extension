@@ -1,0 +1,28 @@
+{
+  "name": "@copilot-ralph-extension/tui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Terminal UI for visualizing live ralph_loop / self_improve / grow_project runs (issue #22).",
+  "bin": {
+    "ralph-tui": "./bin/tui.mjs"
+  },
+  "main": "./src/events.mjs",
+  "exports": {
+    ".": "./src/events.mjs",
+    "./events": "./src/events.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "ink": "^5.0.1",
+    "ink-spinner": "^5.0.0",
+    "react": "^18.3.1"
+  },
+  "license": "MIT"
+}

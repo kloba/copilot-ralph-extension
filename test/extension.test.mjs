@@ -616,6 +616,27 @@ test("stagnation_limit=0 disables detection", async () => {
     assert.equal(controller.state.lastResult.iterations, 4);
 });
 
+test("stagnation: two identical empty-string responses trigger stagnation (silent-agent detector)", async () => {
+    // Subtle: prev/streak compares text values, so an agent that
+    // returns content:"" on every turn (a sub-agent error returning
+    // an empty final message, a weird streaming edge that emits a
+    // single empty chunk, etc.) is genuinely stagnating — repeating
+    // the same empty content. Stagnation must catch this and finish
+    // the loop rather than cycling at max_iterations.
+    //
+    // Note this is distinct from "no assistant.message at all" — that
+    // path is blocked earlier by the queue-bloat guard (fireInFlight
+    // && !observedMessageThisFire) and never reaches stagnation. The
+    // empty-CONTENT case DOES flip observedMessageThisFire (pinned
+    // elsewhere) so the loop advances and stagnation can compare.
+    const { session, controller } = await arm({ max_iterations: 10, stagnation_limit: 2 });
+    session.emit("session.idle", { data: {} }); // fire iter 1
+    runTurn(session, ""); // iter 1 response: empty
+    runTurn(session, ""); // iter 2 response: empty → streak hits 2
+    assert.equal(controller.state.lastResult.reason, "stagnation");
+    assert.equal(controller.state.lastResult.iterations, 2);
+});
+
 // ── ralph_stop tool ───────────────────────────────────────────────────────
 
 test("ralph_stop cancels an active loop and reports iteration count", async () => {

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
 ### Bug fixes (root agentic loop boundary)
 - **Refire trigger switched from `assistant.turn_end` to `session.idle`.**
@@ -15,6 +15,15 @@
   root-level agentic-loop completion, which is the correct iteration
   boundary. The `fireInFlight` / `observedMessageThisFire` gate is
   retained as belt-and-suspenders.
+
+### Hardening
+- `completion_promise` / `abort_promise` are trimmed before being stored
+  so copy-paste padding (e.g. `"  COMPLETE\n"`) doesn't silently fail
+  to ever match.
+- `ralph_stop` rejects unknown argument keys (typo guard mirroring
+  `ralph_loop`).
+- `install.sh` writes via temp file + atomic `mv`, with cleanup safe
+  under macOS bash 3.2 + `set -u` (empty array expansion).
 
 ## 0.5.0
 

@@ -79,10 +79,9 @@ function collapseNote(text) {
     return text ? String(text).replace(/\s+/g, " ").trim() : "";
 }
 
-// Cap length at PREVIEW_CHARS (surrogate-safely) and flatten whitespace.
-// Used by every log site that embeds an external string (abort reason,
-// send-error message) so the timeline can't be flooded by a pathological
-// payload.
+// Cap length at PREVIEW_CHARS (surrogate-safely) and flatten whitespace
+// for log sites embedding external strings (abort reason, send-error
+// message), so the timeline can't be flooded by a pathological payload.
 function boundedNoteForLog(text) {
     return collapseNote(truncateNote(text));
 }

@@ -5,7 +5,7 @@
 [![CI](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml)
 [![Inspired by](https://img.shields.io/badge/inspired_by-Anthropic_Ralph_Wiggum-blue)](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)
 
-**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [How it works](#how-it-works) · [Commit attribution](#commit-attribution) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)
+**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [Documentation](#documentation) · [How it works](#how-it-works) · [Commit attribution](#commit-attribution) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)
 
 ## What is Ralph Wiggum?
 
@@ -206,6 +206,15 @@ npm test    # runs the node:test suite under test/ (no deps, no install needed)
 ```
 
 The handler logic lives in [`extension/handler.mjs`](extension/handler.mjs) and is decoupled from the SDK so it can be unit-tested with a fake session that drives events deterministically.
+
+## Documentation
+
+Contributor and design docs live under [`docs/`](docs/) so this README can stay focused on end-users:
+
+- [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — local dev setup, style conventions, commit-trailer rules, PR expectations.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — design notes on the `session.idle` event-driven loop, the `extension.mjs`/`handler.mjs` split, the baked-prompt pattern, and the tool surface.
+- [`docs/RELEASING.md`](docs/RELEASING.md) — manual release checklist for tagged GitHub Releases.
+- [`SECURITY.md`](SECURITY.md) — how to report a vulnerability and the supported-versions policy.
 
 ## How it works
 

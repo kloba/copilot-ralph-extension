@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
-const { MAX_PROMISE_CHARS } = __test__;
+const { MAX_PROMISE_CHARS, PREVIEW_CHARS } = __test__;
 
 function makeFakeSession({ failSend = false, rejectSend = false } = {}) {
     const sent = [];
@@ -1172,13 +1172,27 @@ test("ralph_stop caps oversized user-supplied reason in response and result.note
     assert.equal(r.resultType, "success");
     // Structured note in tool reply
     assert.ok(r.note, "response should carry note");
-    assert.ok(r.note.length <= 500, `r.note.length=${r.note.length} > 500`);
+    assert.ok(r.note.length <= PREVIEW_CHARS, `r.note.length=${r.note.length} > ${PREVIEW_CHARS}`);
     // Visible text should be the bounded "stopped after … (note)." form,
     // not 50 KiB of x's.
     assert.ok(r.textResultForLlm.length < 1000, `textResultForLlm too long: ${r.textResultForLlm.length}`);
     // Result note matches the visible note
     assert.equal(controller.state.lastResult.note, r.note);
-    assert.ok(controller.state.lastResult.note.length <= 500);
+    assert.ok(controller.state.lastResult.note.length <= PREVIEW_CHARS);
+});
+
+test("ralph_stop reason at exactly PREVIEW_CHARS passes through unchanged (boundary)", async () => {
+    // Pin the boundary: reason length === PREVIEW_CHARS must NOT trip the
+    // truncation path (no ellipsis added, no chars dropped). This guards
+    // an off-by-one in truncateNote (uses `<=` not `<`) so the cap is
+    // inclusive.
+    const exactlyAtCap = "y".repeat(PREVIEW_CHARS);
+    const { session, controller, stop } = await arm({ max_iterations: 5 });
+    session.emit("session.idle", { data: {} });
+    const r = await stop.handler({ reason: exactlyAtCap });
+    assert.equal(r.resultType, "success");
+    assert.equal(r.note, exactlyAtCap);
+    assert.equal(controller.state.lastResult.note, exactlyAtCap);
 });
 
 test("lastAssistantContent is capped at MAX_CONTENT_CHARS (1 MiB)", async () => {

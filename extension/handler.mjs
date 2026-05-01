@@ -34,14 +34,18 @@ const MAX_PROMISE_CHARS = 200;
 // extremely chatty turns shouldn't be allowed to consume unbounded memory.
 const MAX_CONTENT_CHARS = 1_048_576; // 1 MiB
 
+// Find a slice length ≤ `cut` that doesn't split a UTF-16 surrogate
+// pair (4-byte chars like emoji). Used by both previewOf and truncateNote
+// so a string ending mid-emoji never produces an invalid lone surrogate.
+function safeSliceEnd(s, cut) {
+    const code = s.charCodeAt(cut - 1);
+    return code >= 0xd800 && code <= 0xdbff ? cut - 1 : cut;
+}
+
 function previewOf(text) {
     if (!text) return "";
     if (text.length <= PREVIEW_CHARS) return text;
-    let cut = PREVIEW_CHARS;
-    // Avoid splitting a UTF-16 surrogate pair (4-byte char like emoji).
-    const code = text.charCodeAt(cut - 1);
-    if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
-    return text.slice(0, cut) + "…";
+    return text.slice(0, safeSliceEnd(text, PREVIEW_CHARS)) + "…";
 }
 
 // Truncate `note` to PREVIEW_CHARS without splitting a surrogate pair —
@@ -50,10 +54,7 @@ function previewOf(text) {
 function truncateNote(text) {
     const s = String(text);
     if (s.length <= PREVIEW_CHARS) return s;
-    let cut = PREVIEW_CHARS;
-    const code = s.charCodeAt(cut - 1);
-    if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
-    return s.slice(0, cut);
+    return s.slice(0, safeSliceEnd(s, PREVIEW_CHARS));
 }
 // Collapse whitespace (newlines, tabs, runs of spaces) into single spaces and
 // trim. Used to flatten a multi-line note (e.g. an Error stack) into the

@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Fixes
+- `extension/events-emit.mjs` — index.jsonl entries
+  now include `type: "armed"`. Previously the
+  emitter wrote `{runId, label, startedAt,
+  maxIterations, minIterations}` without a `type`
+  field, but the TUI's `readRunIndex`
+  (`packages/tui/src/writer.mjs:227`) filters for
+  `obj.type === "armed"`, so `ralph-tui list` and
+  `ralph-tui stats` silently dropped every run the
+  extension's lighter sibling emitter recorded.
+  `packages/tui/src/writer.mjs`'s `recordIndex`
+  already emits the field — only the
+  install.sh-shipped sibling had drifted from the
+  contract. Added a cross-component round-trip
+  test: write via `extension/events-emit.mjs`,
+  read via `packages/tui/src/writer.mjs`'s
+  `readRunIndex`, assert the run surfaces.
+
 ### Internal
 - Added `.nvmrc` pinning Node major **20** so
   contributors who run `nvm use` / `fnm use` /

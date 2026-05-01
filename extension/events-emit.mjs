@@ -108,8 +108,14 @@ export function createEventEmitter({ label, startedAt, env, fs } = {}) {
         try { _append(eventsPath, line + "\n"); } catch { /* swallow */ }
         if (ev.type === "armed") {
             // Maintain the run index so `ralph-tui list` can find this run
-            // without scanning the whole runs root.
+            // without scanning the whole runs root. The index entry MUST
+            // include `type: "armed"` because the TUI's `readRunIndex`
+            // (packages/tui/src/writer.mjs) filters for that exact field —
+            // without it `ralph-tui list` and `ralph-tui stats` would skip
+            // every run this emitter recorded. Mirrors writer.mjs's
+            // `recordIndex` shape.
             const idx = serialize({
+                type: "armed",
                 runId,
                 label,
                 startedAt,

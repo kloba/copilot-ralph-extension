@@ -107,11 +107,46 @@ test("createEventEmitter: armed event also writes a line to the run index", () =
     assert.ok(eventsLine, "events.jsonl write is missing");
     assert.ok(indexLine, "index.jsonl write is missing");
     const idx = JSON.parse(indexLine.line.trimEnd());
+    // The TUI's readRunIndex filters for `type === "armed"`. If this
+    // line ever stops being emitted, `ralph-tui list` and
+    // `ralph-tui stats` silently skip every extension-recorded run.
+    assert.equal(idx.type, "armed", "index entry must carry type=armed so the TUI consumer accepts it");
     assert.equal(idx.runId, "self_improve-99");
     assert.equal(idx.label, "self_improve");
     assert.equal(idx.startedAt, 99);
     assert.equal(idx.maxIterations, 100);
     assert.equal(idx.minIterations, 5);
+});
+
+test("createEventEmitter: index entry round-trips through TUI's readRunIndex", async () => {
+    // Cross-component reliability: the extension's emitter writes
+    // index.jsonl entries that the TUI's `readRunIndex` consumer must
+    // accept. Historically the emitter omitted `type: "armed"` from
+    // the index entry, but readRunIndex filters for that exact field —
+    // so `ralph-tui list` and `ralph-tui stats` silently skipped every
+    // run recorded by the extension. Pin the contract here by writing
+    // a real run dir to a tmp $RALPH_EVENTS_DIR via the emitter, then
+    // round-tripping it through the TUI's reader.
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const os = await import("node:os");
+    const { readRunIndex } = await import("../packages/tui/src/writer.mjs");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "ralph-emit-rt-"));
+    try {
+        const e = createEventEmitter({
+            label: "ralph_loop",
+            startedAt: 12345,
+            env: { RALPH_EVENTS_DIR: root },
+        });
+        e.write({ type: "armed", runId: e.runId, ts: 0, maxIterations: 7, minIterations: 1 });
+        const entries = readRunIndex({ env: { RALPH_EVENTS_DIR: root } });
+        assert.equal(entries.length, 1, "TUI's readRunIndex must surface the extension-emitted run");
+        assert.equal(entries[0].runId, "ralph_loop-12345");
+        assert.equal(entries[0].label, "ralph_loop");
+        assert.equal(entries[0].type, "armed");
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
 });
 
 test("createEventEmitter: non-armed events do NOT touch the index", () => {

@@ -3,6 +3,21 @@
 ## Unreleased
 
 ### Fixes
+- README user-facing sections now name `grow_project` as the third
+  loop tool throughout. Three stale spots still hardcoded the
+  pre-`grow_project` two-tool wording: the "How it works" code-
+  example inline comment listed only `ralph_loop + ralph_stop +
+  self_improve` (one tool short of the four `controller.tools`
+  actually exposes); the Troubleshooting "`<owner>` is already
+  armed/running" entry said the leading word reflects "ralph_loop
+  or self_improve" and the guard "fires on either tool"
+  (undersold the third); and the Limitations "One loop per
+  session" callout said "arming a second `ralph_loop` (or a
+  `self_improve`)" fails — missing `grow_project` and only
+  describing two of the six pairwise directions of the symmetric
+  conflict. All three updated; no remaining
+  `ralph_loop or self_improve` enumeration survives in user-facing
+  README copy.
 - `self_improve` `focus` schema description now discloses the
   steering semantics ("Steers ideation and improvement selection
   without altering the SDLC stages") matching the parallel callout

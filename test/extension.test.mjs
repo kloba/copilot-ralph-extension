@@ -1681,6 +1681,26 @@ test("onUserPromptSubmitted injects additionalContext exactly once after a finis
     assert.equal(r2, undefined);
 });
 
+test("onUserPromptSubmitted bracket reflects the calling tool's label (self_improve)", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const si = c.tools.find((x) => x.name === "self_improve");
+    const stop = c.tools.find((x) => x.name === "ralph_stop");
+    await si.handler({ max_iterations: 5 });
+    await stop.handler({ reason: "test" });
+    assert.equal(c.state.lastResult.label, "self_improve");
+    const r = await c.hooks.onUserPromptSubmitted({ prompt: "next" });
+    assert.ok(r?.additionalContext, "expected additionalContext after a finished self_improve loop");
+    assert.match(r.additionalContext, /^\[self_improve just finished/,
+        `expected bracket prefix to be self_improve, got: ${r.additionalContext}`);
+    assert.doesNotMatch(r.additionalContext, /ralph_loop just finished/);
+    assert.ok(
+        session.logs.some((l) => /^self_improve: injecting post-loop context/.test(l)),
+        "expected the self_improve-prefixed injection log line",
+    );
+});
+
 test("onUserPromptSubmitted is a no-op when no loop has finished", async () => {
     const c = createRalphController();
     const r = await c.hooks.onUserPromptSubmitted({ prompt: "anything" });

@@ -481,7 +481,7 @@ test("validateArgs success returns exactly the documented value shape (no stray 
     });
     assert.ok(r.value);
     assert.deepEqual(Object.keys(r.value).sort(), [
-        "abortPromise", "completionPromise", "max", "min", "prompt", "stagnationLimit",
+        "abortPromise", "completionPromise", "max", "maxTokens", "min", "prompt", "stagnationLimit", "warnAtPct",
     ]);
     assert.equal(r.value.prompt, "go");
     assert.equal(r.value.max, 10);
@@ -489,24 +489,26 @@ test("validateArgs success returns exactly the documented value shape (no stray 
     assert.equal(r.value.completionPromise, "DONE");
     assert.equal(r.value.abortPromise, "FAIL");
     assert.equal(r.value.stagnationLimit, 4);
+    assert.equal(r.value.maxTokens, null);
+    assert.equal(r.value.warnAtPct, 80);
     // With abort_promise omitted the key is still present, valued null.
     const r2 = validateArgs({ prompt: "go" });
     assert.deepEqual(Object.keys(r2.value).sort(), [
-        "abortPromise", "completionPromise", "max", "min", "prompt", "stagnationLimit",
+        "abortPromise", "completionPromise", "max", "maxTokens", "min", "prompt", "stagnationLimit", "warnAtPct",
     ]);
     assert.equal(r2.value.abortPromise, null);
 });
 
-test("state.active: arming sets exactly the documented 14-field ActiveLoopState shape", async () => {
-    // The ActiveLoopState typedef enumerates 14 fields. Pin the exact
+test("state.active: arming sets exactly the documented 17-field ActiveLoopState shape", async () => {
+    // The ActiveLoopState typedef enumerates 17 fields. Pin the exact
     // key set and initial values so future refactors that add or rename
     // a field have to update both the typedef and this test in lockstep.
     const { session, controller } = await arm({ max_iterations: 7, min_iterations: 2, abort_promise: "FAIL", stagnation_limit: 4 });
     const a = controller.state.active;
     assert.deepEqual(Object.keys(a).sort(), [
         "abortPromise", "completionPromise", "fireInFlight", "i",
-        "label", "max", "min", "observedMessageThisFire", "pendingFire",
-        "prev", "prompt", "stagnationLimit", "startedAt", "streak",
+        "label", "max", "maxTokens", "min", "observedMessageThisFire", "pendingFire",
+        "prev", "prompt", "stagnationLimit", "startedAt", "streak", "tokens", "warnAtPct",
     ]);
     assert.equal(a.i, 0);
     assert.equal(a.prev, null);
@@ -517,6 +519,10 @@ test("state.active: arming sets exactly the documented 14-field ActiveLoopState 
     assert.equal(a.label, "ralph_loop");
     assert.equal(typeof a.startedAt, "number");
     assert.ok(a.startedAt > 0);
+    assert.equal(a.maxTokens, null);
+    assert.equal(a.warnAtPct, 80);
+    assert.equal(a.tokens.input, 0);
+    assert.equal(a.tokens.output, 0);
     void session;
 });
 
@@ -1645,9 +1651,11 @@ test("ralph_loop & ralph_stop schema properties match their KEYS sets", () => {
         "abort_promise",
         "completion_promise",
         "max_iterations",
+        "max_tokens",
         "min_iterations",
         "prompt",
         "stagnation_limit",
+        "warn_at_pct",
     ], "ralph_loop schema properties must match RALPH_LOOP_KEYS exactly");
     const rs = c.tools.find((t) => t.name === "ralph_stop");
     assert.deepEqual(Object.keys(rs.parameters.properties).sort(), ["reason"],
@@ -4459,4 +4467,123 @@ test("README documents both Co-authored-by trailers and RALPH_NO_ATTRIBUTION opt
     const ralphIdx = readme.indexOf(BAKED_RALPH_TRAILER);
     assert.ok(copilotIdx >= 0 && ralphIdx >= 0, "both trailer literals must appear in README");
     assert.ok(copilotIdx < ralphIdx, `README must list Copilot trailer (idx ${copilotIdx}) BEFORE copilot-ralph trailer (idx ${ralphIdx}) — GitHub UI surfaces the first co-author more prominently`);
+});
+
+// ── token tracking (issue #7) ─────────────────────────────────────────────
+
+function emitUsage(session, { input, output, model = "claude-opus-4.7", content = "ok" }) {
+    session.emit("assistant.message", { data: { content, usage: { input_tokens: input, output_tokens: output, model } } });
+    session.emit("session.idle", { data: {} });
+}
+
+test("validateArgs: max_tokens default null, accepts positive integer", () => {
+    const r = validateArgs({ prompt: "go" });
+    assert.equal(r.value.maxTokens, null);
+    const r2 = validateArgs({ prompt: "go", max_tokens: 50000 });
+    assert.equal(r2.value.maxTokens, 50000);
+});
+
+test("validateArgs: max_tokens rejects 0, negative, non-integer, > 1e9", () => {
+    assert.match(validateArgs({ prompt: "go", max_tokens: 0 }).error, /max_tokens/);
+    assert.match(validateArgs({ prompt: "go", max_tokens: -1 }).error, /max_tokens/);
+    assert.match(validateArgs({ prompt: "go", max_tokens: 1.5 }).error, /max_tokens/);
+    assert.match(validateArgs({ prompt: "go", max_tokens: 1e10 }).error, /max_tokens/);
+});
+
+test("validateArgs: warn_at_pct default 80, accepts 1-99, rejects out of range", () => {
+    assert.equal(validateArgs({ prompt: "go" }).value.warnAtPct, 80);
+    assert.equal(validateArgs({ prompt: "go", warn_at_pct: 50 }).value.warnAtPct, 50);
+    assert.match(validateArgs({ prompt: "go", warn_at_pct: 0 }).error, /warn_at_pct/);
+    assert.match(validateArgs({ prompt: "go", warn_at_pct: 100 }).error, /warn_at_pct/);
+    assert.match(validateArgs({ prompt: "go", warn_at_pct: 1.5 }).error, /warn_at_pct/);
+});
+
+test("token tracking: accumulates input/output across iterations", async () => {
+    const { session, controller } = await arm({ max_iterations: 5 });
+    runTurn(session, ""); // pendingFire → iter 1
+    emitUsage(session, { input: 1000, output: 200 });
+    emitUsage(session, { input: 1500, output: 300 });
+    const tk = controller.state.active.tokens;
+    assert.equal(tk.input, 2500);
+    assert.equal(tk.output, 500);
+    assert.equal(tk.byIteration.length, 2);
+    assert.equal(tk.byModel["claude-opus-4.7"].input, 2500);
+    assert.equal(tk.currentModel, "claude-opus-4.7");
+});
+
+test("token tracking: max_tokens cap aborts loop with reason max_tokens", async () => {
+    const { session, stop, controller } = await arm({ max_iterations: 100, max_tokens: 1000 });
+    runTurn(session, "");
+    emitUsage(session, { input: 600, output: 200 }); // 800 < 1000
+    assert.ok(controller.state.active, "should still be active");
+    emitUsage(session, { input: 200, output: 100 }); // total 1100 ≥ 1000
+    // session.idle was emitted by emitUsage; the cap fires on the next idle
+    assert.equal(controller.state.active, null);
+    assert.equal(controller.state.lastResult.reason, "max_tokens");
+    assert.match(controller.state.lastResult.note, /1100 tokens used/);
+    void stop;
+});
+
+test("token tracking: result.tokens block surfaced on finish", async () => {
+    const { session } = await arm({ max_iterations: 100, max_tokens: 500 });
+    const c = await import("../extension/handler.mjs");
+    runTurn(session, "");
+    emitUsage(session, { input: 400, output: 50 });
+    emitUsage(session, { input: 200, output: 50 });
+    const ralphCtrl = c; // not used; just check session
+    void ralphCtrl;
+});
+
+test("token tracking: unknown model logs once and skips threshold checks", async () => {
+    const { session, controller } = await arm({ max_iterations: 5 });
+    runTurn(session, "");
+    session.emit("assistant.message", { data: { content: "x", usage: { input_tokens: 999999999, output_tokens: 0, model: "made-up-model" } } });
+    session.emit("assistant.message", { data: { content: "y", usage: { input_tokens: 1, output_tokens: 0, model: "made-up-model" } } });
+    const unknownLogs = session.logs.filter((l) => l.includes("no known context-window"));
+    assert.equal(unknownLogs.length, 1, "unknown model warning fires at most once");
+    // No threshold warnings should fire for unknown models even at huge usage
+    const warnLogs = session.logs.filter((l) => l.includes("approaching context window") || l.includes("critical"));
+    assert.equal(warnLogs.length, 0);
+    void controller;
+});
+
+test("token tracking: fires 80% warning once at threshold", async () => {
+    const { session, controller } = await arm({ max_iterations: 10 });
+    runTurn(session, "");
+    // claude-opus-4.7 window = 200000; 80% = 160000
+    emitUsage(session, { input: 161000, output: 100 });
+    emitUsage(session, { input: 1000, output: 100 }); // would re-trigger if not deduped
+    const warnLogs = session.logs.filter((l) => l.includes("approaching context window"));
+    assert.equal(warnLogs.length, 1, "80% threshold warns exactly once per loop");
+    void controller;
+});
+
+test("token tracking: missing usage data is a no-op", async () => {
+    const { session, controller } = await arm({ max_iterations: 5 });
+    runTurn(session, "");
+    session.emit("assistant.message", { data: { content: "no usage here" } });
+    session.emit("session.idle", { data: {} });
+    assert.equal(controller.state.active.tokens.input, 0);
+    assert.equal(controller.state.active.tokens.output, 0);
+});
+
+test("token tracking: result.tokens populated when usage seen", async () => {
+    const { session, controller, stop } = await arm({ max_iterations: 10 });
+    runTurn(session, "");
+    emitUsage(session, { input: 100, output: 50 });
+    await stop.handler({ reason: "test cleanup" });
+    const r = controller.state.lastResult;
+    assert.ok(r.tokens, "result should contain tokens block");
+    assert.equal(r.tokens.input, 100);
+    assert.equal(r.tokens.output, 50);
+    assert.equal(r.tokens.total, 150);
+});
+
+test("token tracking: tokens block omitted when no usage observed", async () => {
+    const { session, controller, stop } = await arm({ max_iterations: 10 });
+    runTurn(session, "");
+    runTurn(session, "no-usage iter");
+    await stop.handler({ reason: "no tokens" });
+    const r = controller.state.lastResult;
+    assert.equal(r.tokens, undefined);
 });

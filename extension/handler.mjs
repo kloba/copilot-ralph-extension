@@ -17,6 +17,7 @@ const DEFAULTS = Object.freeze({
     min_iterations: 1,
     completion_promise: "COMPLETE",
     stagnation_limit: 3,
+    warn_at_pct: 80,
 });
 // self_improve has different max/min defaults than ralph_loop because the
 // SDLC loop is meant to run long-haul (whole-repo polish across many
@@ -45,6 +46,39 @@ const MAX_PROMISE_CHARS = 200;
 // substring matching (completion/abort/stagnation) and the preview.
 const MAX_CONTENT_CHARS = 1_048_576; // 1 MiB
 
+// Issue #7: static map of model → context-window size. Conservative
+// values from the public docs — when SDK reports a model not listed
+// here we skip the warning rather than guess. Numbers are TOTAL window
+// (input + output combined), since usage events report cumulative
+// input tokens for the conversation.
+const MODEL_CONTEXT_WINDOWS = Object.freeze({
+    "claude-opus-4.7": 200000,
+    "claude-opus-4.7-1m-internal": 1000000,
+    "claude-opus-4.7-high": 200000,
+    "claude-opus-4.7-xhigh": 200000,
+    "claude-opus-4.6": 200000,
+    "claude-opus-4.6-1m": 1000000,
+    "claude-opus-4.5": 200000,
+    "claude-sonnet-4.6": 200000,
+    "claude-sonnet-4.5": 200000,
+    "claude-sonnet-4": 200000,
+    "claude-haiku-4.5": 200000,
+    "gpt-5.5": 256000,
+    "gpt-5.4": 256000,
+    "gpt-5.3-codex": 256000,
+    "gpt-5.2-codex": 256000,
+    "gpt-5.2": 256000,
+    "gpt-5.4-mini": 256000,
+    "gpt-5-mini": 128000,
+    "gpt-4.1": 128000,
+});
+
+// Issue #7: warning thresholds (percent of context window). Pre-baked
+// so we can iterate a small array instead of computing both edges
+// inline. 95% is the "stronger" warning that suggests ralph_stop.
+const TOKEN_WARNING_THRESHOLDS = Object.freeze([80, 95]);
+
+
 // Map finish reason → log-line verb. Reasons not listed fall through
 // to "⏹ stopped" (max_iterations, abort_promise, stagnation,
 // user_stopped, detached).
@@ -54,6 +88,7 @@ const VERB_BY_REASON = Object.freeze({
     completion_promise: "✅ completed",
     send_error: "⚠️ ended",
     aborted: "⚠️ ended",
+    max_tokens: "⏹ stopped",
 });
 
 // Project-agnostic SDLC self-improvement prompt baked into the
@@ -412,6 +447,8 @@ const RALPH_LOOP_KEYS = new Set([
     "completion_promise",
     "abort_promise",
     "stagnation_limit",
+    "max_tokens",
+    "warn_at_pct",
 ]);
 const RALPH_STOP_KEYS = new Set(["reason"]);
 const SELF_IMPROVE_KEYS = new Set([
@@ -566,7 +603,36 @@ export function validateArgs(args) {
         };
     }
 
-    return { value: { prompt, max, min, completionPromise, abortPromise, stagnationLimit } };
+    // Issue #7: optional max_tokens cap. Null when not supplied (cap
+    // disabled). Accepted shapes: positive integer ≤ 1e9 (sanity bound
+    // — anything larger is almost certainly a bug, since current
+    // context windows top out at 1M).
+    let maxTokens = null;
+    if (args.max_tokens !== undefined && args.max_tokens !== null) {
+        const mtC = coerceNumberField("max_tokens", args.max_tokens);
+        if (mtC.error) return mtC;
+        if (!Number.isInteger(mtC.value) || mtC.value < 1 || mtC.value > 1_000_000_000) {
+            return {
+                error: `ralph_loop: max_tokens must be a positive integer ≤ 1e9 (got ${displayValue(args.max_tokens)}).`,
+            };
+        }
+        maxTokens = mtC.value;
+    }
+
+    // Issue #7: warn_at_pct controls the first context-window warning
+    // threshold. The 95% second threshold is hard-coded since it's
+    // meant as the "danger zone" and is independent of user preference.
+    const rawWarnPct = args.warn_at_pct ?? DEFAULTS.warn_at_pct;
+    const wpC = coerceNumberField("warn_at_pct", rawWarnPct);
+    if (wpC.error) return wpC;
+    const warnAtPct = wpC.value;
+    if (!Number.isInteger(warnAtPct) || warnAtPct < 1 || warnAtPct > 99) {
+        return {
+            error: `ralph_loop: warn_at_pct must be an integer in [1, 99] (got ${displayValue(rawWarnPct)}).`,
+        };
+    }
+
+    return { value: { prompt, max, min, completionPromise, abortPromise, stagnationLimit, maxTokens, warnAtPct } };
 }
 
 /**
@@ -585,6 +651,9 @@ export function validateArgs(args) {
  * @property {boolean} fireInFlight - True between a successful tryFire and the next assistant.message that "consumes" it.
  * @property {boolean} observedMessageThisFire - True once the in-flight fire has produced at least one root assistant.message.
  * @property {number} startedAt - Epoch ms captured at arm-time, used for durationMs.
+ * @property {number|null} maxTokens - Issue #7: opt-in token cap; null = disabled.
+ * @property {number} warnAtPct - Issue #7: first context-window warning threshold (default 80, range 1..99). 95% second-threshold is hard-coded.
+ * @property {{ input: number, output: number, byIteration: Array<object>, byModel: Object<string, {input:number, output:number}>, currentModel: string|null, warnedThresholds: number[], unknownModelLogged: boolean }} tokens - Issue #7: cumulative token bookkeeping. Initialized empty at arm-time; mutated in onAssistantMessage as usage events arrive.
  */
 
 /**
@@ -657,7 +726,7 @@ export function createRalphController() {
 
     const finish = (reason, note) => {
         if (!state.active) return;
-        const { startedAt, i: iterations, label } = state.active;
+        const { startedAt, i: iterations, label, tokens } = state.active;
         const finishedAt = Date.now();
         const durationMs = clampedElapsed(startedAt);
         const result = {
@@ -670,6 +739,18 @@ export function createRalphController() {
             durationMs,
         };
         if (note) result.note = truncateNote(note);
+        // Issue #7: surface tokens block whenever any tokens were
+        // counted. Empty (no usage events seen) ⇒ omit so the result
+        // shape doesn't pretend to know what it doesn't.
+        if (tokens && (tokens.input > 0 || tokens.output > 0)) {
+            result.tokens = {
+                input: tokens.input,
+                output: tokens.output,
+                total: tokens.input + tokens.output,
+                byIteration: [...tokens.byIteration],
+                byModel: { ...tokens.byModel },
+            };
+        }
         const verb = VERB_BY_REASON[reason] ?? "⏹ stopped";
         // Single-line log format: collapse newlines/tabs in note (Error
         // stacks would otherwise break alignment in the timeline).
@@ -679,12 +760,97 @@ export function createRalphController() {
         state.lastResult = Object.freeze(result);
     };
 
+    // Issue #7: extract usage from an event payload. Defensive against
+    // multiple possible shapes — different SDK versions may expose
+    // usage as data.usage = {input_tokens, output_tokens, model} OR
+    // as flat data.usage_input_tokens / data.usage_output_tokens /
+    // data.usage_model. Returns null when no usage data found.
+    const extractUsage = (ev) => {
+        const d = ev?.data;
+        if (!d) return null;
+        const u = d.usage;
+        if (u && typeof u === "object") {
+            const input = Number(u.input_tokens ?? u.inputTokens ?? 0);
+            const output = Number(u.output_tokens ?? u.outputTokens ?? 0);
+            const model = typeof u.model === "string" ? u.model : (typeof d.model === "string" ? d.model : null);
+            if (Number.isFinite(input) && Number.isFinite(output) && (input > 0 || output > 0)) {
+                return { input, output, model };
+            }
+        }
+        const flatIn = Number(d.usage_input_tokens ?? d.usageInputTokens ?? 0);
+        const flatOut = Number(d.usage_output_tokens ?? d.usageOutputTokens ?? 0);
+        if (Number.isFinite(flatIn) && Number.isFinite(flatOut) && (flatIn > 0 || flatOut > 0)) {
+            const model = typeof d.usage_model === "string" ? d.usage_model
+                : typeof d.usageModel === "string" ? d.usageModel
+                : typeof d.model === "string" ? d.model : null;
+            return { input: flatIn, output: flatOut, model };
+        }
+        return null;
+    };
+
+    // Issue #7: credit usage to the active loop. Updates per-iteration
+    // and per-model rollups, then checks context-window warning
+    // thresholds. Each threshold fires at most once per loop run.
+    const creditUsage = (a, usage) => {
+        a.tokens.input += usage.input;
+        a.tokens.output += usage.output;
+        a.tokens.byIteration.push({
+            iter: a.i,
+            input: usage.input,
+            output: usage.output,
+            model: usage.model ?? null,
+        });
+        if (usage.model) {
+            a.tokens.currentModel = usage.model;
+            const m = a.tokens.byModel[usage.model] ?? { input: 0, output: 0 };
+            m.input += usage.input;
+            m.output += usage.output;
+            a.tokens.byModel[usage.model] = m;
+        }
+        // Context-window warnings — only for known models. Unknown models
+        // get one log line so the user knows the warning is skipped.
+        const window = usage.model ? MODEL_CONTEXT_WINDOWS[usage.model] : null;
+        if (!window) {
+            if (usage.model && !a.tokens.unknownModelLogged) {
+                log(`${a.label}: token tracking — model ${JSON.stringify(usage.model)} has no known context-window size; skipping window warnings.`);
+                a.tokens.unknownModelLogged = true;
+            }
+            return;
+        }
+        // Use input tokens for the warning since that's what determines
+        // when the next request will overflow. Output tokens shrink
+        // available space too but only for the *current* turn.
+        const used = a.tokens.input;
+        const pct = (used / window) * 100;
+        for (const threshold of TOKEN_WARNING_THRESHOLDS) {
+            const effective = threshold === 80 ? a.warnAtPct : threshold;
+            if (pct >= effective && !a.tokens.warnedThresholds.includes(threshold)) {
+                a.tokens.warnedThresholds.push(threshold);
+                const usedK = Math.round(used / 1000);
+                const winK = Math.round(window / 1000);
+                if (threshold === 95) {
+                    log(`${a.label}: ⚠ context window critical: ${usedK}k / ${winK}k tokens used (${pct.toFixed(1)}%, model ${usage.model}). Consider ralph_stop to avoid mid-iteration truncation.`);
+                } else {
+                    log(`${a.label}: ⚠ approaching context window: ${usedK}k / ${winK}k tokens used (${pct.toFixed(1)}%, model ${usage.model}). Consider stopping and restarting with a fresh session.`);
+                }
+            }
+        }
+    };
+
+
     const onAssistantMessage = (ev) => {
         const text = ev?.data?.content;
         if (typeof text !== "string") return;
         // Ignore sub-agent messages — see isSubAgentEvent() rationale.
         // Otherwise their content would be checked for completion/abort tokens.
         if (isSubAgentEvent(ev)) return;
+        // Issue #7: credit token usage on this event (if any) before we
+        // touch the rest of the state. Sub-agent events are excluded by
+        // the guard above.
+        if (state.active) {
+            const usage = extractUsage(ev);
+            if (usage) creditUsage(state.active, usage);
+        }
         // Mark this fire "consumed" so the next idle is treated as a real
         // response cycle, not a spurious signal that would queue another copy.
         if (state.active?.fireInFlight) {
@@ -758,6 +924,18 @@ export function createRalphController() {
 
         if (a.i >= a.max) return finish("max_iterations");
 
+        // Issue #7: check max_tokens cap *after* min_iterations have
+        // completed (don't bypass the user's minimum) and after
+        // completion/abort/stagnation have had their chance. Use total
+        // (input+output) for the cap since that's the user-facing
+        // budget concept ("don't spend more than N tokens on this loop").
+        if (a.maxTokens && a.i >= a.min) {
+            const total = a.tokens.input + a.tokens.output;
+            if (total >= a.maxTokens) {
+                return finish("max_tokens", `${total} tokens used (cap: ${a.maxTokens})`);
+            }
+        }
+
         a.i += 1;
         fireIteration(a);
     };
@@ -817,6 +995,15 @@ export function createRalphController() {
             fireInFlight: false,
             observedMessageThisFire: false,
             startedAt: Date.now(),
+            tokens: {
+                input: 0,
+                output: 0,
+                byIteration: [],
+                byModel: {},
+                currentModel: null,
+                warnedThresholds: [],
+                unknownModelLogged: false,
+            },
         };
         state.lastAssistantContent = "";
         state.lastResult = null;
@@ -889,6 +1076,19 @@ export function createRalphController() {
                         // so LLM clients honoring `not` see it up front instead of
                         // via a tool-call failure.
                         not: { const: 1 },
+                    },
+                    max_tokens: {
+                        type: "integer",
+                        description: "Optional cumulative token cap for the loop (input + output combined). When the loop crosses this value at the end of an iteration, it stops with reason \"max_tokens\". Omit for no cap. Useful to bound spend on long-running self-improve / grow_project runs.",
+                        minimum: 1,
+                        maximum: 1_000_000_000,
+                    },
+                    warn_at_pct: {
+                        type: "integer",
+                        description: `First context-window warning threshold as a percent of the model's total window (default ${DEFAULTS.warn_at_pct}). A second hard-coded warning fires at 95%. Each warning fires at most once per loop run.`,
+                        default: DEFAULTS.warn_at_pct,
+                        minimum: 1,
+                        maximum: 99,
                     },
                 },
                 required: ["prompt"],

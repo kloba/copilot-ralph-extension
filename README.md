@@ -111,7 +111,7 @@ If no loop is active it returns `resultType: "failure"` with the message `ralph_
 
 ```js
 {
-  textResultForLlm: "ralph_loop armed (max=20). Iterations will run as conversation turns.",
+  textResultForLlm: "ralph_loop armed (max=20). Iterations will run as conversation turns. Use ralph_stop to cancel.",
   resultType: "success",
   armed: true,
   max: 20,

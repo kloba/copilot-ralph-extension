@@ -815,7 +815,7 @@ export function createRalphController() {
                     },
                     stagnation_limit: {
                         type: "integer",
-                        description: `Abort if the assistant returns N consecutive byte-identical responses (default ${DEFAULTS.stagnation_limit}, 0 to disable). Must be 0 or ≥ 2.`,
+                        description: `Abort if the assistant returns N consecutive byte-identical responses (default ${DEFAULTS.stagnation_limit}, 0 to disable). Must be 0 or ≥ 2 — the value 1 is rejected at runtime since no comparison is possible after a single response.`,
                         default: DEFAULTS.stagnation_limit,
                         minimum: 0,
                         not: { const: 1 },

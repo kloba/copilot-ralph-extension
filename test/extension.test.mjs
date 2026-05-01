@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
-const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_BACKLOG_ABORT_TOKEN, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf } = __test__;
+const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf } = __test__;
 
 function makeFakeSession({ failSend = false, rejectSend = false, sendErrorMessage } = {}) {
     const sent = [];
@@ -987,6 +987,24 @@ test("GROW_PROJECT_DEFAULTS exposes wider budget than self_improve", () => {
     assert.equal(GROW_PROJECT_DEFAULTS.min_iterations, 10);
     // Frozen so a future caller can't mutate the shared default.
     assert.ok(Object.isFrozen(GROW_PROJECT_DEFAULTS), "GROW_PROJECT_DEFAULTS must be frozen");
+});
+
+test("BAKED_ABORT_TOKEN and BAKED_BACKLOG_ABORT_TOKEN pin distinct canonical strings", () => {
+    // The two tokens drive separate runtime watchers and are baked
+    // into separate prompts. Pin their literal values so a future
+    // "rename" or "harmonize" refactor (e.g. unifying both behind a
+    // single ABORT) is forced to update this test — at which point
+    // the contributor must also update both prompts, both schema
+    // descriptions, both warnPromiseDrift call sites, the README,
+    // and the cross-pollination test. This is the canonical-source
+    // anchor for that fan-out.
+    assert.equal(BAKED_ABORT_TOKEN, "ABORT_NO_IMPROVEMENTS");
+    assert.equal(BAKED_BACKLOG_ABORT_TOKEN, "ABORT_NO_BACKLOG");
+    assert.notEqual(BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, "tokens must remain distinct");
+    // Neither must be a substring of the other; otherwise a sub-agent
+    // emitting one would accidentally fire both watchers.
+    assert.equal(BAKED_BACKLOG_ABORT_TOKEN.includes(BAKED_ABORT_TOKEN), false);
+    assert.equal(BAKED_ABORT_TOKEN.includes(BAKED_BACKLOG_ABORT_TOKEN), false);
 });
 
 test("self_improve appends focus text to the SDLC prompt", async () => {

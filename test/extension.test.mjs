@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
-const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, previewOf } = __test__;
+const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, previewOf } = __test__;
 
 function makeFakeSession({ failSend = false, rejectSend = false, sendErrorMessage } = {}) {
     const sent = [];
@@ -566,6 +566,45 @@ test("self_improve refuses when ralph_loop is already active", async () => {
     const r = await si.handler({});
     assert.equal(r.resultType, "failure");
     assert.match(r.textResultForLlm, /ralph_loop is already/);
+});
+
+test("PROMPT_SELF_IMPROVE mentions every required SDLC category and stage", () => {
+    const p = PROMPT_SELF_IMPROVE;
+    // Stages
+    for (const stage of ["ORIENT", "IDEATE", "CRITIQUE", "BASELINE", "IMPLEMENT", "TEST", "COMMIT", "PUSH"]) {
+        assert.match(p, new RegExp(stage), `missing stage: ${stage}`);
+    }
+    // Categories
+    for (const cat of [
+        "bug fix",
+        "hardening",
+        "validation",
+        "tests",
+        "refactor",
+        "dependency",
+        "docs",
+        "release engineering",
+    ]) {
+        assert.ok(p.toLowerCase().includes(cat), `missing category: ${cat}`);
+    }
+    // Completion / abort tokens spelled out
+    assert.match(p, /COMPLETE/);
+    assert.match(p, /ABORT_NO_IMPROVEMENTS/);
+    // Conventional-commit + trailer
+    assert.match(p, /Co-authored-by: Copilot/);
+    assert.ok(p.length <= MAX_PROMPT_CHARS, `prompt is ${p.length} chars; cap is ${MAX_PROMPT_CHARS}`);
+});
+
+test("self_improve actually arms with the real SDLC prompt", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    await t.handler({});
+    // First idle fires iter 1 — assert the prompt sent matches PROMPT_SELF_IMPROVE.
+    session.emit("session.idle", { data: {} });
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(session.sent[0]?.prompt, PROMPT_SELF_IMPROVE);
 });
 
 test("public tools and hooks surface is frozen (defensive against accidental mutation)", () => {

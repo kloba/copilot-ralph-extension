@@ -39,6 +39,69 @@ const VERB_BY_REASON = Object.freeze({
     aborted: "⚠️ ended",
 });
 
+// Project-agnostic SDLC self-improvement prompt baked into the
+// `self_improve` tool. Each iteration walks the agent through:
+//   ORIENT  — read recent commits + project docs
+//   IDEATE  — pick ONE concrete change, rotating across SDLC categories
+//             (bug fix, hardening, validation, tests, refactor,
+//             dependency hygiene, docs, release engineering)
+//   CRITIQUE — rubber-duck pass: state the change, the risk, and one
+//              alternative considered and rejected
+//   BASELINE — detect & run the project's existing test command
+//   IMPLEMENT — surgical edits only; no invented features
+//   TEST     — re-run; must stay green at same-or-higher count
+//   COMMIT   — conventional-commit prefix + Co-authored-by trailer
+//   PUSH     — git push (non-fatal on push failure)
+//   END      — emit COMPLETE on its own line, or ABORT_NO_IMPROVEMENTS
+const PROMPT_SELF_IMPROVE = `You are running an autonomous self-improvement iteration on the project in cwd. Each iteration must produce ONE concrete improvement and a real commit; if no worthwhile improvement exists after honest investigation, emit ABORT_NO_IMPROVEMENTS instead.
+
+PER-ITERATION SDLC WORKFLOW (the smallest correct step is the right step):
+
+1. ORIENT.
+   - Run \`git log --oneline -20\` and read the most recent commits so you do not redo or undo prior iterations.
+   - Skim the project's primary docs: README, AGENTS.md, package.json / pyproject.toml / Cargo.toml / go.mod (whichever exist), CHANGELOG.
+   - Detect the project's existing test command (npm test, pytest, cargo test, go test ./..., etc).
+
+2. IDEATE.
+   Pick ONE concrete improvement. Rotate across these SDLC categories so the loop covers the whole lifecycle over time:
+     - bug fix or edge-case hardening
+     - input validation / error message clarity
+     - tests for under-covered behaviour
+     - refactor for readability / dead-code removal
+     - dependency / config hygiene
+     - docs (README, CHANGELOG, comments) accuracy
+     - release engineering (version bump rules, CI hints, .gitignore, lockfile)
+   Avoid repeating the SDLC category used in the previous 2-3 commits.
+
+3. CRITIQUE (rubber-duck pass).
+   Before editing, briefly state: the change, the risk it introduces, and one alternative you considered and rejected. Reject your own idea and pick a different one if the risk outweighs the value.
+
+4. BASELINE.
+   Run the project's existing test command and record pass/fail count. If the baseline is broken on entry and you cannot fix it in this single iteration, emit ABORT_NO_IMPROVEMENTS.
+
+5. IMPLEMENT.
+   Surgical edits only. No invented features. Do not change public API surface unless that change IS the improvement.
+
+6. TEST.
+   Re-run the same test command. It MUST pass at the same or higher count than baseline. If it fails, fix forward or revert, then re-run.
+
+7. COMMIT.
+   Short imperative subject prefixed with the SDLC category (\`fix:\`, \`feat:\`, \`test:\`, \`refactor:\`, \`docs:\`, \`chore:\`, \`ci:\`, \`perf:\`). Always include the trailer:
+     Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+   Write the commit message to a temp file in a SEPARATE shell call before running \`git commit -F\`; combining heredoc + commit in one call has historically failed silently. Avoid the literal word "interrupt"-trip phrases that some shells filter.
+
+8. PUSH.
+   \`git push\` to origin. If push fails (no remote, auth, conflict), log it and continue; do not abort the loop on push failure.
+
+9. END THE TURN.
+   Emit the literal token COMPLETE on its own line so the loop advances. If no worthwhile improvement exists, emit ABORT_NO_IMPROVEMENTS instead.
+
+HARD RULES:
+- Stay in cwd; do not edit unrelated repos.
+- Do not introduce new top-level dependencies, frameworks, or build systems unless that introduction IS the improvement and the rubber-duck critique justified it.
+- Do not delete or rewrite the project's existing license, README, or CHANGELOG wholesale; surgical edits only.
+- Each iteration is a paid turn — the smallest correct step is the right step.`;
+
 // Find a slice length ≤ `cut` that doesn't split a UTF-16 surrogate pair
 // (4-byte chars like emoji), so we never produce a lone-surrogate tail.
 function safeSliceEnd(s, cut) {
@@ -672,7 +735,7 @@ export function createRalphController() {
                 // so we benefit from the same prompt/length/integer guards
                 // the ralph_loop tool already has.
                 const parsed = validateArgs({
-                    prompt: "self_improve placeholder — real SDLC prompt lands in a subsequent iteration.",
+                    prompt: PROMPT_SELF_IMPROVE,
                     max_iterations: 100,
                     min_iterations: 5,
                 });
@@ -788,4 +851,4 @@ export function createRalphController() {
     };
 }
 
-export const __test__ = { DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, previewOf };
+export const __test__ = { DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, PROMPT_SELF_IMPROVE, previewOf };

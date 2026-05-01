@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### CI
+- `.github/workflows/ci.yml` — the **Syntax check** step
+  was hard-coded to `node --check extension/extension.mjs
+  && node --check extension/handler.mjs`, which silently
+  excluded `extension/events-emit.mjs` from CI's parse
+  guard once that file shipped. Worse, attempting the
+  fix as `node --check extension/*.mjs` would only have
+  validated the first glob match (Node's `--check` flag
+  ignores positional arguments past the first), giving
+  the appearance of coverage while still skipping the
+  rest. Replace with an explicit shell loop that runs
+  `node --check` against every `.mjs` under `extension/`,
+  so new sibling files are automatically covered. Drives
+  parity with `install.sh`'s post-copy verification,
+  which already iterates the same FILES list.
+
 ### Documentation
 - `docs/ARCHITECTURE.md` — fix three drift points so the
   contributor-facing architecture doc matches reality:

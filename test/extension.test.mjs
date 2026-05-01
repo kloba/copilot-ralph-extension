@@ -1287,6 +1287,22 @@ test("grow_project schema declares max/min/completion/abort/stagnation/focus bou
     assert.equal(p.focus.maxLength, MAX_FOCUS_CHARS);
 });
 
+test("self_improve schema description discloses all three loop conflict siblings", () => {
+    // Iter gp-15 finding: when grow_project shipped as a third peer,
+    // self_improve's description still said "ralph_loop or
+    // self_improve" — it did not mention grow_project even though
+    // grow_project now also blocks self_improve. Pin the disclosure
+    // for all three peers symmetric with the grow_project pin so a
+    // future fourth-tool addition is forced to update this string
+    // (and a regression that drops grow_project from the disclosure
+    // is caught loudly).
+    const c = createRalphController();
+    const si = c.tools.find((t) => t.name === "self_improve");
+    assert.match(si.description, /ralph_loop/);
+    assert.match(si.description, /grow_project/, "must disclose conflict with grow_project");
+    assert.match(si.description, /ralph_stop/, "must disclose ralph_stop as the cancel mechanism");
+});
+
 test("grow_project schema description mentions the active-loop conflict siblings", () => {
     // Schema description is the public contract the LLM sees. It must
     // explicitly call out that grow_project / ralph_loop / self_improve

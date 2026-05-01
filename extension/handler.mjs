@@ -270,6 +270,25 @@ const SELF_IMPROVE_KEYS = new Set([
 ]);
 const MAX_FOCUS_CHARS = 2000;
 
+// Validate self_improve's optional `focus` argument. Treats null/undefined
+// as "not supplied" (returns {value: undefined}); for strings, requires
+// non-whitespace content and ≤ MAX_FOCUS_CHARS after trim. Centralizes the
+// three error messages so the handler call site stays one line.
+function parseFocus(raw) {
+    if (raw === undefined || raw === null) return { value: undefined };
+    if (typeof raw !== "string") {
+        return { error: `self_improve: focus must be a string (got ${describeArgType(raw)}).` };
+    }
+    const trimmed = raw.trim();
+    if (!trimmed) {
+        return { error: "self_improve: focus must contain at least one non-whitespace character." };
+    }
+    if (trimmed.length > MAX_FOCUS_CHARS) {
+        return { error: `self_improve: focus exceeds ${MAX_FOCUS_CHARS} characters (got ${trimmed.length}).` };
+    }
+    return { value: trimmed };
+}
+
 // Validate completion_promise / abort_promise: string, non-whitespace,
 // ≤ MAX_PROMISE_CHARS, trimmed before matching. `whenProvided` injects
 // ", when provided," into abort_promise's empty error (it has no default).
@@ -814,20 +833,9 @@ export function createRalphController() {
                 const a = args ?? {};
                 // Validate `focus` independently (the rest is delegated to
                 // validateArgs via the constructed prompt below).
-                let focus;
-                if (a.focus !== undefined && a.focus !== null) {
-                    if (typeof a.focus !== "string") {
-                        return failure(`self_improve: focus must be a string (got ${describeArgType(a.focus)}).`);
-                    }
-                    const trimmed = a.focus.trim();
-                    if (!trimmed) {
-                        return failure("self_improve: focus must contain at least one non-whitespace character.");
-                    }
-                    if (trimmed.length > MAX_FOCUS_CHARS) {
-                        return failure(`self_improve: focus exceeds ${MAX_FOCUS_CHARS} characters (got ${trimmed.length}).`);
-                    }
-                    focus = trimmed;
-                }
+                const focusParse = parseFocus(a.focus);
+                if (focusParse.error) return failure(focusParse.error);
+                const focus = focusParse.value;
                 const prompt = focus
                     ? `${PROMPT_SELF_IMPROVE}\n\nFocus this run on: ${focus}`
                     : PROMPT_SELF_IMPROVE;

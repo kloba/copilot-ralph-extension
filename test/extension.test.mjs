@@ -1387,6 +1387,50 @@ test("self_improve rejects non-string focus", async () => {
     assert.match(r.textResultForLlm, /self_improve: focus must be a string/);
 });
 
+test("grow_project rejects focus over MAX_FOCUS_CHARS, accepts the boundary, and rejects whitespace/non-string", async () => {
+    // Mirror of the four self_improve focus-bound pins, consolidated:
+    // each path must surface the grow_project: prefix (not the
+    // delegated ralph_loop: prefix from validateArgs).
+    const c = createRalphController();
+    const session = makeFakeSession();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "grow_project");
+
+    const tooBig = await t.handler({ focus: "x".repeat(MAX_FOCUS_CHARS + 1) });
+    assert.equal(tooBig.resultType, "failure");
+    assert.match(tooBig.textResultForLlm, new RegExp(`^grow_project: focus exceeds ${MAX_FOCUS_CHARS}`));
+    assert.doesNotMatch(tooBig.textResultForLlm, /ralph_loop:/);
+
+    // Boundary: trimmed.length === MAX_FOCUS_CHARS must arm. The
+    // handler check is `> MAX_FOCUS_CHARS`, so an off-by-one
+    // regression to `>=` would be caught here.
+    const session2 = makeFakeSession();
+    const c2 = createRalphController();
+    c2.attach(session2);
+    const t2 = c2.tools.find((x) => x.name === "grow_project");
+    const boundary = await t2.handler({ focus: "x".repeat(MAX_FOCUS_CHARS), max_iterations: 1, min_iterations: 1 });
+    assert.equal(boundary.resultType, "success", boundary.textResultForLlm);
+    assert.equal(boundary.armed, true);
+
+    // Whitespace-only focus rejected.
+    const session3 = makeFakeSession();
+    const c3 = createRalphController();
+    c3.attach(session3);
+    const t3 = c3.tools.find((x) => x.name === "grow_project");
+    const ws = await t3.handler({ focus: "   \t\n  " });
+    assert.equal(ws.resultType, "failure");
+    assert.match(ws.textResultForLlm, /^grow_project: focus must contain/);
+
+    // Non-string focus rejected (number sentinel).
+    const session4 = makeFakeSession();
+    const c4 = createRalphController();
+    c4.attach(session4);
+    const t4 = c4.tools.find((x) => x.name === "grow_project");
+    const num = await t4.handler({ focus: 42 });
+    assert.equal(num.resultType, "failure");
+    assert.match(num.textResultForLlm, /^grow_project: focus must be a string/);
+});
+
 test("self_improve treats focus: null as 'not supplied' and arms with the bare SDLC prompt", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

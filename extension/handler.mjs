@@ -385,17 +385,17 @@ const MAX_FOCUS_CHARS = 2000;
 // as "not supplied" (returns {value: undefined}); for strings, requires
 // non-whitespace content and ≤ MAX_FOCUS_CHARS after trim. Centralizes the
 // three error messages so the handler call site stays one line.
-function parseFocus(raw) {
+function parseFocus(raw, toolName = "self_improve") {
     if (raw === undefined || raw === null) return { value: undefined };
     if (typeof raw !== "string") {
-        return { error: `self_improve: focus must be a string (got ${describeArgType(raw)}).` };
+        return { error: `${toolName}: focus must be a string (got ${describeArgType(raw)}).` };
     }
     const trimmed = raw.trim();
     if (!trimmed) {
-        return { error: "self_improve: focus must contain at least one non-whitespace character." };
+        return { error: `${toolName}: focus must contain at least one non-whitespace character.` };
     }
     if (trimmed.length > MAX_FOCUS_CHARS) {
-        return { error: `self_improve: focus exceeds ${MAX_FOCUS_CHARS} characters (got ${trimmed.length}).` };
+        return { error: `${toolName}: focus exceeds ${MAX_FOCUS_CHARS} characters (got ${trimmed.length}).` };
     }
     return { value: trimmed };
 }
@@ -1049,7 +1049,7 @@ export function createRalphController() {
                 const bad = validateOptionalArgShape("grow_project", args, GROW_PROJECT_KEYS);
                 if (bad) return bad;
                 const a = args ?? {};
-                const focusParse = parseFocus(a.focus);
+                const focusParse = parseFocus(a.focus, "grow_project");
                 if (focusParse.error) return failure(focusParse.error);
                 const focus = focusParse.value;
                 const prompt = focus

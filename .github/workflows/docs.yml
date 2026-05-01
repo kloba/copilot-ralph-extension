@@ -39,4 +39,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Deploy to gh-pages
-        run: mkdocs gh-deploy --force --clean --message "docs: deploy ${{ github.sha }}"
+        # Block scalar (`|`) avoids the YAML "mapping values are not
+        # allowed here" parser error that fires when an inline quoted
+        # string contains a literal colon (here: `docs: deploy …`).
+        # Without the block scalar GitHub rejects the whole workflow
+        # at parse time on every push, even ones that don't touch
+        # docs/** — path filters never get a chance to run.
+        run: |
+          mkdocs gh-deploy --force --clean --message "docs deploy ${{ github.sha }}"

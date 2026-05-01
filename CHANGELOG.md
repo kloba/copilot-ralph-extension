@@ -3,6 +3,21 @@
 ## Unreleased
 
 ### Fixes
+- `docs.yml` workflow: replace the inline single-line `run:`
+  scalar with a block scalar (`|`) so the embedded `docs:`
+  colon in the gh-deploy commit message no longer trips the
+  YAML parser. Symptom: every push since the workflow landed
+  produced a phantom "Deploy docs site" run with conclusion
+  `failure`, no jobs, and the GitHub UI message "This run
+  likely failed because of a workflow file issue" — because
+  GitHub parses workflow files *before* applying `paths:`
+  filters, so a YAML syntax error fails the run even on
+  pushes that don't touch `docs/**`. Replacing the inline
+  `--message "docs: deploy ${{ github.sha }}"` with a block
+  scalar containing `--message "docs deploy ${{ github.sha
+  }}"` (no colon) makes every workflow file parse cleanly
+  (`python3 -c "import yaml; yaml.safe_load(...)"` confirmed
+  for all three of `ci.yml`, `docs.yml`, `release.yml`).
 - `tailEventsFile` (packages/tui) now detects file replacement
   even when the freed inode is reused by the next file in the
   directory — common on Linux ext4 — by tracking

@@ -468,8 +468,7 @@ export function createRalphController() {
         }
 
         // Queue-bloat protection: if the prompt we previously fired hasn't
-        // produced any assistant.message yet, this idle is a stale signal
-        // (e.g. SDK fired idle before the agent picked up our send).
+        // produced any assistant.message yet, this idle is a stale signal.
         if (a.fireInFlight && !a.observedMessageThisFire) {
             log("ralph_loop: skipping idle — previous prompt not yet picked up by agent");
             return;

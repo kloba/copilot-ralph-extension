@@ -166,3 +166,58 @@ test("bin --help mentions doctor", () => {
     assert.equal(r.status, 0);
     assert.match(r.stdout, /doctor/);
 });
+
+import { mkdirSync as mkSync2 } from "node:fs";
+
+function seedRun(root, runId, ts) {
+    const runDir = join(root, runId);
+    mkSync2(runDir, { recursive: true });
+    writeFileSync(join(runDir, "events.jsonl"), JSON.stringify({ type: "armed", ts, runId }) + "\n");
+    return JSON.stringify({ type: "armed", ts, runId, label: "ralph_loop", maxIterations: 5, minIterations: 1 });
+}
+
+test("bin prune --dry-run: lists would-remove without deleting", () => {
+    const dir = tmp();
+    const old = seedRun(dir, "ralph_loop-old", 1);  // ts=1ms epoch ⇒ very old
+    const fresh = seedRun(dir, "ralph_loop-fresh", Date.now());
+    writeFileSync(join(dir, "index.jsonl"), old + "\n" + fresh + "\n");
+    const r = runBin(["prune", "--older-than", "365d", "--dry-run"], { RALPH_EVENTS_DIR: dir });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /dry-run.*would remove 1/);
+    assert.match(r.stdout, /would remove ralph_loop-old/);
+    // file still present
+    const list = runBin(["list", "--json"], { RALPH_EVENTS_DIR: dir });
+    assert.equal(JSON.parse(list.stdout).length, 2);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("bin prune --older-than 0m: removes every run", () => {
+    const dir = tmp();
+    const a = seedRun(dir, "ralph_loop-a", Date.now() - 1000);
+    const b = seedRun(dir, "ralph_loop-b", Date.now() - 2000);
+    writeFileSync(join(dir, "index.jsonl"), a + "\n" + b + "\n");
+    const r = runBin(["prune", "--older-than", "0m"], { RALPH_EVENTS_DIR: dir });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /pruned 2 runs/);
+    const list = runBin(["list", "--json"], { RALPH_EVENTS_DIR: dir });
+    assert.deepEqual(JSON.parse(list.stdout), []);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("bin prune: invalid --older-than exits non-zero", () => {
+    const r = runBin(["prune", "--older-than", "nope"], { RALPH_EVENTS_DIR: tmp() });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /invalid --older-than/);
+});
+
+test("parseDuration: accepts d/h/m, rejects garbage", async () => {
+    const { parseDuration } = await import("../src/writer.mjs");
+    assert.equal(parseDuration("30d"), 30 * 86_400_000);
+    assert.equal(parseDuration("12h"), 12 * 3_600_000);
+    assert.equal(parseDuration("5m"), 5 * 60_000);
+    assert.equal(parseDuration("0m"), 0);
+    assert.equal(parseDuration("nope"), null);
+    assert.equal(parseDuration("1.5d"), null);
+    assert.equal(parseDuration(""), null);
+    assert.equal(parseDuration(undefined), null);
+});

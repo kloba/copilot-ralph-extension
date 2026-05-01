@@ -21,7 +21,7 @@ import fs from "node:fs";
 import nodePath from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { readRunIndex, resolveRunsRoot, resolveRunEventsPath } from "../src/writer.mjs";
+import { readRunIndex, resolveRunsRoot, resolveRunEventsPath, parseDuration, pruneRuns } from "../src/writer.mjs";
 import { readEventsFile, tailEventsFile } from "../src/tail.mjs";
 import { formatEventLine } from "../src/plain.mjs";
 
@@ -33,6 +33,7 @@ USAGE
   ralph-tui replay <runId>
   ralph-tui watch [runId] [--plain]
   ralph-tui doctor
+  ralph-tui prune [--older-than 30d] [--dry-run]
   ralph-tui --help | -h
 
 OPTIONS
@@ -40,13 +41,19 @@ OPTIONS
               when stdout is not a TTY, e.g. piped to a file or in CI).
   --json      For \`list\`: emit the run index as a JSON array (one
               object per run, newest first) for scripting/dashboards.
+  --older-than DURATION  For \`prune\`: only remove runs older than
+              DURATION (e.g. 30d, 12h, 5m). Default 30d.
+  --dry-run   For \`prune\`: list what would be removed; delete nothing.
   --help, -h  Show this help.
 
 ENV
   RALPH_EVENTS_DIR  Override the runs root (default ~/.copilot/ralph/runs).
 `;
 
-/** Minimal argv parser. Returns { cmd, positional[], flags{} }. */
+/** Minimal argv parser. Returns { cmd, positional[], flags{} }.
+ *  Supports `--flag`, `--flag=value`, and `--flag value` for a known
+ *  set of value-taking flags (currently: --older-than). */
+const VALUE_FLAGS = new Set(["older-than"]);
 export function parseArgv(argv) {
     const out = { cmd: null, positional: [], flags: {} };
     const args = [...argv];
@@ -55,7 +62,20 @@ export function parseArgv(argv) {
         if (a === "--help" || a === "-h") { out.flags.help = true; continue; }
         if (a === "--plain") { out.flags.plain = true; continue; }
         if (a === "--no-plain") { out.flags.plain = false; continue; }
-        if (a.startsWith("--")) { out.flags[a.slice(2)] = true; continue; }
+        if (a.startsWith("--")) {
+            const eq = a.indexOf("=");
+            if (eq !== -1) {
+                out.flags[a.slice(2, eq)] = a.slice(eq + 1);
+                continue;
+            }
+            const key = a.slice(2);
+            if (VALUE_FLAGS.has(key) && args.length && !args[0].startsWith("--")) {
+                out.flags[key] = args.shift();
+                continue;
+            }
+            out.flags[key] = true;
+            continue;
+        }
         if (!out.cmd) { out.cmd = a; continue; }
         out.positional.push(a);
     }
@@ -213,6 +233,26 @@ export function cmdDoctor() {
     return 0;
 }
 
+export function cmdPrune(opts = {}) {
+    const raw = typeof opts["older-than"] === "string" ? opts["older-than"] : "30d";
+    const olderThanMs = parseDuration(raw);
+    if (olderThanMs === null) {
+        fail(`prune: invalid --older-than '${raw}' (expected e.g. 30d, 12h, 5m)`);
+        return 2;
+    }
+    const dryRun = Boolean(opts["dry-run"]);
+    const { removed, kept } = pruneRuns({ olderThanMs, dryRun });
+    if (dryRun) {
+        process.stdout.write(`# dry-run (older-than=${raw}); would remove ${removed.length}, keep ${kept}\n`);
+    } else {
+        process.stdout.write(`# pruned ${removed.length} run${removed.length === 1 ? "" : "s"} (older-than=${raw}); ${kept} kept\n`);
+    }
+    for (const r of removed) {
+        process.stdout.write(`${dryRun ? "would remove" : "removed"} ${r.runId}\n`);
+    }
+    return 0;
+}
+
 export async function main(argv = process.argv.slice(2)) {
     const { cmd, positional, flags } = parseArgv(argv);
     if (flags.help || cmd === "help" || (!cmd && !positional.length)) {
@@ -224,6 +264,7 @@ export async function main(argv = process.argv.slice(2)) {
         case "replay": return cmdReplay(positional[0]);
         case "watch": return await cmdWatch(positional[0], { plain: flags.plain });
         case "doctor": return cmdDoctor();
+        case "prune": return cmdPrune(flags);
         default:
             fail(`unknown command: ${cmd}\n${USAGE}`);
             return 2;

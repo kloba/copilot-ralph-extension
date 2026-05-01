@@ -211,3 +211,80 @@ export function readRunIndex({ fs = fsDefault, path = pathDefault, os = osDefaul
 }
 
 export { makeRunId };
+
+/**
+ * Parse a duration string like "30d", "12h", "5m" into milliseconds.
+ * Strict: returns null for invalid input. No fractional values.
+ */
+export function parseDuration(input) {
+    if (typeof input !== "string") return null;
+    const m = /^(\d+)([dhm])$/.exec(input.trim());
+    if (!m) return null;
+    const n = Number(m[1]);
+    if (!Number.isFinite(n) || n < 0) return null;
+    const unit = m[2];
+    const ms = unit === "d" ? 86_400_000
+        : unit === "h" ? 3_600_000
+            : 60_000;
+    return n * ms;
+}
+
+/**
+ * Prune runs whose `armed` ts is older than `olderThanMs` from now.
+ * Returns `{ removed: [{runId, ts}], kept: number }`. When `dryRun` is
+ * true no filesystem changes are made.
+ *
+ * Blast-radius constraint: only deletes per-run directories under the
+ * resolved runs root and rewrites index.jsonl in place.
+ */
+export function pruneRuns({
+    olderThanMs,
+    dryRun = false,
+    now = Date.now,
+    fs = fsDefault,
+    path = pathDefault,
+    os = osDefault,
+    env = process.env,
+} = {}) {
+    if (typeof olderThanMs !== "number" || !Number.isFinite(olderThanMs) || olderThanMs < 0) {
+        throw new TypeError("pruneRuns: olderThanMs must be a non-negative number");
+    }
+    const root = resolveRunsRoot({ env, os, path });
+    const indexPath = path.join(root, "index.jsonl");
+    const cutoff = now() - olderThanMs;
+    const removed = [];
+    const survivors = [];
+    let raw;
+    try {
+        raw = fs.readFileSync(indexPath, "utf8");
+    } catch (err) {
+        if (err && err.code === "ENOENT") return { removed, kept: 0 };
+        throw err;
+    }
+    for (const line of raw.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        let obj;
+        try { obj = JSON.parse(trimmed); } catch { continue; }
+        if (!obj || obj.type !== "armed" || typeof obj.runId !== "string") continue;
+        if (typeof obj.ts === "number" && obj.ts < cutoff) {
+            removed.push({ runId: obj.runId, ts: obj.ts });
+        } else {
+            survivors.push(trimmed);
+        }
+    }
+    if (!dryRun && removed.length > 0) {
+        for (const { runId } of removed) {
+            const runDir = path.join(root, runId);
+            try {
+                fs.rmSync(runDir, { recursive: true, force: true });
+            } catch {
+                // best-effort; surviving index entry would be misleading,
+                // but we still rewrite the index to drop the reference
+            }
+        }
+        const next = survivors.length ? survivors.join("\n") + "\n" : "";
+        fs.writeFileSync(indexPath, next, { encoding: "utf8" });
+    }
+    return { removed, kept: survivors.length };
+}

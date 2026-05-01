@@ -238,6 +238,15 @@ const RALPH_LOOP_KEYS = new Set([
     "stagnation_limit",
 ]);
 const RALPH_STOP_KEYS = new Set(["reason"]);
+const SELF_IMPROVE_KEYS = new Set([
+    "max_iterations",
+    "min_iterations",
+    "focus",
+    "completion_promise",
+    "abort_promise",
+    "stagnation_limit",
+]);
+const MAX_FOCUS_CHARS = 500;
 
 // Validate completion_promise / abort_promise: string, non-whitespace,
 // ≤ MAX_PROMISE_CHARS, trimmed before matching. `whenProvided` injects
@@ -711,13 +720,54 @@ export function createRalphController() {
         {
             name: "self_improve",
             description:
-                "Arms ralph_loop with a baked-in, project-agnostic SDLC self-improvement prompt (orient → ideate → critique → baseline → implement → test → commit → push → COMPLETE). Placeholder: SDLC prompt + schema land in subsequent iterations.",
+                "Arms ralph_loop with a baked-in, project-agnostic SDLC self-improvement prompt (orient → ideate → critique → baseline → implement → test → commit → push → COMPLETE). Optional `focus` string narrows the run to a specific area without altering the SDLC scaffolding.",
             parameters: {
                 type: "object",
-                properties: {},
+                properties: {
+                    max_iterations: {
+                        type: "integer",
+                        description: `Maximum iterations before stopping (default 100, max ${MAX_ALLOWED_ITERATIONS}).`,
+                        default: 100,
+                        minimum: 1,
+                        maximum: MAX_ALLOWED_ITERATIONS,
+                    },
+                    min_iterations: {
+                        type: "integer",
+                        description: "Minimum iterations before completion_promise / abort_promise are honored (default 5).",
+                        default: 5,
+                        minimum: 1,
+                        maximum: MAX_ALLOWED_ITERATIONS,
+                    },
+                    focus: {
+                        type: "string",
+                        description: `Optional focus area appended to the SDLC prompt as "Focus this run on: <focus>". Max ${MAX_FOCUS_CHARS} chars.`,
+                        minLength: 1,
+                        maxLength: MAX_FOCUS_CHARS,
+                    },
+                    completion_promise: {
+                        type: "string",
+                        description: `Substring that, when present in an assistant turn's response, signals completion (default '${DEFAULTS.completion_promise}'). Max ${MAX_PROMISE_CHARS} chars.`,
+                        default: DEFAULTS.completion_promise,
+                        minLength: 1,
+                        maxLength: MAX_PROMISE_CHARS,
+                    },
+                    abort_promise: {
+                        type: "string",
+                        description: `Optional substring that, when present in an assistant turn's response, aborts the loop early. Max ${MAX_PROMISE_CHARS} chars.`,
+                        minLength: 1,
+                        maxLength: MAX_PROMISE_CHARS,
+                    },
+                    stagnation_limit: {
+                        type: "integer",
+                        description: `Abort if the assistant returns N consecutive byte-identical responses (default ${DEFAULTS.stagnation_limit}, 0 to disable). Must be 0 or ≥ 2.`,
+                        default: DEFAULTS.stagnation_limit,
+                        minimum: 0,
+                        not: { const: 1 },
+                    },
+                },
                 additionalProperties: false,
             },
-            handler: async () => {
+            handler: async (args) => {
                 if (!sessionRef?.send) {
                     return failure(
                         "self_improve: session not attached — controller.attach(session) must be called before invoking self_improve.",
@@ -730,16 +780,43 @@ export function createRalphController() {
                         : `running (iteration ${i}/${max}`;
                     return failure(`ralph_loop is already ${status} — call ralph_stop first).`);
                 }
-                // Placeholder prompt — will be replaced by the real SDLC
-                // prompt in the next iteration. Pushed through validateArgs
-                // so we benefit from the same prompt/length/integer guards
-                // the ralph_loop tool already has.
+                if (args !== null && args !== undefined) {
+                    const shape = validateArgShape("self_improve", args, SELF_IMPROVE_KEYS);
+                    if (shape) return failure(shape.error);
+                }
+                const a = args ?? {};
+                // Validate `focus` independently (the rest is delegated to
+                // validateArgs via the constructed prompt below).
+                let focus;
+                if (a.focus !== undefined && a.focus !== null) {
+                    if (typeof a.focus !== "string") {
+                        return failure(`self_improve: focus must be a string (got ${describeArgType(a.focus)}).`);
+                    }
+                    const trimmed = a.focus.trim();
+                    if (!trimmed) {
+                        return failure("self_improve: focus must contain at least one non-whitespace character.");
+                    }
+                    if (trimmed.length > MAX_FOCUS_CHARS) {
+                        return failure(`self_improve: focus exceeds ${MAX_FOCUS_CHARS} characters (got ${trimmed.length}).`);
+                    }
+                    focus = trimmed;
+                }
+                const prompt = focus
+                    ? `${PROMPT_SELF_IMPROVE}\n\nFocus this run on: ${focus}`
+                    : PROMPT_SELF_IMPROVE;
                 const parsed = validateArgs({
-                    prompt: PROMPT_SELF_IMPROVE,
-                    max_iterations: 100,
-                    min_iterations: 5,
+                    prompt,
+                    max_iterations: a.max_iterations ?? 100,
+                    min_iterations: a.min_iterations ?? 5,
+                    completion_promise: a.completion_promise,
+                    abort_promise: a.abort_promise,
+                    stagnation_limit: a.stagnation_limit,
                 });
-                if (parsed.error) return failure(parsed.error);
+                if (parsed.error) {
+                    // Re-prefix delegated validateArgs errors so users see
+                    // self_improve in the error stream rather than ralph_loop.
+                    return failure(parsed.error.replace(/^ralph_loop:/, "self_improve:"));
+                }
                 return armLoop(parsed.value, "self_improve");
             },
         },

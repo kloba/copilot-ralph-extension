@@ -607,6 +607,70 @@ test("self_improve actually arms with the real SDLC prompt", async () => {
     assert.equal(session.sent[0]?.prompt, PROMPT_SELF_IMPROVE);
 });
 
+test("self_improve appends focus text to the SDLC prompt", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({ focus: "harden input validation" });
+    assert.equal(r.resultType, "success");
+    session.emit("session.idle", { data: {} });
+    await new Promise((rs) => setTimeout(rs, 0));
+    assert.match(session.sent[0]?.prompt, /Focus this run on: harden input validation$/);
+    assert.ok(session.sent[0].prompt.startsWith(PROMPT_SELF_IMPROVE));
+});
+
+test("self_improve respects max_iterations / min_iterations overrides", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({ max_iterations: 50, min_iterations: 10 });
+    assert.equal(r.resultType, "success");
+    assert.equal(r.max, 50);
+    assert.equal(r.min, 10);
+});
+
+test("self_improve rejects unknown args", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({ wat: 1 });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /self_improve.*unknown/i);
+});
+
+test("self_improve rejects focus over 500 chars", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({ focus: "x".repeat(501) });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /self_improve: focus exceeds 500/);
+});
+
+test("self_improve rejects whitespace-only focus", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({ focus: "   \t\n  " });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /self_improve: focus must contain/);
+});
+
+test("self_improve rejects non-string focus", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({ focus: 42 });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /self_improve: focus must be a string/);
+});
+
 test("public tools and hooks surface is frozen (defensive against accidental mutation)", () => {
     const c = createRalphController();
     assert.ok(Object.isFrozen(c.tools));

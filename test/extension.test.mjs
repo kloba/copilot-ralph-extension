@@ -1403,6 +1403,24 @@ test("preview does not split UTF-16 surrogate pairs (no lone high surrogate)", a
     assert.deepEqual(JSON.parse(JSON.stringify(preview)), preview);
 });
 
+test("note truncation is silent — no '…' indicator (asymmetric with preview)", async () => {
+    // RalphResult typedef explicitly contracts that `note` is truncated
+    // silently while `preview` appends "…". Notes flow inline into the
+    // single-line log marker and the post-loop additionalContext bracket;
+    // a trailing "…" there would be misread as part of the message
+    // (e.g. `note=connection lost…` looks like a verb that trails off
+    // rather than a hint that the note was truncated). Pin the contract
+    // so a future "consistency cleanup" doesn't break log-line callers.
+    const longReason = "x".repeat(PREVIEW_CHARS + 100);
+    const { session, controller, stop } = await arm({ max_iterations: 5 });
+    session.emit("session.idle", { data: {} });
+    await stop.handler({ reason: longReason });
+    const note = controller.state.lastResult.note;
+    assert.equal(note.length, PREVIEW_CHARS, "note must be capped at exactly PREVIEW_CHARS");
+    assert.ok(!note.endsWith("…"), "note must NOT carry the '…' indicator (preview-only)");
+    assert.equal(note, "x".repeat(PREVIEW_CHARS));
+});
+
 test("note truncation does not split UTF-16 surrogate pairs", async () => {
     // 499 'a's + "🎉" + filler — same surrogate-edge as preview test, but
     // exercising the note path via ralph_stop reason.

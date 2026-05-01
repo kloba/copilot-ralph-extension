@@ -117,7 +117,7 @@ function isSubAgentEvent(ev) {
  * @property {number} startedAt - Epoch ms when the loop was armed.
  * @property {number} finishedAt - Epoch ms when the loop finished.
  * @property {number} durationMs - Elapsed wall-clock ms from arming to finish, clamped to ≥ 0 (a backward clock jump mid-loop reports 0 instead of a negative).
- * @property {string} [note] - Optional human-readable context: caller-supplied via ralph_stop({reason}), or the underlying error message on send_error, or the SDK abort reason on aborted. Truncated to 500 chars (surrogate-safe).
+ * @property {string} [note] - Optional human-readable context: caller-supplied via ralph_stop({reason}), or the underlying error message on send_error, or the SDK abort reason on aborted. Truncated silently to 500 chars (surrogate-safe) — no "…" indicator is appended (unlike `preview`). Notes are flowed inline into single-line log markers and the post-loop additionalContext bracket, where a trailing "…" would be misread as part of the message.
  */
 
 // Shared helper: every tool handler that accepts an args object should

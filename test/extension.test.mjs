@@ -672,6 +672,12 @@ test("PROMPT_SELF_IMPROVE mentions every required SDLC category and stage", () =
     assert.match(p, /ABORT_NO_IMPROVEMENTS/);
     // Conventional-commit + trailer
     assert.match(p, /Co-authored-by: Copilot/);
+    // Rubber-duck pass — explicitly named so the agent calls the right
+    // sub-agent during the CRITIQUE stage rather than improvising.
+    assert.match(p, /rubber-duck/i, "CRITIQUE stage must name the rubber-duck pass");
+    // Conventional-commit prefix list — the agent needs the canonical
+    // set so commit subjects don't drift across iterations.
+    assert.match(p, /feat|fix|refactor|test|docs|chore/, "must mention conventional-commit prefixes");
     assert.ok(p.length <= MAX_PROMPT_CHARS, `prompt is ${p.length} chars; cap is ${MAX_PROMPT_CHARS}`);
 });
 

@@ -241,6 +241,10 @@ If you arm a new `ralph_loop` *before* the next user prompt fires, the prior run
 - Node.js ≥ 20 (only required for running the test suite; the installed extension uses the Node runtime bundled with Copilot CLI)
 - No runtime npm dependencies. Tests use `node:test` (built-in); run them with `npm test`.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a per-release record of behavior changes, hardening notes, and bug fixes.
+
 ## License
 
 MIT

@@ -251,7 +251,7 @@ If you arm a new `ralph_loop` *before* the next user prompt fires, the prior run
 ## Troubleshooting
 
 - **`/extensions` doesn't list `ralph`.** Confirm `extension.mjs` and `handler.mjs` are present in `~/.copilot/extensions/ralph/` (user-scoped) or `.github/extensions/ralph/` (project-scoped, only visible from inside that repo) and restart Copilot CLI. `./install.sh` from source double-checks both files with `node --check` before writing.
-- **`ralph_loop is already armed/running` failure.** Only one loop runs per session at a time — call `ralph_stop` before re-arming. The same message fires when `ralph_loop` and `self_improve` collide either way.
+- **`<owner> is already armed/running` failure.** Only one loop runs per session at a time — call `ralph_stop` before re-arming. The leading word (`ralph_loop` or `self_improve`) reflects whichever tool armed the active loop, so the guard fires on either tool when the other is active.
 - **`abort_promise … overlap as substrings`.** `completion_promise` and `abort_promise` must be disjoint phrases (e.g. `"DONE"` and `"DONE_FAIL"` is rejected because one contains the other). Pick non-overlapping tokens.
 - **Loop ends immediately with `reason: send_error`.** The first `session.send` call rejected — usually because `controller.attach(session)` was not called or the session is no longer live. Check `result.note` for the underlying error.
 - **Loop runs N+ times instead of stopping.** Check that the prompt actually instructs the agent to emit the `completion_promise` literally; with a quoted/paraphrased completion phrase the loop only stops at `max_iterations`.

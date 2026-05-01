@@ -42,6 +42,15 @@
   with `ralph_stop`.
 
 ### Hardening (post-0.6.0)
+- The "already armed/running" guard message now names the **owning**
+  loop, not the calling tool. When `self_improve` armed the active
+  loop and the agent then calls `ralph_loop`, the failure now reads
+  `self_improve is already armed (iteration 1/N pending) — call
+  ralph_stop first.` Previously this hardcoded `ralph_loop is already
+  …` regardless of which tool actually armed the loop, lying about
+  ownership and confusing the calling agent. Mirror behaviour on the
+  other side: a `self_improve` invoked while `ralph_loop` armed the
+  loop reads `ralph_loop is already …`.
 - The `ralph_loop is already armed/running` failure string had
   unbalanced parentheses: the produced sentence ended with
   `…pending — call ralph_stop first).` (stray close paren after the

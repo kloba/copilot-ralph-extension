@@ -2800,6 +2800,20 @@ test("calling ralph_loop before attach fails fast with a clear error and does NO
     assert.equal(c.state.active, null, "must not leave armed state behind");
 });
 
+test("calling self_improve before attach fails fast with a self_improve-labelled error and does NOT arm", async () => {
+    // Mirror of the ralph_loop pin above. requireAttachedSession() weaves
+    // the calling tool's name through the message, so the failure must
+    // carry "self_improve:" rather than the previous hardcoded prefix —
+    // a regression that drops the label would lie about which tool the
+    // caller actually invoked.
+    const c = createRalphController();
+    const si = c.tools.find((t) => t.name === "self_improve");
+    const r = await si.handler({});
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /^self_improve: session not attached/);
+    assert.equal(c.state.active, null, "must not leave armed state behind");
+});
+
 test("attach is transactional: if session.on throws mid-subscribe, earlier listeners are rolled back", () => {
     // Without the rollback, a session.on() that rejects (say) the third
     // event ("abort") with an unknown-event error would leave the first

@@ -499,8 +499,8 @@ test("validateArgs success returns exactly the documented value shape (no stray 
     assert.equal(r2.value.abortPromise, null);
 });
 
-test("state.active: arming sets exactly the documented 17-field ActiveLoopState shape", async () => {
-    // The ActiveLoopState typedef enumerates 17 fields. Pin the exact
+test("state.active: arming sets exactly the documented 18-field ActiveLoopState shape", async () => {
+    // The ActiveLoopState typedef enumerates 18 fields. Pin the exact
     // key set and initial values so future refactors that add or rename
     // a field have to update both the typedef and this test in lockstep.
     const { session, controller } = await arm({ max_iterations: 7, min_iterations: 2, abort_promise: "FAIL", stagnation_limit: 4 });
@@ -508,7 +508,7 @@ test("state.active: arming sets exactly the documented 17-field ActiveLoopState 
     assert.deepEqual(Object.keys(a).sort(), [
         "abortPromise", "completionPromise", "fireInFlight", "i",
         "label", "max", "maxTokens", "min", "observedMessageThisFire", "pendingFire",
-        "prev", "prompt", "stagnationLimit", "startedAt", "streak", "tokens", "warnAtPct",
+        "prev", "prompt", "stagnationLimit", "startedAt", "stopCaffeinate", "streak", "tokens", "warnAtPct",
     ]);
     assert.equal(a.i, 0);
     assert.equal(a.prev, null);
@@ -4586,4 +4586,172 @@ test("token tracking: tokens block omitted when no usage observed", async () => 
     await stop.handler({ reason: "no tokens" });
     const r = controller.state.lastResult;
     assert.equal(r.tokens, undefined);
+});
+
+// ── caffeinate integration (issue #8) ────────────────────────────────────
+
+function makeCaffeinateSpy({ failSpawn = false, failError = null } = {}) {
+    const calls = [];
+    const children = [];
+    const spawnFn = (cmd, args, opts) => {
+        calls.push({ cmd, args, opts });
+        if (failSpawn) throw new Error("spawn failed");
+        const child = {
+            pid: 99000 + calls.length,
+            killed: false,
+            killArgs: [],
+            errorHandler: null,
+            on(type, fn) {
+                if (type === "error") {
+                    this.errorHandler = fn;
+                    if (failError) queueMicrotask(() => fn(failError));
+                }
+            },
+            kill(sig) { this.killed = true; this.killArgs.push(sig); },
+        };
+        children.push(child);
+        return child;
+    };
+    return { calls, children, spawnFn };
+}
+
+async function armWithCaffeinate({ env = {}, platform = "darwin", spawnSpy } = {}) {
+    const session = makeFakeSession();
+    const controller = createRalphController({
+        caffeinate: {
+            env,
+            platform,
+            pid: 12345,
+            spawnFn: spawnSpy.spawnFn,
+        },
+    });
+    controller.attach(session);
+    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
+    const armResult = await ralph.handler({ prompt: "go", max_iterations: 3 });
+    return { session, controller, armResult, ralph };
+}
+
+test("caffeinate: disabled by default — no spawn, no log line", async () => {
+    const spy = makeCaffeinateSpy();
+    const { session, armResult } = await armWithCaffeinate({ env: {}, spawnSpy: spy });
+    assert.equal(armResult.armed, true);
+    assert.equal(spy.calls.length, 0, "must NOT spawn caffeinate when RALPH_CAFFEINATE is unset");
+    assert.equal(session.logs.some((l) => l.includes("caffeinate")), false, "no caffeinate log line when disabled");
+});
+
+test("caffeinate: enabled via RALPH_CAFFEINATE=1 spawns 'caffeinate -i -w <pid>' on darwin", async () => {
+    const spy = makeCaffeinateSpy();
+    const { session } = await armWithCaffeinate({
+        env: { RALPH_CAFFEINATE: "1" },
+        platform: "darwin",
+        spawnSpy: spy,
+    });
+    assert.equal(spy.calls.length, 1);
+    assert.equal(spy.calls[0].cmd, "caffeinate");
+    assert.deepEqual(spy.calls[0].args, ["-i", "-w", "12345"]);
+    assert.equal(spy.calls[0].opts.stdio, "ignore");
+    assert.equal(spy.calls[0].opts.detached, false);
+    assert.ok(session.logs.some((l) => /keeping system awake via caffeinate/.test(l)), "must log activation line");
+});
+
+test("caffeinate: scope=idle+display adds -d flag", async () => {
+    const spy = makeCaffeinateSpy();
+    await armWithCaffeinate({
+        env: { RALPH_CAFFEINATE: "1", RALPH_CAFFEINATE_SCOPE: "idle+display" },
+        platform: "darwin",
+        spawnSpy: spy,
+    });
+    assert.deepEqual(spy.calls[0].args, ["-id", "-w", "12345"]);
+});
+
+test("caffeinate: invalid scope falls back to idle", async () => {
+    const spy = makeCaffeinateSpy();
+    await armWithCaffeinate({
+        env: { RALPH_CAFFEINATE: "1", RALPH_CAFFEINATE_SCOPE: "bogus" },
+        platform: "darwin",
+        spawnSpy: spy,
+    });
+    assert.deepEqual(spy.calls[0].args, ["-i", "-w", "12345"]);
+});
+
+test("caffeinate: child is killed on loop completion", async () => {
+    const spy = makeCaffeinateSpy();
+    const { session, controller } = await armWithCaffeinate({
+        env: { RALPH_CAFFEINATE: "1" },
+        platform: "darwin",
+        spawnSpy: spy,
+    });
+    runTurn(session, "doing work");          // iter 1
+    runTurn(session, "still going COMPLETE"); // hits completion_promise
+    assert.equal(controller.state.active, null, "loop should be finished");
+    assert.equal(spy.children.length, 1);
+    assert.equal(spy.children[0].killed, true, "caffeinate child must be killed on finish");
+    assert.deepEqual(spy.children[0].killArgs, ["SIGTERM"]);
+});
+
+test("caffeinate: child is killed on ralph_stop", async () => {
+    const spy = makeCaffeinateSpy();
+    const { controller } = await armWithCaffeinate({
+        env: { RALPH_CAFFEINATE: "1" },
+        platform: "darwin",
+        spawnSpy: spy,
+    });
+    const stop = controller.tools.find((t) => t.name === "ralph_stop");
+    await stop.handler({});
+    assert.equal(spy.children[0].killed, true);
+});
+
+test("caffeinate: non-darwin platform is a silent no-op (logged skip, no spawn)", async () => {
+    const spy = makeCaffeinateSpy();
+    const { session } = await armWithCaffeinate({
+        env: { RALPH_CAFFEINATE: "1" },
+        platform: "linux",
+        spawnSpy: spy,
+    });
+    assert.equal(spy.calls.length, 0, "must NOT spawn on linux");
+    assert.ok(session.logs.some((l) => /caffeinate skipped/.test(l)), "must log a skip line on unsupported platforms");
+});
+
+test("caffeinate: spawn throw does not abort the loop", async () => {
+    const spy = makeCaffeinateSpy({ failSpawn: true });
+    const { session, armResult, controller } = await armWithCaffeinate({
+        env: { RALPH_CAFFEINATE: "1" },
+        platform: "darwin",
+        spawnSpy: spy,
+    });
+    assert.equal(armResult.armed, true, "loop must arm despite caffeinate spawn failure");
+    assert.notEqual(controller.state.active, null);
+    assert.ok(session.logs.some((l) => /caffeinate spawn failed/.test(l)), "must log spawn failure");
+});
+
+test("caffeinate: truthy variants ('true', 'YES', 'on') all enable", async () => {
+    for (const val of ["true", "YES", "on", "1"]) {
+        const spy = makeCaffeinateSpy();
+        await armWithCaffeinate({
+            env: { RALPH_CAFFEINATE: val },
+            platform: "darwin",
+            spawnSpy: spy,
+        });
+        assert.equal(spy.calls.length, 1, `value ${JSON.stringify(val)} should enable caffeinate`);
+    }
+});
+
+test("caffeinate: falsy values keep it off", async () => {
+    for (const val of ["0", "false", "", "no", "off"]) {
+        const spy = makeCaffeinateSpy();
+        await armWithCaffeinate({
+            env: { RALPH_CAFFEINATE: val },
+            platform: "darwin",
+            spawnSpy: spy,
+        });
+        assert.equal(spy.calls.length, 0, `value ${JSON.stringify(val)} should NOT enable caffeinate`);
+    }
+});
+
+test("caffeinate: README documents env vars and macOS-only scope", () => {
+    const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf8");
+    assert.match(readme, /## Keep system awake/, "README must document the caffeinate integration");
+    assert.ok(readme.includes("RALPH_CAFFEINATE"), "README must mention RALPH_CAFFEINATE env var");
+    assert.ok(readme.includes("RALPH_CAFFEINATE_SCOPE"), "README must mention RALPH_CAFFEINATE_SCOPE env var");
+    assert.match(readme, /macOS only|darwin/i, "README must clarify macOS-only scope");
 });

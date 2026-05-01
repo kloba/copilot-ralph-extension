@@ -701,7 +701,7 @@ export function createRalphController() {
                 additionalProperties: false,
             },
             handler: async (args) => {
-                if (!state.active) return failure("ralph_stop: no ralph_loop is currently running.");
+                if (!state.active) return failure("ralph_stop: no ralph_loop or self_improve is currently running.");
                 // ralph_stop's `reason` is optional (null/undefined valid).
                 // Anything else goes through the same shape + unknown-keys
                 // gate as ralph_loop so typos surface loudly.

@@ -1545,7 +1545,7 @@ test("ralph_stop with no active loop reports 'no loop' even if args have a typo"
     const stop = c.tools.find((t) => t.name === "ralph_stop");
     const r = await stop.handler({ resaon: "typo" });
     assert.equal(r.resultType, "failure");
-    assert.match(r.textResultForLlm, /no ralph_loop is currently running/);
+    assert.match(r.textResultForLlm, /no ralph_loop or self_improve is currently running/);
     assert.doesNotMatch(r.textResultForLlm, /unknown argument/);
 });
 
@@ -1780,9 +1780,22 @@ test("calling ralph_stop twice in a row: 2nd call reports no active loop", async
     assert.equal(controller.state.lastResult.reason, "user_stopped");
     const r2 = await stop.handler({ reason: "second" });
     assert.equal(r2.resultType, "failure");
-    assert.match(r2.textResultForLlm, /no ralph_loop is currently running/);
+    assert.match(r2.textResultForLlm, /no ralph_loop or self_improve is currently running/);
     // The original result must NOT be overwritten by the failed second stop.
     assert.equal(controller.state.lastResult.note, "first");
+});
+
+test("ralph_stop no-loop failure mentions BOTH ralph_loop and self_improve", async () => {
+    // ralph_stop tears down either flavor of armed loop, so the failure
+    // message must name both — otherwise an LLM that only ever called
+    // self_improve will think ralph_stop refers to a different state
+    // machine and won't realize it's the right cancellation tool.
+    const c = createRalphController();
+    const stop = c.tools.find((t) => t.name === "ralph_stop");
+    const r = await stop.handler({});
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /ralph_loop/);
+    assert.match(r.textResultForLlm, /self_improve/);
 });
 
 // ── hook ──────────────────────────────────────────────────────────────────

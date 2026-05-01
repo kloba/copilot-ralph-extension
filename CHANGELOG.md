@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Fixes
+- `extension/events-emit.mjs` — `makeRunId` now
+  substitutes `Date.now()` when `startedAt` is
+  non-finite (undefined / NaN / Infinity / string /
+  object). Without this, two callers that both
+  forgot to pass `startedAt` would generate the same
+  literal id (`"ralph_loop-undefined"`), collide on
+  the same per-run directory, and silently overwrite
+  each other's events. The lenient fallback matches
+  the file's documented contract ("swallow every
+  error so the loop keeps running") while preserving
+  the unique-per-call-id property the writer / TUI
+  depend on. Adds a regression test that pumps seven
+  bad-input shapes through `makeRunId` and asserts
+  each fallback yields a finite timestamp ≥ now().
+
 ### CI
 - `.github/workflows/ci.yml` — extend the syntax
   check loop to cover `packages/tui/src/*.mjs`,

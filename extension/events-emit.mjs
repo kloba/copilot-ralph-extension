@@ -28,10 +28,20 @@ export function resolveRunsRoot(env = process.env) {
     return join(homedir(), ".copilot", "ralph", "runs");
 }
 
-/** `${label}-${startedAt}` — stable, sortable, file-system safe. */
+/** `${label}-${startedAt}` — stable, sortable, file-system safe.
+ *
+ * Lenient by design: this module's contract is "swallow every error
+ * so the loop keeps running". A non-finite `startedAt` (undefined /
+ * NaN / Infinity / string) would otherwise stringify to e.g.
+ * `"ralph_loop-undefined"` and every subsequent invocation with the
+ * same defect would collide on the same per-run directory, silently
+ * overwriting events. Substitute `Date.now()` instead so each call
+ * still gets a unique, sortable id even under degraded input.
+ */
 export function makeRunId(label, startedAt) {
     const safeLabel = String(label || "ralph_loop").replace(/[^A-Za-z0-9_-]/g, "_");
-    return `${safeLabel}-${startedAt}`;
+    const safeTs = Number.isFinite(startedAt) ? startedAt : Date.now();
+    return `${safeLabel}-${safeTs}`;
 }
 
 function clipExcerpt(s) {

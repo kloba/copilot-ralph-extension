@@ -50,6 +50,26 @@ test("makeRunId: falls back to 'ralph_loop' when label is empty / null / undefin
     assert.equal(makeRunId(undefined, 1), "ralph_loop-1");
 });
 
+test("makeRunId: substitutes Date.now() when startedAt is non-finite", () => {
+    // Lenient by design: the file-level contract is "swallow every
+    // error so the loop keeps running". A literal `${label}-undefined`
+    // would collide on every subsequent call with a missing startedAt,
+    // silently overwriting the per-run directory. Substituting
+    // Date.now() preserves the unique, sortable id property even
+    // under degraded input.
+    const before = Date.now();
+    for (const bad of [undefined, null, NaN, Infinity, -Infinity, "1700000000000", {}]) {
+        const id = makeRunId("ralph_loop", bad);
+        const m = /^ralph_loop-(\d+)$/.exec(id);
+        assert.ok(m, `expected fallback runId, got ${id} (input: ${String(bad)})`);
+        const ts = Number(m[1]);
+        assert.ok(ts >= before, `fallback ts must be >= now() snapshot (got ${ts}, before ${before})`);
+    }
+    // Finite numeric startedAt is preserved verbatim.
+    assert.equal(makeRunId("ralph_loop", 0), "ralph_loop-0");
+    assert.equal(makeRunId("ralph_loop", 1700000000000), "ralph_loop-1700000000000");
+});
+
 test("createEventEmitter: write appends one JSONL line per call", () => {
     const lines = [];
     const fakeFs = {

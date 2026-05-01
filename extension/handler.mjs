@@ -582,10 +582,6 @@ export function createRalphController() {
         finish("aborted", note);
     };
 
-    // Shared arming body for ralph_loop (and, in a later iteration,
-    // self_improve). Caller is responsible for the session-attached
-    // and already-active guards plus arg validation; this helper
-    // mutates state.active and emits the arm log + success result.
     // Single source of truth for the "session not attached" refusal —
     // used by both arming tools so the wording stays in lockstep and the
     // label matches the calling tool.
@@ -608,6 +604,12 @@ export function createRalphController() {
         return failure(`${state.active.label} is already ${status} — call ralph_stop first.`);
     }
 
+    // Shared arming body for ralph_loop and self_improve. Caller is
+    // responsible for the session-attached and already-active guards
+    // plus arg validation; this helper mutates state.active and emits
+    // the arm log + success result. The `label` is woven through
+    // state.active.label, the arm log line, and the success text so
+    // every observable artifact reflects which tool armed the loop.
     function armLoop(parsedValue, label = "ralph_loop") {
         state.active = {
             ...parsedValue,

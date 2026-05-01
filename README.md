@@ -4,7 +4,7 @@
 
 [![Inspired by](https://img.shields.io/badge/inspired_by-Anthropic_Ralph_Wiggum-blue)](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)
 
-**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [How it works](#how-it-works) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)
+**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [How it works](#how-it-works) · [Commit attribution](#commit-attribution) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)
 
 ## What is Ralph Wiggum?
 
@@ -272,6 +272,37 @@ The SDK emits one `session.idle` per *root-level* agentic loop completion — no
 This mirrors how Anthropic's Claude Code `ralph-wiggum` plugin uses the `Stop` hook to re-prompt — same architectural shape, just expressed via the Copilot CLI extension SDK.
 
 If you arm a new `ralph_loop` *before* the next user prompt fires, the prior run's result is wiped during arming — the post-loop context from the previous run will **not** leak into the new loop's first prompt.
+
+## Commit attribution
+
+The baked `self_improve` and `grow_project` SDLC prompts instruct the agent to add a `Co-authored-by:` trailer to every commit so loop-driven changes are attributable. Today that's a single trailer:
+
+```
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+```
+
+**Planned (see [issue #1](https://github.com/kloba/copilot-ralph-extension/issues/1)):** add a *second* `Co-authored-by:` trailer pointing at a dedicated `copilot-ralph` GitHub account so commits made via this extension are also passively searchable across public GitHub:
+
+```
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>
+```
+
+Once the bot account is registered, `gh search commits "co-authored-by:copilot-ralph@users.noreply.github.com"` will surface every public-repo commit produced by a `self_improve` / `grow_project` run — a zero-infrastructure usage signal.
+
+### Opt-out
+
+Set `RALPH_NO_ATTRIBUTION=1` in the environment before arming the loop to suppress the second `copilot-ralph` trailer. The first `Copilot` trailer still ships, since it identifies the agent that made the change. The opt-out is **honored by the baked prompt**, not by the extension code path — the agent reads the env var during the COMMIT stage and omits the trailer accordingly.
+
+```bash
+RALPH_NO_ATTRIBUTION=1 copilot   # subsequent self_improve/grow_project loops omit the copilot-ralph trailer
+```
+
+### Caveats
+
+- **Only public-repo commits are searchable.** GitHub's commit search API does not index private repositories, so private-repo loops are invisible to `gh search commits` regardless of the trailer. The bot-account profile likewise only shows public contributions.
+- **This is effectively opt-in telemetry via git metadata.** No data leaves your machine — the trailer is just text in the commit object — but anyone reading the public commit log can correlate it with extension usage. The opt-out exists so you can disable that correlation per session without forking the extension.
+- **The bot account must exist before commits are made.** Unregistered noreply emails do not link retroactively to a GitHub account once the account is created — the `+copilot-ralph@users.noreply.github.com` mailbox has to be claimed first, then the trailers will associate going forward.
 
 ## Troubleshooting
 

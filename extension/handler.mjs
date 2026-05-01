@@ -373,10 +373,6 @@ export function createRalphController() {
     const log = (msg) => {
         try { sessionRef?.log?.(msg); } catch { /* swallow */ }
     };
-    const sendPrompt = (prompt) => {
-        if (!sessionRef?.send) throw new Error("session not attached");
-        return sessionRef.send({ prompt });
-    };
 
     // Fire iteration prompt; handle both sync throws and async rejections.
     // Captures the active-loop identity at fire-time so a late rejection from
@@ -413,7 +409,8 @@ export function createRalphController() {
             finish("send_error", `${prefix}: ${raw}`);
         };
         try {
-            const r = sendPrompt(prompt);
+            if (!sessionRef?.send) throw new Error("session not attached");
+            const r = sessionRef.send({ prompt });
             if (typeof r?.then === "function") {
                 r.catch((err) => handleSendFailure(err, "rejected"));
             }

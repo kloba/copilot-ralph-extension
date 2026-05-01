@@ -33,9 +33,24 @@
   any stale `lastResult` so the post-loop hook doesn't leak the
   previous run's preview into the next prompt.
 - README parameter table now surfaces the 200-char cap on
-  `completion_promise` / `abort_promise`.
+  `completion_promise` / `abort_promise`, the 65536-char cap on
+  `prompt`, and a rationale for why `stagnation_limit=1` is rejected.
 - `install.sh --help` extracts the comment block dynamically
-  (no hard-coded line range).
+  (no hard-coded line range), and Option C now documents the
+  `--help` flag alongside `--project` and `--dry-run`.
+- README polish pass: inline table of contents under the badge;
+  Troubleshooting section (5 entries covering missing-extensions,
+  already-armed, abort/completion overlap, send_error, runaway);
+  Windows install note (WSL / Git Bash / MSYS2 fallback for the
+  Bash-only `install.sh`); Node 20+ requirement called out in
+  Requirements; Changelog link section; timeline verb legend
+  (✅ / ⚠️ / ⏹ → finish reasons); `(elapsed Xms)` in the sample
+  iter log line; explicit `attach()` detach return shown in the
+  embedder snippet; bare ` ``` ` code fences tagged `text`;
+  redundant Tips bullets trimmed (one-loop-per-session,
+  stagnation-overrides-min) since the same facts live in
+  Limitations / Troubleshooting; abort/completion overlap example
+  spelled out with explicit assignment.
 
 ## 0.6.0
 

@@ -29,7 +29,7 @@ const USAGE = `\
 ralph-tui — terminal visualizer for ralph_loop runs (issue #22).
 
 USAGE
-  ralph-tui list [--json]
+  ralph-tui list [--json] [--limit N]
   ralph-tui replay <runId>
   ralph-tui watch [runId] [--plain]
   ralph-tui doctor
@@ -55,7 +55,7 @@ ENV
 /** Minimal argv parser. Returns { cmd, positional[], flags{} }.
  *  Supports `--flag`, `--flag=value`, and `--flag value` for a known
  *  set of value-taking flags (currently: --older-than). */
-const VALUE_FLAGS = new Set(["older-than"]);
+const VALUE_FLAGS = new Set(["older-than", "limit"]);
 export function parseArgv(argv) {
     const out = { cmd: null, positional: [], flags: {} };
     const args = [...argv];
@@ -95,7 +95,20 @@ function fail(msg, code = 2) {
 }
 
 function cmdList(opts = {}) {
-    const entries = readRunIndex();
+    let entries = readRunIndex();
+    if (opts.limit !== undefined) {
+        if (opts.limit === true) {
+            fail(`list: --limit requires a value (e.g. --limit 5)`);
+            return 2;
+        }
+        const s = String(opts.limit).trim();
+        const n = Number(s);
+        if (s === "" || !Number.isInteger(n) || n < 0) {
+            fail(`list: invalid --limit '${opts.limit}' (expected non-negative integer)`);
+            return 2;
+        }
+        entries = entries.slice(0, n);
+    }
     if (opts.json) {
         // Emit a stable JSON array (newest first) for scripts/dashboards.
         // Empty index → "[]\n" so consumers can JSON.parse unconditionally.
@@ -303,7 +316,7 @@ export async function main(argv = process.argv.slice(2)) {
         return 0;
     }
     switch (cmd) {
-        case "list": return cmdList({ json: Boolean(flags.json) });
+        case "list": return cmdList({ json: Boolean(flags.json), limit: flags.limit });
         case "replay": return cmdReplay(positional[0]);
         case "watch": return await cmdWatch(positional[0], { plain: flags.plain });
         case "doctor": return cmdDoctor();

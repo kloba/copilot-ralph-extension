@@ -290,3 +290,48 @@ test("bin --help: mentions --version", () => {
     const r = runBin(["--help"]);
     assert.match(r.stdout, /--version/);
 });
+
+function seedThreeRuns(dir) {
+    writeFileSync(join(dir, "index.jsonl"),
+        JSON.stringify({ type: "armed", ts: 1000, runId: "ralph_loop-1000", label: "ralph_loop", maxIterations: 5, minIterations: 1 }) + "\n"
+        + JSON.stringify({ type: "armed", ts: 2000, runId: "self_improve-2000", label: "self_improve", maxIterations: 100, minIterations: 5 }) + "\n"
+        + JSON.stringify({ type: "armed", ts: 3000, runId: "grow_project-3000", label: "grow_project", maxIterations: 50, minIterations: 1 }) + "\n",
+    );
+}
+
+test("bin list --limit N: prints at most N runs (newest first)", () => {
+    const dir = tmp();
+    seedThreeRuns(dir);
+    const r = runBin(["list", "--limit", "2", "--json"], { RALPH_EVENTS_DIR: dir });
+    assert.equal(r.status, 0);
+    const parsed = JSON.parse(r.stdout);
+    assert.equal(parsed.length, 2);
+    assert.equal(parsed[0].runId, "grow_project-3000");
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("bin list --limit 0: prints zero runs and exits 0", () => {
+    const dir = tmp();
+    seedThreeRuns(dir);
+    const r = runBin(["list", "--limit", "0", "--json"], { RALPH_EVENTS_DIR: dir });
+    assert.equal(r.status, 0);
+    assert.deepEqual(JSON.parse(r.stdout), []);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("bin list --limit nope: invalid value exits non-zero", () => {
+    const dir = tmp();
+    seedThreeRuns(dir);
+    const r = runBin(["list", "--limit", "nope"], { RALPH_EVENTS_DIR: dir });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /invalid --limit/);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("bin list (no --limit): all runs preserved", () => {
+    const dir = tmp();
+    seedThreeRuns(dir);
+    const r = runBin(["list", "--json"], { RALPH_EVENTS_DIR: dir });
+    assert.equal(JSON.parse(r.stdout).length, 3);
+    rmSync(dir, { recursive: true, force: true });
+});

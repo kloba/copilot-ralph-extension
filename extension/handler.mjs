@@ -41,6 +41,18 @@ function safeSliceEnd(s, cut) {
     return code >= 0xd800 && code <= 0xdbff ? cut - 1 : cut;
 }
 
+// Mirror of safeSliceEnd for the START side: if the kept slice would begin
+// on a lone low surrogate (0xdc00..0xdfff) — its high surrogate was just
+// dropped by the head-trim — bump the start forward by 1 so we never
+// produce an invalid UTF-16 string. Matters for the 1 MiB rolling buffer
+// in onAssistantMessage where slicing from the head can otherwise leave
+// a torn pair at position 0 that prints as a replacement char and reads
+// like garbage to anything inspecting state.lastAssistantContent.
+function safeSliceStart(s, start) {
+    const code = s.charCodeAt(start);
+    return code >= 0xdc00 && code <= 0xdfff ? start + 1 : start;
+}
+
 function previewOf(text) {
     if (!text) return "";
     if (text.length <= PREVIEW_CHARS) return text;
@@ -389,8 +401,11 @@ export function createRalphController() {
         // Bound memory: drop oldest content past the cap. The completion /
         // abort / stagnation checks only ever inspect this string, and a
         // 1 MiB tail is more than enough to find any reasonable signal.
+        // Use safeSliceStart so the head-trim never leaves a lone low
+        // surrogate at position 0 (which would corrupt the buffer for any
+        // downstream consumer that tries to render it).
         state.lastAssistantContent = next.length > MAX_CONTENT_CHARS
-            ? next.slice(next.length - MAX_CONTENT_CHARS)
+            ? next.slice(safeSliceStart(next, next.length - MAX_CONTENT_CHARS))
             : next;
     };
 

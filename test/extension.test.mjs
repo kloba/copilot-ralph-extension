@@ -1195,6 +1195,37 @@ test("ralph_stop reason at exactly PREVIEW_CHARS passes through unchanged (bound
     assert.equal(controller.state.lastResult.note, exactlyAtCap);
 });
 
+test("lastAssistantContent head-trim does not split a UTF-16 surrogate pair", async () => {
+    // The 1 MiB rolling buffer slices from the HEAD when overflowing. If
+    // the slice boundary lands inside a surrogate pair, the new buffer
+    // would start with a lone low surrogate (0xdc00..0xdfff) — invalid
+    // UTF-16 that prints as a replacement char. safeSliceStart bumps the
+    // start forward by 1 in that case. Pin it.
+    const { session, controller } = await arm({ max_iterations: 5, stagnation_limit: 0 });
+    session.emit("session.idle", { data: {} });
+    const cap = __test__.MAX_CONTENT_CHARS;
+    // Construct content so the head-trim boundary lands EXACTLY between
+    // the two halves of a surrogate pair:
+    //   index 0: 'a'        (will be dropped)
+    //   index 1: HIGH surr  (will be dropped)
+    //   index 2: LOW surr   (would be kept as a LONE low surrogate without the fix)
+    //   indices 3..cap+1: 'a' * (cap - 1)
+    // Total length = cap + 2 → slice(next.length - cap) = slice(2) → kept buffer
+    // starts at the lone low surrogate. safeSliceStart must bump to slice(3).
+    const emoji = "\uD83D\uDE00"; // 😀, U+1F600
+    const content = "a" + emoji + "a".repeat(cap - 1);
+    assert.equal(content.length, cap + 2);
+    session.emit("assistant.message", { data: { content } });
+    const buf = controller.state.lastAssistantContent;
+    assert.ok(buf.length <= cap, `length ${buf.length} > cap ${cap}`);
+    // The first code unit must NOT be a lone low surrogate.
+    const firstCode = buf.charCodeAt(0);
+    assert.ok(
+        firstCode < 0xdc00 || firstCode > 0xdfff,
+        `expected no lone low surrogate at buffer head, got 0x${firstCode.toString(16)}`,
+    );
+});
+
 test("lastAssistantContent is capped at MAX_CONTENT_CHARS (1 MiB)", async () => {
     const { session, controller } = await arm({ max_iterations: 5, stagnation_limit: 0 });
     session.emit("session.idle", { data: {} });

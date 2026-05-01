@@ -44,13 +44,20 @@ function serialize(ev) {
     const cleaned = { ...ev };
     if (typeof cleaned.excerpt === "string") cleaned.excerpt = clipExcerpt(cleaned.excerpt);
     if (typeof cleaned.note === "string") cleaned.note = clipExcerpt(cleaned.note);
-    let line = JSON.stringify(cleaned);
+    // `JSON.stringify` throws on circular refs and BigInt. The
+    // file-level contract is "swallow every error so the loop keeps
+    // running" — so we must catch here too. A single malformed event
+    // is dropped silently; the loop continues.
+    let line;
+    try { line = JSON.stringify(cleaned); }
+    catch { return null; }
     if (Buffer.byteLength(line, "utf8") <= MAX_EVENT_LINE_BYTES) return line;
     // Last-resort: drop the excerpt/note entirely so at least the type +
     // ids land on disk.
     delete cleaned.excerpt;
     delete cleaned.note;
-    line = JSON.stringify(cleaned);
+    try { line = JSON.stringify(cleaned); }
+    catch { return null; }
     if (Buffer.byteLength(line, "utf8") <= MAX_EVENT_LINE_BYTES) return line;
     return null; // unrecoverable; caller swallows.
 }

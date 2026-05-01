@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Fixes
+- `extension/events-emit.mjs` — `serialize()` now
+  catches `JSON.stringify` throws (e.g. circular
+  refs, `BigInt` payloads) and drops the bad event
+  instead of crashing the loop. The file's contract
+  is "swallow every error so the loop keeps running"
+  (lines 6-8); the two un-guarded `JSON.stringify`
+  calls were the last paths through which a single
+  malformed internal event could take the entire
+  ralph_loop / self_improve / grow_project process
+  down. Adds a regression test that pumps a `BigInt`
+  field and a self-referential cycle through
+  `e.write()` and asserts no throw + no partial line
+  on disk + a subsequent good event still writes.
+
 ### Internal
 - `.gitignore` — add `.env`, `.env.*`, `coverage/`,
   and `*.tgz` to the repo's ignore list. The `.env*`

@@ -205,3 +205,35 @@ test("createEventEmitter: oversize event line is dropped after stripping excerpt
     e.write({ type: "iteration_end", runId: "r", ts: 1, iteration: 1, payload: huge });
     assert.equal(captured.length, 0);
 });
+
+test("createEventEmitter: BigInt / circular ref events are dropped, not thrown", () => {
+    // The file-level contract is "swallow every error so the loop keeps
+    // running" (see extension/events-emit.mjs lines 6-8). Before this
+    // guard, a single event containing a BigInt or a circular ref would
+    // throw out of `JSON.stringify` inside `serialize()`, propagate
+    // through `write()`, and crash the entire loop. Now both cases
+    // drop the bad event silently and leave the disk untouched.
+    const captured = [];
+    const e = createEventEmitter({
+        label: "ralph_loop",
+        startedAt: 1,
+        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        fs: {
+            mkdirSync: () => {},
+            appendFileSync: (_, line) => captured.push(line),
+        },
+    });
+    // BigInt is not JSON-serialisable.
+    assert.doesNotThrow(() => {
+        e.write({ type: "iteration_end", runId: "r", ts: 1, badField: 1n });
+    });
+    // Circular reference in note-like payload.
+    const cyc = { type: "iteration_end", runId: "r", ts: 1 };
+    cyc.self = cyc;
+    assert.doesNotThrow(() => { e.write(cyc); });
+    assert.equal(captured.length, 0, "no malformed event should reach the disk");
+
+    // Sanity: a well-formed event still writes after a poisoned one.
+    e.write({ type: "iteration_end", runId: "r", ts: 2, iteration: 1 });
+    assert.equal(captured.length, 1);
+});

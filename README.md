@@ -65,6 +65,8 @@ cd copilot-ralph-extension
 
 `install.sh` syntax-checks each source file with `node --check` and writes via temp-file + atomic `mv`, so a concurrent Copilot CLI reload can never see a half-written `handler.mjs`.
 
+> **Windows note:** the runtime extension (`extension.mjs` + `handler.mjs`) is plain ESM and works wherever Copilot CLI runs. The `install.sh` script requires a Bash shell — on Windows use **WSL**, **Git Bash**, or **MSYS2**. As a fallback, follow Option A or B above (the `mkdir -p` + `curl` snippets) inside any POSIX-ish shell, or copy `extension/extension.mjs` and `extension/handler.mjs` manually into `%USERPROFILE%\.copilot\extensions\ralph\`.
+
 ## Usage
 
 In a Copilot CLI session, ask the agent to invoke `ralph_loop`:

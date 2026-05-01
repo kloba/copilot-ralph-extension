@@ -150,6 +150,11 @@ test("validateArgs: rejects non-string completion/abort promise with typed error
 test("validateArgs: rejects identical completion and abort promise", () => {
     const r = validateArgs({ prompt: "x", completion_promise: "DONE", abort_promise: "DONE" });
     assert.match(r.error, /must differ/);
+    // Pin diagnosability: the colliding value MUST appear in the message.
+    // When promises come from upstream config / env vars rather than a
+    // hand-typed call, surfacing the actual value tells the user *which*
+    // signal was duplicated without making them rerun with logging.
+    assert.match(r.error, /"DONE"/);
 });
 
 test("validateArgs: rejects substring overlap between completion and abort promises", () => {

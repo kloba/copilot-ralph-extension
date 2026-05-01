@@ -249,7 +249,7 @@ export function validateArgs(args) {
 
     if (abortPromise !== null && abortPromise === completionPromise) {
         return {
-            error: "ralph_loop: abort_promise must differ from completion_promise (otherwise the signal is ambiguous).",
+            error: `ralph_loop: abort_promise must differ from completion_promise (both are ${JSON.stringify(completionPromise)} — the signal would be ambiguous).`,
         };
     }
     if (abortPromise !== null && (abortPromise.includes(completionPromise) || completionPromise.includes(abortPromise))) {

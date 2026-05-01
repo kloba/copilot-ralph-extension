@@ -972,6 +972,14 @@ test("PROMPT_GROW_PROJECT references the gh-issue backlog + acceptance + demo co
     assert.match(p, /gh issue list[^\n]*--state\s+open/, "ORIENT must scope the backlog query to --state open");
     assert.match(p, /gh issue create/, "must instruct the agent to create proposed issues");
     assert.match(p, /gh issue close/, "must instruct the agent to close completed issues");
+    // CLOSE stage must specify `--reason completed` explicitly.
+    // Without the flag, the issue closes with gh's default reason
+    // (which on a recent gh CLI is "not planned" — the wrong
+    // semantic for shipped work). That corrupts repo metrics
+    // (closed-not-planned vs closed-completed) and makes "what
+    // shipped vs what was abandoned" hard to distinguish.
+    assert.match(p, /gh issue close[^\n]*--reason\s+completed/,
+        "CLOSE must use --reason completed, not the default close reason");
     // Three-part completion gate
     assert.match(p, /acceptance/i, "must reference the acceptance check");
     assert.match(p, /demo/i, "must reference the demo invocation");

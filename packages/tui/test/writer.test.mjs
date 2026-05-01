@@ -10,6 +10,7 @@ import {
     resolveRunEventsPath,
     resolveRunsRoot,
     aggregateRuns,
+    pruneRuns,
 } from "../src/writer.mjs";
 import { makeRunId } from "../src/events.mjs";
 
@@ -312,4 +313,104 @@ test("aggregateRuns: mean is arithmetic over runs with iterations", () => {
     assert.equal(r.total, 2);
     assert.equal(r.iters.max, 8);
     assert.equal(r.iters.mean, 5);
+});
+
+test("pruneRuns: refuses to delete entries whose runId contains traversal segments", () => {
+    const root = mkTmp();
+    const indexPath = path.join(root, "index.jsonl");
+    // Two armed rows: one legitimate (old enough to prune) and one
+    // hostile entry whose runId would escape the runs root via
+    // path.join. The hostile sibling directory is a sentinel we set
+    // up OUTSIDE the runs root and assert is still present after the
+    // prune.
+    const sentinel = fs.mkdtempSync(path.join(os.tmpdir(), "ralph-tui-sentinel-"));
+    const sentinelMarker = path.join(sentinel, "do-not-delete.txt");
+    fs.writeFileSync(sentinelMarker, "keep me\n");
+    const goodId = "good-run-id";
+    fs.mkdirSync(path.join(root, goodId), { recursive: true });
+    fs.writeFileSync(path.join(root, goodId, "events.jsonl"), "");
+    const hostileId = `../${path.basename(sentinel)}`;
+    fs.writeFileSync(
+        indexPath,
+        JSON.stringify({ type: "armed", runId: goodId, ts: 100 }) + "\n" +
+            JSON.stringify({ type: "armed", runId: hostileId, ts: 100 }) + "\n",
+    );
+    const result = pruneRuns({
+        olderThanMs: 10,
+        now: () => 10_000,
+        env: { RALPH_EVENTS_DIR: root },
+    });
+    // Only the legitimate run was removed.
+    assert.deepEqual(result.removed.map((r) => r.runId), [goodId]);
+    // The hostile row remains in the index (defence-in-depth survival).
+    assert.equal(result.kept, 1);
+    const survivingIndex = fs.readFileSync(indexPath, "utf8").trim().split("\n")
+        .map((l) => JSON.parse(l));
+    assert.equal(survivingIndex.length, 1);
+    assert.equal(survivingIndex[0].runId, hostileId);
+    // And the sibling directory is still on disk.
+    assert.ok(fs.existsSync(sentinelMarker), "sentinel must survive prune");
+    fs.rmSync(sentinel, { recursive: true, force: true });
+});
+
+test("pruneRuns: deletes only the per-run dir, leaves index for fresh runs", () => {
+    const root = mkTmp();
+    const indexPath = path.join(root, "index.jsonl");
+    const oldId = "old-run";
+    const newId = "new-run";
+    fs.mkdirSync(path.join(root, oldId), { recursive: true });
+    fs.writeFileSync(path.join(root, oldId, "events.jsonl"), "x\n");
+    fs.mkdirSync(path.join(root, newId), { recursive: true });
+    fs.writeFileSync(path.join(root, newId, "events.jsonl"), "y\n");
+    fs.writeFileSync(
+        indexPath,
+        JSON.stringify({ type: "armed", runId: oldId, ts: 1 }) + "\n" +
+            JSON.stringify({ type: "armed", runId: newId, ts: 9_500 }) + "\n",
+    );
+    const result = pruneRuns({
+        olderThanMs: 1_000,
+        now: () => 10_000,
+        env: { RALPH_EVENTS_DIR: root },
+    });
+    assert.equal(result.removed.length, 1);
+    assert.equal(result.removed[0].runId, oldId);
+    assert.equal(result.kept, 1);
+    assert.ok(!fs.existsSync(path.join(root, oldId)), "old run dir should be gone");
+    assert.ok(fs.existsSync(path.join(root, newId)), "new run dir should survive");
+});
+
+test("pruneRuns: dryRun never touches the filesystem", () => {
+    const root = mkTmp();
+    const indexPath = path.join(root, "index.jsonl");
+    const oldId = "old-run";
+    fs.mkdirSync(path.join(root, oldId), { recursive: true });
+    fs.writeFileSync(
+        indexPath,
+        JSON.stringify({ type: "armed", runId: oldId, ts: 1 }) + "\n",
+    );
+    const before = fs.readFileSync(indexPath, "utf8");
+    const result = pruneRuns({
+        olderThanMs: 1,
+        dryRun: true,
+        now: () => 10_000,
+        env: { RALPH_EVENTS_DIR: root },
+    });
+    assert.equal(result.removed.length, 1);
+    assert.ok(fs.existsSync(path.join(root, oldId)), "dryRun must not delete");
+    assert.equal(fs.readFileSync(indexPath, "utf8"), before, "dryRun must not rewrite index");
+});
+
+test("pruneRuns: rejects bad olderThanMs argument", () => {
+    assert.throws(() => pruneRuns({ olderThanMs: -1 }), /non-negative/);
+    assert.throws(() => pruneRuns({ olderThanMs: NaN }), /non-negative/);
+    assert.throws(() => pruneRuns({ olderThanMs: "10" }), /non-negative/);
+});
+
+test("pruneRuns: missing index.jsonl returns empty result", () => {
+    const root = mkTmp();
+    const result = pruneRuns({
+        olderThanMs: 1,
+        env: { RALPH_EVENTS_DIR: root },
+    });
+    assert.deepEqual(result, { removed: [], kept: 0 });
 });

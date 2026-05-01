@@ -44,16 +44,27 @@ export function resolveRunEventsPath(runId, deps = {}) {
     if (typeof runId !== "string" || !runId) {
         throw new TypeError("resolveRunEventsPath: runId must be a non-empty string");
     }
-    // Reject path-traversal payloads so a stray `replay ../../etc/passwd`
-    // (or a hostile runId surfaced via shell completion / autofill) cannot
-    // escape the runs root. Legitimately emitted runIds are produced by
-    // `makeRunId` and only contain `[A-Za-z0-9_-]`, so this is purely a
-    // safety net for user-supplied input on the TUI subcommands.
-    if (runId.includes("/") || runId.includes("\\") || runId.includes("\0") || runId === "." || runId === ".." || runId.includes("..")) {
+    if (isPathTraversalRunId(runId)) {
         throw new TypeError(`resolveRunEventsPath: runId ${JSON.stringify(runId)} contains path separators or traversal segments`);
     }
     const path = deps.path ?? pathDefault;
     return path.join(resolveRunsRoot(deps), runId, "events.jsonl");
+}
+
+// Reject path-traversal payloads so a stray `replay ../../etc/passwd`
+// (or a hostile/corrupted index.jsonl row whose `runId` was hand-edited
+// to escape the runs root) cannot reach the filesystem outside the
+// resolved runs directory. Legitimately emitted runIds are produced by
+// `makeRunId` and only contain `[A-Za-z0-9_-]`, so this is purely a
+// safety net for caller-supplied input. Shared between
+// `resolveRunEventsPath` (read path) and `pruneRuns` (delete path).
+function isPathTraversalRunId(runId) {
+    return runId.includes("/")
+        || runId.includes("\\")
+        || runId.includes("\0")
+        || runId === "."
+        || runId === ".."
+        || runId.includes("..");
 }
 
 /**
@@ -331,6 +342,18 @@ export function pruneRuns({
         let obj;
         try { obj = JSON.parse(trimmed); } catch { continue; }
         if (!obj || obj.type !== "armed" || typeof obj.runId !== "string") continue;
+        // Defence in depth: an index.jsonl row whose `runId` contains a
+        // path separator or traversal segment must NEVER reach rmSync —
+        // `path.join(root, "../etc")` resolves outside the runs root and
+        // `rmSync(..., { force: true, recursive: true })` would happily
+        // wipe out a sibling directory. The writer never produces such
+        // ids (makeRunId emits `[A-Za-z0-9_-]+`), but a hand-edited or
+        // corrupted index.jsonl could. Treat the row as a survivor so
+        // the index keeps it but no destructive action runs.
+        if (isPathTraversalRunId(obj.runId)) {
+            survivors.push(trimmed);
+            continue;
+        }
         if (typeof obj.ts === "number" && obj.ts < cutoff) {
             removed.push({ runId: obj.runId, ts: obj.ts });
         } else {

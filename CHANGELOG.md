@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+### Fixes
+- `packages/tui/src/writer.mjs` — harden `pruneRuns`
+  against the same path-traversal class
+  `resolveRunEventsPath` already rejects (issue
+  follow-up to fb2d2f8). Today a hand-edited or
+  corrupted `index.jsonl` row whose `runId` contained
+  `..`, `/`, `\`, or `\0` would let `path.join(root,
+  runId)` resolve outside the runs root, after which
+  `rmSync(..., { recursive: true, force: true })`
+  would happily delete the sibling directory. The
+  writer never produces such ids — `makeRunId` only
+  emits `[A-Za-z0-9_-]+` — so this is purely a
+  defence-in-depth guard for caller-supplied input.
+  Hostile rows are now treated as survivors: they
+  stay in the index (so an operator can audit them)
+  but never reach `rmSync`. Extracted the runId
+  predicate into a shared `isPathTraversalRunId`
+  helper so the read path (`resolveRunEventsPath`)
+  and the delete path (`pruneRuns`) cannot drift.
+
+### Tests
+- Add 5 direct unit tests for `pruneRuns` in
+  `packages/tui/test/writer.test.mjs` (until now this
+  helper was uncovered): the new path-traversal
+  guard via a sentinel sibling directory, the happy
+  path that deletes only the matching per-run dir,
+  `dryRun: true` byte-for-byte fidelity of the
+  index, input-validation of `olderThanMs`, and the
+  empty-state path when `index.jsonl` is absent.
+
 ### CI
 - `.github/workflows/ci.yml` — the **Syntax check** step
   was hard-coded to `node --check extension/extension.mjs

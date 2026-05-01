@@ -9,7 +9,6 @@
 set -euo pipefail
 
 DRY_RUN=0
-TARGET_FLAG=""
 SEEN_DRY_RUN=0
 SEEN_PROJECT=0
 # Reject duplicates so a copy-paste typo (`./install.sh --dry-run --dry-run`)
@@ -40,7 +39,6 @@ for arg in "$@"; do
     --project)
       reject_duplicate --project SEEN_PROJECT
       SEEN_PROJECT=1
-      TARGET_FLAG="--project"
       ;;
     *)
       echo "Error: unknown argument '$arg' (try --help)." >&2
@@ -75,7 +73,7 @@ else
   echo "Warning: node not found; skipping syntax check." >&2
 fi
 
-if [[ "$TARGET_FLAG" == "--project" ]]; then
+if [[ "$SEEN_PROJECT" == "1" ]]; then
   GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
   if [[ -z "$GIT_ROOT" ]]; then
     echo "Error: --project requires being inside a git repo." >&2

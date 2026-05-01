@@ -829,6 +829,22 @@ test("self_improve respects max_iterations / min_iterations overrides", async ()
     assert.equal(r.min, 10);
 });
 
+test("self_improve rejects min_iterations > max_iterations with self_improve prefix", async () => {
+    // Mirror of the ralph_loop "min_iterations must be ≤ max_iterations"
+    // test — self_improve delegates to validateArgs, which emits the
+    // error with a "ralph_loop:" prefix, then the handler must rewrite
+    // it to "self_improve:" before returning.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({ min_iterations: 5, max_iterations: 3 });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /^self_improve:/);
+    assert.match(r.textResultForLlm, /min_iterations/);
+    assert.doesNotMatch(r.textResultForLlm, /ralph_loop:/);
+});
+
 test("self_improve rejects unknown args", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

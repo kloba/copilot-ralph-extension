@@ -335,3 +335,28 @@ test("bin list (no --limit): all runs preserved", () => {
     assert.equal(JSON.parse(r.stdout).length, 3);
     rmSync(dir, { recursive: true, force: true });
 });
+
+test("bin where: prints default runs root", () => {
+    const r = runBin(["where"], { RALPH_EVENTS_DIR: "" });  // empty -> default
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /\.copilot\/ralph\/runs\n$/);
+});
+
+test("bin where: honours RALPH_EVENTS_DIR override", () => {
+    const dir = tmp();
+    const r = runBin(["where"], { RALPH_EVENTS_DIR: dir });
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, dir + "\n");
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("bin where: works even when directory does not exist", () => {
+    const r = runBin(["where"], { RALPH_EVENTS_DIR: "/tmp/ralph-tui-does-not-exist-zz" });
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, "/tmp/ralph-tui-does-not-exist-zz\n");
+});
+
+test("bin --help: mentions where", () => {
+    const r = runBin(["--help"]);
+    assert.match(r.stdout, /ralph-tui where/);
+});

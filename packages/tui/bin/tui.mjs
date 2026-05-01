@@ -35,6 +35,7 @@ USAGE
   ralph-tui doctor
   ralph-tui prune [--older-than 30d] [--dry-run]
   ralph-tui stats
+  ralph-tui where
   ralph-tui --help | -h
 
 OPTIONS
@@ -305,6 +306,11 @@ export function readTuiVersion() {
     }
 }
 
+export function cmdWhere() {
+    process.stdout.write(resolveRunsRoot() + "\n");
+    return 0;
+}
+
 export async function main(argv = process.argv.slice(2)) {
     const { cmd, positional, flags } = parseArgv(argv);
     if (flags.version) {
@@ -322,6 +328,7 @@ export async function main(argv = process.argv.slice(2)) {
         case "doctor": return cmdDoctor();
         case "prune": return cmdPrune(flags);
         case "stats": return cmdStats();
+        case "where": return cmdWhere();
         default:
             fail(`unknown command: ${cmd}\n${USAGE}`);
             return 2;

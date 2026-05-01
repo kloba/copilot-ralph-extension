@@ -10,6 +10,8 @@ set -euo pipefail
 
 DRY_RUN=0
 TARGET_FLAG=""
+SEEN_DRY_RUN=0
+SEEN_PROJECT=0
 for arg in "$@"; do
   case "$arg" in
     --help|-h)
@@ -20,9 +22,22 @@ for arg in "$@"; do
       exit 0
       ;;
     --dry-run)
+      # Reject duplicates so a copy-paste typo (`./install.sh --dry-run
+      # --dry-run`) surfaces loudly instead of being silently accepted.
+      # The user almost certainly meant a different second flag.
+      if [[ "$SEEN_DRY_RUN" == "1" ]]; then
+        echo "Error: --dry-run specified more than once." >&2
+        exit 1
+      fi
+      SEEN_DRY_RUN=1
       DRY_RUN=1
       ;;
     --project)
+      if [[ "$SEEN_PROJECT" == "1" ]]; then
+        echo "Error: --project specified more than once." >&2
+        exit 1
+      fi
+      SEEN_PROJECT=1
       TARGET_FLAG="--project"
       ;;
     *)

@@ -418,7 +418,7 @@ export function createRalphController() {
         };
         try {
             const r = sendPrompt(prompt);
-            if (r && typeof r.then === "function") {
+            if (typeof r?.then === "function") {
                 r.catch((err) => handleSendFailure(err, "rejected"));
             }
         } catch (err) {

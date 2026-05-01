@@ -99,6 +99,16 @@ test("validateArgs: rejects bad max_iterations", () => {
     assert.ok(validateArgs({ prompt: "x", max_iterations: 5 }).value);
 });
 
+test("validateArgs: range error displays empty/string raw values clearly (got \"\")", () => {
+    // Bare `${rawMax}` rendered an empty string as a phantom blank
+    // — `(got ).` — which looks like a bug in the error message itself.
+    // Quote string inputs so the user sees what they actually passed.
+    assert.match(validateArgs({ prompt: "x", max_iterations: "" }).error, /\(got ""\)/);
+    assert.match(validateArgs({ prompt: "x", max_iterations: "abc" }).error, /\(got "abc"\)/);
+    // Numbers stay unquoted (no fake "1.5" string artifact).
+    assert.match(validateArgs({ prompt: "x", max_iterations: 1.5 }).error, /\(got 1\.5\)/);
+});
+
 test("validateArgs: rejects empty/whitespace-only completion/abort promise strings", () => {
     assert.match(validateArgs({ prompt: "x", completion_promise: "" }).error, /completion_promise/);
     assert.match(validateArgs({ prompt: "x", completion_promise: "   " }).error, /whitespace-only/);

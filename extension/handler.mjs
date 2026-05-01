@@ -113,6 +113,15 @@ function describeArgType(args) {
     return typeof args;
 }
 
+// Render a raw arg value for human-readable error messages. Quotes string
+// inputs so an empty/whitespace-only value displays as `""` instead of an
+// invisible blank, and stringifies NaN/Infinity as themselves rather than
+// JSON.stringify's "null".
+function displayValue(v) {
+    if (typeof v === "string") return JSON.stringify(v);
+    return String(v);
+}
+
 function validateArgShape(toolName, args, knownKeys) {
     if (args === null || args === undefined || typeof args !== "object" || Array.isArray(args)) {
         return { error: `${toolName}: arguments must be an object (got ${describeArgType(args)}).` };
@@ -172,7 +181,7 @@ export function validateArgs(args) {
     const max = Number(rawMax);
     if (!Number.isInteger(max) || max < 1 || max > MAX_ALLOWED_ITERATIONS) {
         return {
-            error: `ralph_loop: max_iterations must be an integer in [1, ${MAX_ALLOWED_ITERATIONS}] (got ${rawMax}).`,
+            error: `ralph_loop: max_iterations must be an integer in [1, ${MAX_ALLOWED_ITERATIONS}] (got ${displayValue(rawMax)}).`,
         };
     }
 
@@ -183,7 +192,7 @@ export function validateArgs(args) {
     const min = Number(rawMin);
     if (!Number.isInteger(min) || min < 1 || min > max) {
         return {
-            error: `ralph_loop: min_iterations must be an integer in [1, max_iterations=${max}] (got ${rawMin}).`,
+            error: `ralph_loop: min_iterations must be an integer in [1, max_iterations=${max}] (got ${displayValue(rawMin)}).`,
         };
     }
 
@@ -231,7 +240,7 @@ export function validateArgs(args) {
     const stagnationLimit = Number(rawStagnation);
     if (!Number.isInteger(stagnationLimit) || stagnationLimit < 0 || stagnationLimit === 1) {
         return {
-            error: `ralph_loop: stagnation_limit must be 0 (disabled) or an integer ≥ 2 (got ${rawStagnation}). 1 is meaningless because no comparison is possible after a single response.`,
+            error: `ralph_loop: stagnation_limit must be 0 (disabled) or an integer ≥ 2 (got ${displayValue(rawStagnation)}). 1 is meaningless because no comparison is possible after a single response.`,
         };
     }
 

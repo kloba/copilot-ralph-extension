@@ -586,6 +586,18 @@ export function createRalphController() {
     // self_improve). Caller is responsible for the session-attached
     // and already-active guards plus arg validation; this helper
     // mutates state.active and emits the arm log + success result.
+    // Single source of truth for the "another loop is already active"
+    // refusal — used by both ralph_loop and self_improve so the message
+    // and iteration-counter logic can never drift.
+    function activeLoopGuard() {
+        if (!state.active) return null;
+        const { pendingFire, i, max } = state.active;
+        const status = pendingFire
+            ? `armed (iteration 1/${max} pending)`
+            : `running (iteration ${i}/${max})`;
+        return failure(`${state.active.label} is already ${status} — call ralph_stop first.`);
+    }
+
     function armLoop(parsedValue, label = "ralph_loop") {
         state.active = {
             ...parsedValue,
@@ -680,15 +692,8 @@ export function createRalphController() {
                         "ralph_loop: session not attached — controller.attach(session) must be called before invoking ralph_loop.",
                     );
                 }
-                if (state.active) {
-                    const { pendingFire, i, max } = state.active;
-                    // Both branches share the same "— call ralph_stop first" tail;
-                    // only the iteration counter and arm-vs-run verb differ.
-                    const status = pendingFire
-                        ? `armed (iteration 1/${max} pending)`
-                        : `running (iteration ${i}/${max})`;
-                    return failure(`${state.active.label} is already ${status} — call ralph_stop first.`);
-                }
+                const guard = activeLoopGuard();
+                if (guard) return guard;
                 const parsed = validateArgs(args);
                 if (parsed.error) return failure(parsed.error);
                 return armLoop(parsed.value);
@@ -786,13 +791,8 @@ export function createRalphController() {
                         "self_improve: session not attached — controller.attach(session) must be called before invoking self_improve.",
                     );
                 }
-                if (state.active) {
-                    const { pendingFire, i, max } = state.active;
-                    const status = pendingFire
-                        ? `armed (iteration 1/${max} pending)`
-                        : `running (iteration ${i}/${max})`;
-                    return failure(`${state.active.label} is already ${status} — call ralph_stop first.`);
-                }
+                const guard = activeLoopGuard();
+                if (guard) return guard;
                 if (args !== null && args !== undefined) {
                     const shape = validateArgShape("self_improve", args, SELF_IMPROVE_KEYS);
                     if (shape) return failure(shape.error);

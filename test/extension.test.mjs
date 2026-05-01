@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -4694,6 +4695,35 @@ test(".gitignore protects against committing common secret-bearing files", () =>
             lines.includes(required),
             `.gitignore must list ${required} to prevent accidental secret commits`,
         );
+    }
+});
+
+test("every shipped .mjs parses cleanly with `node --check`", () => {
+    // Mirror the CI "Syntax check" job locally so a broken syntax in
+    // any shipped file fails `npm test` immediately, regardless of
+    // whether any test imports the file. The TUI's component tests
+    // skip in CI when ink/react aren't installed, so without this
+    // guard a typo in `packages/tui/src/components/*.mjs` would slip
+    // through CI undetected.
+    const dirs = [
+        "extension",
+        "packages/tui/src",
+        "packages/tui/src/components",
+        "packages/tui/bin",
+    ];
+    const files = [];
+    for (const dir of dirs) {
+        const abs = resolve(REPO_ROOT, dir);
+        for (const entry of readdirSync(abs, { withFileTypes: true })) {
+            if (entry.isFile() && entry.name.endsWith(".mjs")) {
+                files.push(resolve(abs, entry.name));
+            }
+        }
+    }
+    assert.ok(files.length >= 10, `expected to scan many .mjs files (got ${files.length})`);
+    for (const f of files) {
+        const r = spawnSync(process.execPath, ["--check", f], { encoding: "utf8" });
+        assert.equal(r.status, 0, `node --check failed for ${f}: ${r.stderr || r.stdout}`);
     }
 });
 

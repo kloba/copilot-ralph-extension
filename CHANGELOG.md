@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### CI
+- `.github/workflows/ci.yml` — extend the syntax
+  check loop to cover `packages/tui/src/*.mjs`,
+  `packages/tui/src/components/*.mjs`, and
+  `packages/tui/bin/*.mjs` in addition to
+  `extension/*.mjs`. The TUI's component tests
+  dynamically skip in CI when `ink` / `react` aren't
+  installed (the workflow does not run `cd
+  packages/tui && npm install`), so a syntax error in
+  any component file would otherwise slip through
+  CI undetected. Parse-checking is dependency-free
+  and ~10 ms per file, closing the gap cheaply.
+
+### Tests
+- `test/extension.test.mjs` — add a local mirror of
+  the CI parse-check (`every shipped .mjs parses
+  cleanly with \`node --check\``) so `npm test` fails
+  immediately on a syntax regression in any shipped
+  `.mjs`, regardless of whether any test imports it.
+
 ### Fixes
 - `extension/events-emit.mjs` — `serialize()` now
   catches `JSON.stringify` throws (e.g. circular

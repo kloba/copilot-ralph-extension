@@ -30,15 +30,24 @@ jobs:
         run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
       - name: Syntax check
-        # Iterate every extension/*.mjs so new files are automatically
+        # Iterate every shipped .mjs so new files are automatically
         # covered (the previous hard-coded list dropped events-emit.mjs).
         # `node --check` only validates its first positional argument
         # when given multiple paths, so we loop explicitly to ensure
         # every file is parsed. `set -e` propagates any failure as the
         # job's exit code.
+        #
+        # The TUI's component tests dynamically skip in CI when ink /
+        # react aren't installed (we don't run `cd packages/tui && npm
+        # install` in this job), so a syntax error in
+        # packages/tui/src/components/*.mjs would otherwise slip
+        # through. Parse-checking is dependency-free and catches it.
         run: |
           set -e
-          for f in extension/*.mjs; do
+          for f in extension/*.mjs \
+                   packages/tui/src/*.mjs \
+                   packages/tui/src/components/*.mjs \
+                   packages/tui/bin/*.mjs; do
             node --check "$f"
           done
 

@@ -681,6 +681,21 @@ test("ralph_stop with no active loop returns failure", async () => {
     assert.equal(r.resultType, "failure");
 });
 
+test("ralph_stop with no active loop reports 'no loop' even if args have a typo", async () => {
+    // Priority pin: when no loop is active, the "nothing to stop" error
+    // takes precedence over the unknown-arg shape error. The typo is
+    // moot if there's nothing to act on, and reporting the validation
+    // error first would confuse callers ("did my stop land or not?").
+    // Pin this priority so a future refactor that hoists validateArgShape
+    // above the active-check doesn't silently flip the message order.
+    const c = createRalphController();
+    const stop = c.tools.find((t) => t.name === "ralph_stop");
+    const r = await stop.handler({ resaon: "typo" });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /no ralph_loop is currently running/);
+    assert.doesNotMatch(r.textResultForLlm, /unknown argument/);
+});
+
 test("ralph_stop tolerates null/undefined args; rejects array shape loudly", async () => {
     const { session, controller, stop } = await arm({ max_iterations: 5 });
     session.emit("session.idle", { data: {} });

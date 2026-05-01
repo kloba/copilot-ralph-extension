@@ -450,12 +450,9 @@ export function createRalphController() {
         // accumulator is reset on each iteration fire-out.
         const prev = state.lastAssistantContent;
         const next = prev ? `${prev}\n${text}` : text;
-        // Bound memory: drop oldest content past the cap. The completion /
-        // abort / stagnation checks only ever inspect this string, and a
-        // 1 MiB tail is more than enough to find any reasonable signal.
-        // Use safeSliceStart so the head-trim never leaves a lone low
-        // surrogate at position 0 (which would corrupt the buffer for any
-        // downstream consumer that tries to render it).
+        // Bound memory: keep a tail ≤ MAX_CONTENT_CHARS — completion/abort/
+        // stagnation only inspect this string. safeSliceStart guards against
+        // the head-trim leaving a lone low surrogate at position 0.
         state.lastAssistantContent = next.length > MAX_CONTENT_CHARS
             ? next.slice(safeSliceStart(next, next.length - MAX_CONTENT_CHARS))
             : next;

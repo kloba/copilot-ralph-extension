@@ -101,7 +101,7 @@ function isSubAgentEvent(ev) {
 
 /**
  * @typedef {Object} RalphArgs
- * @property {string} prompt - Required. The prompt re-injected each iteration. ≤ 64KiB.
+ * @property {string} prompt - Required. The prompt re-injected each iteration. ≤ MAX_PROMPT_CHARS (65 536) UTF-16 code units. Note: emoji and other 4-byte chars consume two code units each, so worst-case byte length can be larger than 64 KiB.
  * @property {number} [max_iterations=20] - Hard cap on iterations (1..1000).
  * @property {number} [min_iterations=1] - Floor before completion/abort phrases honored (1..max_iterations).
  * @property {string} [completion_promise="COMPLETE"] - Substring → finish with reason "completion_promise".

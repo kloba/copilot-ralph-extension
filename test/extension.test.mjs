@@ -203,6 +203,28 @@ test("validateArgs: trims surrounding whitespace from completion_promise / abort
     assert.match(r2.error, /completion_promise exceeds/, r2.error);
 });
 
+test("ralph_loop: re-fires the trimmed prompt to session.send (not the raw padded input)", async () => {
+    // validateArgs trims args.prompt before storing it on state.active. The
+    // value re-fired each iteration should therefore be the trimmed string,
+    // not the user's raw input. Without this pin, a future change that
+    // stored the raw value (or stopped trimming) would silently send "  go\n"
+    // to the agent every iteration, polluting prompt previews and burning
+    // tokens on whitespace.
+    const session = makeFakeSession();
+    const controller = createRalphController();
+    controller.attach(session);
+    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
+    await ralph.handler({ prompt: "  go\n  ", max_iterations: 3 });
+    assert.equal(controller.state.active.prompt, "go");
+    session.emit("session.idle", { data: {} });
+    runTurn(session, "still working");
+    runTurn(session, "still working again");
+    // Every send must use the trimmed prompt verbatim.
+    assert.ok(session.sent.length >= 2);
+    for (const s of session.sent) assert.equal(s.prompt, "go");
+});
+
+
 test("validateArgs: identical/overlap check runs AFTER trimming, not before", () => {
     // Subtle: trimming runs first, so promises that look distinct verbatim
     // but collapse to the same trimmed string MUST still be flagged as

@@ -236,6 +236,7 @@ If you arm a new `ralph_loop` *before* the next user prompt fires, the prior run
 
 - GitHub Copilot CLI (tested on `1.0.40-0`)
 - Copilot CLI Extension SDK (`@github/copilot-sdk/extension`) — bundled with Copilot CLI
+- Node.js ≥ 20 (only required for running the test suite; the installed extension uses the Node runtime bundled with Copilot CLI)
 - No runtime npm dependencies. Tests use `node:test` (built-in); run them with `npm test`.
 
 ## License

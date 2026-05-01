@@ -543,8 +543,7 @@ export function createRalphController() {
         // If the SDK supplies an abort reason in the event payload,
         // capture it so it shows up in the log line and additionalContext.
         const reasonRaw = ev?.data?.reason ?? ev?.reason;
-        const trimmed = typeof reasonRaw === "string" ? reasonRaw.trim() : "";
-        const note = trimmed || undefined;
+        const note = (typeof reasonRaw === "string" ? reasonRaw.trim() : "") || undefined;
         // Bound the log line via boundedNoteForLog so a pathologically
         // large SDK abort reason doesn't dump megabytes into the timeline.
         // The structured note on the result is independently truncated

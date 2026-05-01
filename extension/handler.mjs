@@ -498,6 +498,39 @@ export function createRalphController() {
         finish("aborted", note);
     };
 
+    // Shared arming body for ralph_loop (and, in a later iteration,
+    // self_improve). Caller is responsible for the session-attached
+    // and already-active guards plus arg validation; this helper
+    // mutates state.active and emits the arm log + success result.
+    function armLoop(parsedValue) {
+        state.active = {
+            ...parsedValue,
+            i: 0,
+            prev: null,
+            streak: 0,
+            pendingFire: true,
+            fireInFlight: false,
+            observedMessageThisFire: false,
+            startedAt: Date.now(),
+        };
+        state.lastAssistantContent = "";
+        state.lastResult = null;
+
+        // Build the arm log line as an array of "key=value" parts
+        // so optional fields drop out cleanly without nested ternaries.
+        const { max, min, completionPromise, abortPromise, stagnationLimit } = parsedValue;
+        const armParts = [`max=${max}`];
+        if (min > 1) armParts.push(`min=${min}`);
+        armParts.push(`completion=${JSON.stringify(completionPromise)}`);
+        if (abortPromise) armParts.push(`abort=${JSON.stringify(abortPromise)}`);
+        if (stagnationLimit > 0) armParts.push(`stagnation_limit=${stagnationLimit}`);
+        log(`🔁 ralph_loop armed — ${armParts.join(", ")}`);
+        return success(
+            `ralph_loop armed (max=${max}${min > 1 ? `, min=${min}` : ""}). Iterations will run as conversation turns. Use ralph_stop to cancel.`,
+            { armed: true, max, min },
+        );
+    }
+
     const tools = [
         {
             name: "ralph_loop",
@@ -573,33 +606,7 @@ export function createRalphController() {
                 }
                 const parsed = validateArgs(args);
                 if (parsed.error) return failure(parsed.error);
-
-                state.active = {
-                    ...parsed.value,
-                    i: 0,
-                    prev: null,
-                    streak: 0,
-                    pendingFire: true,
-                    fireInFlight: false,
-                    observedMessageThisFire: false,
-                    startedAt: Date.now(),
-                };
-                state.lastAssistantContent = "";
-                state.lastResult = null;
-
-                // Build the arm log line as an array of "key=value" parts
-                // so optional fields drop out cleanly without nested ternaries.
-                const { max, min, completionPromise, abortPromise, stagnationLimit } = parsed.value;
-                const armParts = [`max=${max}`];
-                if (min > 1) armParts.push(`min=${min}`);
-                armParts.push(`completion=${JSON.stringify(completionPromise)}`);
-                if (abortPromise) armParts.push(`abort=${JSON.stringify(abortPromise)}`);
-                if (stagnationLimit > 0) armParts.push(`stagnation_limit=${stagnationLimit}`);
-                log(`🔁 ralph_loop armed — ${armParts.join(", ")}`);
-                return success(
-                    `ralph_loop armed (max=${max}${min > 1 ? `, min=${min}` : ""}). Iterations will run as conversation turns. Use ralph_stop to cancel.`,
-                    { armed: true, max, min },
-                );
+                return armLoop(parsed.value);
             },
         },
         {

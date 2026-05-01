@@ -66,6 +66,13 @@ if [[ "$TARGET_FLAG" == "--project" ]]; then
   fi
   TARGET_DIR="$GIT_ROOT/.github/extensions/ralph"
 else
+  # User-scoped install needs $HOME. Surface a friendly error if it's
+  # unset (cron / minimal docker / weird CI) instead of letting `set -u`
+  # bail out with a cryptic "HOME: unbound variable" diagnostic.
+  if [[ -z "${HOME:-}" ]]; then
+    echo "Error: \$HOME is not set; cannot determine user-scoped install path. Pass --project to install into the current git repo instead." >&2
+    exit 1
+  fi
   TARGET_DIR="$HOME/.copilot/extensions/ralph"
 fi
 

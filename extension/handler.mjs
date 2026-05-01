@@ -681,10 +681,8 @@ export function createRalphController() {
                     if (shape) return failure(shape.error);
                 }
                 const { i, max } = state.active;
-                // args is now either null/undefined or a validated object
-                // (validateArgShape above rejected arrays and non-objects).
-                // truncateNote caps the stored value so a giant user-
-                // supplied reason can't pollute the LLM context.
+                // truncateNote caps the stored value so a giant user-supplied
+                // reason can't pollute the LLM context.
                 const reason = typeof args?.reason === "string" ? args.reason.trim() : "";
                 const note = reason ? truncateNote(reason) : undefined;
                 finish("user_stopped", note);

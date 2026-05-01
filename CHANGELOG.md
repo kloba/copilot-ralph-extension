@@ -21,7 +21,8 @@
   (issue #1). The new trailer attributes loop output to a
   dedicated `copilot-ralph` GitHub account so usage is passively
   searchable across public GitHub via `gh search commits
-  "co-authored-by:copilot-ralph@users.noreply.github.com"` —
+  "copilot-ralph@users.noreply.github.com"` (raw-text search;
+  GitHub's commit-search API has no `co-authored-by:` qualifier) —
   zero-infrastructure analytics. Setting
   `RALPH_NO_ATTRIBUTION=1` in the environment instructs the agent
   to omit ONLY the `copilot-ralph` trailer; the `Copilot` trailer

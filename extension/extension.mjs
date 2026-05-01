@@ -5,7 +5,7 @@
 import { joinSession } from "@github/copilot-sdk/extension";
 import { createRalphController } from "./handler.mjs";
 
-const controller = createRalphController();
+const controller = createRalphController({ events: true });
 
 // joinSession / attach can fail (SDK version mismatch, missing session
 // methods). Without a try/catch the rejection becomes an unhandled

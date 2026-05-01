@@ -14,6 +14,8 @@
 
 import { createRequire } from "node:module";
 
+import { createEventEmitter as defaultEventEmitter } from "./events-emit.mjs";
+
 // Lazy-resolved sync `require` so we can pull child_process only when needed
 // (caffeinate when enabled, git for ralph_status / adaptive-budget, etc.)
 // without paying the import cost up front.
@@ -1044,6 +1046,37 @@ export function createRalphController(opts = {}) {
     // import cost is paid only when adaptive_budget is actually enabled.
     const adaptiveCwd = opts.adaptive?.cwd ?? process.cwd();
     const adaptiveGitExec = opts.adaptive?.gitExec ?? ((args) => defaultAdaptiveGitExec(args, adaptiveCwd));
+    // JSONL event emit DI (issue #22). When `opts.events` is undefined or
+    // false, no events.jsonl is produced — the loop runs exactly as before.
+    // When `opts.events` is `true` or an object, an emitter is built per
+    // armLoop call and attached to state.active.events. `factory` is the
+    // injection seam tests use to record without touching disk.
+    //   opts.events = false | undefined         → off
+    //   opts.events = true                      → on, default emitter (writes ~/.copilot/ralph/runs)
+    //   opts.events = { factory }               → on, custom factory({label, startedAt}) → writer
+    //   opts.events = { env, fs }               → on, default emitter w/ overrides
+    const eventsConfig = (() => {
+        const e = opts.events;
+        if (!e) return null;
+        if (e === true) return { factory: defaultEventEmitter };
+        if (typeof e.factory === "function") return { factory: e.factory };
+        return { factory: (args) => defaultEventEmitter({ ...args, env: e.env, fs: e.fs }) };
+    })();
+    const buildEventWriter = (label, startedAt) => {
+        if (!eventsConfig) return null;
+        try { return eventsConfig.factory({ label, startedAt }) ?? null; }
+        catch { return null; }
+    };
+    const safeEmit = (a, ev) => {
+        const w = a?.events;
+        if (!w?.write) return;
+        try { w.write(ev); } catch { /* swallow */ }
+    };
+    const safeCloseEvents = (a) => {
+        const w = a?.events;
+        if (!w?.close) return;
+        try { w.close(); } catch { /* swallow */ }
+    };
     const state = {
         active: null,           // ActiveLoopState; null when no loop is armed.
         lastAssistantContent: "",
@@ -1138,6 +1171,23 @@ export function createRalphController(opts = {}) {
         const verb = VERB_BY_REASON[reason] ?? "⏹ stopped";
         const noteForLog = collapseNote(result.note);
         log(`${verb} ${label} after ${iterations} iteration${pluralS(iterations)} (reason: ${reason}${noteForLog ? `, note: ${noteForLog}` : ""}, ${durationMs}ms)`);
+        // Issue #22: emit terminal event before we drop state.active so
+        // the writer is still reachable. Failure-flavored reasons map
+        // to `abort` (UI shows red); success-flavored reasons map to
+        // `complete` (UI shows green).
+        const ABORT_REASONS = new Set(["aborted", "abort_promise", "send_error", "stagnation"]);
+        const terminalType = ABORT_REASONS.has(reason) ? "abort" : "complete";
+        safeEmit(state.active, {
+            type: terminalType,
+            runId: state.active.runId,
+            iterations,
+            reason,
+            note: result.note,
+            durationMs,
+            tokens: result.tokens ? { input: result.tokens.input, output: result.tokens.output } : undefined,
+            ts: finishedAt,
+        });
+        safeCloseEvents(state.active);
         state.active = null;
         state.lastResult = deepFreeze(result);
         // Tear down caffeinate AFTER state.active is cleared and lastResult is
@@ -1262,6 +1312,7 @@ export function createRalphController(opts = {}) {
     const fireIteration = (a) => {
         log(`🔁 ${a.label} iter ${a.i}/${a.max} (elapsed ${clampedElapsed(a.startedAt)}ms)`);
         state.lastAssistantContent = "";
+        safeEmit(a, { type: "iteration_start", runId: a.runId, iteration: a.i, ts: Date.now() });
         tryFire(a.prompt);
     };
 
@@ -1303,6 +1354,18 @@ export function createRalphController(opts = {}) {
 
         const text = state.lastAssistantContent;
 
+        // Issue #22: emit iteration_end as soon as the iteration is
+        // observable on disk — before any terminator runs so the TUI
+        // sees the completed iter even when the loop ends right after.
+        safeEmit(a, {
+            type: "iteration_end",
+            runId: a.runId,
+            iteration: a.i,
+            excerpt: text,
+            tokens: { input: a.tokens.input, output: a.tokens.output },
+            ts: Date.now(),
+        });
+
         // completion/abort only honored once min_iterations have completed
         if (a.i >= a.min) {
             if (text.includes(a.completionPromise)) return finish("completion_promise");
@@ -1314,7 +1377,10 @@ export function createRalphController(opts = {}) {
             // a.prev` is false so we take the reset branch and set streak=1.
             a.streak = text === a.prev ? a.streak + 1 : 1;
             a.prev = text;
-            if (a.streak >= a.stagnationLimit) return finish("stagnation");
+            if (a.streak >= a.stagnationLimit) {
+                safeEmit(a, { type: "stagnation", runId: a.runId, iteration: a.i, streak: a.streak, ts: Date.now() });
+                return finish("stagnation");
+            }
         }
 
         // Track per-iteration response signature for the adaptive-budget
@@ -1430,6 +1496,8 @@ export function createRalphController(opts = {}) {
         // "files changed since loop started" diff. Best-effort — a non-git
         // cwd just means status reports null for the git block.
         const armedGit = captureGitArmSnapshot(gitExec, gitCwd);
+        const startedAt = Date.now();
+        const eventsWriter = buildEventWriter(label, startedAt);
         state.active = {
             ...parsedValue,
             label,
@@ -1439,7 +1507,7 @@ export function createRalphController(opts = {}) {
             pendingFire: true,
             fireInFlight: false,
             observedMessageThisFire: false,
-            startedAt: Date.now(),
+            startedAt,
             tokens: {
                 input: 0,
                 output: 0,
@@ -1459,6 +1527,9 @@ export function createRalphController(opts = {}) {
             pauseReason: null,
             pausedAt: 0,
             totalPausedMs: 0,
+            // Issue #22: per-loop event writer (null when events are off).
+            events: eventsWriter,
+            runId: eventsWriter?.runId ?? null,
         };
         state.lastAssistantContent = "";
         state.lastResult = null;
@@ -1473,6 +1544,18 @@ export function createRalphController(opts = {}) {
         if (stagnationLimit > 0) armParts.push(`stagnation_limit=${stagnationLimit}`);
         if (adaptiveBudget) armParts.push(`adaptive=${adaptiveExtension}/${adaptiveMaxTotal}`);
         log(`🔁 ${label} armed — ${armParts.join(", ")}`);
+        // Issue #22: emit the armed event AFTER state.active is wired so
+        // safeEmit can find the writer; an `armed` event also bumps the
+        // run index so `ralph-tui list` discovers this run immediately.
+        safeEmit(state.active, {
+            type: "armed",
+            runId: state.active.runId,
+            label,
+            maxIterations: max,
+            minIterations: min,
+            startedAt,
+            ts: startedAt,
+        });
         return success(
             `${label} armed (max=${max}${min > 1 ? `, min=${min}` : ""}${adaptiveBudget ? `, adaptive_max_total=${adaptiveMaxTotal}` : ""}). Iterations will run as conversation turns. Use ralph_stop to cancel.`,
             { armed: true, max, min, adaptive_budget: adaptiveBudget, adaptive_extension: adaptiveExtension, adaptive_max_total: adaptiveMaxTotal },
@@ -1731,6 +1814,7 @@ export function createRalphController(opts = {}) {
                 a.pauseReason = reason;
                 a.pausedAt = Date.now();
                 log(`⏸ ${label} paused at ${i}/${max}${reason ? ` (${reason})` : ""}`);
+                safeEmit(a, { type: "pause", runId: a.runId, iteration: i, reason, ts: a.pausedAt });
                 return success(
                     `${label} paused at ${i}/${max}${reason ? ` (${reason})` : ""}. Use ralph_resume to continue.`,
                     { iterations: i, paused: true, reason },
@@ -1762,6 +1846,7 @@ export function createRalphController(opts = {}) {
                 a.streak = 0;
                 a.prev = null;
                 log(`▶ ${a.label} resumed at ${a.i}/${a.max} (paused for ${pausedFor}ms)`);
+                safeEmit(a, { type: "resume", runId: a.runId, iteration: a.i, pausedForMs: pausedFor, ts: Date.now() });
                 return success(
                     `${a.label} resumed at ${a.i}/${a.max}. Next iteration will fire on the next session.idle.`,
                     { iterations: a.i, paused: false, pausedForMs: pausedFor },

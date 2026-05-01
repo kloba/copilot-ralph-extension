@@ -502,12 +502,13 @@ test("validateArgs success returns exactly the documented value shape (no stray 
     assert.equal(r2.value.abortPromise, null);
 });
 
-test("state.active: arming sets exactly the documented 30-field ActiveLoopState shape", async () => {
-    // The ActiveLoopState typedef enumerates 30 fields: 14 base
+test("state.active: arming sets exactly the documented 32-field ActiveLoopState shape", async () => {
+    // The ActiveLoopState typedef enumerates 32 fields: 14 base
     // + 6 token/caffeinate/git fields (issues #5/#7/#8) + 6 adaptive-budget
-    // fields (issue #4) + 4 pause/resume fields (issue #3). Pin the
-    // exact key set and initial values so future refactors that add or rename
-    // a field have to update both the typedef and this test in lockstep.
+    // fields (issue #4) + 4 pause/resume fields (issue #3) + 2 event-emit
+    // fields (events writer + runId, issue #22). Pin the exact key set
+    // and initial values so future refactors that add or rename a field
+    // have to update both the typedef and this test in lockstep.
     const { session, controller } = await arm({ max_iterations: 7, min_iterations: 2, abort_promise: "FAIL", stagnation_limit: 4 });
     const a = controller.state.active;
     assert.deepEqual(Object.keys(a).sort(), [
@@ -519,6 +520,7 @@ test("state.active: arming sets exactly the documented 30-field ActiveLoopState 
         "adaptiveMaxTotal",
         "armedGit",
         "completionPromise",
+        "events",
         "fireInFlight",
         "i",
         "label",
@@ -534,6 +536,7 @@ test("state.active: arming sets exactly the documented 30-field ActiveLoopState 
         "pendingFire",
         "prev",
         "prompt",
+        "runId",
         "stagnationLimit",
         "startedAt",
         "stopCaffeinate",

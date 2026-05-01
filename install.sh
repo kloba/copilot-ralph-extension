@@ -53,7 +53,7 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$SCRIPT_DIR/extension"
-FILES=(extension.mjs handler.mjs)
+FILES=(extension.mjs handler.mjs events-emit.mjs)
 
 for f in "${FILES[@]}"; do
   if [[ ! -f "$SOURCE_DIR/$f" ]]; then

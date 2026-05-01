@@ -49,13 +49,10 @@ function safeSliceEnd(s, cut) {
     return code >= 0xd800 && code <= 0xdbff ? cut - 1 : cut;
 }
 
-// Mirror of safeSliceEnd for the START side: if the kept slice would begin
-// on a lone low surrogate (0xdc00..0xdfff) — its high surrogate was just
-// dropped by the head-trim — bump the start forward by 1 so we never
-// produce an invalid UTF-16 string. Matters for the 1 MiB rolling buffer
-// in onAssistantMessage where slicing from the head can otherwise leave
-// a torn pair at position 0 that prints as a replacement char and reads
-// like garbage to anything inspecting state.lastAssistantContent.
+// Mirror of safeSliceEnd for the START side: if the kept slice would
+// begin on a lone low surrogate (high surrogate dropped by the head
+// trim), advance start by 1 to avoid producing an invalid UTF-16
+// string. Used by onAssistantMessage's rolling-buffer trim.
 function safeSliceStart(s, start) {
     const code = s.charCodeAt(start);
     return code >= 0xdc00 && code <= 0xdfff ? start + 1 : start;

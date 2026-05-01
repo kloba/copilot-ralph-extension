@@ -298,6 +298,20 @@ RALPH_NO_ATTRIBUTION=1 copilot   # subsequent self_improve/grow_project loops om
 - **This is effectively opt-in telemetry via git metadata.** No data leaves your machine — the trailer is just text in the commit object — but anyone reading the public commit log can correlate it with extension usage. The opt-out exists so you can disable that correlation per session without forking the extension.
 - **The bot account must exist before commits are made.** Unregistered noreply emails do not link retroactively to a GitHub account once the account is created — the `copilot-ralph@users.noreply.github.com` mailbox (matching the trailer format used in the example block above) has to be claimed first, then the trailers will associate going forward.
 
+## Live dashboard (experimental, issue #6)
+
+A minimal local dashboard server lives at [`extension/dashboard.mjs`](extension/dashboard.mjs). It exposes a zero-dependency HTTP+SSE endpoint suitable for streaming loop events into a browser:
+
+```js
+import { createDashboardServer } from "./extension/dashboard.mjs";
+const server = await createDashboardServer({});
+console.log(server.url); // http://127.0.0.1:NNNN/?token=…
+server.broadcast("iteration_start", { iter: 1, max: 20 });
+await server.close();
+```
+
+It binds to `127.0.0.1` only, picks a free port, and gates the SSE stream behind a one-time random token. The full UX described in [#6](https://github.com/kloba/copilot-ralph-extension/issues/6) (timeline, diff pane, replay controls) will land in follow-up PRs; this is the v0 surface.
+
 ## Troubleshooting
 
 - **`/extensions` doesn't list `ralph`.** Confirm `extension.mjs` and `handler.mjs` are present in `~/.copilot/extensions/ralph/` (user-scoped) or `.github/extensions/ralph/` (project-scoped, only visible from inside that repo) and restart Copilot CLI. `./install.sh` from source double-checks both files with `node --check` before writing.

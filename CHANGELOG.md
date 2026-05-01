@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Internal
+- `.gitignore` — add `.env`, `.env.*`, `coverage/`,
+  and `*.tgz` to the repo's ignore list. The `.env*`
+  patterns are the de-facto-standard preventive
+  entries against accidentally committing local
+  dotenv files (which routinely contain credentials)
+  via `git add -A`. The extension itself doesn't use
+  dotenv, but contributor tooling — asciinema
+  recipes, ad-hoc scripts, IDE launchers — often
+  does. `coverage/` and `*.tgz` are defensive entries
+  for future `c8`/`nyc` and `npm pack` output. Add a
+  regression test that asserts `.env` and `.env.*`
+  remain present so a future "simplify" PR cannot
+  silently regress the security-critical lines.
+
 ### Refactor
 - `extension/handler.mjs` — wrap `gitExec` and
   `adaptiveGitExec` at the controller boundary so a

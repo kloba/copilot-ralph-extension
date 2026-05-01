@@ -2,3 +2,20 @@ node_modules/
 .DS_Store
 *.log
 .copilot/
+
+# Never commit local environment files — they routinely contain
+# credentials (API tokens, database URLs). The `.env*` pattern catches
+# `.env`, `.env.local`, `.env.test`, etc., so a contributor running
+# tooling that auto-loads dotenv cannot accidentally leak secrets via
+# `git add -A`. The extension itself does not use dotenv (see
+# `extension/handler.mjs` — only `process.env` lookups), but contributor
+# tooling (asciinema recipes, ad-hoc scripts) often does.
+.env
+.env.*
+
+# Coverage reports from any future `c8` / `nyc` invocation.
+coverage/
+
+# Output of `npm pack` / `npm publish --dry-run` so a packed tarball
+# left in the repo root is not accidentally committed.
+*.tgz

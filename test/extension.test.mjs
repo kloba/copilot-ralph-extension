@@ -4682,6 +4682,21 @@ test("install.sh FILES array matches actual extension/*.mjs on disk", () => {
     );
 });
 
+test(".gitignore protects against committing common secret-bearing files", () => {
+    // Regression guard: `.gitignore` started minimal (4 lines) and any
+    // future "simplify" PR that drops `.env*` could let a contributor's
+    // local dotenv slip in via `git add -A`. The cost of one assertion
+    // per critical pattern is much lower than the credential-leak fallout.
+    const gi = readFileSync(resolve(REPO_ROOT, ".gitignore"), "utf8");
+    const lines = gi.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    for (const required of [".env", ".env.*"]) {
+        assert.ok(
+            lines.includes(required),
+            `.gitignore must list ${required} to prevent accidental secret commits`,
+        );
+    }
+});
+
 // ── token tracking (issue #7) ─────────────────────────────────────────────
 
 function emitUsage(session, { input, output, model = "claude-opus-4.7", content = "ok" }) {

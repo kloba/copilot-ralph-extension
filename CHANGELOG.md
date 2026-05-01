@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Tests
+- Add 16 unit tests for `extension/events-emit.mjs`
+  (`test/events-emit.test.mjs`). Until now the zero-dep
+  JSONL emitter shipped next to `handler.mjs` was only
+  exercised indirectly via `handler-events.test.mjs`. The
+  new file pins the exported contract directly:
+  `resolveRunsRoot` (default, env override, blank/whitespace
+  fallback, missing env arg), `makeRunId` (composition,
+  sanitisation of non-`[A-Za-z0-9_-]` chars, empty/null/
+  undefined label fallback), and `createEventEmitter`
+  (single-line append, armed-also-writes-index, non-armed
+  does-not-touch-index, falsy-event drop, excerpt clipping
+  to 500 chars + ellipsis, swallowed mkdir/append errors,
+  memoised mkdir, idempotent close, oversize-event drop).
+  Total suite count is now 399 (was 383).
+
 ### Fixes
 - `docs.yml` workflow: replace the inline single-line `run:`
   scalar with a block scalar (`|`) so the embedded `docs:`

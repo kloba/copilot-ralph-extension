@@ -1,0 +1,207 @@
+// Unit tests for extension/events-emit.mjs — the zero-dep JSONL emitter
+// shipped next to handler.mjs. Until now coverage came only via the
+// handler-events integration tests, which leaves the helpers
+// (resolveRunsRoot / makeRunId / createEventEmitter's truncation +
+// error-swallowing paths) untested in isolation. These tests pin the
+// exported contract so a future refactor can't drift silently.
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+import {
+    resolveRunsRoot,
+    makeRunId,
+    createEventEmitter,
+} from "../extension/events-emit.mjs";
+
+test("resolveRunsRoot: defaults to $HOME/.copilot/ralph/runs", () => {
+    assert.equal(resolveRunsRoot({}), join(homedir(), ".copilot", "ralph", "runs"));
+});
+
+test("resolveRunsRoot: honours RALPH_EVENTS_DIR override", () => {
+    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "/tmp/ralph" }), "/tmp/ralph");
+});
+
+test("resolveRunsRoot: ignores empty / whitespace override and falls back to default", () => {
+    const def = join(homedir(), ".copilot", "ralph", "runs");
+    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "" }), def);
+    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "   " }), def);
+});
+
+test("resolveRunsRoot: tolerates missing env arg", () => {
+    // Should not throw even when env is undefined; falls back to homedir-based default.
+    assert.match(resolveRunsRoot(undefined), /\.copilot[/\\]ralph[/\\]runs$/);
+});
+
+test("makeRunId: composes ${label}-${startedAt}", () => {
+    assert.equal(makeRunId("ralph_loop", 1700000000000), "ralph_loop-1700000000000");
+});
+
+test("makeRunId: sanitises label by replacing every non-[A-Za-z0-9_-] with _", () => {
+    assert.equal(makeRunId("self/improve!", 42), "self_improve_-42");
+    assert.equal(makeRunId("a b c", 1), "a_b_c-1");
+});
+
+test("makeRunId: falls back to 'ralph_loop' when label is empty / null / undefined", () => {
+    assert.equal(makeRunId("", 1), "ralph_loop-1");
+    assert.equal(makeRunId(null, 1), "ralph_loop-1");
+    assert.equal(makeRunId(undefined, 1), "ralph_loop-1");
+});
+
+test("createEventEmitter: write appends one JSONL line per call", () => {
+    const lines = [];
+    const fakeFs = {
+        mkdirSync: () => {},
+        appendFileSync: (path, line) => lines.push({ path, line }),
+    };
+    const e = createEventEmitter({
+        label: "ralph_loop",
+        startedAt: 1234,
+        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        fs: fakeFs,
+    });
+    e.write({ type: "iteration_start", runId: e.runId, ts: 1, iteration: 1 });
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].path, "/tmp/r/ralph_loop-1234/events.jsonl");
+    assert.equal(JSON.parse(lines[0].line.trimEnd()).type, "iteration_start");
+});
+
+test("createEventEmitter: armed event also writes a line to the run index", () => {
+    const lines = [];
+    const fakeFs = {
+        mkdirSync: () => {},
+        appendFileSync: (path, line) => lines.push({ path, line }),
+    };
+    const e = createEventEmitter({
+        label: "self_improve",
+        startedAt: 99,
+        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        fs: fakeFs,
+    });
+    e.write({ type: "armed", runId: e.runId, ts: 0, maxIterations: 100, minIterations: 5 });
+    assert.equal(lines.length, 2, "armed must produce one events.jsonl line + one index.jsonl line");
+    const eventsLine = lines.find((l) => l.path.endsWith("events.jsonl"));
+    const indexLine = lines.find((l) => l.path === "/tmp/r/index.jsonl");
+    assert.ok(eventsLine, "events.jsonl write is missing");
+    assert.ok(indexLine, "index.jsonl write is missing");
+    const idx = JSON.parse(indexLine.line.trimEnd());
+    assert.equal(idx.runId, "self_improve-99");
+    assert.equal(idx.label, "self_improve");
+    assert.equal(idx.startedAt, 99);
+    assert.equal(idx.maxIterations, 100);
+    assert.equal(idx.minIterations, 5);
+});
+
+test("createEventEmitter: non-armed events do NOT touch the index", () => {
+    const lines = [];
+    const fakeFs = {
+        mkdirSync: () => {},
+        appendFileSync: (path, line) => lines.push({ path, line }),
+    };
+    const e = createEventEmitter({
+        label: "ralph_loop",
+        startedAt: 1,
+        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        fs: fakeFs,
+    });
+    e.write({ type: "iteration_end", runId: e.runId, ts: 1, iteration: 1 });
+    e.write({ type: "complete", runId: e.runId, ts: 2, reason: "completion_promise", iteration: 1 });
+    assert.ok(lines.every((l) => !l.path.endsWith("index.jsonl")));
+});
+
+test("createEventEmitter: ignores non-object / falsy events instead of writing junk", () => {
+    const lines = [];
+    const e = createEventEmitter({
+        label: "ralph_loop",
+        startedAt: 1,
+        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        fs: { mkdirSync: () => {}, appendFileSync: (p, l) => lines.push({ p, l }) },
+    });
+    e.write(null);
+    e.write(undefined);
+    e.write("string");
+    e.write(42);
+    assert.equal(lines.length, 0);
+});
+
+test("createEventEmitter: long excerpt is clipped to <= 500 chars + trailing ellipsis", () => {
+    const captured = [];
+    const e = createEventEmitter({
+        label: "ralph_loop",
+        startedAt: 1,
+        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        fs: {
+            mkdirSync: () => {},
+            appendFileSync: (_, line) => captured.push(line),
+        },
+    });
+    const longExcerpt = "x".repeat(2000);
+    e.write({ type: "iteration_end", runId: "r", ts: 1, iteration: 1, excerpt: longExcerpt });
+    assert.equal(captured.length, 1);
+    const parsed = JSON.parse(captured[0].trimEnd());
+    assert.ok(parsed.excerpt.length <= 500);
+    assert.ok(parsed.excerpt.endsWith("…"));
+});
+
+test("createEventEmitter: write swallows mkdir + append errors so the loop never crashes", () => {
+    const e = createEventEmitter({
+        label: "ralph_loop",
+        startedAt: 1,
+        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        fs: {
+            mkdirSync: () => { throw new Error("EROFS"); },
+            appendFileSync: () => { throw new Error("ENOSPC"); },
+        },
+    });
+    // Must not throw.
+    e.write({ type: "armed", runId: "r", ts: 0, maxIterations: 1, minIterations: 1 });
+    e.write({ type: "iteration_start", runId: "r", ts: 1, iteration: 1 });
+});
+
+test("createEventEmitter: mkdir is called once across many writes (memoised)", () => {
+    let mkdirCalls = 0;
+    const e = createEventEmitter({
+        label: "ralph_loop",
+        startedAt: 1,
+        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        fs: {
+            mkdirSync: () => { mkdirCalls += 1; },
+            appendFileSync: () => {},
+        },
+    });
+    for (let i = 0; i < 5; i += 1) {
+        e.write({ type: "iteration_start", runId: "r", ts: i, iteration: i });
+    }
+    assert.equal(mkdirCalls, 1);
+});
+
+test("createEventEmitter: close() is a no-op safe to call repeatedly", () => {
+    const e = createEventEmitter({
+        label: "ralph_loop",
+        startedAt: 1,
+        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        fs: { mkdirSync: () => {}, appendFileSync: () => {} },
+    });
+    assert.doesNotThrow(() => { e.close(); e.close(); });
+});
+
+test("createEventEmitter: oversize event line is dropped after stripping excerpt+note (best-effort)", () => {
+    const captured = [];
+    const e = createEventEmitter({
+        label: "ralph_loop",
+        startedAt: 1,
+        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        fs: {
+            mkdirSync: () => {},
+            appendFileSync: (_, line) => captured.push(line),
+        },
+    });
+    // 32KB junk in a non-clipped field — exceeds the 16KB hard cap and
+    // can't be salvaged by stripping excerpt/note. Must not throw and
+    // must not write a partial line.
+    const huge = "y".repeat(32 * 1024);
+    e.write({ type: "iteration_end", runId: "r", ts: 1, iteration: 1, payload: huge });
+    assert.equal(captured.length, 0);
+});

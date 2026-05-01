@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Documentation
+- `packages/tui/README.md` — fix two drift points
+  about how `src/tail.mjs` detects file replacement.
+  The README claimed only "inode changes" trigger
+  the reader's offset reset, but the implementation
+  has tracked **both** `ino` and `birthtimeMs` since
+  the early TUI hardening pass — that's what defeats
+  the Linux-ext4 blind spot where a freed inode is
+  immediately reallocated to the next file in the
+  same directory (so naïve `ino`-only detection
+  silently misses the replacement when the new file
+  happens to start with bytes that match the old
+  file's tail). Both the Architecture notes bullet
+  and the Tests coverage bullet now describe the
+  ino+birthtime pair the code actually maintains and
+  that `tail.test.mjs` already exercises.
+
 ### Tests
 - Add a drift-guard test that asserts `install.sh`'s
   hardcoded `FILES=(extension.mjs handler.mjs

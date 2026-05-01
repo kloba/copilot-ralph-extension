@@ -117,9 +117,11 @@ Useful for:
   Maintains `<root>/index.jsonl` so `list` enumerates runs without
   recursing into every per-run dir.
 * `src/tail.mjs` — `readEventsFile` (sync, for `replay`) and
-  `tailEventsFile` (async iterator, for `watch`). Polls + detects
-  inode changes so `replay` overwriting a tailed file restarts the
-  reader.
+  `tailEventsFile` (async iterator, for `watch`). Polls and detects
+  file replacement by tracking **both** `ino` and `birthtimeMs`,
+  so a `replay`-style overwrite (or any unlink+create that happens
+  to reuse the freed inode — common on Linux ext4) still restarts
+  the reader at offset 0.
 * `src/plain.mjs` — `formatEventLine`: pure event → log line. The
   Ink renderer (slice 5) shares this module for non-TTY fallback.
 * `bin/tui.mjs` — argv parser + dispatcher. Stdlib-only today; will
@@ -142,7 +144,10 @@ Coverage for the non-render layer:
 * `writer.test.mjs` — DI-driven writer behavior, index file shape,
   error surfacing through `onError`.
 * `tail.test.mjs` — partial-line buffering, malformed-line tolerance,
-  ENOENT-until-it-exists, file-replacement (inode-change) handling.
+  ENOENT-until-it-exists, and file-replacement detection along **both**
+  axes the implementation tracks: a fresh inode (ino change) and a
+  reused inode whose `birthtimeMs` advanced (the Linux-ext4 blind
+  spot a naïve ino-only check would miss).
 * `plain.test.mjs` — every event type's expected log-line shape,
   excerpt truncation/collapse, garbage-input safety.
 * `bin.test.mjs` — argv parser, `--help`, `list` (empty + populated),

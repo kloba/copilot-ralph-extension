@@ -586,6 +586,16 @@ export function createRalphController() {
     // self_improve). Caller is responsible for the session-attached
     // and already-active guards plus arg validation; this helper
     // mutates state.active and emits the arm log + success result.
+    // Single source of truth for the "session not attached" refusal —
+    // used by both arming tools so the wording stays in lockstep and the
+    // label matches the calling tool.
+    function requireAttachedSession(label) {
+        if (sessionRef?.send) return null;
+        return failure(
+            `${label}: session not attached — controller.attach(session) must be called before invoking ${label}.`,
+        );
+    }
+
     // Single source of truth for the "another loop is already active"
     // refusal — used by both ralph_loop and self_improve so the message
     // and iteration-counter logic can never drift.
@@ -687,11 +697,8 @@ export function createRalphController() {
                 additionalProperties: false,
             },
             handler: async (args) => {
-                if (!sessionRef?.send) {
-                    return failure(
-                        "ralph_loop: session not attached — controller.attach(session) must be called before invoking ralph_loop.",
-                    );
-                }
+                const notAttached = requireAttachedSession("ralph_loop");
+                if (notAttached) return notAttached;
                 const guard = activeLoopGuard();
                 if (guard) return guard;
                 const parsed = validateArgs(args);
@@ -786,11 +793,8 @@ export function createRalphController() {
                 additionalProperties: false,
             },
             handler: async (args) => {
-                if (!sessionRef?.send) {
-                    return failure(
-                        "self_improve: session not attached — controller.attach(session) must be called before invoking self_improve.",
-                    );
-                }
+                const notAttached = requireAttachedSession("self_improve");
+                if (notAttached) return notAttached;
                 const guard = activeLoopGuard();
                 if (guard) return guard;
                 if (args !== null && args !== undefined) {

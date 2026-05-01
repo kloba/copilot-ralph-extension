@@ -111,12 +111,11 @@ function success(message, extra = {}) {
 }
 
 // Per the SDK schema, every session event carries an optional `agentId`
-// field that is *absent* on root-agent events and *present* (a string)
-// on sub-agent events (task / explore / code-review / rubber-duck …).
-// Sub-agent events bubble up the session bus alongside root-agent
-// events, so any handler that should only fire for the root must filter
-// them out — otherwise sub-agents trigger spurious refires (turn_end /
-// message) or kill the root loop (abort).
+// field — absent on root-agent events, a string on sub-agent events
+// (task / explore / code-review / rubber-duck …). Sub-agent events
+// bubble up the same bus, so handlers that should only fire for the
+// root must filter them out (otherwise sub-agents trigger spurious
+// refires or interrupt the loop).
 function isSubAgentEvent(ev) {
     return ev != null && ev.agentId !== undefined && ev.agentId !== null;
 }

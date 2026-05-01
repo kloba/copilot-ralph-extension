@@ -140,8 +140,23 @@ export async function main(argv = process.argv.slice(2)) {
 }
 
 // Only run main() when invoked as a script (not when imported by tests).
-const isDirectRun = import.meta.url === `file://${process.argv[1]}`
-    || process.argv[1]?.endsWith("/bin/tui.mjs");
+// `npm link` installs the bin as a symlink (e.g. /opt/homebrew/bin/ralph-tui
+// → …/packages/tui/bin/tui.mjs); resolve it through realpath so the
+// "is this the entry point?" check survives the indirection.
+let isDirectRun = false;
+try {
+    const { realpathSync } = await import("node:fs");
+    const { pathToFileURL } = await import("node:url");
+    if (process.argv[1]) {
+        const real = realpathSync(process.argv[1]);
+        isDirectRun = pathToFileURL(real).href === import.meta.url;
+    }
+} catch {
+    // Fall back to the simpler heuristics if realpath fails (e.g.
+    // running from stdin or a non-existent path during tests).
+    isDirectRun = import.meta.url === `file://${process.argv[1]}`
+        || Boolean(process.argv[1]?.endsWith("/bin/tui.mjs"));
+}
 if (isDirectRun) {
     main().then((code) => process.exit(code ?? 0)).catch((err) => {
         process.stderr.write(`ralph-tui: ${err?.stack ?? err}\n`);

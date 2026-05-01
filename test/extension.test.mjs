@@ -1158,6 +1158,20 @@ test("public tools and hooks surface is frozen (defensive against accidental mut
     assert.ok(Object.isFrozen(stopTool.parameters));
     assert.ok(Object.isFrozen(stopTool.parameters.properties));
     assert.throws(() => { stopTool.parameters.properties.reason.maxLength = 9999; }, TypeError);
+    // self_improve tool surface — symmetric deep-freeze. Without this
+    // a caller could mutate e.g. focus.maxLength to bypass the
+    // 500-char cap or remove the not:{const:1} carve-out from
+    // stagnation_limit. Pin every property and the additionalProperties
+    // flag so deep-freeze drift is caught.
+    const siTool = c.tools.find((t) => t.name === "self_improve");
+    assert.ok(Object.isFrozen(siTool.parameters));
+    assert.ok(Object.isFrozen(siTool.parameters.properties));
+    for (const propName of Object.keys(siTool.parameters.properties)) {
+        const prop = siTool.parameters.properties[propName];
+        assert.ok(Object.isFrozen(prop), `self_improve.${propName} schema not frozen`);
+    }
+    assert.throws(() => { siTool.parameters.properties.focus.maxLength = 99999; }, TypeError);
+    assert.throws(() => { siTool.parameters.properties.stagnation_limit.not = { const: 999 }; }, TypeError);
 });
 
 test("DEFAULTS object is frozen — defaults cannot be mutated at runtime", () => {

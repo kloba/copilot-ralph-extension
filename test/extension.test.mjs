@@ -238,6 +238,18 @@ test("ralph_stop tool spec declares maxLength on optional reason", () => {
     assert.equal(t.parameters.properties.reason.maxLength, 500);
 });
 
+test("ralph_loop tool description matches the actual refire trigger (session.idle)", () => {
+    // Pin the user-facing description so a future refactor that changes the
+    // event we listen on (or vice-versa, that re-introduces a stale "turn_end"
+    // mention) is caught by tests rather than mis-informing tool consumers.
+    // The earlier description still claimed "assistant turn_end" long after
+    // the implementation switched to session.idle.
+    const c = createRalphController();
+    const t = c.tools.find((x) => x.name === "ralph_loop");
+    assert.match(t.description, /session\.idle/, "description must mention session.idle");
+    assert.doesNotMatch(t.description, /turn_end/, "description must not mention the obsolete turn_end trigger");
+});
+
 // ── arming behaviour ──────────────────────────────────────────────────────
 
 test("arming returns success and does NOT send before first turn_end", async () => {

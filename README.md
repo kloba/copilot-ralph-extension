@@ -282,7 +282,7 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>
 ```
 
-The first identifies the agent. The second attributes the commit to a dedicated `copilot-ralph` GitHub account so commits made via this extension are passively searchable across public GitHub. Once the bot account is registered, `gh search commits "co-authored-by:copilot-ralph@users.noreply.github.com"` surfaces every public-repo commit produced by a `self_improve` / `grow_project` run — a zero-infrastructure usage signal.
+The first identifies the agent. The second attributes the commit to a dedicated `copilot-ralph` GitHub account so commits made via this extension are passively searchable across public GitHub. Once the bot account is registered, `gh search commits "copilot-ralph@users.noreply.github.com"` (raw-text search across commit messages — GitHub's commit-search API has no `co-authored-by:` qualifier, so the trailer is matched as plain text) surfaces every public-repo commit produced by a `self_improve` / `grow_project` run — a zero-infrastructure usage signal.
 
 ### Opt-out
 

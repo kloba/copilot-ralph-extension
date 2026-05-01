@@ -1318,6 +1318,26 @@ test("self_improve rejects array/primitive args; accepts null/undefined", async 
     assert.equal(c.state.active.label, "self_improve");
 });
 
+test("arming grow_project sets state.active.label to 'grow_project'", async () => {
+    // Pin the label because finish() logs ("<label>: stopped after …"),
+    // the active-loop guard's "armed by <label>" wording, and the
+    // ralph_stop "stopped <label> after N iterations" line all derive
+    // from state.active.label. A future refactor that armLoop'd
+    // grow_project with the wrong literal (e.g. copy-pasted "self_improve"
+    // from the sibling block) would silently mislabel every log line
+    // until something else broke. self_improve has parallel coverage at
+    // line 1312/1318; mirror it for grow_project.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "grow_project");
+    const r = await t.handler({});
+    assert.equal(r.resultType, "success");
+    assert.equal(c.state.active.label, "grow_project");
+    assert.notEqual(c.state.active.label, "self_improve");
+    assert.notEqual(c.state.active.label, "ralph_loop");
+});
+
 test("self_improve schema declares max_iterations / min_iterations bounds matching runtime", () => {
     // Same drift-prevention rationale as the focus-bounds test: a
     // schema-validating dispatcher must catch the same out-of-range

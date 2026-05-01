@@ -986,6 +986,11 @@ test("PROMPT_SELF_IMPROVE bakes the dual Co-authored-by trailer + RALPH_NO_ATTRI
     assert.match(p, /RALPH_NO_ATTRIBUTION=1/, "must document the RALPH_NO_ATTRIBUTION=1 opt-out env var");
     // Opt-out polarity: setting the var SUPPRESSES, not enables.
     assert.match(p, /RALPH_NO_ATTRIBUTION=1[\s\S]{0,200}\bomit\b/i, "RALPH_NO_ATTRIBUTION=1 must instruct the agent to OMIT the second trailer");
+    // Stricter polarity: must say "omit ONLY" (or equivalent) so a future
+    // edit can't degrade to "omit BOTH" trailers — the Copilot trailer
+    // must always ship for agent-attribution audit.
+    assert.match(p, /\bomit\b[\s\S]{0,80}\bonly\b/i, "must instruct OMIT ONLY the copilot-ralph trailer (Copilot trailer always ships)");
+    assert.match(p, /\balways\s+ship/i, "must promise the Copilot trailer always ships");
 });
 
 test("PROMPT_GROW_PROJECT bakes the dual Co-authored-by trailer + RALPH_NO_ATTRIBUTION opt-out (issue #1)", () => {
@@ -997,6 +1002,10 @@ test("PROMPT_GROW_PROJECT bakes the dual Co-authored-by trailer + RALPH_NO_ATTRI
     assert.match(p, /Co-authored-by: copilot-ralph <copilot-ralph@users\.noreply\.github\.com>/, "must bake the copilot-ralph bot-account trailer (issue #1)");
     assert.match(p, /RALPH_NO_ATTRIBUTION=1/, "must document the RALPH_NO_ATTRIBUTION=1 opt-out env var");
     assert.match(p, /RALPH_NO_ATTRIBUTION=1[\s\S]{0,200}\bomit\b/i, "RALPH_NO_ATTRIBUTION=1 must instruct the agent to OMIT the copilot-ralph trailer");
+    // Stricter polarity (mirror of self_improve pin): must say "omit ONLY"
+    // so a future edit can't degrade to "omit BOTH" trailers.
+    assert.match(p, /\bomit\b[\s\S]{0,80}\bonly\b/i, "must instruct OMIT ONLY the copilot-ralph trailer (Copilot trailer + Closes #N always ship)");
+    assert.match(p, /\balways\s+ship/i, "must promise the Copilot trailer (and Closes #N) always ship");
 });
 
 test("PROMPT_GROW_PROJECT bakes COMPLETE and ABORT_NO_BACKLOG tokens + fits MAX_PROMPT_CHARS", () => {

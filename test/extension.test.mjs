@@ -1394,6 +1394,53 @@ test("self_improve does NOT warn when promises match the baked SDLC prompt's tok
     assert.equal(warns.length, 0, `expected no drift warnings, got: ${JSON.stringify(warns)}`);
 });
 
+test("grow_project warns when completion_promise / abort_promise drift from the baked SDLC prompt's emit tokens", async () => {
+    // Mirror of the self_improve drift pin (iter 27/28) but for the
+    // grow_project handler: PROMPT_GROW_PROJECT bakes in "emit COMPLETE"
+    // and "emit ABORT_NO_BACKLOG" — a different abort token from
+    // self_improve. A caller passing different completion_promise /
+    // abort_promise gets a one-shot warning at arm-time so the
+    // mismatch is visible in the timeline rather than silently running
+    // the loop to max_iterations.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "grow_project");
+    const r = await t.handler({
+        completion_promise: "DONE",
+        abort_promise: "STOP",
+        max_iterations: 1,
+        min_iterations: 1,
+    });
+    assert.equal(r.resultType, "success");
+    const warns = session.logs.filter((l) => /^grow_project: warning —/.test(l));
+    assert.equal(warns.length, 2, `expected two drift warnings, got: ${JSON.stringify(warns)}`);
+    assert.ok(warns.some((l) => /completion_promise="DONE".*"COMPLETE".*max_iterations/.test(l)), "completion_promise drift warning must name field, supplied value, baked token, and consequence");
+    // Crucially the abort warning references ABORT_NO_BACKLOG, not the
+    // self_improve token ABORT_NO_IMPROVEMENTS — this proves the
+    // BAKED_BACKLOG_ABORT_TOKEN substitution at the warnPromiseDrift
+    // call site.
+    assert.ok(warns.some((l) => /abort_promise="STOP".*"ABORT_NO_BACKLOG".*abort signal/.test(l)), "abort_promise drift warning must name ABORT_NO_BACKLOG, not ABORT_NO_IMPROVEMENTS");
+});
+
+test("grow_project does NOT warn when promises match the baked SDLC prompt's tokens", async () => {
+    // Inverse: passing the exact baked tokens must produce zero
+    // warnings. The default abort_promise (ABORT_NO_BACKLOG) must also
+    // be silent on omission — pinned by the no-args case below.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "grow_project");
+    await t.handler({
+        completion_promise: "COMPLETE",
+        abort_promise: "ABORT_NO_BACKLOG",
+        max_iterations: 1,
+        min_iterations: 1,
+    });
+    const warns = session.logs.filter((l) => /^grow_project: warning —/.test(l));
+    assert.equal(warns.length, 0, `expected no drift warnings, got: ${JSON.stringify(warns)}`);
+});
+
 test("self_improve rejects overlapping completion/abort phrases with self_improve prefix", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

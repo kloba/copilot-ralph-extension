@@ -336,7 +336,7 @@ export function validateArgs(args) {
  *   attach: (session: object) => () => void,
  *   state: { active: ActiveLoopState|null, lastAssistantContent: string, lastResult: RalphResult|null },
  *   _internal: { onAssistantMessage: Function, onIdle: Function, onAbort: Function, finish: Function, success: Function, failure: Function }
- * }} Controller. `attach` returns an unsubscribe function that detaches all listeners and finalizes any active loop with reason='detached'.
+ * }} Controller. See `attach()` for the detach contract.
  */
 export function createRalphController() {
     const state = {

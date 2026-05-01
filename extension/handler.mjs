@@ -723,14 +723,14 @@ export function createRalphController() {
     const hooks = Object.freeze({
         onUserPromptSubmitted: async () => {
             if (!state.lastResult) return;
-            const r = state.lastResult;
+            const { iterations, reason, note, durationMs } = state.lastResult;
             state.lastResult = null;
             // Collapse whitespace so a multi-line note (e.g. an Error stack
             // surfaced via send_error) doesn't break the bracketed context
             // line presented to the agent.
-            const noteOneLine = collapseNote(r.note);
-            const ctx = `[ralph_loop just finished — iterations=${r.iterations}, reason=${r.reason}${noteOneLine ? `, note=${noteOneLine}` : ""}, durationMs=${r.durationMs}]`;
-            log(`ralph_loop: injecting post-loop context into next user prompt (reason=${r.reason}, iterations=${r.iterations})`);
+            const noteOneLine = collapseNote(note);
+            const ctx = `[ralph_loop just finished — iterations=${iterations}, reason=${reason}${noteOneLine ? `, note=${noteOneLine}` : ""}, durationMs=${durationMs}]`;
+            log(`ralph_loop: injecting post-loop context into next user prompt (reason=${reason}, iterations=${iterations})`);
             return { additionalContext: ctx };
         },
     });

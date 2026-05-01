@@ -1,0 +1,125 @@
+name: Release
+
+# Tag-driven release workflow. Push a tag matching v*.*.* and this:
+#   1. Verifies package.json#version === tag (sans the "v" prefix).
+#   2. Verifies CHANGELOG.md has a section for that version.
+#   3. Runs `npm test` on the tagged commit.
+#   4. Creates a GitHub Release with the CHANGELOG section as body and
+#      both extension/*.mjs files attached as standalone downloadable assets.
+#
+# All three pre-flight checks fail fast so a malformed tag never produces
+# a half-baked release. See docs/RELEASING.md for the manual checklist.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write   # required to create the GitHub Release
+
+jobs:
+  release:
+    name: Cut release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Node.js (matches engines.node in package.json)
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "20"
+
+      - name: Resolve tag and version
+        id: meta
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          # Strip leading "v" — package.json holds bare semver.
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Tag: ${TAG} → version: ${VERSION}"
+
+      - name: Verify package.json version matches tag
+        env:
+          EXPECTED: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          ACTUAL="$(node -p "require('./package.json').version")"
+          if [[ "${ACTUAL}" != "${EXPECTED}" ]]; then
+            echo "::error::package.json version (${ACTUAL}) does not match tag (${EXPECTED})." >&2
+            echo "Bump package.json#version to ${EXPECTED} and re-tag." >&2
+            exit 1
+          fi
+          echo "package.json version matches tag: ${ACTUAL}"
+
+      - name: Verify CHANGELOG has a section for this version
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Accept any of:  ## [vX.Y.Z]   ## vX.Y.Z   ## [X.Y.Z]   ## X.Y.Z
+          # (followed by anything — date, em dash, etc.)
+          if ! grep -E "^## \\[?v?${VERSION//./\\.}\\]?( |$|—|-)" CHANGELOG.md > /dev/null; then
+            echo "::error::CHANGELOG.md is missing a section for ${VERSION} (or ${TAG})." >&2
+            echo "Add a '## ${VERSION}' or '## [${TAG}]' heading before tagging." >&2
+            exit 1
+          fi
+          echo "CHANGELOG.md has a section for ${VERSION}."
+
+      - name: Run tests
+        run: npm test
+
+      - name: Extract CHANGELOG section for this version
+        id: notes
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Print the CHANGELOG block from the matching heading up to (but
+          # excluding) the next "## " heading. Fail loudly if empty.
+          NOTES_FILE="$(mktemp)"
+          awk -v v="${VERSION}" '
+            BEGIN { in_section = 0 }
+            /^## / {
+              if (in_section) { exit }
+              # Strip optional leading "[" and "v", then check for an exact
+              # version match at the start of the heading text.
+              line = $0
+              sub(/^## \[?v?/, "", line)
+              if (index(line, v) == 1) {
+                # Confirm the next character (if any) is a non-version char
+                # so v0.7.0 doesn't accidentally match v0.7.01.
+                next_char = substr(line, length(v) + 1, 1)
+                if (next_char == "" || next_char == "]" || next_char == " " || next_char == "—" || next_char == "-") {
+                  in_section = 1
+                  next
+                }
+              }
+            }
+            in_section { print }
+          ' CHANGELOG.md > "${NOTES_FILE}"
+          if ! [ -s "${NOTES_FILE}" ]; then
+            echo "::error::Extracted CHANGELOG section is empty for ${VERSION}." >&2
+            exit 1
+          fi
+          echo "notes_file=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
+          echo "── Release notes ──────────────────────────"
+          cat "${NOTES_FILE}"
+          echo "───────────────────────────────────────────"
+
+      - name: Create GitHub Release with extension assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
+        run: |
+          set -euo pipefail
+          gh release create "${TAG}" \
+            extension/extension.mjs \
+            extension/handler.mjs \
+            --title "${TAG}" \
+            --notes-file "${NOTES_FILE}"

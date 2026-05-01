@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Features
+- Tag-driven release workflow at `.github/workflows/release.yml`
+  (issue #10). Pushing a `v*.*.*` tag verifies that
+  `package.json#version` matches the tag, that `CHANGELOG.md` has a
+  section for the version, runs `npm test`, and creates a GitHub
+  Release with `extension/extension.mjs` and `extension/handler.mjs`
+  attached as standalone downloadable assets so users can pin a
+  specific revision instead of curling from rolling `main`. Pre-flight
+  checks fail fast so a malformed tag never produces a half-baked
+  release. README adds an "Option C — Pin a specific tagged release"
+  install snippet.
 - `grow_project` IDEATE stage now bootstraps the three labels it
   uses (`grow-project`, `proposed`, `in-progress`) with idempotent
   `gh label create … 2>/dev/null || true` calls before issuing

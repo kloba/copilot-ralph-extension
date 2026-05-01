@@ -476,9 +476,16 @@ export function createRalphController() {
         if (state.active) {
             // If the SDK supplies an abort reason in the event payload,
             // capture it so it shows up in the log line and additionalContext.
-            const reason = ev?.data?.reason ?? ev?.reason;
-            const note = typeof reason === "string" && reason.trim() ? reason.trim() : undefined;
-            log(`⏹ ralph_loop interrupted by session abort${note ? ` (${note})` : ""}.`);
+            const reasonRaw = ev?.data?.reason ?? ev?.reason;
+            const trimmed = typeof reasonRaw === "string" ? reasonRaw.trim() : "";
+            const note = trimmed ? trimmed : undefined;
+            // Bound the log line: truncateNote here so a pathologically large
+            // SDK abort reason doesn't dump megabytes into the timeline. The
+            // structured note on the result is also truncated by finish(),
+            // but the pre-finish log line was previously printing the raw
+            // value uncapped — fix that.
+            const noteForLog = note ? collapseNote(truncateNote(note)) : "";
+            log(`⏹ ralph_loop interrupted by session abort${noteForLog ? ` (${noteForLog})` : ""}.`);
             finish("aborted", note);
         }
     };

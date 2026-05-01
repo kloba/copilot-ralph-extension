@@ -810,6 +810,25 @@ test("abort event with whitespace-only reason ignores it (no note)", async () =>
     assert.equal(controller.state.lastResult.note, undefined);
 });
 
+test("abort event with oversized reason truncates BOTH the log line and result.note", async () => {
+    // A pathological abort reason (an entire stack trace, a huge SDK
+    // payload, etc.) must not dump megabytes into the session log nor
+    // into the structured note. result.note has been truncated all
+    // along (via finish() → truncateNote); the abort log line was
+    // previously printing the raw value uncapped — pin both bounds.
+    const huge = "Z".repeat(50_000);
+    const { session, controller } = await arm({ max_iterations: 5 });
+    session.emit("session.idle", { data: {} });
+    session.emit("abort", { data: { reason: huge } });
+    assert.equal(controller.state.lastResult.reason, "aborted");
+    assert.ok(controller.state.lastResult.note.length <= PREVIEW_CHARS);
+    const abortLog = session.logs.find((l) => /interrupted by session abort/.test(l));
+    assert.ok(abortLog, "expected abort log line");
+    // Wrapper text "⏹ ralph_loop interrupted by session abort (…)." adds
+    // ~50 chars; PREVIEW_CHARS + a generous slack still rules out 50KB.
+    assert.ok(abortLog.length < PREVIEW_CHARS + 200, `abort log too long: ${abortLog.length}`);
+});
+
 test("calling ralph_stop immediately after arm (before any session.idle) finishes with iterations=0", async () => {
     // Arm but never emit session.idle — so the loop never even gets to
     // iteration 1. ralph_stop must still be able to clean up cleanly,

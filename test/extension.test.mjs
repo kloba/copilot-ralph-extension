@@ -1645,6 +1645,47 @@ test("grow_project does NOT warn when promises match the baked SDLC prompt's tok
     assert.equal(warns.length, 0, `expected no drift warnings, got: ${JSON.stringify(warns)}`);
 });
 
+test("cross-pollination: tokens stay distinct between self_improve and grow_project", async () => {
+    // Passing the OTHER tool's abort token must trigger the drift
+    // warning. This pins that the two tokens (ABORT_NO_IMPROVEMENTS
+    // for self_improve, ABORT_NO_BACKLOG for grow_project) stay
+    // distinct in the runtime watcher — a future "harmonize tokens"
+    // refactor would silently break either tool's abort signal, and
+    // this test would fire first.
+
+    // self_improve fed grow_project's abort token → must warn.
+    const s1 = makeFakeSession();
+    const c1 = createRalphController();
+    c1.attach(s1);
+    const tSI = c1.tools.find((x) => x.name === "self_improve");
+    await tSI.handler({
+        abort_promise: "ABORT_NO_BACKLOG",
+        max_iterations: 1,
+        min_iterations: 1,
+    });
+    const w1 = s1.logs.filter((l) => /^self_improve: warning —/.test(l));
+    assert.ok(
+        w1.some((l) => /abort_promise="ABORT_NO_BACKLOG".*"ABORT_NO_IMPROVEMENTS"/.test(l)),
+        `self_improve must warn when fed grow_project's ABORT_NO_BACKLOG token; got: ${JSON.stringify(w1)}`,
+    );
+
+    // grow_project fed self_improve's abort token → must warn.
+    const s2 = makeFakeSession();
+    const c2 = createRalphController();
+    c2.attach(s2);
+    const tGP = c2.tools.find((x) => x.name === "grow_project");
+    await tGP.handler({
+        abort_promise: "ABORT_NO_IMPROVEMENTS",
+        max_iterations: 1,
+        min_iterations: 1,
+    });
+    const w2 = s2.logs.filter((l) => /^grow_project: warning —/.test(l));
+    assert.ok(
+        w2.some((l) => /abort_promise="ABORT_NO_IMPROVEMENTS".*"ABORT_NO_BACKLOG"/.test(l)),
+        `grow_project must warn when fed self_improve's ABORT_NO_IMPROVEMENTS token; got: ${JSON.stringify(w2)}`,
+    );
+});
+
 test("self_improve rejects overlapping completion/abort phrases with self_improve prefix", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

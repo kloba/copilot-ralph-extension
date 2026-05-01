@@ -373,9 +373,6 @@ export function createRalphController() {
     const log = (msg) => {
         try { sessionRef?.log?.(msg); } catch { /* swallow */ }
     };
-    const logIterStart = (a) => {
-        log(`🔁 ralph_loop iter ${a.i}/${a.max} (elapsed ${clampedElapsed(a.startedAt)}ms)`);
-    };
     const sendPrompt = (prompt) => {
         if (!sessionRef?.send) throw new Error("session not attached");
         return sessionRef.send({ prompt });
@@ -482,7 +479,7 @@ export function createRalphController() {
     // iteration is evaluated as empty rather than the prior turn), and
     // fire the prompt. Caller is responsible for incrementing `a.i`.
     const fireIteration = (a) => {
-        logIterStart(a);
+        log(`🔁 ralph_loop iter ${a.i}/${a.max} (elapsed ${clampedElapsed(a.startedAt)}ms)`);
         state.lastAssistantContent = "";
         tryFire(a.prompt);
     };

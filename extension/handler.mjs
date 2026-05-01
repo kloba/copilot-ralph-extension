@@ -548,8 +548,7 @@ export function createRalphController() {
         // large SDK abort reason doesn't dump megabytes into the timeline.
         // The structured note on the result is independently truncated
         // by finish() → truncateNote.
-        const noteForLog = note ? boundedNoteForLog(note) : "";
-        log(`⏹ ralph_loop interrupted by session abort${noteForLog ? ` (${noteForLog})` : ""}.`);
+        log(`⏹ ralph_loop interrupted by session abort${note ? ` (${boundedNoteForLog(note)})` : ""}.`);
         finish("aborted", note);
     };
 

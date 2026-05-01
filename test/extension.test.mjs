@@ -581,6 +581,21 @@ test("ralph_loop refuses when self_improve is already active", async () => {
     assert.match(r.textResultForLlm, /already/i);
 });
 
+test("ralph_stop tears down a self_improve-armed loop", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const si = c.tools.find((x) => x.name === "self_improve");
+    const stop = c.tools.find((x) => x.name === "ralph_stop");
+    const armed = await si.handler({ max_iterations: 5 });
+    assert.equal(armed.resultType, "success");
+    const r = await stop.handler({ reason: "user wants out" });
+    assert.equal(r.resultType, "success", r.textResultForLlm);
+    // Re-arming after stop must be allowed (state.active cleared).
+    const rearm = await si.handler({ max_iterations: 5 });
+    assert.equal(rearm.resultType, "success");
+});
+
 test("PROMPT_SELF_IMPROVE mentions every required SDLC category and stage", () => {
     const p = PROMPT_SELF_IMPROVE;
     // Stages

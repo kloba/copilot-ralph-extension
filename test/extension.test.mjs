@@ -363,7 +363,7 @@ test("validateArgs: rejects unknown keys (typo guard)", () => {
     }).value);
 });
 
-test("ralph_loop & ralph_stop schemas declare additionalProperties:false (mirrors runtime validation)", () => {
+test("all tool schemas declare additionalProperties:false (mirrors runtime validation)", () => {
     const c = createRalphController();
     const ralph = c.tools.find((t) => t.name === "ralph_loop");
     const stop = c.tools.find((t) => t.name === "ralph_stop");
@@ -373,7 +373,7 @@ test("ralph_loop & ralph_stop schemas declare additionalProperties:false (mirror
     assert.equal(si.parameters.additionalProperties, false);
 });
 
-test("ralph_loop & ralph_stop schemas both declare type:'object' at the root", () => {
+test("all tool schemas declare type:'object' at the root", () => {
     // JSON-schema clients that route on `type` will reject the tool
     // outright if this drifts (e.g. someone refactors and the root
     // type goes missing). Pin it for all three tools alongside the

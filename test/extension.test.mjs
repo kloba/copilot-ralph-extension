@@ -763,6 +763,24 @@ test("self_improve rejects unknown args", async () => {
     assert.match(r.textResultForLlm, /self_improve.*unknown/i);
 });
 
+test("self_improve rejects 'prompt' arg — users cannot override the SDLC prompt", async () => {
+    // The whole point of self_improve is the baked-in SDLC prompt;
+    // accepting a caller-supplied `prompt` would silently bypass it.
+    // SELF_IMPROVE_KEYS deliberately omits "prompt", so the
+    // unknown-arg shape guard must fire here.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({ prompt: "do something else", max_iterations: 3 });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /^self_improve:/);
+    assert.match(r.textResultForLlm, /unknown argument/i);
+    assert.match(r.textResultForLlm, /"prompt"/);
+    // No loop should be armed after a rejected call.
+    assert.equal(c.state.active, null);
+});
+
 test("self_improve rejects focus over 500 chars", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

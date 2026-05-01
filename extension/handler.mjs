@@ -703,9 +703,8 @@ export function createRalphController() {
         };
         requireMethod("send", "send(message)");
         requireMethod("on", "on(event, handler)");
-        // Idempotent re-attach: if we're already wired (possibly to a
-        // different session), tear that down first so we don't end up with
-        // duplicate listeners that would double-count every event.
+        // Idempotent re-attach: tear down any existing wiring first so we don't
+        // end up with duplicate listeners that double-count every event.
         if (currentDetach) {
             try { currentDetach(); } catch { /* ignore */ }
             currentDetach = null;

@@ -237,13 +237,6 @@ If you arm a new `ralph_loop` *before* the next user prompt fires, the prior run
 - Copilot CLI Extension SDK (`@github/copilot-sdk/extension`) — bundled with Copilot CLI
 - No runtime npm dependencies. Tests use `node:test` (built-in); run them with `npm test`.
 
-## Related
-
-- **[anthropics/claude-code/plugins/ralph-wiggum](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)** — original plugin for Claude Code
-- **[sepehrbayat/copilot-ralph-mode](https://github.com/sepehrbayat/copilot-ralph-mode)** — Python wrapper for Copilot CLI
-- **[mihaiLucian/copilot-ralph](https://github.com/mihaiLucian/copilot-ralph)** — PowerShell wrapper for Copilot CLI
-- **[michaelstonis/ImInDanger](https://github.com/michaelstonis/ImInDanger)** — C# CLI using GitHub.Copilot.SDK (.NET)
-
 ## License
 
 MIT

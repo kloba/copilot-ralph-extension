@@ -124,6 +124,88 @@ if (!PROMPT_SELF_IMPROVE.includes(DEFAULTS.completion_promise) ||
     );
 }
 
+// PROMPT_GROW_PROJECT is the baked SDLC prompt for the grow_project tool.
+// Unlike self_improve (which polishes one tiny improvement per iter), this
+// loop grows a project by ideating a backlog of features as GitHub issues
+// (via the `gh` CLI) on the first iter, then executing one feature per
+// subsequent iter against a three-part completion gate: tests green +
+// executable acceptance check + demo invocation. The literal abort token
+// is BAKED_BACKLOG_ABORT_TOKEN ("ABORT_NO_BACKLOG"), distinct from
+// self_improve's "ABORT_NO_IMPROVEMENTS" because the agent emits it for a
+// different reason: the backlog has been drained, not that no worthwhile
+// improvement exists.
+const PROMPT_GROW_PROJECT = `You are running an autonomous project-growth iteration on the project in cwd. Each iteration ships ONE feature end-to-end from a GitHub-issue backlog; if the backlog is drained or no proposed issue is ready, emit ABORT_NO_BACKLOG instead.
+
+PER-ITERATION SDLC WORKFLOW (the smallest correct step is the right step):
+
+1. ORIENT.
+   - \`gh issue list --label grow-project --state open\` to see the backlog.
+   - \`git log --oneline -20\` so you do not redo or undo prior iterations.
+   - Skim README, AGENTS.md, package.json / pyproject.toml / Cargo.toml / go.mod (whichever exist), CHANGELOG.
+   - Detect the project's existing test command (npm test, pytest, cargo test, go test ./..., etc).
+
+2. IDEATE (only if the backlog is empty AND this is the first iter).
+   Generate 5-10 small, well-scoped features. For each, run \`gh issue create --label grow-project --label proposed\` with a body that includes:
+     - Spec — one paragraph describing the feature.
+     - Acceptance criteria — a checkbox list of machine-checkable assertions (test name, CLI invocation + expected output, file existence + content match, etc).
+     - Demo command — a single CLI invocation that exercises the feature end-to-end and prints recognisable output.
+     - Optional \`Depends-on: #N\` line per dependency.
+   If the backlog is non-empty, skip this stage.
+
+3. SELECT.
+   Pick ONE issue with the \`proposed\` label, oldest first. Respect any \`Depends-on: #N\` lines: block if any dependency issue is still open. Re-label the chosen issue with \`gh issue edit N --add-label in-progress --remove-label proposed\`. If no proposed issue is ready, emit ABORT_NO_BACKLOG.
+
+4. CRITIQUE (rubber-duck pass).
+   Briefly state the change, the risk, and one alternative you considered+rejected. If the spec is unclear, post a refining comment on the issue before proceeding.
+
+5. BASELINE.
+   Run the project's existing test command and record pass/fail count. If the baseline is broken on entry and you cannot fix it in this single iteration, emit ABORT_NO_BACKLOG.
+
+6. IMPLEMENT.
+   Surgical edits only. No invented features beyond the issue's spec.
+
+7. TEST.
+   Re-run the same test command. It MUST pass at the same or higher count than baseline. If it fails, fix forward or revert, then re-run.
+
+8. ACCEPTANCE.
+   Execute every acceptance-criteria check from the issue body. Each one must pass. Tick the checkbox in the issue body via \`gh issue edit\` as you go.
+
+9. DEMO.
+   Execute the demo command. Capture its output and post it as a comment on the issue with \`gh issue comment N --body ...\` so the demo trace is durable.
+
+10. COMMIT.
+    Conventional-commit prefix (\`feat:\` is typical). Subject must reference the issue, e.g. \`feat(#42): add CSV export\`. Trailers MUST include both:
+      Closes #N
+      Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+    Write the commit message to a temp file in a SEPARATE shell call before running \`git commit -F\`; combining heredoc + commit in one call has historically failed silently. Prefer "cancel", "tear down", or "stop" in commit messages over forceful-action synonyms that some agent runtimes treat as trigger phrases.
+
+11. PUSH.
+    \`git push\` to origin. If push fails (no remote, auth, conflict), log it and continue; do not abort the loop on push failure.
+
+12. CLOSE.
+    \`gh issue close N --reason completed\`. The commit trailer auto-closes too, but be explicit so the close is recorded even if the push failed.
+
+13. END THE TURN.
+    Emit the literal token COMPLETE on its own line so the loop advances. If the backlog is drained, emit ABORT_NO_BACKLOG instead.
+
+HARD RULES:
+- Stay in cwd; do not edit unrelated repos.
+- Do not introduce new top-level dependencies, frameworks, or build systems unless that introduction IS the feature and the rubber-duck critique justified it.
+- Do not delete or rewrite the project's existing license, README, or CHANGELOG wholesale; surgical edits only.
+- Each iteration is a paid turn — the smallest correct step is the right step.`;
+
+// Literal abort token baked into PROMPT_GROW_PROJECT. Centralised here so
+// the warnPromiseDrift call site (in the grow_project handler) and the
+// prompt body stay in lockstep — if either drifts, the load-time parity
+// guard below throws.
+const BAKED_BACKLOG_ABORT_TOKEN = "ABORT_NO_BACKLOG";
+if (!PROMPT_GROW_PROJECT.includes(DEFAULTS.completion_promise) ||
+    !PROMPT_GROW_PROJECT.includes(BAKED_BACKLOG_ABORT_TOKEN)) {
+    throw new Error(
+        `handler.mjs: PROMPT_GROW_PROJECT must contain both "${DEFAULTS.completion_promise}" and "${BAKED_BACKLOG_ABORT_TOKEN}" — the grow_project drift warning depends on this invariant.`,
+    );
+}
+
 // Find a slice length ≤ `cut` that doesn't split a UTF-16 surrogate pair
 // (4-byte chars like emoji), so we never produce a lone-surrogate tail.
 function safeSliceEnd(s, cut) {

@@ -926,27 +926,39 @@ test("self_improve schema declares max_iterations / min_iterations bounds matchi
     assert.equal(min.default, 5);
 });
 
+test("ralph_loop & ralph_stop schema properties match their KEYS sets", () => {
+    // Mirror of the self_improve schema-vs-KEYS-set drift test
+    // (above). Same rationale: a divergence between the
+    // JSON-schema's advertised properties and the Set used by
+    // validateArgShape silently produces either a "documented but
+    // rejected" arg or an "accepted but undocumented" arg. Pin both
+    // tools the same way so the invariant is enforced uniformly.
+    const c = createRalphController();
+    const rl = c.tools.find((t) => t.name === "ralph_loop");
+    assert.deepEqual(Object.keys(rl.parameters.properties).sort(), [
+        "abort_promise",
+        "completion_promise",
+        "max_iterations",
+        "min_iterations",
+        "prompt",
+        "stagnation_limit",
+    ], "ralph_loop schema properties must match RALPH_LOOP_KEYS exactly");
+    const rs = c.tools.find((t) => t.name === "ralph_stop");
+    assert.deepEqual(Object.keys(rs.parameters.properties).sort(), ["reason"],
+        "ralph_stop schema properties must match RALPH_STOP_KEYS exactly");
+});
+
 test("self_improve schema properties match SELF_IMPROVE_KEYS membership exactly", () => {
-    // The schema's `properties` keys and the SELF_IMPROVE_KEYS Set
-    // (used by validateArgShape for the unknown-arg guard) MUST agree
-    // in both directions: any property the schema advertises that
-    // SELF_IMPROVE_KEYS doesn't list would silently get rejected at
-    // runtime even though the schema accepts it; any key
-    // SELF_IMPROVE_KEYS allows that the schema doesn't advertise
-    // would surface to LLMs without documentation. Pin equality of
-    // the sorted key lists so either drift is loud.
     const c = createRalphController();
     const si = c.tools.find((t) => t.name === "self_improve");
-    const schemaKeys = Object.keys(si.parameters.properties).sort();
-    const expected = [
+    assert.deepEqual(Object.keys(si.parameters.properties).sort(), [
         "abort_promise",
         "completion_promise",
         "focus",
         "max_iterations",
         "min_iterations",
         "stagnation_limit",
-    ];
-    assert.deepEqual(schemaKeys, expected, "schema property names must match SELF_IMPROVE_KEYS exactly");
+    ], "schema property names must match SELF_IMPROVE_KEYS exactly");
 });
 
 test("self_improve schema declares completion/abort/stagnation bounds matching runtime", () => {

@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Features
+- **New `self_improve` tool.** Thin wrapper that arms `ralph_loop`
+  with a baked-in, project-agnostic SDLC self-improvement prompt
+  walking the agent through nine stages — ORIENT (read recent
+  commits + project docs, detect the test command), IDEATE (rotate
+  across SDLC categories: bug fix, hardening, validation, tests,
+  refactor, dependency hygiene, docs, release engineering),
+  CRITIQUE (rubber-duck pass), BASELINE, IMPLEMENT, TEST, COMMIT
+  (conventional-commit prefix + Co-authored-by trailer), PUSH, END
+  (emit `COMPLETE` or `ABORT_NO_IMPROVEMENTS`). Use it on any repo
+  to drive autonomous improvement without authoring the prompt.
+- Schema mirrors `ralph_loop` but with self-improve-flavored
+  defaults: `max_iterations` 100 (cap 1000), `min_iterations` 5,
+  `completion_promise` `"COMPLETE"`, optional `abort_promise`,
+  `stagnation_limit` 3 (≥ 2 or 0), plus a new optional `focus`
+  string (≤500 chars) appended verbatim as
+  `Focus this run on: <focus>` after the SDLC scaffolding.
+- `self_improve` reuses the same `state.active` / `finish()` /
+  post-loop `additionalContext` pipeline as `ralph_loop` via a
+  shared private `armLoop(parsedValue, label)` helper — only the
+  log line and success-result text differ in the leading label.
+- Only one loop runs per session at a time, so calling
+  `self_improve` while a `ralph_loop` is active fails fast with
+  the existing `is already running` guard (and vice versa). Cancel
+  with `ralph_stop`.
+
 ### Hardening (post-0.6.0)
 - `attach()` is now transactional: if `session.on()` throws partway
   through subscribing the three required events (assistant.message,

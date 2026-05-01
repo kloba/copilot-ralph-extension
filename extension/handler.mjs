@@ -676,9 +676,9 @@ export function createRalphController() {
                     // Both branches share the same "— call ralph_stop first" tail;
                     // only the iteration counter and arm-vs-run verb differ.
                     const status = pendingFire
-                        ? `armed (iteration 1/${max} pending`
-                        : `running (iteration ${i}/${max}`;
-                    return failure(`ralph_loop is already ${status} — call ralph_stop first).`);
+                        ? `armed (iteration 1/${max} pending)`
+                        : `running (iteration ${i}/${max})`;
+                    return failure(`ralph_loop is already ${status} — call ralph_stop first.`);
                 }
                 const parsed = validateArgs(args);
                 if (parsed.error) return failure(parsed.error);
@@ -780,9 +780,9 @@ export function createRalphController() {
                 if (state.active) {
                     const { pendingFire, i, max } = state.active;
                     const status = pendingFire
-                        ? `armed (iteration 1/${max} pending`
-                        : `running (iteration ${i}/${max}`;
-                    return failure(`ralph_loop is already ${status} — call ralph_stop first).`);
+                        ? `armed (iteration 1/${max} pending)`
+                        : `running (iteration ${i}/${max})`;
+                    return failure(`ralph_loop is already ${status} — call ralph_stop first.`);
                 }
                 if (args !== null && args !== undefined) {
                     const shape = validateArgShape("self_improve", args, SELF_IMPROVE_KEYS);

@@ -998,6 +998,11 @@ test("arming twice before first turn_end shows clearer 'armed' message", async (
     assert.match(r.textResultForLlm, /already armed/);
     assert.match(r.textResultForLlm, /iteration 1\/7 pending/);
     assert.doesNotMatch(r.textResultForLlm, /iteration 0/);
+    // Parens around the status clause must be balanced and the sentence
+    // must end with a clean period — guards against a regression where
+    // the close-paren was misplaced after the period ("first).").
+    assert.match(r.textResultForLlm, /\(iteration 1\/7 pending\) — call ralph_stop first\.$/);
+    assert.doesNotMatch(r.textResultForLlm, /first\)\./);
 });
 
 // ── iteration loop ────────────────────────────────────────────────────────

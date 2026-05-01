@@ -1023,6 +1023,24 @@ test("PROMPT_GROW_PROJECT references the gh-issue backlog + acceptance + demo co
     // that simplifies it back to `git commit -m` re-introduces the
     // bug-trail.
     assert.match(p, /git commit -F/, "COMMIT must use the -F temp-file ritual, not -m heredoc");
+    // PUSH stage must be non-fatal on failure. Real-world push
+    // failures (transient network, auth refresh, branch-protection
+    // race, origin lock) would otherwise abort the entire iter
+    // mid-flight even though the local commit landed cleanly. The
+    // prompt baked this rule explicitly; pin both halves so a
+    // simplifying edit that drops either the "log it" or
+    // "do not abort" half fails the suite.
+    assert.match(p, /push fails[\s\S]*log|continue|do not abort/i,
+        "PUSH must be non-fatal: log + continue rather than abort the loop on push failure");
+    // BASELINE stage must instruct bail-on-red. Without this rule,
+    // an iter that enters with a broken baseline would proceed to
+    // IMPLEMENT + TEST, masking the pre-existing failure inside
+    // the new feature's diff and shipping a broken feature with a
+    // green-looking test signal (because the SAME tests failed
+    // before AND after). Pin the bail-on-red literal so a refactor
+    // can't quietly drop it.
+    assert.match(p, /baseline is broken[\s\S]*ABORT_NO_BACKLOG/i,
+        "BASELINE must bail with ABORT_NO_BACKLOG if entry baseline is red");
 });
 
 test("both baked prompts retain the cwd guardrail and the trigger-phrase footgun caveat", () => {

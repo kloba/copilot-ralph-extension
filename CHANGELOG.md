@@ -3,6 +3,25 @@
 ## Unreleased
 
 ### Fixes
+- `grow_project` `focus` validation errors now carry the
+  `grow_project:` prefix instead of `self_improve:`. The shared
+  `parseFocus` helper hardcoded the latter, so a too-big or
+  wrong-typed `focus` passed to `grow_project` would surface
+  `"self_improve: focus exceeds 2000 characters …"` — the
+  wrong tool name in the error stream. `parseFocus` now takes a
+  `toolName` parameter (default preserves backwards compatibility
+  for the existing `self_improve` call site).
+- `ralph_stop` "no active loop" error message now reads
+  `"no ralph_loop, self_improve, or grow_project is currently
+  running."` Previously it only mentioned `ralph_loop` and
+  `self_improve` — a user trying to cancel a non-existent
+  `grow_project` loop saw a misleading message.
+- `self_improve` schema description now discloses that a
+  `grow_project` loop also blocks it (matching the symmetric
+  `activeLoopGuard`). Previously the description hardcoded
+  `"ralph_loop or self_improve"` and never mentioned the third
+  peer; the model reading the schema had no warning before
+  hitting the runtime guard.
 - `self_improve` argument-validation errors are now guaranteed to
   carry the `self_improve:` prefix even if a future `validateArgs`
   path forgets the delegated `ralph_loop:` prefix. The previous

@@ -383,11 +383,9 @@ export function createRalphController() {
 
     const finish = (reason, note) => {
         if (!state.active) return;
-        // state.active.startedAt is always set at arming time (see the
-        // `state.active = { ...startedAt: Date.now() }` block in the
-        // ralph_loop handler), so the `??` fallback is dead — but clamp
-        // durationMs to ≥ 0 in case the system clock jumps backward
-        // mid-loop (NTP correction) and finishedAt < startedAt.
+        // clampedElapsed (defined above) clamps Date.now() - startedAt to ≥ 0
+        // so a backward clock jump mid-loop (NTP correction) reports 0 in
+        // durationMs / log line instead of a negative number.
         const startedAt = state.active.startedAt;
         const finishedAt = Date.now();
         const result = {

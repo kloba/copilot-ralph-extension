@@ -502,11 +502,10 @@ test("validateArgs success returns exactly the documented value shape (no stray 
     assert.equal(r2.value.abortPromise, null);
 });
 
-test("state.active: arming sets exactly the documented 26-field ActiveLoopState shape", async () => {
-    // The ActiveLoopState typedef enumerates 26 fields: 14 base
+test("state.active: arming sets exactly the documented 30-field ActiveLoopState shape", async () => {
+    // The ActiveLoopState typedef enumerates 30 fields: 14 base
     // + 6 token/caffeinate/git fields (issues #5/#7/#8) + 6 adaptive-budget
-    // fields (issue #4: adaptiveBudget, adaptiveExtension, adaptiveMaxTotal,
-    // originalMax, adaptiveContentHashes, adaptiveExtensionHistory). Pin the
+    // fields (issue #4) + 4 pause/resume fields (issue #3). Pin the
     // exact key set and initial values so future refactors that add or rename
     // a field have to update both the typedef and this test in lockstep.
     const { session, controller } = await arm({ max_iterations: 7, min_iterations: 2, abort_promise: "FAIL", stagnation_limit: 4 });
@@ -529,6 +528,9 @@ test("state.active: arming sets exactly the documented 26-field ActiveLoopState 
         "min",
         "observedMessageThisFire",
         "originalMax",
+        "pauseReason",
+        "paused",
+        "pausedAt",
         "pendingFire",
         "prev",
         "prompt",
@@ -537,6 +539,7 @@ test("state.active: arming sets exactly the documented 26-field ActiveLoopState 
         "stopCaffeinate",
         "streak",
         "tokens",
+        "totalPausedMs",
         "warnAtPct",
     ]);
     assert.equal(a.i, 0);
@@ -556,6 +559,10 @@ test("state.active: arming sets exactly the documented 26-field ActiveLoopState 
     assert.equal(a.originalMax, 7);
     assert.deepEqual(a.adaptiveContentHashes, []);
     assert.deepEqual(a.adaptiveExtensionHistory, []);
+    assert.equal(a.paused, false);
+    assert.equal(a.pauseReason, null);
+    assert.equal(a.pausedAt, 0);
+    assert.equal(a.totalPausedMs, 0);
     void session;
 });
 
@@ -580,9 +587,9 @@ test("controller instances are independent (state is closure-private, not module
 });
 
 
-test("controller exposes ralph_loop, ralph_stop, ralph_status, self_improve, and grow_project tools and hooks", () => {
+test("controller exposes ralph_loop, ralph_stop, ralph_pause, ralph_resume, ralph_status, self_improve, and grow_project tools and hooks", () => {
     const c = createRalphController();
-    assert.deepEqual(c.tools.map((t) => t.name).sort(), ["grow_project", "ralph_loop", "ralph_status", "ralph_stop", "self_improve"]);
+    assert.deepEqual(c.tools.map((t) => t.name).sort(), ["grow_project", "ralph_loop", "ralph_pause", "ralph_resume", "ralph_status", "ralph_stop", "self_improve"]);
     assert.equal(typeof c.hooks.onUserPromptSubmitted, "function");
     assert.equal(typeof c.attach, "function");
     // Pin the EXACT hook surface — if a future change leaks an internal
@@ -599,9 +606,11 @@ test("controller exposes ralph_loop, ralph_stop, ralph_status, self_improve, and
     assert.equal(c.tools[0].name, "ralph_loop", "tools[0] must be ralph_loop");
     assert.equal(c.tools[1].name, "ralph_stop", "tools[1] must be ralph_stop");
     assert.equal(c.tools[2].name, "ralph_status", "tools[2] must be ralph_status");
-    assert.equal(c.tools[3].name, "self_improve", "tools[3] must be self_improve");
-    assert.equal(c.tools[4].name, "grow_project", "tools[4] must be grow_project");
-    assert.equal(c.tools.length, 5, "tools array must have exactly five entries");
+    assert.equal(c.tools[3].name, "ralph_pause", "tools[3] must be ralph_pause");
+    assert.equal(c.tools[4].name, "ralph_resume", "tools[4] must be ralph_resume");
+    assert.equal(c.tools[5].name, "self_improve", "tools[5] must be self_improve");
+    assert.equal(c.tools[6].name, "grow_project", "tools[6] must be grow_project");
+    assert.equal(c.tools.length, 7, "tools array must have exactly seven entries");
 });
 
 test("self_improve tool is exposed (stub)", () => {
@@ -5059,4 +5068,103 @@ test("adaptive_budget: when feature is OFF, finish() result has no adaptive bloc
     const r = controller.state.lastResult;
     assert.ok(r);
     assert.equal(r.adaptive, undefined, "no adaptive block when adaptive_budget is false");
+});
+
+// ── ralph_pause / ralph_resume (issue #3) ──────────────────────────────
+
+test("ralph_pause: with no active loop returns failure", async () => {
+    const c = createRalphController();
+    c.attach(makeFakeSession());
+    const pause = c.tools.find((t) => t.name === "ralph_pause");
+    const r = await pause.handler({});
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /no ralph_loop/);
+});
+
+test("ralph_resume: with no active loop returns failure", async () => {
+    const c = createRalphController();
+    c.attach(makeFakeSession());
+    const resume = c.tools.find((t) => t.name === "ralph_resume");
+    const r = await resume.handler({});
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /no ralph_loop/);
+});
+
+test("ralph_resume: on a non-paused loop returns failure", async () => {
+    const { controller } = await arm({ max_iterations: 5 });
+    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const r = await resume.handler({});
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /not paused/);
+});
+
+test("ralph_pause: short-circuits onIdle so iteration counter does not advance", async () => {
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    runTurn(session, "boot");
+    runTurn(session, "first");
+    const beforePause = controller.state.active.i;
+    await pause.handler({ reason: "manual review" });
+    assert.equal(controller.state.active.paused, true);
+    assert.equal(controller.state.active.pauseReason, "manual review");
+    // Drive several "fake user chat" idle events while paused — these
+    // must NOT consume iterations.
+    runTurn(session, "user is chatting");
+    runTurn(session, "user is still chatting");
+    runTurn(session, "more chatter");
+    assert.equal(controller.state.active.i, beforePause, "iteration counter must not advance while paused");
+    assert.ok(controller.state.active, "loop must still be active (paused, not stopped)");
+});
+
+test("ralph_pause is idempotent — pausing an already-paused loop is a no-op success", async () => {
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    runTurn(session, "boot");
+    await pause.handler({ reason: "first" });
+    const r = await pause.handler({ reason: "second" });
+    assert.equal(r.resultType, "success");
+    assert.equal(r.paused, true);
+    assert.equal(controller.state.active.pauseReason, "first", "first reason wins; second pause is a no-op");
+});
+
+test("ralph_resume: re-arms the loop and the next idle fires the next iteration", async () => {
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    runTurn(session, "boot");
+    runTurn(session, "first");
+    const before = controller.state.active.i;
+    await pause.handler({});
+    runTurn(session, "while paused");
+    await resume.handler({});
+    assert.equal(controller.state.active.paused, false);
+    assert.equal(controller.state.active.streak, 0, "streak resets on resume");
+    assert.equal(controller.state.active.prev, null, "prev resets on resume");
+    runTurn(session, "after resume");
+    assert.ok(controller.state.active.i > before, "iteration counter must advance after resume");
+});
+
+test("ralph_stop while paused still works and tears the loop down", async () => {
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const stop = controller.tools.find((t) => t.name === "ralph_stop");
+    runTurn(session, "boot");
+    runTurn(session, "first");
+    await pause.handler({});
+    const r = await stop.handler({ reason: "user gave up" });
+    assert.equal(r.resultType, "success");
+    assert.equal(controller.state.active, null, "active state must clear");
+    assert.equal(controller.state.lastResult.reason, "user_stopped");
+});
+
+test("ralph_pause / ralph_resume reject unknown args", async () => {
+    const { controller } = await arm({ max_iterations: 5 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const r1 = await pause.handler({ reason: "ok", bogus: 1 });
+    assert.equal(r1.resultType, "failure");
+    assert.match(r1.textResultForLlm, /unknown|bogus/i);
+    const r2 = await resume.handler({ bogus: 1 });
+    assert.equal(r2.resultType, "failure");
+    assert.match(r2.textResultForLlm, /unknown|bogus/i);
 });

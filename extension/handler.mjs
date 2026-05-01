@@ -761,6 +761,8 @@ const RALPH_LOOP_KEYS = new Set([
     "adaptive_max_total",
 ]);
 const RALPH_STOP_KEYS = new Set(["reason"]);
+const RALPH_PAUSE_KEYS = new Set(["reason"]);
+const RALPH_RESUME_KEYS = new Set([]);
 const SELF_IMPROVE_KEYS = new Set([
     "max_iterations",
     "min_iterations",
@@ -1000,6 +1002,10 @@ export function validateArgs(args) {
  * @property {number} originalMax - Issue #4: snapshot of `max` at arm-time so logs/results can report the user-supplied vs effective budget.
  * @property {string[]} adaptiveContentHashes - Issue #4: rolling djb2 hashes of the last ADAPTIVE_WINDOW iterations' assistant content; powers the response-novelty signal.
  * @property {Array<{atIter: number, from: number, to: number, reason: string}>} adaptiveExtensionHistory - Issue #4: append-only log of every extension granted; surfaced in ralph_status and the finish result.
+ * @property {boolean} paused - Issue #3: when true, onIdle short-circuits before firing the next iteration. Toggled by ralph_pause / ralph_resume.
+ * @property {string|null} pauseReason - Issue #3: optional human-readable reason supplied to ralph_pause; surfaced in logs.
+ * @property {number} pausedAt - Issue #3: epoch ms of the most recent pause; 0 when never paused.
+ * @property {number} totalPausedMs - Issue #3: cumulative paused time across all pause/resume cycles, deducted from durationMs so wall-clock reflects active time.
  */
 
 /**
@@ -1268,6 +1274,12 @@ export function createRalphController(opts = {}) {
         // queue an extra copy of our prompt.
         if (isSubAgentEvent(ev)) return;
 
+        // Issue #3: if paused, stop here. The user may still chat freely
+        // with the agent in this session — those turns reach the real
+        // session.idle but we deliberately do nothing, leaving the loop
+        // counter untouched until ralph_resume re-arms.
+        if (a.paused) return;
+
         // The turn that *called* ralph_loop goes idle before any iteration runs.
         // Use that idle to fire iteration 1; evaluate completion/abort on later ones.
         if (a.pendingFire) {
@@ -1443,6 +1455,10 @@ export function createRalphController(opts = {}) {
             originalMax: parsedValue.max,
             adaptiveContentHashes: [],
             adaptiveExtensionHistory: [],
+            paused: false,
+            pauseReason: null,
+            pausedAt: 0,
+            totalPausedMs: 0,
         };
         state.lastAssistantContent = "";
         state.lastResult = null;
@@ -1680,6 +1696,76 @@ export function createRalphController(opts = {}) {
                         ? `no active loop; last ${snapshot.last.label} ${snapshot.last.reason} after ${snapshot.last.iterations} iterations`
                         : "no active loop and no prior run in this session";
                 return success(summary, { status: snapshot });
+            },
+        },
+        {
+            name: "ralph_pause",
+            description:
+                "Pause the active ralph_loop / self_improve / grow_project loop without losing iteration count or conversation context. The currently-running iteration (if any) finishes normally; subsequent session.idle events are short-circuited until ralph_resume is called. While paused, the user may chat freely with the agent — those turns do NOT consume iterations. Idempotent: pausing an already-paused loop is a no-op. Returns failure if no loop is active.",
+            parameters: {
+                type: "object",
+                properties: {
+                    reason: {
+                        type: "string",
+                        description: `Optional human-readable reason for pausing (≤${PREVIEW_CHARS} chars). Surfaced in logs and ralph_status.`,
+                        maxLength: PREVIEW_CHARS,
+                    },
+                },
+                additionalProperties: false,
+            },
+            handler: async (args) => {
+                if (!state.active) return failure("ralph_pause: no ralph_loop, self_improve, or grow_project is currently running.");
+                const bad = validateOptionalArgShape("ralph_pause", args, RALPH_PAUSE_KEYS);
+                if (bad) return bad;
+                const a = state.active;
+                const { i, max, label } = a;
+                if (a.paused) {
+                    return success(
+                        `${label} already paused at ${i}/${max}${a.pauseReason ? ` (${a.pauseReason})` : ""}.`,
+                        { iterations: i, paused: true, reason: a.pauseReason ?? null },
+                    );
+                }
+                const reasonRaw = typeof args?.reason === "string" ? args.reason.trim() : "";
+                const reason = reasonRaw ? truncateNote(reasonRaw) : null;
+                a.paused = true;
+                a.pauseReason = reason;
+                a.pausedAt = Date.now();
+                log(`⏸ ${label} paused at ${i}/${max}${reason ? ` (${reason})` : ""}`);
+                return success(
+                    `${label} paused at ${i}/${max}${reason ? ` (${reason})` : ""}. Use ralph_resume to continue.`,
+                    { iterations: i, paused: true, reason },
+                );
+            },
+        },
+        {
+            name: "ralph_resume",
+            description:
+                "Resume a paused ralph_loop / self_improve / grow_project from the same iteration counter. Stagnation streak is reset (manual intervention almost always changes context). Returns failure if no loop is active or the loop is not currently paused. The next session.idle event after resume will fire the next iteration normally.",
+            parameters: {
+                type: "object",
+                properties: {},
+                additionalProperties: false,
+            },
+            handler: async (args) => {
+                if (!state.active) return failure("ralph_resume: no ralph_loop, self_improve, or grow_project is currently running.");
+                const bad = validateOptionalArgShape("ralph_resume", args, RALPH_RESUME_KEYS);
+                if (bad) return bad;
+                const a = state.active;
+                if (!a.paused) {
+                    return failure(`ralph_resume: ${a.label} is not paused. Use ralph_pause first, or ralph_stop to cancel.`);
+                }
+                const pausedFor = a.pausedAt > 0 ? Date.now() - a.pausedAt : 0;
+                a.totalPausedMs += pausedFor;
+                a.paused = false;
+                a.pauseReason = null;
+                a.pausedAt = 0;
+                a.streak = 0;
+                a.prev = null;
+                log(`▶ ${a.label} resumed at ${a.i}/${a.max} (paused for ${pausedFor}ms)`);
+                return success(
+                    `${a.label} resumed at ${a.i}/${a.max}. Next iteration will fire on the next session.idle.`,
+                    { iterations: a.i, paused: false, pausedForMs: pausedFor },
+                );
             },
         },
         {

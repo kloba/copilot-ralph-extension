@@ -173,6 +173,8 @@ Each iteration walks the agent through nine stages: **ORIENT** (read recent comm
 
 `self_improve` reuses the same internal state machine as `ralph_loop` — the same `controller.state.active` shape, the same `finish()` pipeline, the same timeline log line (just with `self_improve` as the label), and the same `additionalContext` post-loop hook. Only one loop runs per session at a time, so a `self_improve` while a `ralph_loop` is active fails fast (and vice versa). Cancel with `ralph_stop` exactly as you would for any `ralph_loop`.
 
+> ⚠️ **The baked SDLC prompt instructs the agent to emit `COMPLETE` at the end of every iteration.** That means `completion_promise` would fire on iter 1 if `min_iterations` allowed it. The default `min_iterations: 5` defers honoring `COMPLETE` until iter 5 (so a 100-iter call usually stops there). To run the full budget, set `min_iterations` equal to `max_iterations` — e.g. `self_improve({ max_iterations: 100, min_iterations: 100 })`. Use `ralph_stop` to tear down a long-running session early.
+
 ## Development
 
 ```bash

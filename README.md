@@ -63,6 +63,7 @@ cd copilot-ralph-extension
 ./install.sh                # user-scoped → ~/.copilot/extensions/ralph
 ./install.sh --project      # project-scoped → .github/extensions/ralph (cwd must be inside a git repo)
 ./install.sh --dry-run      # show what would be installed without writing anything
+./install.sh --help         # print usage and exit
 ```
 
 `install.sh` syntax-checks each source file with `node --check` and writes via temp-file + atomic `mv`, so a concurrent Copilot CLI reload can never see a half-written `handler.mjs`.

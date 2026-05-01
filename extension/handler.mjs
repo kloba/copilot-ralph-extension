@@ -582,7 +582,7 @@ export function createRalphController() {
                     completion_promise: {
                         type: "string",
                         description:
-                            `Substring that, when present in an assistant turn's response, signals completion (default 'COMPLETE'). Max ${MAX_PROMISE_CHARS} chars.`,
+                            `Substring that, when present in an assistant turn's response, signals completion (default '${DEFAULTS.completion_promise}'). Max ${MAX_PROMISE_CHARS} chars.`,
                         default: DEFAULTS.completion_promise,
                         minLength: 1,
                         maxLength: MAX_PROMISE_CHARS,

@@ -624,10 +624,12 @@ export function createRalphController() {
                 }
                 if (state.active) {
                     const a = state.active;
-                    const where = a.pendingFire
-                        ? `armed (iteration 1/${a.max} pending — call ralph_stop first)`
-                        : `running (iteration ${a.i}/${a.max} — call ralph_stop first)`;
-                    return failure(`ralph_loop is already ${where}.`);
+                    // Both branches share the same "— call ralph_stop first" tail;
+                    // only the iteration counter and arm-vs-run verb differ.
+                    const status = a.pendingFire
+                        ? `armed (iteration 1/${a.max} pending`
+                        : `running (iteration ${a.i}/${a.max}`;
+                    return failure(`ralph_loop is already ${status} — call ralph_stop first).`);
                 }
                 const parsed = validateArgs(args);
                 if (parsed.error) return failure(parsed.error);

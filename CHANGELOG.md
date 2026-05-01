@@ -20,6 +20,19 @@
   read via `packages/tui/src/writer.mjs`'s
   `readRunIndex`, assert the run surfaces.
 
+### Refactor
+- `extension/handler.mjs` — extracted the
+  `warnPromiseDrift` helper to closure scope so
+  `self_improve` and `grow_project` share a single
+  implementation. Previously the function was
+  defined byte-identically inside each handler
+  (modulo the tool-name prefix in the log
+  message), so a future tweak to the warning text
+  could drift between the two tools. Pure refactor
+  — behaviour and log messages unchanged; the 431
+  existing tests continue to pin the
+  prompt/runtime drift warnings.
+
 ### Internal
 - Added `.nvmrc` pinning Node major **20** so
   contributors who run `nvm use` / `fnm use` /

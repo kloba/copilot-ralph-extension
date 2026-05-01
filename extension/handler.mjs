@@ -1156,6 +1156,22 @@ export function createRalphController(opts = {}) {
         try { sessionRef?.log?.(msg); } catch { /* swallow */ }
     };
 
+    // Shared helper for self_improve / grow_project handlers (refactor): emit
+    // a single arm-time log line if the caller's completion_promise /
+    // abort_promise differs from the baked SDLC prompt's literal emit
+    // instruction. A mismatch means the prompt instructs the agent to emit
+    // one token while the runtime watches for another — the loop silently
+    // runs to max_iterations on an otherwise-successful run. Was previously
+    // duplicated byte-for-byte (modulo tool name) in both handlers; pulling
+    // it up keeps a single source of truth so a future message tweak can't
+    // drift between the two tools.
+    const warnPromiseDrift = (toolName, fieldName, raw, expected, consequence) => {
+        if (typeof raw !== "string") return;
+        const trimmed = raw.trim();
+        if (!trimmed || trimmed === expected) return;
+        log(`${toolName}: warning — ${fieldName}=${JSON.stringify(trimmed)} differs from the baked SDLC prompt's "${expected}" emit instruction; ${consequence}.`);
+    };
+
     // Fire iteration prompt; handle both sync throws and async rejections.
     // Captures the active-loop identity at fire-time so a late rejection from a
     // previous arming can't poison a freshly-armed loop. Queue-bloat protection:
@@ -1992,15 +2008,10 @@ export function createRalphController(opts = {}) {
                 // agent to emit one token while the runtime watches for
                 // another — silently running to max_iterations on an
                 // otherwise-successful loop. Emit a single arm-time warning
-                // so the mismatch is visible in the timeline.
-                const warnPromiseDrift = (fieldName, raw, expected, consequence) => {
-                    if (typeof raw !== "string") return;
-                    const trimmed = raw.trim();
-                    if (!trimmed || trimmed === expected) return;
-                    log(`self_improve: warning — ${fieldName}=${JSON.stringify(trimmed)} differs from the baked SDLC prompt's "${expected}" emit instruction; ${consequence}.`);
-                };
-                warnPromiseDrift("completion_promise", a.completion_promise, DEFAULTS.completion_promise, "loop may run to max_iterations");
-                warnPromiseDrift("abort_promise", a.abort_promise, BAKED_ABORT_TOKEN, "abort signal may never fire");
+                // so the mismatch is visible in the timeline. Helper is
+                // shared with grow_project; see warnPromiseDrift definition.
+                warnPromiseDrift("self_improve", "completion_promise", a.completion_promise, DEFAULTS.completion_promise, "loop may run to max_iterations");
+                warnPromiseDrift("self_improve", "abort_promise", a.abort_promise, BAKED_ABORT_TOKEN, "abort signal may never fire");
                 const parsed = validateArgs({
                     prompt,
                     max_iterations: a.max_iterations ?? SELF_IMPROVE_DEFAULTS.max_iterations,
@@ -2095,15 +2106,10 @@ export function createRalphController(opts = {}) {
                 // the literal signal tokens. If the caller overrides
                 // completion_promise / abort_promise, prompt and runtime
                 // watch different tokens — silently running to
-                // max_iterations on an otherwise-successful drain.
-                const warnPromiseDrift = (fieldName, raw, expected, consequence) => {
-                    if (typeof raw !== "string") return;
-                    const trimmed = raw.trim();
-                    if (!trimmed || trimmed === expected) return;
-                    log(`grow_project: warning — ${fieldName}=${JSON.stringify(trimmed)} differs from the baked SDLC prompt's "${expected}" emit instruction; ${consequence}.`);
-                };
-                warnPromiseDrift("completion_promise", a.completion_promise, DEFAULTS.completion_promise, "loop may run to max_iterations");
-                warnPromiseDrift("abort_promise", a.abort_promise, BAKED_BACKLOG_ABORT_TOKEN, "abort signal may never fire");
+                // max_iterations on an otherwise-successful drain. Helper
+                // is shared with self_improve; see warnPromiseDrift defn.
+                warnPromiseDrift("grow_project", "completion_promise", a.completion_promise, DEFAULTS.completion_promise, "loop may run to max_iterations");
+                warnPromiseDrift("grow_project", "abort_promise", a.abort_promise, BAKED_BACKLOG_ABORT_TOKEN, "abort signal may never fire");
                 const parsed = validateArgs({
                     prompt,
                     max_iterations: a.max_iterations ?? GROW_PROJECT_DEFAULTS.max_iterations,

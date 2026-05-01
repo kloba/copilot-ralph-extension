@@ -548,7 +548,7 @@ test("ralph_stop with no active loop returns failure", async () => {
     assert.equal(r.resultType, "failure");
 });
 
-test("ralph_stop tolerates null/undefined/array args without crashing", async () => {
+test("ralph_stop tolerates null/undefined args; rejects array shape loudly", async () => {
     const { session, controller, stop } = await arm({ max_iterations: 5 });
     session.emit("session.idle", { data: {} });
     // null instead of {} — JS default params don't catch null
@@ -563,12 +563,20 @@ test("ralph_stop tolerates null/undefined/array args without crashing", async ()
     const r2 = await stop.handler(undefined);
     assert.equal(r2.resultType, "success");
 
-    // Array: must not throw, reason just ignored
+    // Array: rejected loudly (mirrors ralph_loop's shape guard) so a caller
+    // who passed e.g. ["reason"] gets a clear error instead of silently
+    // stopping with no note.
     await controller.tools[0].handler({ prompt: "go", max_iterations: 5 });
     session.emit("session.idle", { data: {} });
     const r3 = await stop.handler(["reason"]);
-    assert.equal(r3.resultType, "success");
-    assert.equal(controller.state.lastResult.note, undefined);
+    assert.equal(r3.resultType, "failure");
+    assert.match(r3.textResultForLlm, /arguments must be an object \(got array\)/);
+    assert.notEqual(controller.state.active, null, "loop must remain active on validation failure");
+
+    // Non-object primitive: also rejected loudly.
+    const r4 = await stop.handler("done");
+    assert.equal(r4.resultType, "failure");
+    assert.match(r4.textResultForLlm, /arguments must be an object \(got string\)/);
 });
 
 // ── send error handling ───────────────────────────────────────────────────

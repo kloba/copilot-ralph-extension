@@ -532,10 +532,21 @@ export function createRalphController() {
             },
             handler: async (args) => {
                 if (!state.active) return failure("ralph_stop: no ralph_loop is currently running.");
-                // Reject unknown keys to mirror ralph_loop's runtime guard
-                // (typos like `resaon` instead of `reason` would otherwise
-                // silently drop the user's note instead of surfacing it).
-                if (args !== null && args !== undefined && typeof args === "object" && !Array.isArray(args)) {
+                // Reject malformed arg shapes the same way ralph_loop does:
+                // an array or non-object would otherwise silently fall through
+                // to "no reason" instead of telling the caller their input
+                // was wrong.
+                if (args !== null && args !== undefined) {
+                    if (typeof args !== "object" || Array.isArray(args)) {
+                        return failure(
+                            `ralph_stop: arguments must be an object (got ${
+                                Array.isArray(args) ? "array" : typeof args
+                            }).`,
+                        );
+                    }
+                    // Reject unknown keys to mirror ralph_loop's runtime guard
+                    // (typos like `resaon` instead of `reason` would otherwise
+                    // silently drop the user's note instead of surfacing it).
                     const unknown = Object.keys(args).filter((k) => k !== "reason");
                     if (unknown.length > 0) {
                         return failure(`ralph_stop: unknown argument${unknown.length === 1 ? "" : "s"}: ${unknown.map((k) => JSON.stringify(k)).join(", ")}. Valid keys: reason.`);
@@ -543,7 +554,7 @@ export function createRalphController() {
                 }
                 const i = state.active.i;
                 const max = state.active.max;
-                const reason = (args && typeof args === "object" && !Array.isArray(args)) ? args.reason : undefined;
+                const reason = args && typeof args === "object" && !Array.isArray(args) ? args.reason : undefined;
                 const trimmed = typeof reason === "string" && reason.trim() ? reason.trim() : undefined;
                 // Cap before surfacing in the response or storing in result.note
                 // so a giant user-supplied reason can't pollute the LLM context.

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Fixes
+- `tailEventsFile` (packages/tui) now detects file replacement
+  even when the freed inode is reused by the next file in the
+  directory — common on Linux ext4 — by tracking
+  `stat.birthtimeMs` alongside `stat.ino`. Previously, an
+  `unlink + writeFileSync` rotation whose new first line had
+  the same byte length as the old single line (e.g. two
+  minimal `armed` events sharing ~38 bytes) would skip the
+  entire first event of the rotated file because `offset` was
+  not reset. The fix treats *either* a new inode *or* a new
+  birthtime as the replacement signal and resets `offset`,
+  `pending`, and `lastSize` accordingly. Pinned by a new
+  fakeFs-driven regression test that simulates same-ino /
+  fresh-btime rotation deterministically across platforms.
+  This unblocks CI, which had been red on every push since
+  e65de63 because the existing rotation test relied on Linux
+  kernel inode-reuse behavior that only triggered on the
+  runner.
+
 ### Features
 - `self_improve` now treats red GitHub Actions runs as the
   highest-priority signal. ORIENT best-effort lists failing

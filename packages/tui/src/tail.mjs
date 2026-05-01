@@ -109,6 +109,15 @@ export function tailEventsFile(filePath, options = {}) {
             // at the same total size would otherwise be invisible.
             let lastSize = -1;
             let lastIno = null;
+            // Linux frequently reallocates a freed inode number for the
+            // very next file in the same directory, so `ino` alone can
+            // miss an unlink+create replacement when the new file's
+            // first line happens to match the old file's byte length.
+            // birthtimeMs is bound to the underlying inode allocation:
+            // a reallocated inode gets a fresh btime even when its
+            // number repeats. Tracking both gives us a reliable
+            // "this is a different file" signal across rotation.
+            let lastBirthtimeMs = null;
 
             while (!done) {
                 if (signal?.aborted) return;
@@ -122,15 +131,26 @@ export function tailEventsFile(filePath, options = {}) {
                     try { await sleep(pollMs); } catch { return; }
                     continue;
                 }
-                // File replaced (different inode) → restart from offset 0
-                // even when stat.size grew. Without this a writeFileSync
-                // overwrite that produces a larger payload would be read
-                // starting mid-body.
-                if (lastIno !== null && stat.ino !== lastIno) {
+                // File replaced → restart from offset 0 even when
+                // stat.size grew. Without this a writeFileSync overwrite
+                // that produces a larger payload would be read starting
+                // mid-body. We treat *either* a different inode *or* a
+                // different birthtime as a replacement signal so
+                // inode-reuse-after-unlink (common on ext4) still
+                // triggers the reset.
+                const birthtimeMs = Number.isFinite(stat.birthtimeMs) ? stat.birthtimeMs : null;
+                const inoChanged = lastIno !== null && stat.ino !== lastIno;
+                const btimeChanged =
+                    lastBirthtimeMs !== null
+                    && birthtimeMs !== null
+                    && birthtimeMs !== lastBirthtimeMs;
+                if (inoChanged || btimeChanged) {
                     offset = 0;
                     pending = "";
+                    lastSize = -1;
                 }
                 lastIno = stat.ino;
+                lastBirthtimeMs = birthtimeMs;
                 if (stat.size === lastSize) {
                     try { await sleep(pollMs); } catch { return; }
                     continue;

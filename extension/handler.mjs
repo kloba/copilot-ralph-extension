@@ -275,15 +275,17 @@ export function validateArgs(args) {
         abortPromise = r.value;
     }
 
-    if (abortPromise !== null && abortPromise === completionPromise) {
-        return {
-            error: `ralph_loop: abort_promise must differ from completion_promise (both are ${JSON.stringify(completionPromise)} — the signal would be ambiguous).`,
-        };
-    }
-    if (abortPromise !== null && (abortPromise.includes(completionPromise) || completionPromise.includes(abortPromise))) {
-        return {
-            error: `ralph_loop: completion_promise (${JSON.stringify(completionPromise)}) and abort_promise (${JSON.stringify(abortPromise)}) overlap as substrings — whichever check runs first will always fire. Pick disjoint phrases.`,
-        };
+    if (abortPromise !== null) {
+        if (abortPromise === completionPromise) {
+            return {
+                error: `ralph_loop: abort_promise must differ from completion_promise (both are ${JSON.stringify(completionPromise)} — the signal would be ambiguous).`,
+            };
+        }
+        if (abortPromise.includes(completionPromise) || completionPromise.includes(abortPromise)) {
+            return {
+                error: `ralph_loop: completion_promise (${JSON.stringify(completionPromise)}) and abort_promise (${JSON.stringify(abortPromise)}) overlap as substrings — whichever check runs first will always fire. Pick disjoint phrases.`,
+            };
+        }
     }
 
     const rawStagnation = args.stagnation_limit ?? DEFAULTS.stagnation_limit;

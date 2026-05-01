@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
-const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf } = __test__;
+const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf } = __test__;
 
 function makeFakeSession({ failSend = false, rejectSend = false, sendErrorMessage } = {}) {
     const sent = [];
@@ -970,6 +970,15 @@ test("PROMPT_GROW_PROJECT references the gh-issue backlog + acceptance + demo co
     assert.match(p, /Co-authored-by: Copilot/, "commit must include Co-authored-by trailer");
     // Rubber-duck stage explicitly named
     assert.match(p, /rubber-duck/i, "CRITIQUE stage must name the rubber-duck pass");
+    // First-iter label bootstrap: the very first `gh issue create --label X`
+    // would fail on a missing label. The IDEATE stage must instruct the
+    // agent to ensure the labels exist (idempotently, via `|| true`) BEFORE
+    // creating any issues. Without this, the first-ever grow_project run
+    // burns iter 1 on a recoverable error.
+    assert.match(p, /gh label create grow-project/, "IDEATE must bootstrap grow-project label");
+    assert.match(p, /gh label create proposed/, "IDEATE must bootstrap proposed label");
+    assert.match(p, /gh label create in-progress/, "IDEATE must bootstrap in-progress label");
+    assert.match(p, /\|\| true/, "label create calls must be idempotent (|| true)");
 });
 
 test("PROMPT_SELF_IMPROVE bakes the dual Co-authored-by trailer + RALPH_NO_ATTRIBUTION opt-out (issue #1)", () => {
@@ -1059,6 +1068,24 @@ test("BAKED_ABORT_TOKEN and BAKED_BACKLOG_ABORT_TOKEN pin distinct canonical str
     // emitting one would accidentally fire both watchers.
     assert.equal(BAKED_BACKLOG_ABORT_TOKEN.includes(BAKED_ABORT_TOKEN), false);
     assert.equal(BAKED_ABORT_TOKEN.includes(BAKED_BACKLOG_ABORT_TOKEN), false);
+});
+
+test("BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT pin canonical attribution literals (issue #1)", () => {
+    // Centralised canonical-source anchor for the dual-trailer
+    // attribution invariant (mirror of the BAKED_*_ABORT_TOKEN
+    // anchor above). The handler enforces these at module-load
+    // time across BOTH baked prompts; pinning the literals here
+    // forces any rename / domain-change / opt-out polarity flip
+    // to ripple through this test, the load-time guard, both
+    // prompts, the README "Commit attribution" section, and the
+    // CHANGELOG.
+    assert.equal(BAKED_COPILOT_TRAILER, "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>");
+    assert.equal(BAKED_RALPH_TRAILER, "Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>");
+    assert.equal(BAKED_ATTRIBUTION_OPT_OUT, "RALPH_NO_ATTRIBUTION=1");
+    // Trailers must be distinct lines; opt-out polarity is "=1"
+    // (truthy enables the suppression), not a bare flag.
+    assert.notEqual(BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER);
+    assert.match(BAKED_ATTRIBUTION_OPT_OUT, /=1$/, "opt-out env var must use the =1 polarity convention");
 });
 
 test("self_improve and grow_project focus descriptions both disclose steering semantics", async () => {

@@ -157,6 +157,7 @@ PER-ITERATION SDLC WORKFLOW (the smallest correct step is the right step):
    - Detect the project's existing test command (npm test, pytest, cargo test, go test ./..., etc).
 
 2. IDEATE (only if the backlog is empty AND this is the first iter).
+   Before creating issues, run \`gh label create grow-project --color 0e8a16 --description "feature backlog" 2>/dev/null || true\` and \`gh label create proposed --color fbca04 --description "ready to pick up" 2>/dev/null || true\` and \`gh label create in-progress --color d93f0b --description "actively being shipped" 2>/dev/null || true\` so the very first \`gh issue create --label X\` call doesn't fail on a missing label. The \`|| true\` swallows the "label already exists" error on subsequent runs.
    Generate 5-10 small, well-scoped features. For each, run \`gh issue create --label grow-project --label proposed\` with a body that includes:
      - Spec — one paragraph describing the feature.
      - Acceptance criteria — a checkbox list of machine-checkable assertions (test name, CLI invocation + expected output, file existence + content match, etc).
@@ -1238,4 +1239,4 @@ export function createRalphController() {
     };
 }
 
-export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, previewOf };
+export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, previewOf };

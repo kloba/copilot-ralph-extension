@@ -101,6 +101,15 @@ function collapseNote(text) {
 function boundedNoteForLog(text) {
     return collapseNote(truncateNote(text));
 }
+// Recursively freeze obj and all nested object/array values. Skips
+// already-frozen objects so cycles or shared sub-graphs terminate.
+// Returns the input for fluent use (e.g. `return deepFreeze({...})`).
+function deepFreeze(obj) {
+    if (obj === null || typeof obj !== "object" || Object.isFrozen(obj)) return obj;
+    Object.freeze(obj);
+    for (const v of Object.values(obj)) deepFreeze(v);
+    return obj;
+}
 function failure(message, extra = {}) {
     return { ...extra, textResultForLlm: message, resultType: "failure" };
 }
@@ -707,12 +716,6 @@ export function createRalphController() {
     // mutate tool descriptors, swap out handlers, OR tweak the JSON schema
     // (which would break clients that introspected our parameters and
     // would silently desync runtime validation from declared bounds).
-    const deepFreeze = (obj) => {
-        if (obj === null || typeof obj !== "object" || Object.isFrozen(obj)) return obj;
-        Object.freeze(obj);
-        for (const v of Object.values(obj)) deepFreeze(v);
-        return obj;
-    };
     for (const t of tools) deepFreeze(t);
     Object.freeze(tools);
 

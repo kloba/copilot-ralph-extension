@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, mkdtempSync, existsSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, join } from "node:path";
+import { tmpdir } from "node:os";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
 const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf } = __test__;
@@ -4702,6 +4703,88 @@ test("install.sh FILES array matches actual extension/*.mjs on disk", () => {
         onDisk,
         "install.sh FILES list and extension/*.mjs disagree — update install.sh whenever you add or remove a sibling .mjs in extension/",
     );
+});
+
+test("install.sh: --help prints the leading comment block", () => {
+    // Smoke test: the script must be syntactically valid bash (otherwise
+    // bash would crash before reaching the --help branch) and the awk
+    // header-extractor must keep working. Refactors of the leading
+    // comment block (adding/removing a flag) silently desync the help
+    // text from reality without this assertion.
+    const r = spawnSync("bash", [resolve(REPO_ROOT, "install.sh"), "--help"], {
+        encoding: "utf8",
+    });
+    assert.equal(r.status, 0, `--help exited ${r.status}; stderr=${r.stderr}`);
+    assert.match(r.stdout, /Usage: \.\/install\.sh/);
+    assert.match(r.stdout, /--project/);
+    assert.match(r.stdout, /--dry-run/);
+    assert.match(r.stdout, /--help/);
+});
+
+test("install.sh: --dry-run reports target dir + sizes without writing", () => {
+    // End-to-end behaviour test for the install path. Runs install.sh
+    // under a sandboxed $HOME (so we never touch the developer's real
+    // ~/.copilot/extensions/ralph) and asserts:
+    //   - exit 0
+    //   - target dir resolved to $HOME/.copilot/extensions/ralph
+    //   - every FILES entry shows up in the dry-run listing with a
+    //     non-zero byte size
+    //   - the sandbox dir is NOT created (dry-run truly writes nothing).
+    const sandboxHome = mkdtempSync(join(tmpdir(), "ralph-install-"));
+    try {
+        const r = spawnSync(
+            "bash",
+            [resolve(REPO_ROOT, "install.sh"), "--dry-run"],
+            { encoding: "utf8", env: { ...process.env, HOME: sandboxHome } },
+        );
+        assert.equal(r.status, 0, `--dry-run exited ${r.status}; stderr=${r.stderr}`);
+        assert.match(r.stdout, /DRY RUN/);
+        assert.ok(
+            r.stdout.includes(`${sandboxHome}/.copilot/extensions/ralph/`),
+            `expected sandbox target in stdout, got: ${r.stdout}`,
+        );
+        const onDisk = readdirSync(resolve(REPO_ROOT, "extension")).filter((f) =>
+            f.endsWith(".mjs"),
+        );
+        for (const f of onDisk) {
+            assert.match(
+                r.stdout,
+                new RegExp(`${f.replace(/\./g, "\\.")} \\(\\d+ bytes\\)`),
+                `dry-run output must list ${f} with a byte count`,
+            );
+        }
+        // Dry-run must NOT have created the target dir.
+        assert.equal(
+            existsSync(`${sandboxHome}/.copilot/extensions/ralph`),
+            false,
+            "dry-run must not create the target directory",
+        );
+    } finally {
+        rmSync(sandboxHome, { recursive: true, force: true });
+    }
+});
+
+test("install.sh: rejects duplicate flags and unknown arguments", () => {
+    // Reliability: silent acceptance of `--dry-run --dry-run` would mask
+    // a copy-paste typo where the user meant a different second flag
+    // (e.g. `--dry-run --project`). The reject_duplicate helper exists
+    // for this — pin its behaviour so a future "simplify" pass can't
+    // remove it without a failing test.
+    const dup = spawnSync(
+        "bash",
+        [resolve(REPO_ROOT, "install.sh"), "--dry-run", "--dry-run"],
+        { encoding: "utf8" },
+    );
+    assert.notEqual(dup.status, 0, "duplicate --dry-run must exit non-zero");
+    assert.match(dup.stderr, /more than once/);
+
+    const unknown = spawnSync(
+        "bash",
+        [resolve(REPO_ROOT, "install.sh"), "--definitely-not-a-flag"],
+        { encoding: "utf8" },
+    );
+    assert.notEqual(unknown.status, 0, "unknown arg must exit non-zero");
+    assert.match(unknown.stderr, /unknown argument/);
 });
 
 test(".gitignore protects against committing common secret-bearing files", () => {

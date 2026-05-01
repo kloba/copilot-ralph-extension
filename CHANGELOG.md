@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Tests
+- `test/extension.test.mjs` — three new behavioural
+  tests for `install.sh` that actually spawn `bash`
+  against the script (under a sandboxed `$HOME` so
+  the dev's real `~/.copilot/extensions/ralph` is
+  never touched). Cover: `--help` prints the
+  Usage/flag block; `--dry-run` reports the right
+  target dir + every FILES entry with a byte size
+  AND does not create the target directory; and
+  `--dry-run --dry-run` plus `--<unknown-flag>` both
+  exit non-zero with the expected stderr. Until now
+  the only `install.sh` coverage was a static FILES
+  drift guard — the script's actual execution path
+  had zero coverage.
+
 ### Performance
 - `packages/tui/src/writer.mjs` — `aggregateRuns`
   no longer computes `iters.max` via

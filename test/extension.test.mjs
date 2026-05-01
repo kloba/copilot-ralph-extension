@@ -970,6 +970,28 @@ test("onUserPromptSubmitted is a no-op when no loop has finished", async () => {
     assert.equal(r, undefined);
 });
 
+test("onUserPromptSubmitted consumes lastResult exactly once (no replay on subsequent prompts)", async () => {
+    // The hook injects [ralph_loop just finished — …] on the FIRST user
+    // prompt after a loop ends, then clears state.lastResult so a
+    // SECOND prompt isn't decorated with the same stale context. A
+    // future refactor that forgets the `state.lastResult = null` line
+    // (or hoists `return` above it) would silently re-inject the same
+    // outcome on every prompt forever, which is both noisy in the
+    // timeline and confuses the agent into thinking the loop just
+    // finished AGAIN. Pin the consume-once contract.
+    const { session, controller } = await arm({ max_iterations: 3 });
+    session.emit("session.idle", { data: {} });
+    runTurn(session, "all done COMPLETE");
+    assert.ok(controller.state.lastResult, "loop must have finished");
+
+    const first = await controller.hooks.onUserPromptSubmitted({ prompt: "next" });
+    assert.match(first.additionalContext, /reason=completion_promise/);
+    assert.equal(controller.state.lastResult, null, "lastResult must be cleared after first injection");
+
+    const second = await controller.hooks.onUserPromptSubmitted({ prompt: "and again" });
+    assert.equal(second, undefined, "second prompt must NOT be decorated with stale outcome");
+});
+
 test("onUserPromptSubmitted collapses multi-line note into single line", async () => {
     const { session, controller, stop } = await arm({ max_iterations: 5 });
     session.emit("session.idle", { data: {} });

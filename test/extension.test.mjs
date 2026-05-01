@@ -1329,6 +1329,47 @@ test("self_improve treats focus: null as 'not supplied' and arms with the bare S
     assert.ok(!/Focus this run on:/.test(sentPrompt), "null focus must not emit Focus suffix");
 });
 
+test("grow_project treats focus: null as 'not supplied' and arms with the bare SDLC prompt", async () => {
+    // Mirror of the iter 21 self_improve null-focus pin.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "grow_project");
+    const r = await t.handler({ focus: null, max_iterations: 1, min_iterations: 1 });
+    assert.equal(r.resultType, "success");
+    session.emit("session.idle", { data: {} });
+    const sentPrompt = session.sent[0]?.prompt ?? "";
+    assert.ok(!/Focus this run on:/.test(sentPrompt), "null focus must not emit Focus suffix");
+});
+
+test("grow_project rewrites delegated bound errors with grow_project prefix", async () => {
+    // Mirror of iter 17/the equivalent self_improve test: validateArgs
+    // emits ralph_loop:-prefixed errors; the handler rewrites them so
+    // the caller sees grow_project: in the error stream.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "grow_project");
+    const tooBig = await t.handler({ max_iterations: 99999 });
+    assert.equal(tooBig.resultType, "failure");
+    assert.match(tooBig.textResultForLlm, /^grow_project:/);
+    assert.doesNotMatch(tooBig.textResultForLlm, /ralph_loop:/);
+    const tooSmall = await t.handler({ max_iterations: 0 });
+    assert.equal(tooSmall.resultType, "failure");
+    assert.match(tooSmall.textResultForLlm, /^grow_project:/);
+});
+
+test("grow_project rejects stagnation_limit=1 with grow_project prefix", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "grow_project");
+    const r = await t.handler({ stagnation_limit: 1 });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /^grow_project:/);
+    assert.doesNotMatch(r.textResultForLlm, /ralph_loop:/);
+});
+
 test("self_improve rewrites delegated bound errors with self_improve prefix", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

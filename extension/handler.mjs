@@ -273,6 +273,23 @@ export function validateArgs(args) {
 }
 
 /**
+ * @typedef {Object} ActiveLoopState
+ * @property {string} prompt - Validated, trimmed prompt re-fired each iteration.
+ * @property {number} max - Hard iteration cap (1..MAX_ALLOWED_ITERATIONS).
+ * @property {number} min - Iterations that must complete before completion/abort phrases are honored (1..max).
+ * @property {string} completionPromise - Trimmed substring whose presence finishes with reason "completion_promise".
+ * @property {string|null} abortPromise - Trimmed substring whose presence finishes with reason "abort_promise"; null when not configured.
+ * @property {number} stagnationLimit - 0 disables; otherwise N≥2 consecutive byte-identical responses fire reason "stagnation".
+ * @property {number} i - Current iteration counter (0 between arm and first idle, 1..max thereafter).
+ * @property {string|null} prev - Last iteration's accumulated text, captured for stagnation comparison; null until the first iteration evaluation.
+ * @property {number} streak - Count of consecutive byte-identical responses (resets to 1 on any change).
+ * @property {boolean} pendingFire - True from arm-time until the first session.idle fires iteration 1.
+ * @property {boolean} fireInFlight - True between a successful tryFire and the next assistant.message that "consumes" it.
+ * @property {boolean} observedMessageThisFire - True once the in-flight fire has produced at least one root assistant.message.
+ * @property {number} startedAt - Epoch ms captured at arm-time, used for durationMs.
+ */
+
+/**
  * Build a Ralph controller.
  *
  * Use `tools` and `hooks` directly in `joinSession({ tools, hooks })`.
@@ -283,13 +300,13 @@ export function validateArgs(args) {
  *   tools: Array<object>,
  *   hooks: { onUserPromptSubmitted: Function },
  *   attach: (session: object) => () => void,
- *   state: { active: object|null, lastAssistantContent: string, lastResult: RalphResult|null },
+ *   state: { active: ActiveLoopState|null, lastAssistantContent: string, lastResult: RalphResult|null },
  *   _internal: { onAssistantMessage: Function, onIdle: Function, onAbort: Function, finish: Function, success: Function, failure: Function }
  * }} Controller. `attach` returns an unsubscribe function that detaches all listeners and finalizes any active loop with reason='detached'.
  */
 export function createRalphController() {
     const state = {
-        active: null,           // see arming below for shape
+        active: null,           // ActiveLoopState; null when no loop is armed.
         lastAssistantContent: "",
         // Shape: see the RalphResult typedef. Frozen on assignment.
         lastResult: null,

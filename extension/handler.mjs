@@ -842,7 +842,15 @@ export function createRalphController() {
                 if (parsed.error) {
                     // Re-prefix delegated validateArgs errors so users see
                     // self_improve in the error stream rather than ralph_loop.
-                    return failure(parsed.error.replace(/^ralph_loop:/, "self_improve:"));
+                    // Defensive fallback: if a future validateArgs path forgets
+                    // the "ralph_loop:" prefix, the regex rewrite would no-op
+                    // and leak an un-prefixed error to self_improve callers.
+                    // Force a "self_improve:" prefix instead so the tool name
+                    // is always present in the error stream.
+                    const msg = parsed.error.startsWith("ralph_loop:")
+                        ? parsed.error.replace(/^ralph_loop:/, "self_improve:")
+                        : `self_improve: ${parsed.error}`;
+                    return failure(msg);
                 }
                 return armLoop(parsed.value, "self_improve");
             },

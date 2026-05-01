@@ -823,6 +823,10 @@ test("calling ralph_stop immediately after arm (before any session.idle) finishe
     assert.equal(controller.state.lastResult.reason, "user_stopped");
     assert.equal(controller.state.lastResult.iterations, 0);
     assert.equal(controller.state.active, null, "state.active must be cleared");
+    // No iteration ran → no assistant.message accumulated → preview must
+    // be the empty string (not undefined, not the prior run's content).
+    // Pins the JSDoc contract on RalphResult.preview.
+    assert.equal(controller.state.lastResult.preview, "");
 });
 
 test("calling ralph_stop twice in a row: 2nd call reports no active loop", async () => {

@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Fixes
+- `ralph_loop` and `ralph_stop` schema descriptions now name all
+  three loop tools (`ralph_loop`, `self_improve`, `grow_project`)
+  symmetric with the runtime `activeLoopGuard`. Previously
+  `ralph_loop`'s description had no active-loop conflict callout
+  at all (so an LLM dispatcher had to learn the conflict from a
+  runtime failure), and `ralph_stop`'s description hardcoded
+  "Cancel a currently-running ralph_loop or self_improve",
+  missing `grow_project` — leaving a dispatcher with a
+  `grow_project` loop active no signal that `ralph_stop` was the
+  cancel endpoint.
 - `self_improve` `completion_promise` and `abort_promise` schema
   descriptions now disclose the baked-SDLC-prompt drift footgun.
   Previously the descriptions were generic copies of `ralph_loop`'s

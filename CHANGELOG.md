@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Hardening (post-0.6.0)
+- `durationMs` and the iter-log `elapsed` marker are clamped to ≥ 0 so
+  a backward `Date.now()` step (NTP correction, RTC skew on resume,
+  manual clock change) mid-loop can no longer surface negative time
+  in result objects or the timeline.
+- `ralph_stop` rejects array / primitive arg shapes loudly (mirrors
+  `ralph_loop`'s shape guard) instead of silently falling through to
+  "no note".
+- `stagnation_limit=1` is now declared invalid in the JSON schema
+  via `not: { const: 1 }` (runtime already rejected it; LLM clients
+  that honor `not` now see the constraint up front).
+- Shape + unknown-keys validation deduplicated into a shared
+  `validateArgShape` helper used by both tools.
+
+### Tests / docs
+- Regression test pinning the `prompt: null/undefined` → "prompt is
+  required" path (some JSON layers normalize undefined → null).
+- Regression test pinning that arming a fresh `ralph_loop` clears
+  any stale `lastResult` so the post-loop hook doesn't leak the
+  previous run's preview into the next prompt.
+- README parameter table now surfaces the 200-char cap on
+  `completion_promise` / `abort_promise`.
+- `install.sh --help` extracts the comment block dynamically
+  (no hard-coded line range).
+
 ## 0.6.0
 
 ### Bug fixes (root agentic loop boundary)

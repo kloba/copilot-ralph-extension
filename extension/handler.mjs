@@ -142,7 +142,9 @@ function displayValue(v) {
 }
 
 function validateArgShape(toolName, args, knownKeys) {
-    if (args === null || args === undefined || typeof args !== "object" || Array.isArray(args)) {
+    // `typeof null === "object"` so null needs an explicit check; undefined
+    // is already caught by the typeof branch (typeof undefined === "undefined").
+    if (args === null || typeof args !== "object" || Array.isArray(args)) {
         return { error: `${toolName}: arguments must be an object (got ${describeArgType(args)}).` };
     }
     const unknown = Object.keys(args).filter((k) => !knownKeys.has(k));

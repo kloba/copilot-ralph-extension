@@ -4,7 +4,7 @@
 
 [![Inspired by](https://img.shields.io/badge/inspired_by-Anthropic_Ralph_Wiggum-blue)](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)
 
-**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [How it works](#how-it-works) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)
+**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Self-improve](#self-improve-self_improve-tool) · [How it works](#how-it-works) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)
 
 ## What is Ralph Wiggum?
 
@@ -152,6 +152,25 @@ The full structured result (available via `controller.state.lastResult` for embe
 - `stagnation_limit` (default 3) catches stuck agents that keep returning identical responses; set to `0` to disable.
 - `min_iterations` is useful when you want the agent to run additional verification or double-check passes even if the completion phrase appears early.
 - Each iteration is a **paid turn**. Budget accordingly.
+
+### Self-improve (`self_improve` tool)
+
+`self_improve` is a thin wrapper that arms `ralph_loop` with a baked-in, **project-agnostic SDLC** prompt. Use it on **any repo** to drive an autonomous improvement loop without writing the prompt yourself:
+
+> *"Use self_improve to keep improving this project for 100 iterations."*
+
+Each iteration walks the agent through nine stages: **ORIENT** (read recent commits + project docs, detect the test command) → **IDEATE** (pick ONE concrete change, rotating across SDLC categories: bug fix, hardening, validation, tests, refactor, dependency hygiene, docs, release engineering) → **CRITIQUE** (rubber-duck pass) → **BASELINE** (run the existing test command) → **IMPLEMENT** (surgical edits only) → **TEST** (must stay green at same-or-higher count) → **COMMIT** (conventional-commit prefix + `Co-authored-by` trailer) → **PUSH** (non-fatal) → **END** (emit `COMPLETE` or `ABORT_NO_IMPROVEMENTS`).
+
+| Param | Default | Purpose |
+|---|---|---|
+| `max_iterations` | `100` | Hard iteration cap (1–1000) |
+| `min_iterations` | `5` | Honors completion / abort phrases only after N iterations |
+| `focus` | _(none)_ | Optional ≤500-char string. Appended verbatim as `Focus this run on: <focus>` after the SDLC scaffolding — narrows the run to one area without altering the SDLC stages. |
+| `completion_promise` | `"COMPLETE"` | Substring → stop. Trimmed; max 200 chars. |
+| `abort_promise` | _(none)_ | Substring → early abort. Same disjoint-substring rule as `ralph_loop`. |
+| `stagnation_limit` | `3` | Same rules as `ralph_loop` (≥ 2 or `0` to disable; `1` is rejected). |
+
+`self_improve` reuses the same internal state machine as `ralph_loop` — the same `controller.state.active` shape, the same `finish()` pipeline, the same timeline log line (just with `self_improve` as the label), and the same `additionalContext` post-loop hook. Only one loop runs per session at a time, so a `self_improve` while a `ralph_loop` is active fails fast (and vice versa). Cancel with `ralph_stop` exactly as you would for any `ralph_loop`.
 
 ## Development
 

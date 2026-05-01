@@ -3,6 +3,17 @@
 ## Unreleased
 
 ### Features
+- `grow_project` IDEATE stage now bootstraps the three labels it
+  uses (`grow-project`, `proposed`, `in-progress`) with idempotent
+  `gh label create … 2>/dev/null || true` calls before issuing
+  `gh issue create --label X` for the first time. Previously the
+  baked prompt instructed the agent to create issues with labels
+  that may not exist yet, so a brand-new repo's iter 1 would fail
+  with `gh: could not add label …` and burn the iteration trying
+  to recover. The README already promised this behaviour but the
+  prompt body never delivered. Pinned by four new prompt asserts
+  (`gh label create grow-project`, `gh label create proposed`,
+  `gh label create in-progress`, and `|| true` for idempotency).
 - `self_improve` and `grow_project` baked SDLC prompts now ship a
   second `Co-authored-by: copilot-ralph
   <copilot-ralph@users.noreply.github.com>` trailer on every
@@ -22,7 +33,17 @@
   pin-tests anchor the canonical noreply email and the opt-out
   polarity ("omit" within 200 chars of `RALPH_NO_ATTRIBUTION=1`)
   so a future edit can't silently drop the bot-account trailer or
-  invert the opt-out polarity.
+  invert the opt-out polarity. A subsequent commit added a
+  load-time parity guard that fails module import if either
+  prompt drops the canonical Copilot or copilot-ralph trailer
+  literal, regresses on trailer order (Copilot must precede
+  copilot-ralph — GitHub's commit UI surfaces the first
+  co-author more prominently), or stops documenting the
+  `RALPH_NO_ATTRIBUTION=1` env var. The new
+  `BAKED_COPILOT_TRAILER`, `BAKED_RALPH_TRAILER`, and
+  `BAKED_ATTRIBUTION_OPT_OUT` literals are exported through
+  `__test__` for symmetric pinning with the existing
+  `BAKED_*_ABORT_TOKEN` constants.
 
 ### Fixes
 - README user-facing sections now name `grow_project` as the third

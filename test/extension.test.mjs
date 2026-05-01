@@ -230,6 +230,42 @@ test("ralph_loop & ralph_stop schemas declare additionalProperties:false (mirror
 
 // ── tool spec ─────────────────────────────────────────────────────────────
 
+test("ralph_loop arm result has the documented shape (textResultForLlm + extras)", async () => {
+    // Pin the user-facing arm message so the README's "Result shape"
+    // example doesn't drift from reality. This caught one such drift
+    // (the trailing "Use ralph_stop to cancel." sentence had been
+    // added to the handler but the README example wasn't updated).
+    const { session, controller } = await arm({ max_iterations: 20 });
+    void session; void controller;
+    // The most recent log entry is the "armed" line; look up the actual
+    // returned envelope by re-arming a fresh controller without going
+    // through arm() helper so we can inspect the raw return value.
+    const c = createRalphController();
+    c.attach(makeFakeSession());
+    const r = await c.tools.find((t) => t.name === "ralph_loop").handler({
+        prompt: "go", max_iterations: 20,
+    });
+    assert.equal(r.resultType, "success");
+    assert.equal(r.armed, true);
+    assert.equal(r.max, 20);
+    assert.equal(r.min, 1);
+    assert.equal(
+        r.textResultForLlm,
+        "ralph_loop armed (max=20). Iterations will run as conversation turns. Use ralph_stop to cancel.",
+    );
+    // min > 1 path: the text adds ", min=N" inside the parens.
+    const c2 = createRalphController();
+    c2.attach(makeFakeSession());
+    const r2 = await c2.tools.find((t) => t.name === "ralph_loop").handler({
+        prompt: "go", max_iterations: 5, min_iterations: 3,
+    });
+    assert.equal(
+        r2.textResultForLlm,
+        "ralph_loop armed (max=5, min=3). Iterations will run as conversation turns. Use ralph_stop to cancel.",
+    );
+    assert.equal(r2.min, 3);
+});
+
 test("controller exposes ralph_loop and ralph_stop tools and hooks", () => {
     const c = createRalphController();
     assert.deepEqual(c.tools.map((t) => t.name).sort(), ["ralph_loop", "ralph_stop"]);

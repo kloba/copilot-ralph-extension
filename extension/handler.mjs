@@ -127,18 +127,23 @@ PER-ITERATION SDLC WORKFLOW (the smallest correct step is the right step):
 
 1. ORIENT.
    - Run \`git log --oneline -20\` and read the most recent commits so you do not redo or undo prior iterations.
+   - If the \`gh\` CLI is available and authenticated, run \`gh issue list --state open --limit 30 2>/dev/null || true\` to see open issues a human or a prior backlog-driven run may have already filed. Skim the titles + labels so you don't duplicate, contradict, or pre-empt work that's already tracked.
+   - Also best-effort check CI health: \`gh run list --status failure --limit 10 2>/dev/null || true\`. If any recent runs on the default branch (or your current branch's HEAD) are failing, treat that as the highest-priority signal — a red CI blocks releases and silently breaks downstream consumers. Drill into the most recent failure with \`gh run view <run-id> --log-failed 2>/dev/null || true\` to capture the actual error before IDEATE.
    - Skim the project's primary docs: README, AGENTS.md, package.json / pyproject.toml / Cargo.toml / go.mod (whichever exist), CHANGELOG.
    - Detect the project's existing test command (npm test, pytest, cargo test, go test ./..., etc).
 
 2. IDEATE.
-   Pick ONE concrete improvement. Rotate across these SDLC categories so the loop covers the whole lifecycle over time:
-     - bug fix or edge-case hardening
-     - input validation / error message clarity
-     - tests for under-covered behaviour
-     - refactor for readability / dead-code removal
-     - dependency / config hygiene
-     - docs (README, CHANGELOG, comments) accuracy
-     - release engineering (version bump rules, CI hints, .gitignore, lockfile)
+   PRIORITY ORDER (do not skip a higher tier when a candidate exists in it):
+     a. RED CI — if ORIENT surfaced any failing GitHub Actions run on the default branch / current branch HEAD, healing that failure IS the iteration. Reproduce the failure locally if possible, fix the root cause (not the symptom — do not add \`continue-on-error\` or delete the failing job to silence it), and verify the fix re-runs green via \`gh run rerun <run-id>\` or by pushing the fix and watching the new run. If the failure is a flaky test, harden it; if it's an env/dependency drift, pin or update; if it's a legitimate regression, revert or fix forward.
+     b. OPEN ISSUE MATCH — if your candidate improvement matches an open issue you saw in ORIENT, prefer addressing that issue end-to-end and reference it with \`Closes #N\` (or \`Refs #N\` if the fix is partial); if the matching issue carries the \`grow-project\` or \`proposed\` label, defer to the backlog tooling and pick a different improvement instead — this loop should not race the backlog runner for issues already queued for feature work.
+     c. ROTATING SDLC IMPROVEMENT — pick ONE concrete improvement, rotating across the categories below so the loop covers the whole lifecycle over time:
+        - bug fix or edge-case hardening
+        - input validation / error message clarity
+        - tests for under-covered behaviour
+        - refactor for readability / dead-code removal
+        - dependency / config hygiene
+        - docs (README, CHANGELOG, comments) accuracy
+        - release engineering (version bump rules, CI hints, .gitignore, lockfile)
    Avoid repeating the SDLC category used in the previous 2-3 commits.
 
 3. CRITIQUE (rubber-duck pass).

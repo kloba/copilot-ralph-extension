@@ -3,6 +3,38 @@
 ## Unreleased
 
 ### Features
+- `self_improve` now treats red GitHub Actions runs as the
+  highest-priority signal. ORIENT best-effort lists failing
+  workflow runs via `gh run list --status failure --limit 10
+  2>/dev/null || true` and captures the failed log with
+  `gh run view <id> --log-failed 2>/dev/null || true`. IDEATE
+  declares a three-tier priority order — RED CI first, then
+  open-issue match, then the rotating SDLC categories — so an
+  iteration heals a broken pipeline before polishing anything
+  else. The prompt explicitly guards against the easy-way-out
+  anti-pattern of silencing the failure with
+  `continue-on-error` or deleting the failing job; the agent
+  must fix the root cause (flaky → harden, drift → pin/update,
+  regression → revert or fix forward) and verify the rerun is
+  green via `gh run rerun` or a fresh push. Pinned by a new
+  prompt assert covering the `gh run list --status failure`
+  literal, the `|| true` best-effort fallback, the
+  `--log-failed` drill-down, the RED-CI-before-rotating-SDLC
+  ordering, and the `continue-on-error` anti-pattern callout.
+- `self_improve` ORIENT stage now best-effort lists open GitHub
+  issues via `gh issue list --state open --limit 30 2>/dev/null
+  || true` so an iteration doesn't duplicate, contradict, or
+  pre-empt work a human (or a prior `grow_project` run) has
+  already filed. The IDEATE stage is updated in lockstep:
+  candidate improvements that match an open issue are addressed
+  end-to-end with `Closes #N` (or `Refs #N` for partial fixes),
+  and issues carrying the `grow-project` or `proposed` label are
+  deferred so `self_improve` doesn't race the backlog runner.
+  The query is best-effort — a missing or unauthenticated `gh`
+  silently no-ops via `|| true` rather than aborting the
+  iteration. Pinned by a new prompt assert covering the literal
+  command, the `|| true` fallback, the `--state open` scope, and
+  the IDEATE label-defer semantics.
 - `ralph_loop` now appends a small commit-attribution rider to the
   user-supplied prompt at arm time, reaching parity with
   `self_improve` and `grow_project` (issue #1). Any git commit

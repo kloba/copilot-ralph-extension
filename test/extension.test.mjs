@@ -958,6 +958,50 @@ test("PROMPT_SELF_IMPROVE mentions every required SDLC category and stage", () =
     assert.ok(p.length <= MAX_PROMPT_CHARS, `prompt is ${p.length} chars; cap is ${MAX_PROMPT_CHARS}`);
 });
 
+test("PROMPT_SELF_IMPROVE ORIENT peeks at open GitHub issues so iterations don't duplicate filed work", () => {
+    // The ORIENT stage now best-effort lists open issues via `gh issue
+    // list --state open` so an iteration doesn't re-implement (or
+    // contradict) something already tracked. Pin the literal command so
+    // a future edit can't silently strip the issue-awareness — and pin
+    // both the `|| true` no-op fallback (so a missing/unauthenticated
+    // gh doesn't abort the iteration) and the `--state open` scope (a
+    // closed-issue dump would just be noise).
+    const p = PROMPT_SELF_IMPROVE;
+    assert.match(p, /gh issue list[^\n]*--state\s+open/, "ORIENT must run `gh issue list --state open`");
+    assert.match(p, /gh issue list[\s\S]{0,80}\|\|\s*true/, "ORIENT issue query must be best-effort (`|| true`) so a missing/unauth gh doesn't abort the iteration");
+    // IDEATE must teach the agent to defer to backlog tooling on
+    // grow-project / proposed-labelled issues so self_improve doesn't
+    // race the backlog runner. Pin both labels.
+    assert.match(p, /grow-project/, "IDEATE must teach the agent to recognise the grow-project label");
+    assert.match(p, /\bproposed\b/, "IDEATE must teach the agent to recognise the proposed label");
+    assert.match(p, /Closes #N|Refs #N/, "IDEATE must instruct the agent how to reference an addressed issue");
+});
+
+test("PROMPT_SELF_IMPROVE ORIENT/IDEATE prioritise healing red GitHub Actions runs", () => {
+    // Highest-leverage signal: a failing CI run on the default branch
+    // blocks releases and breaks downstream consumers. Pin that ORIENT
+    // best-effort lists failing runs and that IDEATE treats them as
+    // the top-priority tier — without a pin, a future "tighten the
+    // prompt" pass could silently demote CI-healing back into a
+    // generic SDLC category and re-introduce the silent-red-CI failure
+    // mode. Also pin the anti-pattern guard against silencing the
+    // failure (continue-on-error / deleting the failing job) instead
+    // of fixing the root cause.
+    const p = PROMPT_SELF_IMPROVE;
+    assert.match(p, /gh run list[^\n]*--status\s+failure/, "ORIENT must run `gh run list --status failure` to detect red CI");
+    assert.match(p, /gh run list[\s\S]{0,80}\|\|\s*true/, "ORIENT CI query must be best-effort (`|| true`) so a missing/unauth gh doesn't abort the iteration");
+    assert.match(p, /gh run view[^\n]*--log-failed/, "ORIENT must capture the failed log via `gh run view --log-failed` before IDEATE");
+    // Priority ordering: red CI must come BEFORE the rotating SDLC
+    // categories. Pin both labels and assert the ordering.
+    assert.match(p, /\bRED CI\b/, "IDEATE must declare a RED CI tier explicitly");
+    assert.match(p, /\bROTATING SDLC\b/i, "IDEATE must declare a ROTATING SDLC tier explicitly");
+    assert.ok(p.indexOf("RED CI") < p.indexOf("ROTATING SDLC"), "RED CI tier must come before ROTATING SDLC tier in IDEATE");
+    // Anti-pattern guard: the prompt must call out NOT silencing
+    // the failure (continue-on-error / delete-the-job) so the agent
+    // doesn't take the easy way out.
+    assert.match(p, /continue-on-error/, "must call out the continue-on-error anti-pattern so the agent fixes the root cause");
+});
+
 test("PROMPT_SELF_IMPROVE + max-sized focus suffix fits under MAX_PROMPT_CHARS", () => {
     // Mirror of the grow_project worst-case budget test. Focus is
     // independently capped at MAX_FOCUS_CHARS, but PROMPT_SELF_IMPROVE

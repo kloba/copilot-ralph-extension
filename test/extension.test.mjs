@@ -552,6 +552,16 @@ test("self_improve description tells the LLM about ralph_stop and single-loop gu
     assert.match(t.description, /SDLC/i);
 });
 
+test("ralph_stop description names self_improve too (not just ralph_loop)", () => {
+    // ralph_stop cancels both flavors of armed loop; the tool description
+    // surfaced to the LLM must name both so the agent knows it can call
+    // ralph_stop on either, not assume self_improve has a separate stop.
+    const c = createRalphController();
+    const t = c.tools.find((x) => x.name === "ralph_stop");
+    assert.match(t.description, /ralph_loop/);
+    assert.match(t.description, /self_improve/);
+});
+
 test("self_improve arms with max=100 min=5 defaults", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

@@ -688,7 +688,7 @@ export function createRalphController() {
         {
             name: "ralph_stop",
             description:
-                "Cancel a currently-running ralph_loop. Returns the iteration count at the moment of stop. Returns failure if no loop is active. Optionally pass a `reason` describing why the loop is being stopped (recorded as `note` on the result).",
+                "Cancel a currently-running ralph_loop or self_improve. Returns the iteration count at the moment of stop. Returns failure if no loop is active. Optionally pass a `reason` describing why the loop is being stopped (recorded as `note` on the result).",
             parameters: {
                 type: "object",
                 properties: {

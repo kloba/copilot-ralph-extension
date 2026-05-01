@@ -209,6 +209,16 @@ function validatePromiseField(fieldName, raw, { whenProvided = false } = {}) {
     return { value: raw.trim() };
 }
 
+// Wrap validatePromiseField with the "if not supplied, fall back to a
+// default" branch shared by completion_promise (default = "COMPLETE")
+// and abort_promise (default = null). Treats both undefined and null
+// as "not supplied" so { abort_promise: null } means "no abort signal"
+// rather than failing the type check.
+function resolveOptionalPromise(fieldName, raw, fallback, opts) {
+    if (raw === undefined || raw === null) return { value: fallback };
+    return validatePromiseField(fieldName, raw, opts);
+}
+
 // Type-check + Number() coerce for the three integer-valued fields
 // (max_iterations / min_iterations / stagnation_limit). They all reject
 // any non-number/non-string input with the same `must be a number` error
@@ -274,19 +284,13 @@ export function validateArgs(args) {
         };
     }
 
-    let completionPromise = DEFAULTS.completion_promise;
-    if (args.completion_promise !== undefined && args.completion_promise !== null) {
-        const r = validatePromiseField("completion_promise", args.completion_promise);
-        if (r.error) return r;
-        completionPromise = r.value;
-    }
+    const cp = resolveOptionalPromise("completion_promise", args.completion_promise, DEFAULTS.completion_promise);
+    if (cp.error) return cp;
+    const completionPromise = cp.value;
 
-    let abortPromise = null;
-    if (args.abort_promise !== undefined && args.abort_promise !== null) {
-        const r = validatePromiseField("abort_promise", args.abort_promise, { whenProvided: true });
-        if (r.error) return r;
-        abortPromise = r.value;
-    }
+    const ap = resolveOptionalPromise("abort_promise", args.abort_promise, null, { whenProvided: true });
+    if (ap.error) return ap;
+    const abortPromise = ap.value;
 
     if (abortPromise !== null) {
         if (abortPromise === completionPromise) {

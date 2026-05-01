@@ -428,9 +428,8 @@ export function createRalphController() {
         if (state.active?.fireInFlight) {
             state.active.observedMessageThisFire = true;
         }
-        // Accumulate across multiple assistant.message events within the same
-        // turn (the SDK can emit several distinct messages per turn). The
-        // accumulator is reset on each iteration fire-out.
+        // Accumulate across multiple assistant.message events in the same turn
+        // (the SDK can emit several per turn); reset on each iteration fire-out.
         const prev = state.lastAssistantContent;
         const next = prev ? `${prev}\n${text}` : text;
         // Bound memory: keep a tail ≤ MAX_CONTENT_CHARS — completion/abort/

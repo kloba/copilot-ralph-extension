@@ -1,0 +1,60 @@
+# MkDocs Material configuration for the Ralph documentation site.
+# Tracked in issue #2: https://github.com/kloba/copilot-ralph-extension/issues/2
+#
+# Build locally:
+#   pip install mkdocs-material
+#   mkdocs serve   # http://127.0.0.1:8000
+#
+# Deploys via .github/workflows/docs.yml on pushes to main.
+
+site_name: Ralph
+site_description: A Ralph Wiggum-style autonomous loop for the GitHub Copilot CLI.
+site_url: https://kloba.github.io/copilot-ralph-extension/
+repo_url: https://github.com/kloba/copilot-ralph-extension
+repo_name: kloba/copilot-ralph-extension
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.instant
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Concepts: concepts.md
+  - Recipes: recipes.md
+  - Showcase: showcase.md
+  - FAQ: faq.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - toc:
+      permalink: true

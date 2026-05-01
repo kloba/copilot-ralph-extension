@@ -716,7 +716,7 @@ export function createRalphController() {
     const deepFreeze = (obj) => {
         if (obj === null || typeof obj !== "object" || Object.isFrozen(obj)) return obj;
         Object.freeze(obj);
-        for (const key of Object.keys(obj)) deepFreeze(obj[key]);
+        for (const v of Object.values(obj)) deepFreeze(v);
         return obj;
     };
     for (const t of tools) deepFreeze(t);

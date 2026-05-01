@@ -1399,6 +1399,42 @@ test("sub-agent assistant.message content is NOT scanned for completion_promise"
 });
 
 
+test("assistant.message with non-string content is silently ignored (defensive type guard)", async () => {
+    // The SDK contract says content is a string, but a misbehaving session
+    // (or a future event variant) might emit non-string payloads. Without
+    // the `typeof text !== "string"` guard, `lastAssistantContent + "\n" + null`
+    // would inject "null" / "undefined" / "[object Object]" into the
+    // accumulator and confuse the completion check. Pin that every
+    // off-spec shape is dropped silently and the loop continues normally.
+    const { session, controller } = await arm({
+        max_iterations: 5,
+        completion_promise: "ALL_DONE",
+        stagnation_limit: 0,
+    });
+    session.emit("session.idle", { data: {} }); // fire iter 1
+    // Each of these *would* poison the accumulator if the typeof guard
+    // were missing. After: accumulator must still equal the one valid
+    // string we emit at the end.
+    session.emit("assistant.message", { data: { content: null } });
+    session.emit("assistant.message", { data: { content: undefined } });
+    session.emit("assistant.message", { data: { content: 42 } });
+    session.emit("assistant.message", { data: { content: ["ALL_DONE"] } });
+    session.emit("assistant.message", { data: { content: { text: "ALL_DONE" } } });
+    session.emit("assistant.message", { data: {} });           // no content key
+    session.emit("assistant.message", { data: null });         // no data.content path
+    session.emit("assistant.message", null);                   // no ev.data path
+    session.emit("assistant.message", undefined);              // no ev path
+    // Now a real string — this and only this should land in the accumulator.
+    session.emit("assistant.message", { data: { content: "real text" } });
+    assert.equal(controller.state.lastAssistantContent, "real text");
+    // And the completion phrase smuggled in via array/object content must
+    // NOT have been substring-matched on the next idle.
+    session.emit("session.idle", { data: {} });
+    assert.equal(controller.state.lastResult, null, "off-spec content must not trigger completion");
+    assert.equal(controller.state.active.i, 2);
+});
+
+
 test("sub-agent abort event does NOT terminate the root ralph_loop", async () => {
     // Sub-agents (task / explore / rubber-duck …) emit their own abort
     // events when they fail or are cancelled. Per the SDK schema, those

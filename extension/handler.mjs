@@ -1678,6 +1678,18 @@ export function createRalphController(opts = {}) {
             stagnation_limit: a.stagnationLimit,
             stagnation_streak: a.streak,
             pending_first_iteration: a.pendingFire,
+            // Pause visibility — without these fields, a paused loop is
+            // indistinguishable from a slow / blocked one in ralph_status,
+            // because `iteration` and `elapsed_ms` keep advancing while
+            // the loop is silent. `paused_for_ms` is the *current* pause
+            // duration (0 when not paused); `total_paused_ms` is the
+            // cumulative time spent paused across all prior pause/resume
+            // cycles in this run (matches what's added back at resume).
+            paused: a.paused === true,
+            pause_reason: a.pauseReason ?? null,
+            paused_at: a.paused && a.pausedAt > 0 ? new Date(a.pausedAt).toISOString() : null,
+            paused_for_ms: a.paused && a.pausedAt > 0 ? Math.max(0, now - a.pausedAt) : 0,
+            total_paused_ms: a.totalPausedMs ?? 0,
             last_response_excerpt: previewOf(state.lastAssistantContent),
         };
         // Git block — best effort. Whole block is omitted when not in a repo.
@@ -1856,7 +1868,7 @@ export function createRalphController(opts = {}) {
                 // reading the result still gets a useful summary even if it
                 // doesn't introspect the JSON.
                 const summary = snapshot.active
-                    ? `${snapshot.label}: iteration ${snapshot.iteration}/${snapshot.max_iterations}, elapsed ${snapshot.elapsed_ms}ms`
+                    ? `${snapshot.label}: iteration ${snapshot.iteration}/${snapshot.max_iterations}, elapsed ${snapshot.elapsed_ms}ms${snapshot.paused ? ` (PAUSED${snapshot.pause_reason ? ` — ${snapshot.pause_reason}` : ""}, for ${snapshot.paused_for_ms}ms)` : ""}`
                     : snapshot.last
                         ? `no active loop; last ${snapshot.last.label} ${snapshot.last.reason} after ${snapshot.last.iterations} iterations`
                         : "no active loop and no prior run in this session";

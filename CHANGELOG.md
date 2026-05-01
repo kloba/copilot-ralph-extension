@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Fixes
+- `extension/handler.mjs` — `ralph_status` now
+  surfaces pause state. The snapshot's active
+  branch gained five fields: `paused` (bool),
+  `pause_reason` (string|null), `paused_at`
+  (ISO timestamp|null), `paused_for_ms` (current
+  pause duration, 0 when not paused), and
+  `total_paused_ms` (cumulative across prior
+  pause/resume cycles). The one-line LLM summary
+  appended `(PAUSED — <reason>, for <ms>ms)`
+  whenever the loop is parked. Before this, an
+  operator who called `ralph_pause` and then
+  `ralph_status` saw the iteration counter and
+  elapsed clock advancing as usual — there was
+  no observable difference between a paused loop
+  and a slow / blocked one. Reliability gap; pure
+  additive change to the JSON payload (no removed
+  or renamed keys). New behaviour test in
+  `test/extension.test.mjs` exercises pause →
+  status → resume → status to pin every field.
+
 ### CI
 - `.github/workflows/ci.yml` — replaced
   `npm ci --no-audit --no-fund || npm install

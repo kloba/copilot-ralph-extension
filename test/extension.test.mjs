@@ -5548,6 +5548,52 @@ test("ralph_status: README documents the tool", () => {
     assert.match(readme, /\bralph_status\b/, "README must mention the ralph_status tool");
 });
 
+test("ralph_status: surfaces paused state (paused, pause_reason, paused_at, paused_for_ms, total_paused_ms)", async () => {
+    // Reliability gap fix: before this, a paused loop was indistinguishable
+    // from a live-but-slow one in ralph_status — `iteration` and `elapsed_ms`
+    // keep advancing while the loop is silent. Without these fields, an
+    // operator who paused the loop and queried status had no way to confirm
+    // the pause took effect or see how long the loop had been parked.
+    const { ralph, status, session, controller } = await armStatusable();
+    await ralph.handler({ prompt: "go", max_iterations: 5, min_iterations: 2, abort_promise: "FAIL", stagnation_limit: 0 });
+    runTurn(session, "iteration 1 work");
+
+    // Live snapshot — must show paused: false and zero pause counters.
+    const live = await status.handler({});
+    assert.equal(live.status.paused, false, "live loop reports paused: false");
+    assert.equal(live.status.pause_reason, null);
+    assert.equal(live.status.paused_at, null);
+    assert.equal(live.status.paused_for_ms, 0);
+    assert.equal(live.status.total_paused_ms, 0);
+    assert.ok(!/PAUSED/.test(live.textResultForLlm), "live summary must not claim paused");
+
+    // Pause it.
+    const pauseTool = controller.tools.find((t) => t.name === "ralph_pause");
+    await pauseTool.handler({ reason: "manual diagnostic break" });
+
+    const paused = await status.handler({});
+    assert.equal(paused.status.paused, true, "paused loop reports paused: true");
+    assert.equal(paused.status.pause_reason, "manual diagnostic break");
+    assert.match(paused.status.paused_at, /^\d{4}-\d{2}-\d{2}T/, "paused_at must be ISO timestamp");
+    assert.equal(typeof paused.status.paused_for_ms, "number");
+    assert.ok(paused.status.paused_for_ms >= 0, "paused_for_ms must be non-negative");
+    assert.equal(paused.status.total_paused_ms, 0, "total_paused_ms is still 0 until resume");
+    assert.match(paused.textResultForLlm, /PAUSED/, "summary must surface pause to the LLM");
+    assert.match(paused.textResultForLlm, /manual diagnostic break/, "summary must include pause reason");
+
+    // Resume — now total_paused_ms must reflect the prior pause window
+    // and the live counters must zero out again.
+    const resumeTool = controller.tools.find((t) => t.name === "ralph_resume");
+    await resumeTool.handler({});
+    const resumed = await status.handler({});
+    assert.equal(resumed.status.paused, false);
+    assert.equal(resumed.status.pause_reason, null);
+    assert.equal(resumed.status.paused_at, null);
+    assert.equal(resumed.status.paused_for_ms, 0);
+    assert.ok(resumed.status.total_paused_ms >= 0, "total_paused_ms accumulates prior pause window");
+    assert.ok(!/PAUSED/.test(resumed.textResultForLlm));
+});
+
 // ── adaptive iteration budget (issue #4) ─────────────────────────────────
 
 function makeAdaptiveGitStub({ shortstat = "", porcelain = "" } = {}) {

@@ -490,7 +490,7 @@ export function createRalphController() {
                     },
                     min_iterations: {
                         type: "integer",
-                        description: `Minimum iterations before completion_promise / abort_promise are honored (default ${DEFAULTS.min_iterations}). Use this to force the agent to run additional verification passes even if it declares completion early.`,
+                        description: `Minimum iterations before completion_promise / abort_promise are honored (default ${DEFAULTS.min_iterations}; must not exceed max_iterations). Use this to force the agent to run additional verification passes even if it declares completion early.`,
                         default: DEFAULTS.min_iterations,
                         minimum: 1,
                         maximum: MAX_ALLOWED_ITERATIONS,

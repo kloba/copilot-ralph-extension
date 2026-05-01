@@ -70,6 +70,21 @@ cd copilot-ralph-extension
 
 > **Windows note:** the runtime extension (`extension.mjs` + `handler.mjs`) is plain ESM and works wherever Copilot CLI runs. The `install.sh` script requires a Bash shell — on Windows use **WSL**, **Git Bash**, or **MSYS2**. As a fallback, follow Option A or B above (the `mkdir -p` + `curl` snippets) inside any POSIX-ish shell, or copy `extension/extension.mjs` and `extension/handler.mjs` manually into `%USERPROFILE%\.copilot\extensions\ralph\`.
 
+### Option C — Pin a specific tagged release
+
+The default install snippets curl from `main`, which is rolling-latest. To pin a specific revision (recommended for shared/CI environments), download the assets attached to a [GitHub Release](https://github.com/kloba/copilot-ralph-extension/releases):
+
+```bash
+VERSION=v0.7.0
+mkdir -p ~/.copilot/extensions/ralph
+for f in extension.mjs handler.mjs; do
+  curl -fsSL "https://github.com/kloba/copilot-ralph-extension/releases/download/$VERSION/$f" \
+    -o ~/.copilot/extensions/ralph/$f
+done
+```
+
+For a project-scoped pin, swap `~/.copilot/extensions/ralph` for `.github/extensions/ralph` inside your repo. See [`docs/RELEASING.md`](docs/RELEASING.md) for the release workflow that produces these assets.
+
 ## Usage
 
 In a Copilot CLI session, ask the agent to invoke `ralph_loop`:

@@ -1169,6 +1169,46 @@ test("self_improve rejects stagnation_limit=1 with self_improve prefix", async (
     assert.doesNotMatch(r.textResultForLlm, /ralph_loop:/);
 });
 
+test("self_improve warns when completion_promise / abort_promise drift from the baked SDLC prompt's emit tokens", async () => {
+    // Pin the iter 27/28 footgun guard: PROMPT_SELF_IMPROVE bakes in
+    // "emit COMPLETE" and "emit ABORT_NO_IMPROVEMENTS". A caller passing
+    // a different completion_promise / abort_promise gets a one-shot
+    // warning at arm-time; otherwise the loop would silently run to
+    // max_iterations because prompt and runtime watch different tokens.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({
+        completion_promise: "DONE",
+        abort_promise: "STOP",
+        max_iterations: 1,
+        min_iterations: 1,
+    });
+    assert.equal(r.resultType, "success");
+    const warns = session.logs.filter((l) => /^self_improve: warning —/.test(l));
+    assert.equal(warns.length, 2, `expected two drift warnings, got: ${JSON.stringify(warns)}`);
+    assert.ok(warns.some((l) => /completion_promise="DONE".*"COMPLETE".*max_iterations/.test(l)), "completion_promise drift warning");
+    assert.ok(warns.some((l) => /abort_promise="STOP".*"ABORT_NO_IMPROVEMENTS".*abort signal/.test(l)), "abort_promise drift warning");
+});
+
+test("self_improve does NOT warn when promises match the baked SDLC prompt's tokens", async () => {
+    // Inverse of the drift test: passing the exact baked tokens (or the
+    // default for completion_promise) must NOT log a spurious warning.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    await t.handler({
+        completion_promise: "COMPLETE",
+        abort_promise: "ABORT_NO_IMPROVEMENTS",
+        max_iterations: 1,
+        min_iterations: 1,
+    });
+    const warns = session.logs.filter((l) => /^self_improve: warning —/.test(l));
+    assert.equal(warns.length, 0, `expected no drift warnings, got: ${JSON.stringify(warns)}`);
+});
+
 test("self_improve rejects overlapping completion/abort phrases with self_improve prefix", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

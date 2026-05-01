@@ -312,6 +312,18 @@ test("ralph_loop & ralph_stop schemas declare additionalProperties:false (mirror
     assert.equal(stop.parameters.additionalProperties, false);
 });
 
+test("ralph_loop & ralph_stop schemas both declare type:'object' at the root", () => {
+    // JSON-schema clients that route on `type` will reject the tool
+    // outright if this drifts (e.g. someone refactors and the root
+    // type goes missing). Pin it for both tools alongside the
+    // additionalProperties:false invariant above.
+    const c = createRalphController();
+    const ralph = c.tools.find((t) => t.name === "ralph_loop");
+    const stop = c.tools.find((t) => t.name === "ralph_stop");
+    assert.equal(ralph.parameters.type, "object");
+    assert.equal(stop.parameters.type, "object");
+});
+
 // ── tool spec ─────────────────────────────────────────────────────────────
 
 test("ralph_loop arm result has the documented shape (textResultForLlm + extras)", async () => {

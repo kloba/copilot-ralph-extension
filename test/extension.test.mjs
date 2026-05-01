@@ -874,6 +874,18 @@ test("onUserPromptSubmitted collapses multi-line note into single line", async (
     assert.equal(r.additionalContext.includes("\n"), false);
 });
 
+test("onUserPromptSubmitted collapses tabs / CR / FF in note (not just LF)", async () => {
+    // collapseNote uses /\s+/ — i.e. ALL whitespace, not just newlines.
+    // Pin tabs, carriage returns, and form feeds so a future tweak that
+    // narrows the regex (e.g. to /[\n\r]+/) would surface the regression.
+    const { session, controller, stop } = await arm({ max_iterations: 5 });
+    session.emit("session.idle", { data: {} });
+    await stop.handler({ reason: "a\tb\rc\fd" });
+    const r = await controller.hooks.onUserPromptSubmitted({ prompt: "next" });
+    assert.match(r.additionalContext, /note=a b c d/);
+    assert.equal(/[\t\r\f]/.test(r.additionalContext), false);
+});
+
 test("finish log line collapses multi-line note (single-line timeline marker)", async () => {
     // A note with newlines (e.g. an Error stack from send_error) must not
     // break the timeline log into multiple lines.

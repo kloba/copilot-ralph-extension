@@ -12,8 +12,7 @@
 // in-session, while still keeping full conversation context — every
 // iteration is a real assistant turn the user sees.
 //
-// Inspired by Anthropic's Claude Code ralph-wiggum plugin (Stop hook
-// re-injection pattern) and Th0rgal/open-ralph-wiggum.
+// Inspired by the Stop-hook re-injection pattern.
 
 const DEFAULTS = {
     max_iterations: 20,

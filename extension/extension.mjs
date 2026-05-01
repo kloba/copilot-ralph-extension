@@ -1,7 +1,6 @@
 // Extension: ralph
 // Hook/event-driven Ralph Wiggum iterative loop for GitHub Copilot CLI.
-// Inspired by Anthropic's Claude Code ralph-wiggum plugin (Stop hook
-// re-injection pattern) and Th0rgal/open-ralph-wiggum.
+// Inspired by the Stop-hook re-injection pattern.
 
 import { joinSession } from "@github/copilot-sdk/extension";
 import { createRalphController } from "./handler.mjs";

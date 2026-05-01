@@ -12,6 +12,12 @@
 //
 // Inspired by the Stop-hook re-injection pattern.
 
+import { createRequire } from "node:module";
+
+// Lazy-resolved sync `require` so we can pull child_process only when caffeinate
+// is actually enabled, avoiding the import cost for the common (disabled) path.
+const moduleRequire = createRequire(import.meta.url);
+
 const DEFAULTS = Object.freeze({
     max_iterations: 20,
     min_iterations: 1,
@@ -355,6 +361,94 @@ function deepFreeze(obj) {
     return obj;
 }
 
+// ---------------------------------------------------------------------------
+// caffeinate integration (issue #8)
+//
+// Optional, opt-in macOS-only system-sleep prevention while a ralph loop is
+// active. Spawns `caffeinate -i [-d] -w <pid>` as a child process at arm-time
+// and kills it at finish-time. The `-w <pid>` flag ties caffeinate's lifetime
+// to the host process, so even if the loop crashes hard caffeinate exits with
+// the CLI — no orphaned wake-locks.
+//
+// Disabled by default. Enable via env var:
+//     RALPH_CAFFEINATE=1                 → enable, scope = idle (default)
+//     RALPH_CAFFEINATE_SCOPE=idle+display → also block display sleep
+//
+// On non-darwin platforms or when the binary is missing, the helper degrades
+// to a silent no-op — never fail the loop over a power-management nicety.
+// ---------------------------------------------------------------------------
+const CAFFEINATE_TRUTHY = new Set(["1", "true", "yes", "on"]);
+const CAFFEINATE_SCOPES = new Set(["idle", "idle+display"]);
+
+function isCaffeinateEnabled(env) {
+    const raw = env?.RALPH_CAFFEINATE;
+    if (typeof raw !== "string") return false;
+    return CAFFEINATE_TRUTHY.has(raw.trim().toLowerCase());
+}
+
+function resolveCaffeinateScope(env) {
+    const raw = env?.RALPH_CAFFEINATE_SCOPE;
+    if (typeof raw !== "string") return "idle";
+    const v = raw.trim().toLowerCase();
+    return CAFFEINATE_SCOPES.has(v) ? v : "idle";
+}
+
+function caffeinateFlagsForScope(scope) {
+    // -i: prevent idle sleep, -d: prevent display sleep.
+    return scope === "idle+display" ? "-id" : "-i";
+}
+
+/**
+ * Start a caffeinate child if enabled + supported. Returns a `stop()` function
+ * (idempotent) or null when no process was spawned. Never throws.
+ *
+ * @param {object} deps
+ * @param {NodeJS.ProcessEnv} deps.env
+ * @param {string} deps.platform - process.platform value
+ * @param {number} deps.pid - host process pid (for `-w`)
+ * @param {Function} deps.spawnFn - child_process.spawn-compatible
+ * @param {(msg: string) => void} deps.log
+ * @param {string} deps.label - "ralph_loop" | "self_improve" | "grow_project"
+ * @returns {(() => void) | null}
+ */
+function startCaffeinate({ env, platform, pid, spawnFn, log, label }) {
+    if (!isCaffeinateEnabled(env)) return null;
+    if (platform !== "darwin") {
+        log(`${label}: caffeinate skipped — platform ${platform} not supported (darwin only)`);
+        return null;
+    }
+    if (typeof spawnFn !== "function") return null;
+    const scope = resolveCaffeinateScope(env);
+    const flags = caffeinateFlagsForScope(scope);
+    const args = [flags, "-w", String(pid)];
+    let child;
+    try {
+        child = spawnFn("caffeinate", args, { stdio: "ignore", detached: false });
+    } catch (err) {
+        log(`${label}: caffeinate spawn failed (${err?.message ?? err}); continuing without sleep prevention`);
+        return null;
+    }
+    if (!child || typeof child.kill !== "function") {
+        log(`${label}: caffeinate spawn returned no child handle; continuing without sleep prevention`);
+        return null;
+    }
+    // Async error (binary missing, ENOENT) reported via 'error' event — never
+    // crash the host. Log + treat as a no-op; the kill() in stop() is safe
+    // even if the child never started.
+    if (typeof child.on === "function") {
+        child.on("error", (err) => {
+            log(`${label}: caffeinate error (${err?.message ?? err}); sleep prevention inactive`);
+        });
+    }
+    log(`${label}: keeping system awake via caffeinate (pid=${child.pid ?? "?"}, scope=${scope})`);
+    let stopped = false;
+    return () => {
+        if (stopped) return;
+        stopped = true;
+        try { child.kill("SIGTERM"); } catch { /* swallow */ }
+    };
+}
+
 function failure(message, extra = {}) {
     return { ...extra, textResultForLlm: message, resultType: "failure" };
 }
@@ -654,6 +748,7 @@ export function validateArgs(args) {
  * @property {number|null} maxTokens - Issue #7: opt-in token cap; null = disabled.
  * @property {number} warnAtPct - Issue #7: first context-window warning threshold (default 80, range 1..99). 95% second-threshold is hard-coded.
  * @property {{ input: number, output: number, byIteration: Array<object>, byModel: Object<string, {input:number, output:number}>, currentModel: string|null, warnedThresholds: number[], unknownModelLogged: boolean }} tokens - Issue #7: cumulative token bookkeeping. Initialized empty at arm-time; mutated in onAssistantMessage as usage events arrive.
+ * @property {(() => void) | null} stopCaffeinate - Idempotent killer for the optional caffeinate child (issue #8); null when sleep prevention is disabled or unsupported.
  */
 
 /**
@@ -671,7 +766,16 @@ export function validateArgs(args) {
  *   _internal: { onAssistantMessage: Function, onIdle: Function, onAbort: Function, finish: Function, success: Function, failure: Function }
  * }} Controller. See `attach()` for the detach contract.
  */
-export function createRalphController() {
+export function createRalphController(opts = {}) {
+    // Caffeinate dependency injection (issue #8). Tests pass stubs; production
+    // resolves child_process.spawn lazily so the import cost is paid only when
+    // RALPH_CAFFEINATE is actually enabled.
+    const caffeinateDeps = {
+        env: opts.caffeinate?.env ?? process.env,
+        platform: opts.caffeinate?.platform ?? process.platform,
+        pid: opts.caffeinate?.pid ?? process.pid,
+        spawnFn: opts.caffeinate?.spawnFn ?? null,
+    };
     const state = {
         active: null,           // ActiveLoopState; null when no loop is armed.
         lastAssistantContent: "",
@@ -726,7 +830,7 @@ export function createRalphController() {
 
     const finish = (reason, note) => {
         if (!state.active) return;
-        const { startedAt, i: iterations, label, tokens } = state.active;
+        const { startedAt, i: iterations, label, tokens, stopCaffeinate } = state.active;
         const finishedAt = Date.now();
         const durationMs = clampedElapsed(startedAt);
         const result = {
@@ -758,6 +862,12 @@ export function createRalphController() {
         log(`${verb} ${label} after ${iterations} iteration${pluralS(iterations)} (reason: ${reason}${noteForLog ? `, note: ${noteForLog}` : ""}, ${durationMs}ms)`);
         state.active = null;
         state.lastResult = Object.freeze(result);
+        // Tear down caffeinate AFTER state.active is cleared and lastResult is
+        // frozen so a kill-time crash can't leave the loop in a half-finished
+        // state.
+        if (typeof stopCaffeinate === "function") {
+            try { stopCaffeinate(); } catch { /* swallow */ }
+        }
     };
 
     // Issue #7: extract usage from an event payload. Defensive against
@@ -985,6 +1095,23 @@ export function createRalphController() {
     // state.active.label, the arm log line, and the success text so
     // every observable artifact reflects which tool armed the loop.
     function armLoop(parsedValue, label = "ralph_loop") {
+        // Resolve spawnFn lazily so child_process is only required when
+        // caffeinate is actually enabled (avoids paying the require cost
+        // for every loop arm). Tests inject spawnFn directly via opts.
+        let spawnFn = caffeinateDeps.spawnFn;
+        if (!spawnFn && isCaffeinateEnabled(caffeinateDeps.env) && caffeinateDeps.platform === "darwin") {
+            try {
+                ({ spawn: spawnFn } = moduleRequire("node:child_process"));
+            } catch { /* swallow — startCaffeinate handles null spawnFn */ }
+        }
+        const stopCaffeinate = startCaffeinate({
+            env: caffeinateDeps.env,
+            platform: caffeinateDeps.platform,
+            pid: caffeinateDeps.pid,
+            spawnFn,
+            log,
+            label,
+        });
         state.active = {
             ...parsedValue,
             label,
@@ -1004,6 +1131,7 @@ export function createRalphController() {
                 warnedThresholds: [],
                 unknownModelLogged: false,
             },
+            stopCaffeinate,
         };
         state.lastAssistantContent = "";
         state.lastResult = null;

@@ -5,7 +5,7 @@
 [![CI](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml)
 [![Inspired by](https://img.shields.io/badge/inspired_by-Anthropic_Ralph_Wiggum-blue)](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)
 
-**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [Documentation](#documentation) · [How it works](#how-it-works) · [Commit attribution](#commit-attribution) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)
+**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [Documentation](#documentation) · [How it works](#how-it-works) · [Commit attribution](#commit-attribution) · [Keep system awake](#keep-system-awake-caffeinate-macos) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)
 
 ## What is Ralph Wiggum?
 
@@ -339,6 +339,28 @@ RALPH_NO_ATTRIBUTION=1 copilot   # subsequent self_improve/grow_project loops om
 - **Only public-repo commits are searchable.** GitHub's commit search API does not index private repositories, so private-repo loops are invisible to `gh search commits` regardless of the trailer. The bot-account profile likewise only shows public contributions.
 - **This is effectively opt-in telemetry via git metadata.** No data leaves your machine — the trailer is just text in the commit object — but anyone reading the public commit log can correlate it with extension usage. The opt-out exists so you can disable that correlation per session without forking the extension.
 - **The bot account must exist before commits are made.** Unregistered noreply emails do not link retroactively to a GitHub account once the account is created — the `copilot-ralph@users.noreply.github.com` mailbox (matching the trailer format used in the example block above) has to be claimed first, then the trailers will associate going forward.
+
+## Keep system awake (`caffeinate`, macOS)
+
+Long `ralph_loop` / `self_improve` / `grow_project` runs can outlast macOS's idle-sleep timeout, which interrupts in-flight tool calls and timers. Opt in to a `caffeinate`-backed sleep block for the duration of the loop:
+
+```bash
+RALPH_CAFFEINATE=1 copilot                                # block idle sleep only (default)
+RALPH_CAFFEINATE=1 RALPH_CAFFEINATE_SCOPE=idle+display copilot   # also keep the display awake
+```
+
+| Variable | Values | Default | Effect |
+|---|---|---|---|
+| `RALPH_CAFFEINATE` | `1` / `true` / `yes` / `on` (case-insensitive) — anything else disables | unset (disabled) | Master switch. When unset, the extension **never** spawns `caffeinate`. |
+| `RALPH_CAFFEINATE_SCOPE` | `idle` or `idle+display` | `idle` | `idle` blocks idle/system sleep but lets the display lock for security. `idle+display` also prevents display sleep. |
+
+Behaviour:
+
+- Spawns `caffeinate -i [-d] -w <pid>` on arm, where `<pid>` is the host CLI process. Logs a single line: `keeping system awake via caffeinate (pid=…, scope=…)`.
+- Killed automatically on loop completion, `ralph_stop`, abort, or detach. The `-w` flag is a belt-and-braces fallback so a hard crash of the CLI still releases the wake-lock.
+- **macOS only.** On Linux/Windows the helper is a silent no-op (a single log line records the skip). Future PRs may add `systemd-inhibit` / `SetThreadExecutionState` equivalents.
+- **Graceful when the binary is missing.** If `caffeinate` isn't on `PATH` or `spawn` fails, the loop runs without sleep prevention and logs the failure — it never aborts the loop over a power-management nicety.
+- **Disabled by default.** The extension does not modify system power state unless you set `RALPH_CAFFEINATE`.
 
 ## Troubleshooting
 

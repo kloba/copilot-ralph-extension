@@ -543,6 +543,31 @@ test("self_improve tool is exposed (stub)", () => {
     assert.ok(t.parameters && t.parameters.type === "object");
 });
 
+test("self_improve arms with max=100 min=5 defaults", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({});
+    assert.equal(r.resultType, "success", r.textResultForLlm);
+    assert.equal(r.armed, true);
+    assert.equal(r.max, 100);
+    assert.equal(r.min, 5);
+    assert.match(r.textResultForLlm, /^self_improve armed/);
+});
+
+test("self_improve refuses when ralph_loop is already active", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const ralph = c.tools.find((x) => x.name === "ralph_loop");
+    const si = c.tools.find((x) => x.name === "self_improve");
+    await ralph.handler({ prompt: "go", max_iterations: 5 });
+    const r = await si.handler({});
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /ralph_loop is already/);
+});
+
 test("public tools and hooks surface is frozen (defensive against accidental mutation)", () => {
     const c = createRalphController();
     assert.ok(Object.isFrozen(c.tools));

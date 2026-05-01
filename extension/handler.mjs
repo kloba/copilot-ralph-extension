@@ -502,7 +502,7 @@ export function createRalphController() {
     // self_improve). Caller is responsible for the session-attached
     // and already-active guards plus arg validation; this helper
     // mutates state.active and emits the arm log + success result.
-    function armLoop(parsedValue) {
+    function armLoop(parsedValue, label = "ralph_loop") {
         state.active = {
             ...parsedValue,
             i: 0,
@@ -524,9 +524,9 @@ export function createRalphController() {
         armParts.push(`completion=${JSON.stringify(completionPromise)}`);
         if (abortPromise) armParts.push(`abort=${JSON.stringify(abortPromise)}`);
         if (stagnationLimit > 0) armParts.push(`stagnation_limit=${stagnationLimit}`);
-        log(`🔁 ralph_loop armed — ${armParts.join(", ")}`);
+        log(`🔁 ${label} armed — ${armParts.join(", ")}`);
         return success(
-            `ralph_loop armed (max=${max}${min > 1 ? `, min=${min}` : ""}). Iterations will run as conversation turns. Use ralph_stop to cancel.`,
+            `${label} armed (max=${max}${min > 1 ? `, min=${min}` : ""}). Iterations will run as conversation turns. Use ralph_stop to cancel.`,
             { armed: true, max, min },
         );
     }
@@ -648,13 +648,37 @@ export function createRalphController() {
         {
             name: "self_improve",
             description:
-                "Arms ralph_loop with a baked-in, project-agnostic SDLC self-improvement prompt (orient → ideate → critique → baseline → implement → test → commit → push → COMPLETE). Stub: not yet implemented.",
+                "Arms ralph_loop with a baked-in, project-agnostic SDLC self-improvement prompt (orient → ideate → critique → baseline → implement → test → commit → push → COMPLETE). Placeholder: SDLC prompt + schema land in subsequent iterations.",
             parameters: {
                 type: "object",
                 properties: {},
                 additionalProperties: false,
             },
-            handler: async () => failure("self_improve: not implemented yet."),
+            handler: async () => {
+                if (!sessionRef?.send) {
+                    return failure(
+                        "self_improve: session not attached — controller.attach(session) must be called before invoking self_improve.",
+                    );
+                }
+                if (state.active) {
+                    const { pendingFire, i, max } = state.active;
+                    const status = pendingFire
+                        ? `armed (iteration 1/${max} pending`
+                        : `running (iteration ${i}/${max}`;
+                    return failure(`ralph_loop is already ${status} — call ralph_stop first).`);
+                }
+                // Placeholder prompt — will be replaced by the real SDLC
+                // prompt in the next iteration. Pushed through validateArgs
+                // so we benefit from the same prompt/length/integer guards
+                // the ralph_loop tool already has.
+                const parsed = validateArgs({
+                    prompt: "self_improve placeholder — real SDLC prompt lands in a subsequent iteration.",
+                    max_iterations: 100,
+                    min_iterations: 5,
+                });
+                if (parsed.error) return failure(parsed.error);
+                return armLoop(parsed.value, "self_improve");
+            },
         },
     ];
     // Deep-freeze the public tool surface so consumers can't swap handlers

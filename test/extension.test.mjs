@@ -2086,6 +2086,38 @@ test("lastResult exposes exactly the documented shape (no stray keys, no missing
         ["durationMs", "finishedAt", "iterations", "note", "preview", "reason", "startedAt"],
         "user_stopped result must add exactly `note` to the 6-key base",
     );
+
+    // Stagnation finishes with NO note (the "reason" itself encodes the
+    // diagnostic — there's no additional context to attach). Pin the
+    // 6-key base for this path so a future change that injected a
+    // diagnostic note (e.g. the duplicated text fragment) into stagnation
+    // results would have to update both the typedef and this test.
+    const a3 = await arm({ max_iterations: 10, stagnation_limit: 2 });
+    a3.session.emit("session.idle", { data: {} });
+    runTurn(a3.session, "spinning");
+    runTurn(a3.session, "spinning");
+    assert.equal(a3.controller.state.lastResult.reason, "stagnation");
+    assert.deepEqual(
+        Object.keys(a3.controller.state.lastResult).sort(),
+        ["durationMs", "finishedAt", "iterations", "preview", "reason", "startedAt"],
+        "stagnation result must have exactly the 6-key base (no note)",
+    );
+
+    // send_error finishes WITH a note (the underlying Error message) — the
+    // 7-key shape mirrors user_stopped's. Pin this so a future change
+    // that dropped the note from error finishes (or renamed it to
+    // "errorMessage") wouldn't slip through.
+    const session4 = makeFakeSession({ failSend: true });
+    const c4 = createRalphController();
+    c4.attach(session4);
+    await c4.tools[0].handler({ prompt: "go", max_iterations: 5 });
+    session4.emit("session.idle", { data: {} });
+    assert.equal(c4.state.lastResult.reason, "send_error");
+    assert.deepEqual(
+        Object.keys(c4.state.lastResult).sort(),
+        ["durationMs", "finishedAt", "iterations", "note", "preview", "reason", "startedAt"],
+        "send_error result must include `note` (the Error message)",
+    );
 });
 
 test("durationMs is clamped to ≥ 0 if the system clock jumps backward", async () => {

@@ -55,6 +55,15 @@ test("validateArgs: rejects empty prompt", () => {
     assert.match(validateArgs({ prompt: "   " }).error, /prompt is required/);
 });
 
+test("validateArgs: explicit prompt:null is treated as missing (not 'wrong type')", () => {
+    // Subtle contract: the SDK may pass `null` for an omitted optional
+    // (e.g. some JSON layers normalize undefined → null). We treat it the
+    // same as an absent prompt so the error message guides the user toward
+    // *providing* a prompt rather than complaining about its type.
+    assert.match(validateArgs({ prompt: null }).error, /prompt is required/);
+    assert.match(validateArgs({ prompt: undefined }).error, /prompt is required/);
+});
+
 test("validateArgs: rejects non-string prompt (number, boolean, array, object)", () => {
     assert.match(validateArgs({ prompt: 42 }).error, /prompt must be a string \(got number\)/);
     assert.match(validateArgs({ prompt: false }).error, /prompt must be a string \(got boolean\)/);

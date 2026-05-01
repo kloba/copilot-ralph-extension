@@ -1829,6 +1829,34 @@ test("multiple assistant.message events in one turn are accumulated", async () =
     assert.equal(controller.state.lastResult.iterations, 1);
 });
 
+test("assistant.message accumulation joins multiple chunks with a newline (split-mid-token won't match)", async () => {
+    // Subtle quirk: the accumulator joins chunks with `\n`, so a
+    // completion_promise that lands SPLIT across two messages
+    // ("COMPL" then "ETE") becomes "COMPL\nETE" and does NOT match
+    // the literal "COMPLETE" substring. In practice the SDK emits
+    // whole turn responses (or large multi-paragraph chunks), so
+    // this doesn't bite — but a refactor that switched the join
+    // to "" would silently change matching semantics on the failure
+    // mode where two adjacent messages happen to bracket the phrase.
+    // Pin the newline join behavior so that change is loud.
+    const { session, controller } = await arm({
+        max_iterations: 5,
+        completion_promise: "DONE",
+        stagnation_limit: 0,
+    });
+    session.emit("session.idle", { data: {} }); // fire iter 1
+    // Phrase split across two messages with no inner whitespace.
+    session.emit("assistant.message", { data: { content: "DO" } });
+    session.emit("assistant.message", { data: { content: "NE" } });
+    // The accumulator must contain a newline between the chunks.
+    assert.equal(controller.state.lastAssistantContent, "DO\nNE");
+    session.emit("session.idle", { data: {} });
+    // Loop must NOT finish on completion_promise — the substring
+    // "DONE" never appears in "DO\nNE". It re-fires iteration 2.
+    assert.equal(controller.state.lastResult, null);
+    assert.equal(controller.state.active.i, 2);
+});
+
 test("preview is truncated to PREVIEW_CHARS + ellipsis", async () => {
     const { session, controller } = await arm({ max_iterations: 1, stagnation_limit: 0 });
     session.emit("session.idle", { data: {} });

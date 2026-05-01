@@ -228,6 +228,21 @@ if (!PROMPT_GROW_PROJECT.includes(DEFAULTS.completion_promise) ||
 // inverts the order fails at module-load time, not at the next CI run.
 // The order-pin (Copilot first, copilot-ralph second) matters because
 // GitHub's commit UI surfaces the first co-author more prominently.
+//
+// Companion surfaces that must stay in lockstep with these literals:
+//   - README.md "Commit attribution" section (canonical user-facing
+//     disclosure, including the public-repo-only searchability caveat,
+//     the RALPH_NO_ATTRIBUTION=1 opt-out, and the order-of-trailers
+//     example block — pinned by the README test in
+//     test/extension.test.mjs).
+//   - Both PROMPT_SELF_IMPROVE and PROMPT_GROW_PROJECT bodies (the
+//     load-time loop below validates both contain the literals in the
+//     correct order and document the opt-out env var).
+//   - The __test__ exports (BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER,
+//     BAKED_ATTRIBUTION_OPT_OUT) used by the canonical-source pin test.
+// Renaming any of these literals (e.g. registering the bot under a
+// different login, swapping the noreply domain) requires updating
+// every surface above.
 const BAKED_COPILOT_TRAILER = "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>";
 const BAKED_RALPH_TRAILER = "Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>";
 const BAKED_ATTRIBUTION_OPT_OUT = "RALPH_NO_ATTRIBUTION=1";

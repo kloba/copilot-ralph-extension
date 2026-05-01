@@ -1167,6 +1167,32 @@ test("grow_project actually arms with PROMPT_GROW_PROJECT", async () => {
     assert.equal(session.sent[0]?.prompt, PROMPT_GROW_PROJECT);
 });
 
+test("the prompt actually fired through armLoop carries both Co-authored-by trailers and the opt-out env var (issue #1)", async () => {
+    // Bridges the module-scope prompt-body pin and the runtime
+    // armLoop pin: a future refactor that derived/stripped the
+    // prompt before session.send (e.g., a "minimize tokens" pass)
+    // could silently drop the canonical attribution literals from
+    // the agent's actual instructions while leaving the exported
+    // PROMPT_* constants untouched. Pin the SENT prompt — the
+    // string the executing agent actually sees — to contain both
+    // trailer literals and the RALPH_NO_ATTRIBUTION env var
+    // verbatim, for both self_improve and grow_project.
+    for (const name of ["self_improve", "grow_project"]) {
+        const session = makeFakeSession();
+        const c = createRalphController();
+        c.attach(session);
+        const tool = c.tools.find((x) => x.name === name);
+        const r = await tool.handler({});
+        assert.equal(r.resultType, "success", `${name} arm should succeed`);
+        session.emit("session.idle", { data: {} });
+        await new Promise((rs) => setTimeout(rs, 0));
+        const sent = session.sent[0]?.prompt ?? "";
+        assert.ok(sent.includes(BAKED_COPILOT_TRAILER), `${name} sent prompt must carry the Copilot trailer`);
+        assert.ok(sent.includes(BAKED_RALPH_TRAILER), `${name} sent prompt must carry the copilot-ralph trailer`);
+        assert.ok(sent.includes(BAKED_ATTRIBUTION_OPT_OUT), `${name} sent prompt must mention ${BAKED_ATTRIBUTION_OPT_OUT}`);
+    }
+});
+
 test("grow_project appends focus text to PROMPT_GROW_PROJECT", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

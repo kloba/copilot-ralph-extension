@@ -1082,12 +1082,33 @@ export function createRalphController(opts = {}) {
     // `cwd` is captured at controller-build time so tests can pin a fake root.
     const gitCwd = opts.git?.cwd ?? process.cwd();
     const gitExecRaw = opts.git?.exec ?? ((args) => defaultGitExec(args, gitCwd));
-    const gitExec = (args) => gitExecRaw(args);
+    // Normalize a throwing gitExec into the same `{ ok: false, ... }` shape
+    // that `defaultGitExec` produces on internal failure. This guarantees
+    // every call site (captureGitArmSnapshot, ralph_status's
+    // buildStatusSnapshot, computeFilesChangedBlock, etc.) can treat
+    // gitExec as total — no need to wrap each call in try/catch and no
+    // way for a misbehaving test injection (or a future production gitExec
+    // that forgets the convention) to crash arm-time and leak caffeinate.
+    const gitExec = (args) => {
+        try { return gitExecRaw(args); }
+        catch (err) {
+            return { ok: false, stdout: "", stderr: err?.message ?? String(err), code: null };
+        }
+    };
     // Adaptive-budget DI (issue #4). Tests inject a stub gitExec to drive
     // signals deterministically; production resolves spawnSync lazily so the
     // import cost is paid only when adaptive_budget is actually enabled.
     const adaptiveCwd = opts.adaptive?.cwd ?? process.cwd();
-    const adaptiveGitExec = opts.adaptive?.gitExec ?? ((args) => defaultAdaptiveGitExec(args, adaptiveCwd));
+    const adaptiveGitExecRaw = opts.adaptive?.gitExec ?? ((args) => defaultAdaptiveGitExec(args, adaptiveCwd));
+    // Same total-function normalization as gitExec above: a throwing
+    // adaptive injection must not crash the end-of-iteration adaptive
+    // signal evaluation (which runs synchronously inside onIdle).
+    const adaptiveGitExec = (args) => {
+        try { return adaptiveGitExecRaw(args); }
+        catch (err) {
+            return { ok: false, stdout: "", stderr: err?.message ?? String(err), code: null };
+        }
+    };
     // JSONL event emit DI (issue #22). When `opts.events` is undefined or
     // false, no events.jsonl is produced — the loop runs exactly as before.
     // When `opts.events` is `true` or an object, an emitter is built per

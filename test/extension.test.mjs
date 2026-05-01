@@ -4996,6 +4996,52 @@ async function armStatusable({ git } = {}) {
     return { session, controller, ralph, status };
 }
 
+test("createRalphController: throwing gitExec is normalized to { ok: false } at boundary", async () => {
+    // Regression: a throwing gitExec injection (or a future production
+    // gitExec that forgets the {ok,stdout,stderr,code} convention) must
+    // NOT crash arm-time. Before the boundary wrap, captureGitArmSnapshot
+    // would propagate the throw out of armLoop, leaving caffeinate
+    // running and the loop never armed. After the wrap, gitExec is total:
+    // every call site sees {ok:false} and treats the cwd as not-a-repo.
+    const session = makeFakeSession();
+    const controller = createRalphController({
+        git: { exec: () => { throw new Error("boom"); }, cwd: "/tmp/fake" },
+    });
+    controller.attach(session);
+    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
+    const status = controller.tools.find((t) => t.name === "ralph_status");
+    const r = await ralph.handler({ prompt: "test prompt" });
+    assert.equal(r.resultType, "success", "throwing gitExec must not break ralph_loop arm");
+    assert.equal(r.armed, true);
+    // ralph_status mid-loop must also tolerate the throw (it calls
+    // gitExec twice via buildStatusSnapshot).
+    const s = await status.handler({});
+    assert.equal(s.resultType, "success");
+    assert.equal(s.status.active, true);
+    assert.equal(s.status.git, null, "no git block when gitExec is unusable");
+});
+
+test("createRalphController: throwing adaptive.gitExec is normalized at boundary", async () => {
+    // Companion guard for the adaptive-budget gitExec. A throwing
+    // injection must not crash evaluateAdaptiveSignals during onIdle.
+    const session = makeFakeSession();
+    const controller = createRalphController({
+        adaptive: { gitExec: () => { throw new Error("adaptive boom"); }, cwd: "/tmp/fake" },
+    });
+    controller.attach(session);
+    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
+    const r = await ralph.handler({
+        prompt: "go",
+        max_iterations: 1,
+        adaptive_budget: true,
+    });
+    assert.equal(r.resultType, "success");
+    assert.equal(r.armed, true);
+    // The loop arms cleanly; adaptive evaluation later in onIdle would
+    // see {ok:false} for both diff and status, hence no positive signal,
+    // hence no extension granted -- but no crash.
+});
+
 test("ralph_status: with no active loop and no prior run returns { active: false }", async () => {
     const { status } = await armStatusable();
     const r = await status.handler({});

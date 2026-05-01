@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Refactor
+- `extension/handler.mjs` — wrap `gitExec` and
+  `adaptiveGitExec` at the controller boundary so a
+  throwing injection (test stub or a future
+  production exec that forgets the `{ ok, stdout,
+  stderr, code }` convention) is normalized to
+  `{ ok: false, stdout: "", stderr: <message>, code:
+  null }` instead of propagating up the stack. Before
+  this change, a throwing test-injected gitExec would
+  crash `captureGitArmSnapshot` mid-`armLoop`,
+  leaving caffeinate running and the loop never
+  armed. After the change, every gitExec call site
+  (arm-time snapshot, `ralph_status`'s
+  buildStatusSnapshot, the files-changed block, the
+  adaptive-budget signal evaluator) can treat the
+  function as total — no per-call try/catch needed.
+  Production behaviour is unchanged because
+  `defaultGitExec` already returns `{ok:false}` on
+  every internal failure path; this only tightens
+  the contract for callers.
+
 ### Documentation
 - `packages/tui/README.md` — fix two drift points
   about how `src/tail.mjs` detects file replacement.

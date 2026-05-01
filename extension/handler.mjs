@@ -653,10 +653,11 @@ export function createRalphController() {
                 // args is now either null/undefined or a validated object
                 // (validateArgShape above rejected arrays and non-objects).
                 const reason = args?.reason;
-                const trimmed = typeof reason === "string" && reason.trim() ? reason.trim() : undefined;
-                // Cap before surfacing in the response or storing in result.note
-                // so a giant user-supplied reason can't pollute the LLM context.
-                const note = trimmed !== undefined ? truncateNote(trimmed) : undefined;
+                // Trim once, treat empty/whitespace-only as "no reason".
+                // truncateNote caps the stored value so a giant user-
+                // supplied reason can't pollute the LLM context.
+                const trimmedReason = typeof reason === "string" ? reason.trim() : "";
+                const note = trimmedReason ? truncateNote(trimmedReason) : undefined;
                 finish("user_stopped", note);
                 return success(
                     `ralph_loop stopped after ${i}/${max} iterations${note ? ` (${note})` : ""}.`,

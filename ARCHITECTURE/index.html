@@ -1,0 +1,785 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A Ralph Wiggum-style autonomous loop for the GitHub Copilot CLI.">
+      
+      
+      
+        <link rel="canonical" href="https://kloba.github.io/copilot-ralph-extension/ARCHITECTURE/">
+      
+      
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.50">
+    
+    
+      
+        <title>Architecture - Ralph</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.a40c8224.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#architecture" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Ralph" class="md-header__button md-logo" aria-label="Ralph" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Ralph
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Architecture
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/kloba/copilot-ralph-extension" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kloba/copilot-ralph-extension
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../quickstart/" class="md-tabs__link">
+        
+  
+    
+  
+  Quickstart
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../concepts/" class="md-tabs__link">
+        
+  
+    
+  
+  Concepts
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../recipes/" class="md-tabs__link">
+        
+  
+    
+  
+  Recipes
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../showcase/" class="md-tabs__link">
+        
+  
+    
+  
+  Showcase
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../faq/" class="md-tabs__link">
+        
+  
+    
+  
+  FAQ
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Ralph" class="md-nav__button md-logo" aria-label="Ralph" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Ralph
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/kloba/copilot-ralph-extension" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kloba/copilot-ralph-extension
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Quickstart
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../concepts/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Concepts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../recipes/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Recipes
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../showcase/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Showcase
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../faq/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    FAQ
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#why-sessionidle-instead-of-a-subprocess-wrapper" class="md-nav__link">
+    <span class="md-ellipsis">
+      Why session.idle instead of a subprocess wrapper?
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      Source layout
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Source layout">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#extensionmjs-vs-handlermjs-split" class="md-nav__link">
+    <span class="md-ellipsis">
+      extension.mjs vs handler.mjs split
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#state-machine-stateactive-the-activeloopstate" class="md-nav__link">
+    <span class="md-ellipsis">
+      State machine: state.active (the ActiveLoopState)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sub-agent-event-filtering" class="md-nav__link">
+    <span class="md-ellipsis">
+      Sub-agent event filtering
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-baked-prompt-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      The "baked prompt" pattern
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tool-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      Tool surface
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#completion-promise-abort-promise-contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      Completion-promise &amp; abort-promise contracts
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adaptive-iteration-budget-issue-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      Adaptive iteration budget (issue #4)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#caffeinate-integration-issue-8" class="md-nav__link">
+    <span class="md-ellipsis">
+      Caffeinate integration (issue #8)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      Test architecture
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h1>
+<p>This document is for contributors and future-self maintenance. End-user docs live in the <a href="../README.md">README</a>. For local-dev setup see <a href="../CONTRIBUTING/">CONTRIBUTING.md</a>.</p>
+<h2 id="why-sessionidle-instead-of-a-subprocess-wrapper">Why <code>session.idle</code> instead of a subprocess wrapper?<a class="headerlink" href="#why-sessionidle-instead-of-a-subprocess-wrapper" title="Permanent link">&para;</a></h2>
+<p>Existing Ralph implementations for Copilot CLI (e.g. <code>copilot-ralph-mode</code>) are <strong>shell wrappers</strong>: they <code>spawn copilot -p "&lt;prompt&gt;"</code> once per iteration. Each iteration starts with a fresh session and loses the conversation context built up by previous iterations.</p>
+<p>This extension instead runs <strong>inside the active session</strong>, driven by the Copilot CLI extension SDK's <code>session.idle</code> event — the same architectural pattern as Anthropic's Claude Code <a href="https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum"><code>ralph-wiggum</code></a> plugin (their <code>Stop</code> hook). When the root agent finishes its turn:</p>
+<ol>
+<li>The SDK emits <code>session.idle</code> to all attached extensions.</li>
+<li>The Ralph controller's <code>onIdle</code> handler runs the completion / abort / stagnation / max-iterations checks.</li>
+<li>If the loop should continue, the controller calls <code>session.send({ prompt })</code> to inject the prompt as a new user turn.</li>
+<li>Copilot CLI processes that turn exactly as if the human had typed it — including all UI rendering, model calls, tool execution, and ancillary handlers.</li>
+</ol>
+<p>The trade-off is documented in the README's comparison table; see <a href="../README.md#whats-different-here">What's different here?</a>.</p>
+<h2 id="source-layout">Source layout<a class="headerlink" href="#source-layout" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>extension/
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── extension.mjs   # SDK glue — joinSession + createRalphController() + register tools/hooks
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>└── handler.mjs     # The entire controller: state machine, validation, tool defs, baked prompts
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>test/
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>└── extension.test.mjs   # node:test suite, exercises handler against a fake session
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>install.sh          # User- or project-scoped install into ~/.copilot/extensions or .github/extensions
+</code></pre></div>
+<h3 id="extensionmjs-vs-handlermjs-split"><code>extension.mjs</code> vs <code>handler.mjs</code> split<a class="headerlink" href="#extensionmjs-vs-handlermjs-split" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>extension.mjs</code></strong> is the only file that talks to the SDK. It's intentionally tiny (~30 LOC). Anything beyond <code>joinSession</code>, <code>controller.attach(session)</code>, and <code>for (const t of controller.tools) session.registerTool(t)</code> does not belong here.</li>
+<li><strong><code>handler.mjs</code></strong> is everything else: state machine, prompt validation, tool definitions, completion / abort / stagnation logic, baked-prompt templates, adaptive-budget signal evaluation, caffeinate spawning, etc. Because it's pure JS over a tiny event-bus interface (<code>on</code>/<code>emit</code>/<code>send</code>/<code>log</code>), it can be unit-tested with <code>makeFakeSession()</code> from <code>test/extension.test.mjs</code> — no SDK mock required.</li>
+</ul>
+<p>The <code>createRalphController(opts?)</code> factory returns <code>{ tools, hooks, attach, state }</code>. Each call returns an <strong>independent</strong> controller with closure-private state — important because tests routinely create two controllers and assert non-leakage.</p>
+<h2 id="state-machine-stateactive-the-activeloopstate">State machine: <code>state.active</code> (the <code>ActiveLoopState</code>)<a class="headerlink" href="#state-machine-stateactive-the-activeloopstate" title="Permanent link">&para;</a></h2>
+<p>While a loop is running, <code>state.active</code> holds the canonical loop state. Field-by-field documentation lives in the JSDoc above <code>createRalphController</code> in <code>handler.mjs</code>. Notable fields:</p>
+<ul>
+<li><code>i</code> / <code>max</code> / <code>min</code> — current iteration index, effective max, lower bound for honoring the completion / abort promises.</li>
+<li><code>prompt</code> / <code>completionPromise</code> / <code>abortPromise</code> — the strings re-fed each iter and the substrings that terminate the loop.</li>
+<li><code>prev</code> / <code>streak</code> / <code>stagnationLimit</code> — byte-identical-response detector that aborts a stuck loop.</li>
+<li><code>pendingFire</code> / <code>fireInFlight</code> / <code>observedMessageThisFire</code> — per-iteration dispatch guards. The first idle (the one that <em>armed</em> the loop) consumes <code>pendingFire</code> to fire iter 1; the in-flight markers prevent stale-idle bloat from cancelled tool calls or sub-agents.</li>
+<li>Adaptive-budget fields (issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/4">#4</a>): <code>adaptiveBudget</code>, <code>adaptiveExtension</code>, <code>adaptiveMaxTotal</code>, <code>originalMax</code>, <code>adaptiveContentHashes</code>, <code>adaptiveExtensionHistory</code>.</li>
+</ul>
+<p>When the loop finishes, <code>state.active</code> becomes <code>null</code> and the immutable <code>state.lastResult</code> (a deep-frozen <code>RalphResult</code>) holds the post-mortem.</p>
+<h2 id="sub-agent-event-filtering">Sub-agent event filtering<a class="headerlink" href="#sub-agent-event-filtering" title="Permanent link">&para;</a></h2>
+<p>Copilot CLI's <code>task</code> / <code>explore</code> / <code>code-review</code> / <code>rubber-duck</code> agents share the same event bus as the root agent. Without filtering, a sub-agent's <code>session.idle</code> would queue an extra prompt fire, and a sub-agent's abort would tear down the root loop. <code>isSubAgentEvent(ev)</code> (in <code>handler.mjs</code>) returns <code>true</code> whenever <code>ev.agentId</code> is a non-empty string — root events have no <code>agentId</code>. <strong>All loop-driving handlers must early-return on <code>isSubAgentEvent(ev)</code>.</strong></p>
+<h2 id="the-baked-prompt-pattern">The "baked prompt" pattern<a class="headerlink" href="#the-baked-prompt-pattern" title="Permanent link">&para;</a></h2>
+<p><code>self_improve</code> and <code>grow_project</code> are convenience tools that wrap <code>armLoop()</code> with a <strong>prompt baked in</strong>: the user only supplies optional <code>focus</code> / <code>max_iterations</code> / <code>min_iterations</code>, and the tool builds a multi-paragraph SDLC or backlog-grooming prompt from a template constant (<code>PROMPT_SELF_IMPROVE</code>, <code>PROMPT_GROW_PROJECT</code>). The bake is opaque to <code>validateArgs</code> — we validate only what the user supplied, then construct the prompt and call <code>armLoop({ prompt: baked, ... })</code>.</p>
+<p>The baked prompts include hard-coded <code>COMPLETE</code> / <code>ABORT_…</code> tokens and <code>min_iterations</code> defaults that defer honoring those tokens (otherwise the agent would emit <code>COMPLETE</code> on iter 1 by virtue of merely <em>describing</em> the protocol). When changing a baked prompt, run the existing prompt-shape tests (<code>PROMPT_SELF_IMPROVE: contains the protocol literal</code>, etc.) — they pin the user-visible contract.</p>
+<h2 id="tool-surface">Tool surface<a class="headerlink" href="#tool-surface" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Purpose</th>
+<th>Key contract</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ralph_loop</code></td>
+<td>Generic re-fed-prompt loop</td>
+<td>One loop at a time. Returns immediately after arming. Driven by <code>session.idle</code>.</td>
+</tr>
+<tr>
+<td><code>ralph_stop</code></td>
+<td>Cancel the active loop</td>
+<td>Returns failure if no loop is active. Optional <code>reason</code> string is recorded as <code>note</code> on the result.</td>
+</tr>
+<tr>
+<td><code>ralph_status</code></td>
+<td>Live structured snapshot of the active loop</td>
+<td>Issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/5">#5</a> — read-only; safe to call mid-loop.</td>
+</tr>
+<tr>
+<td><code>self_improve</code></td>
+<td>Baked SDLC self-improvement prompt</td>
+<td>Wraps <code>armLoop</code> with <code>PROMPT_SELF_IMPROVE</code>. Honors <code>focus</code> for narrowing scope.</td>
+</tr>
+<tr>
+<td><code>grow_project</code></td>
+<td>Baked backlog-grooming + execution loop</td>
+<td>Wraps <code>armLoop</code> with <code>PROMPT_GROW_PROJECT</code>. Drives <code>gh</code> CLI calls.</td>
+</tr>
+</tbody>
+</table>
+<p>All tools share the <code>success(message, extra)</code> / <code>failure(message, extra)</code> envelope: <code>{ ...extra, textResultForLlm, resultType }</code> (extras cannot override <code>textResultForLlm</code> or <code>resultType</code>). The shape is pinned by tests so refactors can't accidentally leak internal scratch into the LLM-facing return.</p>
+<h2 id="completion-promise-abort-promise-contracts">Completion-promise &amp; abort-promise contracts<a class="headerlink" href="#completion-promise-abort-promise-contracts" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong><code>completion_promise</code></strong> (default <code>"COMPLETE"</code>) — substring match against the latest assistant content. When seen on iter ≥ <code>min_iterations</code>, finishes the loop with <code>reason: "completion_promise"</code>.</li>
+<li><strong><code>abort_promise</code></strong> (optional, no default) — same mechanism, but finishes with <code>reason: "abort_promise"</code>. Used by <code>grow_project</code> (<code>ABORT_NO_BACKLOG</code>) to bail when there's nothing to do.</li>
+<li>Both promises are <strong>only honored once <code>i &gt;= min_iterations</code></strong> to avoid premature termination from the agent merely describing the protocol on iter 1. Stagnation, max-iterations, and adaptive-budget terminators have their own thresholds and do not respect <code>min_iterations</code>.</li>
+</ul>
+<h2 id="adaptive-iteration-budget-issue-4">Adaptive iteration budget (issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/4">#4</a>)<a class="headerlink" href="#adaptive-iteration-budget-issue-4" title="Permanent link">&para;</a></h2>
+<p>Opt-in. When the loop reaches <code>max_iterations</code>, <code>evaluateAdaptiveSignals(a, gitExec)</code> returns a non-null reason iff <em>either</em> <code>git diff --shortstat HEAD</code> or <code>git status --porcelain</code> reports working-tree changes, <em>or</em> the rolling 3-iteration content-hash window contains ≥ 2 distinct hashes. A positive signal grants <code>adaptive_extension</code> more iterations, capped at <code>adaptive_max_total</code>. Stagnation / completion / abort still win unconditionally because they're checked earlier in <code>onIdle</code>.</p>
+<h2 id="caffeinate-integration-issue-8">Caffeinate integration (issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/8">#8</a>)<a class="headerlink" href="#caffeinate-integration-issue-8" title="Permanent link">&para;</a></h2>
+<p>Opt-in via <code>RALPH_CAFFEINATE=1</code>. On macOS, <code>armLoop</code> spawns <code>caffeinate -i [-d] -w &lt;pid&gt;</code> to inhibit display/system sleep for the duration of the loop. <code>finish()</code> (and every error path) kills the caffeinate process. Tests inject a <code>spawnFn</code> stub via <code>createRalphController({ caffeinate: { spawnFn } })</code>.</p>
+<h2 id="test-architecture">Test architecture<a class="headerlink" href="#test-architecture" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>node:test</code> runner; no third-party test deps.</li>
+<li><code>makeFakeSession()</code> returns a <code>{ on, emit, send, log }</code> object that mimics the SDK's event bus.</li>
+<li><code>runTurn(session, content)</code> drives one iteration: emits <code>assistant.message</code> then <code>session.idle</code>.</li>
+<li>DI on the controller (<code>createRalphController({ caffeinate, git, adaptive })</code>) lets tests stub external effects (process spawn, git exec) without monkey-patching.</li>
+<li>Several <strong>shape-pin tests</strong> lock down field counts and key sets on <code>state.active</code>, the success-envelope, the parsed-args object, and the tool-array order. These exist specifically to catch refactors that silently leak internal scratch into the LLM-facing surface.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": ["content.code.copy", "navigation.instant", "navigation.tabs", "navigation.sections", "navigation.top", "search.highlight", "search.suggest"], "search": "../assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.60a45f97.min.js"></script>
+      
+    
+  </body>
+</html>

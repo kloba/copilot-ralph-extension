@@ -104,6 +104,8 @@ The tool **arms** the loop and returns immediately. Iterations then play out as 
 | `completion_promise` | `"COMPLETE"` | Substring in assistant response → stop. Trimmed; max 200 chars. |
 | `abort_promise` | _(none)_ | Substring → early abort. Trimmed; max 200 chars. Must differ from `completion_promise` and not overlap as a substring (e.g. `completion_promise: "DONE"` together with `abort_promise: "DONE_FAIL"` is rejected because `"DONE_FAIL"` contains `"DONE"`) |
 | `stagnation_limit` | `3` | Abort after N consecutive byte-identical responses (0 disables, must be ≥ 2 if set — `1` is rejected since no comparison is possible after a single response) |
+| `max_tokens` | _(none)_ | Optional cumulative token cap (input + output combined). Loop stops with reason `max_tokens` when crossed at end of an iteration. Useful to bound spend on long-running self-improve / grow-project runs. |
+| `warn_at_pct` | `80` | First context-window warning threshold (percent of model's total window). A second hard-coded warning fires at 95%. Each fires at most once per loop run. |
 
 ### Companion tool
 
@@ -155,11 +157,26 @@ The full structured result (available via `controller.state.lastResult` for embe
   startedAt: 1719000000000,
   finishedAt: 1719000012345,
   durationMs: 12345,
-  note: "user changed plan"          // present when set via ralph_stop or on send_error / abort with reason
+  note: "user changed plan",          // present when set via ralph_stop or on send_error / abort with reason
+  tokens: {                            // present only when usage events were observed (issue #7)
+    input: 12500,
+    output: 1800,
+    total: 14300,
+    byIteration: [{ iter: 1, input: 8000, output: 900, model: "claude-opus-4.7" }, /* ... */],
+    byModel: { "claude-opus-4.7": { input: 12500, output: 1800 } }
+  }
 }
 ```
 
-`reason` ∈ `completion_promise` · `abort_promise` · `stagnation` · `max_iterations` · `send_error` · `aborted` · `user_stopped` · `detached`.
+`reason` ∈ `completion_promise` · `abort_promise` · `stagnation` · `max_iterations` · `max_tokens` · `send_error` · `aborted` · `user_stopped` · `detached`.
+
+### Token usage
+
+The loop tracks per-iteration token usage from the SDK's `assistant.message` events (when present) and surfaces it on the result as `tokens`. It also:
+
+- Warns once when cumulative input tokens cross `warn_at_pct` (default 80%) of the model's known context window, and again at 95%.
+- Stops the loop with reason `max_tokens` when the cumulative total (input + output) crosses the optional `max_tokens` cap. The cap is checked at the end of each iteration (after `min_iterations` have completed), never mid-iteration.
+- Skips warnings (with a one-time log line) for models not in the static context-window table.
 
 ### Tips
 

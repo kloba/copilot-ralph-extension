@@ -71,9 +71,7 @@ function previewOf(text) {
     return text.slice(0, safeSliceEnd(text, PREVIEW_CHARS)) + "…";
 }
 
-// English pluralization for log lines: "" / "s". Centralized so the next
-// caller (e.g. a future "N attachment(s)" log) doesn't reinvent the
-// `=== 1 ? "" : "s"` ternary.
+// English pluralization for log lines: "" when n===1, "s" otherwise.
 function pluralS(n) {
     return n === 1 ? "" : "s";
 }

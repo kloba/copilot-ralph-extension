@@ -1347,6 +1347,23 @@ test("grow_project schema declares max/min/completion/abort/stagnation/focus bou
     assert.equal(p.focus.maxLength, MAX_FOCUS_CHARS);
 });
 
+test("ralph_stop schema description names all three loop tools it can cancel", () => {
+    // Same family as the gp-15/gp-23 disclosure pins: ralph_stop is
+    // the symmetric cancel endpoint for all three loop arms. Its
+    // description hardcoded "ralph_loop or self_improve" until iter
+    // gp-24 and never mentioned grow_project, so an LLM dispatcher
+    // searching the schema for "grow_project" had no signal that
+    // ralph_stop was the right tool to cancel one. Pin the
+    // disclosure for all three peers — symmetric with the per-tool
+    // description pins — so a future fourth-tool addition is forced
+    // to update this string too.
+    const c = createRalphController();
+    const rs = c.tools.find((t) => t.name === "ralph_stop");
+    assert.match(rs.description, /ralph_loop/, "must name ralph_loop");
+    assert.match(rs.description, /self_improve/, "must name self_improve");
+    assert.match(rs.description, /grow_project/, "must name grow_project");
+});
+
 test("ralph_loop schema description discloses all three loop conflict siblings", () => {
     // Mirror of the self_improve / grow_project disclosure pins.
     // ralph_loop is the lowest-level tool but its activeLoopGuard

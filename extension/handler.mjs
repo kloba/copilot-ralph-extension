@@ -735,8 +735,8 @@ export function createRalphController() {
     }
 
     // Single source of truth for the "another loop is already active"
-    // refusal — used by both ralph_loop and self_improve so the message
-    // and iteration-counter logic can never drift.
+    // refusal — used by ralph_loop, self_improve, and grow_project so
+    // the message and iteration-counter logic can never drift.
     function activeLoopGuard() {
         if (!state.active) return null;
         const { pendingFire, i, max } = state.active;
@@ -746,10 +746,10 @@ export function createRalphController() {
         return failure(`${state.active.label} is already ${status} — call ralph_stop first.`);
     }
 
-    // Shared arming body for ralph_loop and self_improve. Caller is
-    // responsible for the session-attached and already-active guards
-    // plus arg validation; this helper mutates state.active and emits
-    // the arm log + success result. The `label` is woven through
+    // Shared arming body for ralph_loop, self_improve, and grow_project.
+    // Caller is responsible for the session-attached and already-active
+    // guards plus arg validation; this helper mutates state.active and
+    // emits the arm log + success result. The `label` is woven through
     // state.active.label, the arm log line, and the success text so
     // every observable artifact reflects which tool armed the loop.
     function armLoop(parsedValue, label = "ralph_loop") {
@@ -853,7 +853,7 @@ export function createRalphController() {
         {
             name: "ralph_stop",
             description:
-                "Cancel a currently-running ralph_loop or self_improve. Returns the iteration count at the moment of stop. Returns failure if no loop is active. Optionally pass a `reason` describing why the loop is being stopped (recorded as `note` on the result).",
+                "Cancel a currently-running ralph_loop, self_improve, or grow_project. Returns the iteration count at the moment of stop. Returns failure if no loop is active. Optionally pass a `reason` describing why the loop is being stopped (recorded as `note` on the result).",
             parameters: {
                 type: "object",
                 properties: {

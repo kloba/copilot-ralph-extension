@@ -913,14 +913,14 @@ export function createRalphController() {
                     },
                     completion_promise: {
                         type: "string",
-                        description: `Substring that, when present in an assistant turn's response, signals completion (default '${DEFAULTS.completion_promise}'). Max ${MAX_PROMISE_CHARS} chars.`,
+                        description: `Substring that, when present in an assistant turn's response, signals completion (default '${DEFAULTS.completion_promise}'). The baked SDLC prompt instructs the agent to emit '${DEFAULTS.completion_promise}'; overriding here without also editing the prompt body silently runs the loop to max_iterations. Max ${MAX_PROMISE_CHARS} chars.`,
                         default: DEFAULTS.completion_promise,
                         minLength: 1,
                         maxLength: MAX_PROMISE_CHARS,
                     },
                     abort_promise: {
                         type: "string",
-                        description: `Optional substring that, when present in an assistant turn's response, aborts the loop early. Max ${MAX_PROMISE_CHARS} chars.`,
+                        description: `Optional substring that, when present in an assistant turn's response, aborts the loop early (the baked SDLC prompt instructs the agent to emit '${BAKED_ABORT_TOKEN}' when no worthwhile improvement exists, but the field has no default — supply this token explicitly to honor the abort signal). Max ${MAX_PROMISE_CHARS} chars.`,
                         minLength: 1,
                         maxLength: MAX_PROMISE_CHARS,
                     },

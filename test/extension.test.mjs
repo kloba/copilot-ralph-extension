@@ -1181,6 +1181,36 @@ test("self_improve schema declares max_iterations / min_iterations bounds matchi
     assert.ok(Object.isFrozen(SELF_IMPROVE_DEFAULTS), "SELF_IMPROVE_DEFAULTS must be frozen");
 });
 
+test("self_improve and grow_project schema descriptions disclose the baked-prompt drift footgun", () => {
+    // The runtime warnPromiseDrift fires AT arm-time, but by then the
+    // LLM caller has already committed to the wrong promise. The schema
+    // description is what the dispatcher reads BEFORE calling — so it
+    // must explicitly warn that overriding completion_promise /
+    // abort_promise without editing the prompt body silently breaks
+    // the abort signal. Without this pin, a "tighten descriptions"
+    // refactor could quietly remove the guidance.
+    const c = createRalphController();
+
+    const si = c.tools.find((t) => t.name === "self_improve");
+    const siCp = si.parameters.properties.completion_promise.description;
+    const siAp = si.parameters.properties.abort_promise.description;
+    assert.match(siCp, /baked SDLC prompt/i, "self_improve.completion_promise must mention the baked SDLC prompt");
+    assert.match(siCp, /COMPLETE/, "self_improve.completion_promise must name the literal token");
+    assert.match(siCp, /silently runs the loop to max_iterations/, "self_improve.completion_promise must spell out the consequence");
+    assert.match(siAp, /baked SDLC prompt/i, "self_improve.abort_promise must mention the baked SDLC prompt");
+    assert.match(siAp, /ABORT_NO_IMPROVEMENTS/, "self_improve.abort_promise must name the self_improve abort token");
+    assert.equal(/ABORT_NO_BACKLOG/.test(siAp), false, "self_improve.abort_promise must NOT mention grow_project's token");
+
+    const gp = c.tools.find((t) => t.name === "grow_project");
+    const gpCp = gp.parameters.properties.completion_promise.description;
+    const gpAp = gp.parameters.properties.abort_promise.description;
+    assert.match(gpCp, /baked SDLC prompt/i);
+    assert.match(gpCp, /COMPLETE/);
+    assert.match(gpCp, /silently runs the loop to max_iterations/);
+    assert.match(gpAp, /ABORT_NO_BACKLOG/, "grow_project.abort_promise must name the grow_project abort token");
+    assert.equal(/ABORT_NO_IMPROVEMENTS/.test(gpAp), false, "grow_project.abort_promise must NOT mention self_improve's token");
+});
+
 test("ralph_loop schema declares max/min/stagnation/completion/abort bounds matching runtime", () => {
     // Mirror of the self_improve bounds tests: pin ralph_loop's
     // numeric and string schema bounds so a future "harmless" tweak

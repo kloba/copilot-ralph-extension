@@ -252,8 +252,11 @@ test("ralph_loop tool spec declares numeric ranges (minimum/maximum) on integer 
     assert.equal(p.max_iterations.maximum, 1000);
     // min_iterations: 1..1000
     assert.equal(p.min_iterations.minimum, 1);
-    // stagnation_limit: ≥ 0 (0 disables)
+    // stagnation_limit: ≥ 0 (0 disables) AND not: const 1 (runtime rejects 1
+    // because no comparison is possible after a single response — schema
+    // guard surfaces this constraint to LLM clients up front).
     assert.equal(p.stagnation_limit.minimum, 0);
+    assert.deepEqual(p.stagnation_limit.not, { const: 1 });
     // completion_promise / abort_promise: minLength=1 (no empty strings)
     assert.equal(p.completion_promise.minLength, 1);
     assert.equal(p.abort_promise.minLength, 1);

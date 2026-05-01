@@ -483,9 +483,14 @@ export function createRalphController() {
                     },
                     stagnation_limit: {
                         type: "integer",
-                        description: `Abort if the assistant returns N consecutive byte-identical responses (default ${DEFAULTS.stagnation_limit}, 0 to disable).`,
+                        description: `Abort if the assistant returns N consecutive byte-identical responses (default ${DEFAULTS.stagnation_limit}, 0 to disable). Must be 0 or ≥ 2 — the value 1 is rejected at runtime since no comparison is possible after a single response.`,
                         default: DEFAULTS.stagnation_limit,
                         minimum: 0,
+                        // Schema-level guard mirroring the runtime check
+                        // (validateArgs rejects 1) so LLM clients that
+                        // honor `not` see the constraint up front instead
+                        // of discovering it via a tool-call failure.
+                        not: { const: 1 },
                     },
                 },
                 required: ["prompt"],

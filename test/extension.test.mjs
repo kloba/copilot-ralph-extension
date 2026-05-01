@@ -1071,6 +1071,19 @@ test("PROMPT_GROW_PROJECT references the gh-issue backlog + acceptance + demo co
         "TEST must require same-or-higher pass count vs baseline (monotonicity)");
     assert.match(p, /fix forward or revert/i,
         "TEST must offer fix-forward-or-revert recovery, not just abort");
+    // IDEATE-stage acceptance criteria must be a CHECKBOX list
+    // AND machine-checkable. Two distinct contracts:
+    //   - "checkbox list" — without it, ACCEPTANCE can't tick
+    //     anything (gh issue edit checkbox flips depend on
+    //     `- [ ]` markdown), defeating the tick-as-you-go pin.
+    //   - "machine-checkable" — without it, an iter could ship a
+    //     backlog full of subjective criteria ("the UX feels
+    //     nice") that the ACCEPTANCE stage could never actually
+    //     verify, reducing the three-part completion gate to a
+    //     two-part one. Pin both phrases so a refactor can't
+    //     soften either side.
+    assert.match(p, /checkbox list/i, "IDEATE acceptance criteria must be specified as a checkbox list");
+    assert.match(p, /machine-checkable/i, "IDEATE acceptance criteria must be machine-checkable, not subjective");
 });
 
 test("both baked prompts retain the cwd guardrail and the trigger-phrase footgun caveat", () => {

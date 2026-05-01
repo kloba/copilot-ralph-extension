@@ -343,6 +343,23 @@ test("public tools and hooks surface is frozen (defensive against accidental mut
     assert.ok(Object.isFrozen(ralphTool.parameters.properties));
     assert.ok(Object.isFrozen(ralphTool.parameters.properties.prompt));
     assert.throws(() => { ralphTool.parameters.properties.prompt.maxLength = 9999; }, TypeError);
+    // Deep-freeze must reach EVERY descriptor — not just `prompt`. A regression
+    // where deepFreeze stops at one level of nesting would let consumers bump
+    // bounds at runtime (e.g. raise max_iterations.maximum past MAX_ALLOWED_ITERATIONS),
+    // silently desynchronizing the declared JSON schema from validateArgs's
+    // hardcoded caps. Pin freezing of every property + the `required` array.
+    for (const propName of Object.keys(ralphTool.parameters.properties)) {
+        const prop = ralphTool.parameters.properties[propName];
+        assert.ok(Object.isFrozen(prop), `${propName} schema not frozen`);
+    }
+    assert.ok(Object.isFrozen(ralphTool.parameters.required));
+    assert.throws(() => { ralphTool.parameters.required.push("max_iterations"); }, TypeError);
+    assert.throws(() => { ralphTool.parameters.properties.max_iterations.maximum = 999999; }, TypeError);
+    // ralph_stop tool surface is also frozen (same defensive contract).
+    const stopTool = c.tools.find((t) => t.name === "ralph_stop");
+    assert.ok(Object.isFrozen(stopTool.parameters));
+    assert.ok(Object.isFrozen(stopTool.parameters.properties));
+    assert.throws(() => { stopTool.parameters.properties.reason.maxLength = 9999; }, TypeError);
 });
 
 test("ralph_loop tool spec includes stagnation_limit and required prompt", () => {

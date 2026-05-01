@@ -847,12 +847,14 @@ export function createRalphController() {
                 // another — silently running to max_iterations on an
                 // otherwise-successful loop. Emit a single arm-time warning
                 // so the mismatch is visible in the timeline.
-                if (typeof a.completion_promise === "string" && a.completion_promise.trim() && a.completion_promise.trim() !== DEFAULTS.completion_promise) {
-                    log(`self_improve: warning — completion_promise=${JSON.stringify(a.completion_promise.trim())} differs from the baked SDLC prompt's "${DEFAULTS.completion_promise}" emit instruction; loop may run to max_iterations.`);
-                }
-                if (typeof a.abort_promise === "string" && a.abort_promise.trim() && a.abort_promise.trim() !== "ABORT_NO_IMPROVEMENTS") {
-                    log(`self_improve: warning — abort_promise=${JSON.stringify(a.abort_promise.trim())} differs from the baked SDLC prompt's "ABORT_NO_IMPROVEMENTS" emit instruction; abort signal may never fire.`);
-                }
+                const warnPromiseDrift = (fieldName, raw, expected, consequence) => {
+                    if (typeof raw !== "string") return;
+                    const trimmed = raw.trim();
+                    if (!trimmed || trimmed === expected) return;
+                    log(`self_improve: warning — ${fieldName}=${JSON.stringify(trimmed)} differs from the baked SDLC prompt's "${expected}" emit instruction; ${consequence}.`);
+                };
+                warnPromiseDrift("completion_promise", a.completion_promise, DEFAULTS.completion_promise, "loop may run to max_iterations");
+                warnPromiseDrift("abort_promise", a.abort_promise, "ABORT_NO_IMPROVEMENTS", "abort signal may never fire");
                 const parsed = validateArgs({
                     prompt,
                     max_iterations: a.max_iterations ?? SELF_IMPROVE_DEFAULTS.max_iterations,

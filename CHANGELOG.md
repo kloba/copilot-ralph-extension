@@ -20,6 +20,24 @@
   read via `packages/tui/src/writer.mjs`'s
   `readRunIndex`, assert the run surfaces.
 
+### Documentation
+- Added `.github/copilot-instructions.md` — the
+  canonical filename GitHub Copilot loads on
+  session start. Until now `AGENTS.md` referenced
+  it as the dual-trailer source-of-truth, but the
+  file was missing, so AI tooling that followed
+  the link fell through silently. The new file is
+  a thin redirect to `AGENTS.md` (the single
+  source of truth for commit / changelog /
+  versioning conventions) plus a quick summary so
+  agents that don't follow the link still see the
+  rules. New `test/extension.test.mjs` drift
+  guards: (1) every in-repo path AGENTS.md
+  references must exist, (2) the
+  copilot-instructions.md must point at AGENTS.md
+  and mention Conventional Commits + Keep a
+  Changelog by name.
+
 ### Tests
 - `test/extension.test.mjs` — three new tests pin
   the `warnPromiseDrift` runtime warning for both

@@ -4872,6 +4872,47 @@ test(".nvmrc pins the Node major that matches package.json#engines.node floor", 
     );
 });
 
+test("AGENTS.md references to in-repo files actually exist", () => {
+    // AGENTS.md previously cited `.github/copilot-instructions.md` —
+    // the canonical filename GitHub Copilot loads on session start —
+    // but the file was missing. AI tooling that followed the link
+    // silently fell through to a 404 instead of finding the project's
+    // commit / changelog / version conventions. Pin every in-repo
+    // path AGENTS.md references so a future restructure can't
+    // re-introduce dangling links.
+    const agents = readFileSync(resolve(REPO_ROOT, "AGENTS.md"), "utf8");
+    // Match `path/like/this.md` or `path/like/this.yml` style paths
+    // that look like in-repo references (start with .github/ or docs/
+    // or a bare filename with a known extension). Skip URLs.
+    const refs = new Set();
+    for (const m of agents.matchAll(/`([^`\s]+\.(?:md|yml|yaml|sh|mjs|json))`/g)) {
+        const p = m[1];
+        // Skip anything that looks like an example token rather than a
+        // path (e.g. `package.json` is in-repo; that's fine).
+        if (p.startsWith("http")) continue;
+        refs.add(p);
+    }
+    assert.ok(refs.size > 0, "AGENTS.md must reference some in-repo files");
+    const missing = [];
+    for (const p of refs) {
+        if (!existsSync(resolve(REPO_ROOT, p))) missing.push(p);
+    }
+    assert.deepEqual(missing, [], `AGENTS.md references missing files: ${JSON.stringify(missing)}`);
+});
+
+test(".github/copilot-instructions.md exists and points contributors at AGENTS.md", () => {
+    // Canonical filename for GitHub Copilot's auto-loaded instructions.
+    // Keeping it as a thin redirect to AGENTS.md (the single source of
+    // truth) avoids two-files-drift but still ensures Copilot finds
+    // the project conventions.
+    const p = resolve(REPO_ROOT, ".github/copilot-instructions.md");
+    assert.ok(existsSync(p), ".github/copilot-instructions.md must exist (AGENTS.md cites it)");
+    const body = readFileSync(p, "utf8");
+    assert.match(body, /AGENTS\.md/, "copilot-instructions.md must point at AGENTS.md");
+    assert.match(body, /Conventional Commits/i, "must mention the commit convention");
+    assert.match(body, /Keep a Changelog/i, "must mention the changelog convention");
+});
+
 test("install.sh: --help prints the leading comment block", () => {
     // Smoke test: the script must be syntactically valid bash (otherwise
     // bash would crash before reaching the --help branch) and the awk

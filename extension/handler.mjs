@@ -167,12 +167,10 @@ function displayValue(v) {
     return String(v);
 }
 
-// Shared helper: every tool handler that accepts an args object should
-// (a) reject malformed shapes (null/array/primitive) and (b) reject
-// unknown keys — so a typo like `resaon` or `max_iter` surfaces loudly
-// instead of being silently dropped. Returns `null` when the shape is
-// valid, otherwise `{ error: <message> }`. Centralising this logic keeps
-// ralph_loop and ralph_stop's validation in lockstep.
+// Shared helper: reject malformed shapes (null/array/primitive) and
+// unknown keys (so a typo like `resaon` or `max_iter` surfaces loudly
+// instead of being silently dropped). Returns `null` on valid shape,
+// otherwise `{ error: <message> }`.
 function validateArgShape(toolName, args, knownKeys) {
     // typeof null === "object" so null needs an explicit check.
     if (args === null || typeof args !== "object" || Array.isArray(args)) {

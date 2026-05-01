@@ -184,6 +184,28 @@ test("validateArgs: trims surrounding whitespace from completion_promise / abort
     assert.match(r2.error, /completion_promise exceeds/, r2.error);
 });
 
+test("validateArgs: identical/overlap check runs AFTER trimming, not before", () => {
+    // Subtle: trimming runs first, so promises that look distinct verbatim
+    // but collapse to the same trimmed string MUST still be flagged as
+    // identical — otherwise a user who pads one signal with whitespace
+    // could silently smuggle through an ambiguous pair.
+    const collide = validateArgs({
+        prompt: "go",
+        completion_promise: "  DONE\n",
+        abort_promise: "DONE\t",
+    });
+    assert.match(collide.error, /must differ/, collide.error);
+
+    // Same logic for substring overlap: padded "DONE" vs "DONE_FAIL" should
+    // still be caught (post-trim) as overlapping.
+    const overlap = validateArgs({
+        prompt: "go",
+        completion_promise: "  DONE  ",
+        abort_promise: "\tDONE_FAIL\n",
+    });
+    assert.match(overlap.error, /overlap/, overlap.error);
+});
+
 test("validateArgs: rejects negative/non-integer/=1 stagnation_limit", () => {
     assert.match(validateArgs({ prompt: "x", stagnation_limit: -1 }).error, /stagnation_limit/);
     assert.match(validateArgs({ prompt: "x", stagnation_limit: 1.5 }).error, /stagnation_limit/);

@@ -90,9 +90,8 @@ function boundedNoteForLog(text) {
     return collapseNote(truncateNote(text));
 }
 
-// Recursively freeze obj and all nested object/array values. Skips
-// already-frozen objects so cycles or shared sub-graphs terminate.
-// Returns the input for fluent use (e.g. `return deepFreeze({...})`).
+// Recursively freeze obj + nested values; skips already-frozen entries so
+// cycles terminate. Returns the input (for fluent `return deepFreeze(...)`).
 function deepFreeze(obj) {
     if (obj === null || typeof obj !== "object" || Object.isFrozen(obj)) return obj;
     Object.freeze(obj);

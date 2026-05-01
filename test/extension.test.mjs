@@ -1044,6 +1044,16 @@ test("both baked prompts retain the cwd guardrail and the trigger-phrase footgun
         assert.match(prompt, /Stay in cwd/i, `${name}: must retain the "Stay in cwd" hard rule`);
         assert.match(prompt, /\b(cancel|tear down|stop)\b/i, `${name}: must offer cancel/tear down/stop as preferred wording`);
         assert.match(prompt, /trigger phrase/i, `${name}: must explain WHY (trigger-phrase risk) rather than just listing alternatives`);
+        // Negative pin: a well-meaning future edit might rewrite the
+        // trigger-phrase caveat to say `Avoid the literal word "kill"
+        // in commit messages` — but doing so embeds the very trigger
+        // phrase in the prompt the agent reads, defeating the rule
+        // it's trying to teach. The prompt must reach the agent
+        // WITHOUT containing the bare forceful-action word itself.
+        // Use a word-boundary regex so substrings like "skill" or
+        // "killer feature" mentioned in unrelated examples wouldn't
+        // also fail.
+        assert.doesNotMatch(prompt, /\bkill\b/i, `${name}: prompt must not contain the literal trigger-phrase word it warns against`);
     }
 });
 

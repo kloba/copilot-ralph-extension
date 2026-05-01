@@ -656,6 +656,21 @@ test("self_improve appends focus text to the SDLC prompt", async () => {
     assert.ok(session.sent[0].prompt.startsWith(PROMPT_SELF_IMPROVE));
 });
 
+test("self_improve trims surrounding whitespace from focus before appending", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({ focus: "   tighten error messages\n\t  " });
+    assert.equal(r.resultType, "success");
+    session.emit("session.idle", { data: {} });
+    await new Promise((rs) => setTimeout(rs, 0));
+    const sent = session.sent[0]?.prompt ?? "";
+    assert.ok(sent.endsWith("Focus this run on: tighten error messages"),
+        `expected trimmed focus suffix, got: ${JSON.stringify(sent.slice(-80))}`);
+    assert.doesNotMatch(sent, /\n\t/, "trailing tab/newline must not survive into the prompt");
+});
+
 test("self_improve respects max_iterations / min_iterations overrides", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

@@ -1091,6 +1091,18 @@ test("BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT pin 
     // (truthy enables the suppression), not a bare flag.
     assert.notEqual(BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER);
     assert.match(BAKED_ATTRIBUTION_OPT_OUT, /=1$/, "opt-out env var must use the =1 polarity convention");
+    // Both trailers must use the canonical GitHub noreply domain.
+    // A typo like "users.noreply.gihub.com" would silently produce
+    // commits whose Co-authored-by line does not link to any GitHub
+    // user — the trailer ships, the search query above breaks, and
+    // there is no error surface to catch it. Pin the exact domain.
+    assert.match(BAKED_COPILOT_TRAILER, /@users\.noreply\.github\.com>$/, "Copilot trailer must end with the canonical GitHub noreply domain");
+    assert.match(BAKED_RALPH_TRAILER, /@users\.noreply\.github\.com>$/, "copilot-ralph trailer must end with the canonical GitHub noreply domain");
+    // Both trailers start with the conventional-trailer "Co-authored-by: " prefix.
+    // git interpret-trailers and GitHub both key off this exact spelling
+    // (case-sensitive, hyphenated "authored-by", trailing colon-space).
+    assert.match(BAKED_COPILOT_TRAILER, /^Co-authored-by: /);
+    assert.match(BAKED_RALPH_TRAILER, /^Co-authored-by: /);
 });
 
 test("self_improve and grow_project focus descriptions both disclose steering semantics", async () => {

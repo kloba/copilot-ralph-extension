@@ -638,6 +638,17 @@ export function createRalphController() {
                 );
             },
         },
+        {
+            name: "self_improve",
+            description:
+                "Arms ralph_loop with a baked-in, project-agnostic SDLC self-improvement prompt (orient → ideate → critique → baseline → implement → test → commit → push → COMPLETE). Stub: not yet implemented.",
+            parameters: {
+                type: "object",
+                properties: {},
+                additionalProperties: false,
+            },
+            handler: async () => failure("self_improve: not implemented yet."),
+        },
     ];
     // Deep-freeze the public tool surface so consumers can't swap handlers
     // or desync declared schema bounds from runtime validation.

@@ -515,7 +515,7 @@ test("controller instances are independent (state is closure-private, not module
 
 test("controller exposes ralph_loop and ralph_stop tools and hooks", () => {
     const c = createRalphController();
-    assert.deepEqual(c.tools.map((t) => t.name).sort(), ["ralph_loop", "ralph_stop"]);
+    assert.deepEqual(c.tools.map((t) => t.name).sort(), ["ralph_loop", "ralph_stop", "self_improve"]);
     assert.equal(typeof c.hooks.onUserPromptSubmitted, "function");
     assert.equal(typeof c.attach, "function");
     // Pin the EXACT hook surface — if a future change leaks an internal
@@ -531,7 +531,16 @@ test("controller exposes ralph_loop and ralph_stop tools and hooks", () => {
     // assertion instead of a cascade of cryptic ones.
     assert.equal(c.tools[0].name, "ralph_loop", "tools[0] must be ralph_loop");
     assert.equal(c.tools[1].name, "ralph_stop", "tools[1] must be ralph_stop");
-    assert.equal(c.tools.length, 2, "tools array must have exactly two entries");
+    assert.equal(c.tools[2].name, "self_improve", "tools[2] must be self_improve");
+    assert.equal(c.tools.length, 3, "tools array must have exactly three entries");
+});
+
+test("self_improve tool is exposed (stub)", () => {
+    const c = createRalphController();
+    const t = c.tools.find((x) => x.name === "self_improve");
+    assert.ok(t, "self_improve tool must be exposed");
+    assert.equal(typeof t.handler, "function");
+    assert.ok(t.parameters && t.parameters.type === "object");
 });
 
 test("public tools and hooks surface is frozen (defensive against accidental mutation)", () => {

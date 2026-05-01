@@ -544,21 +544,20 @@ export function createRalphController() {
         // A sub-agent that gets aborted (task / explore / rubber-duck
         // failure) must NOT tear down the root ralph_loop along with it.
         if (isSubAgentEvent(ev)) return;
-        if (state.active) {
-            // If the SDK supplies an abort reason in the event payload,
-            // capture it so it shows up in the log line and additionalContext.
-            const reasonRaw = ev?.data?.reason ?? ev?.reason;
-            const trimmed = typeof reasonRaw === "string" ? reasonRaw.trim() : "";
-            const note = trimmed || undefined;
-            // Bound the log line: boundedNoteForLog so a pathologically large
-            // SDK abort reason doesn't dump megabytes into the timeline. The
-            // structured note on the result is also truncated by finish(),
-            // but the pre-finish log line was previously printing the raw
-            // value uncapped — fix that.
-            const noteForLog = note ? boundedNoteForLog(note) : "";
-            log(`⏹ ralph_loop interrupted by session abort${noteForLog ? ` (${noteForLog})` : ""}.`);
-            finish("aborted", note);
-        }
+        if (!state.active) return;
+        // If the SDK supplies an abort reason in the event payload,
+        // capture it so it shows up in the log line and additionalContext.
+        const reasonRaw = ev?.data?.reason ?? ev?.reason;
+        const trimmed = typeof reasonRaw === "string" ? reasonRaw.trim() : "";
+        const note = trimmed || undefined;
+        // Bound the log line: boundedNoteForLog so a pathologically large
+        // SDK abort reason doesn't dump megabytes into the timeline. The
+        // structured note on the result is also truncated by finish(),
+        // but the pre-finish log line was previously printing the raw
+        // value uncapped — fix that.
+        const noteForLog = note ? boundedNoteForLog(note) : "";
+        log(`⏹ ralph_loop interrupted by session abort${noteForLog ? ` (${noteForLog})` : ""}.`);
+        finish("aborted", note);
     };
 
     const tools = [

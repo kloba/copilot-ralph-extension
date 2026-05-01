@@ -385,13 +385,10 @@ export function createRalphController() {
         }
         armedFor.fireInFlight = true;
         armedFor.observedMessageThisFire = false;
-        // Bound logged err.message so a pathologically large error payload
-        // (giant JSON, multi-line stack) doesn't dump megabytes into the
-        // timeline. result.note is already truncated by finish(); mirror
-        // the same cap on the pre-finish log line via boundedNoteForLog.
-        // kind = "rejected" for async rejection, "failed" for sync throw.
-        // Both prefixes are part of the public log/note contract — keep them
-        // distinct so operators can tell which code path produced the error.
+        // kind: "rejected" (async rejection) or "failed" (sync throw). Both
+        // prefixes are part of the public log/note contract — operators rely
+        // on them to tell which code path produced the error. boundedNoteForLog
+        // caps the log line; finish() does its own truncate on result.note.
         const handleSendFailure = (err, kind) => {
             if (state.active !== armedFor) return;
             armedFor.fireInFlight = false;

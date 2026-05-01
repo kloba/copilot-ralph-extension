@@ -1673,6 +1673,23 @@ test("abort event falls back to top-level ev.reason when ev.data.reason is absen
     assert.equal(controller.state.lastResult.note, "network blip");
 });
 
+test("abort log line carries calling tool's label (self_improve)", async () => {
+    // The "⏹ <label> interrupted by session abort" log line was
+    // hardcoded to "ralph_loop" and missed the iter-14 label sweep.
+    // When armed via self_improve, the abort log must read
+    // "⏹ self_improve interrupted by session abort …".
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const si = c.tools.find((x) => x.name === "self_improve");
+    await si.handler({ max_iterations: 5 });
+    session.emit("session.idle", { data: {} });
+    session.emit("abort", { data: { reason: "user changed plan" } });
+    const joined = session.logs.join("\n");
+    assert.match(joined, /⏹ self_improve interrupted by session abort \(user changed plan\)/);
+    assert.doesNotMatch(joined, /⏹ ralph_loop interrupted/);
+});
+
 test("abort event prefers ev.data.reason over ev.reason when both are present", async () => {
     // The handler's reason-resolution is `ev?.data?.reason ?? ev?.reason`.
     // When both layers carry a string, ev.data.reason wins — pin the

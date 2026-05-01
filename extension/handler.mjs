@@ -569,7 +569,7 @@ export function createRalphController() {
         const note = (typeof reasonRaw === "string" ? reasonRaw.trim() : "") || undefined;
         // Log line capped via boundedNoteForLog; result.note is capped
         // independently by finish() → truncateNote.
-        log(`⏹ ralph_loop interrupted by session abort${note ? ` (${boundedNoteForLog(note)})` : ""}.`);
+        log(`⏹ ${state.active.label} interrupted by session abort${note ? ` (${boundedNoteForLog(note)})` : ""}.`);
         finish("aborted", note);
     };
 

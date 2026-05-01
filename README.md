@@ -76,8 +76,8 @@ The tool **arms** the loop and returns immediately. Iterations then play out as 
 | `prompt` | _(required)_ | The task prompt re-fed each iteration |
 | `max_iterations` | `20` | Hard iteration cap (integer, 1–1000) |
 | `min_iterations` | `1` | Minimum iterations before `completion_promise` / `abort_promise` are honored. Use this to force verification passes even if the agent declares completion early. |
-| `completion_promise` | `"COMPLETE"` | Substring in assistant response → stop |
-| `abort_promise` | _(none)_ | Substring → early abort. Must differ from `completion_promise` and not overlap as a substring (e.g. `"DONE"` / `"DONE_FAIL"` is rejected) |
+| `completion_promise` | `"COMPLETE"` | Substring in assistant response → stop. Trimmed; max 200 chars. |
+| `abort_promise` | _(none)_ | Substring → early abort. Trimmed; max 200 chars. Must differ from `completion_promise` and not overlap as a substring (e.g. `"DONE"` / `"DONE_FAIL"` is rejected) |
 | `stagnation_limit` | `3` | Abort after N consecutive byte-identical responses (0 disables, must be ≥ 2 if set) |
 
 ### Companion tool

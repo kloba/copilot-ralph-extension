@@ -36,6 +36,13 @@
   with `ralph_stop`.
 
 ### Hardening (post-0.6.0)
+- The `ralph_loop is already armed/running` failure string had
+  unbalanced parentheses: the produced sentence ended with
+  `…pending — call ralph_stop first).` (stray close paren after the
+  period; opening paren around the iteration counter never closed
+  cleanly). The string now reads `…(iteration 1/7 pending) — call
+  ralph_stop first.` Both `ralph_loop` and `self_improve` emit the
+  same string and both are fixed.
 - `attach()` is now transactional: if `session.on()` throws partway
   through subscribing the three required events (assistant.message,
   session.idle, abort), any listeners attached before the throw are

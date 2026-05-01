@@ -2889,6 +2889,27 @@ test("arming a fresh ralph_loop clears stale lastResult from prior run", async (
         "prior lastResult must be cleared on re-arm to prevent stale post-loop context");
 });
 
+test("self_improve re-arm clears prior lastResult (mirror of ralph_loop)", async () => {
+    // Symmetric guarantee: re-arming via self_improve after a previous
+    // self_improve completed must clear state.lastResult so the
+    // additionalContext hook can't bleed the previous run's preview
+    // into the next user prompt. armLoop() is shared, but pin both
+    // calling tools so a regression that only resets one path is loud.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const si = c.tools.find((x) => x.name === "self_improve");
+    await si.handler({ max_iterations: 3, min_iterations: 1 });
+    session.emit("session.idle", { data: {} });
+    runTurn(session, "wrapped up COMPLETE");
+    assert.equal(c.state.lastResult.reason, "completion_promise");
+    assert.equal(c.state.lastResult.label, "self_improve");
+    const arm2 = await si.handler({ max_iterations: 4, min_iterations: 1 });
+    assert.equal(arm2.resultType, "success");
+    assert.equal(c.state.lastResult, null,
+        "prior self_improve lastResult must be cleared on self_improve re-arm");
+});
+
 test("lastResult is frozen so consumers can't mutate the historical record", async () => {
     const { session, controller } = await arm({ max_iterations: 3 });
     session.emit("session.idle", { data: {} });

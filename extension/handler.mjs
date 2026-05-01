@@ -73,6 +73,14 @@ function truncateNote(text) {
 function collapseNote(text) {
     return text ? String(text).replace(/\s+/g, " ").trim() : "";
 }
+// Bound an arbitrary user/SDK-supplied string for embedding in a single-line
+// log message: cap length at PREVIEW_CHARS (surrogate-safely) and flatten
+// whitespace. Used by every log site that interpolates an external value
+// (abort reason, send-error message) so the timeline can't be flooded by a
+// pathological payload.
+function boundedNoteForLog(text) {
+    return collapseNote(truncateNote(text));
+}
 function failure(message, extra = {}) {
     return { ...extra, textResultForLlm: message, resultType: "failure" };
 }
@@ -326,12 +334,8 @@ export function createRalphController() {
         // Bound logged err.message so a pathologically large error payload
         // (giant JSON, multi-line stack) doesn't dump megabytes into the
         // timeline. result.note is already truncated by finish(); mirror
-        // the same cap on the pre-finish log line. Match onAbort's
-        // approach (truncateNote + collapseNote).
-        const formatErrForLog = (err) => {
-            const msg = err?.message ?? String(err);
-            return collapseNote(truncateNote(msg));
-        };
+        // the same cap on the pre-finish log line via boundedNoteForLog.
+        const formatErrForLog = (err) => boundedNoteForLog(err?.message ?? String(err));
         try {
             const r = sendPrompt(prompt);
             if (r && typeof r.then === "function") {
@@ -488,12 +492,12 @@ export function createRalphController() {
             const reasonRaw = ev?.data?.reason ?? ev?.reason;
             const trimmed = typeof reasonRaw === "string" ? reasonRaw.trim() : "";
             const note = trimmed ? trimmed : undefined;
-            // Bound the log line: truncateNote here so a pathologically large
+            // Bound the log line: boundedNoteForLog so a pathologically large
             // SDK abort reason doesn't dump megabytes into the timeline. The
             // structured note on the result is also truncated by finish(),
             // but the pre-finish log line was previously printing the raw
             // value uncapped — fix that.
-            const noteForLog = note ? collapseNote(truncateNote(note)) : "";
+            const noteForLog = note ? boundedNoteForLog(note) : "";
             log(`⏹ ralph_loop interrupted by session abort${noteForLog ? ` (${noteForLog})` : ""}.`);
             finish("aborted", note);
         }

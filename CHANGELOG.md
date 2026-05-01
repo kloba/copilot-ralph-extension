@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### CI
+- `.github/workflows/ci.yml` — replaced
+  `npm ci --no-audit --no-fund || npm install
+  --no-audit --no-fund` with a conditional
+  `npm ci` gated on `hashFiles('package-lock.json')
+  != ''`. The previous form silently fell through
+  to `npm install` whenever `npm ci` failed,
+  which is exactly the manifest/lockfile drift
+  scenario `npm ci` is supposed to *catch* — a
+  missing or out-of-date lockfile would have been
+  papered over by `npm install` resolving fresh
+  versions at CI time. Today the root has zero
+  dependencies and no lockfile, so the gated
+  step skips entirely; the moment a contributor
+  commits a lockfile alongside new deps, CI
+  enforces it deterministically. Added a
+  drift-guard test in `test/extension.test.mjs`
+  that pins the `run:` line: it must invoke
+  `npm ci --no-audit --no-fund`, must not contain
+  `||` or `npm install`, and the step must be
+  gated on the lockfile.
+
 ### Fixes
 - `extension/events-emit.mjs` — index.jsonl entries
   now include `type: "armed"`. Previously the

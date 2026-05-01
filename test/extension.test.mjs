@@ -4747,6 +4747,36 @@ test("README documents every ralph_loop parameter the schema advertises", () => 
     }
 });
 
+test("ci.yml: install step uses deterministic `npm ci` with no silent fallback", () => {
+    // Drift guard. The previous CI form was
+    //   npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+    // which silently masked manifest/lockfile drift: a contributor
+    // could land a `dependencies` entry without committing the
+    // matching package-lock.json and CI would still go green by
+    // falling through to `npm install` (which then resolves whatever
+    // version satisfies the range at that moment, defeating the
+    // entire reason for `npm ci`). Pin the form so a future "tidy"
+    // pass can't reintroduce the fallback.
+    const ci = readFileSync(resolve(REPO_ROOT, ".github/workflows/ci.yml"), "utf8");
+    assert.match(ci, /npm ci --no-audit --no-fund/, "ci.yml must call `npm ci --no-audit --no-fund`");
+    // Inspect only the actual `run:` line(s), not the comment block
+    // above them — the comment legitimately describes the old form.
+    const runLines = ci.split("\n").filter((l) => /^\s*run:\s*npm ci/.test(l));
+    assert.ok(runLines.length === 1, `expected exactly one \`run: npm ci\` line, got ${runLines.length}`);
+    assert.ok(
+        !/\|\|/.test(runLines[0]) && !/npm install/.test(runLines[0]),
+        `ci.yml \`run:\` line must NOT fall back from npm ci to npm install — got: ${runLines[0]}`,
+    );
+    // The install step must be gated on a lockfile so the no-deps
+    // baseline (today) skips cleanly without erroring on the missing
+    // package-lock.json that `npm ci` requires.
+    assert.match(
+        ci,
+        /if:\s*hashFiles\('package-lock\.json'\)\s*!=\s*''/,
+        "ci.yml install step must be gated on hashFiles('package-lock.json') != ''",
+    );
+});
+
 test("install.sh FILES array matches actual extension/*.mjs on disk", () => {
     // Drift guard. install.sh hardcodes
     //   FILES=(extension.mjs handler.mjs events-emit.mjs)

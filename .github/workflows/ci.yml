@@ -27,7 +27,17 @@ jobs:
           node-version: ${{ matrix.node }}
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+        # Today the root package.json declares zero dependencies and no
+        # package-lock.json is committed, so this step skips entirely.
+        # If a future contributor adds deps via `npm install <pkg>`, a
+        # lockfile is generated and committed; CI then runs the
+        # deterministic `npm ci` against it. We deliberately do NOT
+        # fall back to `npm install` — that would silently mask
+        # manifest/lockfile drift (the previous `npm ci || npm install`
+        # form did exactly that). If `npm ci` ever fails here, fix the
+        # lockfile rather than papering over it.
+        if: hashFiles('package-lock.json') != ''
+        run: npm ci --no-audit --no-fund
 
       - name: Syntax check
         # Iterate every shipped .mjs so new files are automatically

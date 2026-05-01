@@ -121,6 +121,28 @@ test("validateArgs: rejects oversized completion_promise / abort_promise", () =>
     assert.ok(validateArgs({ prompt: "x", abort_promise: atLimit }).value);
 });
 
+test("validateArgs: trims surrounding whitespace from completion_promise / abort_promise", () => {
+    // Subtle bug: a copy-paste artifact like `"  COMPLETE\n"` used to be
+    // stored verbatim, so the substring match (`text.includes("  COMPLETE\n")`)
+    // required exact surrounding whitespace and the loop silently never
+    // terminated on a clean `COMPLETE` from the assistant. Trimming makes
+    // the signal phrase robust to user padding.
+    const r = validateArgs({
+        prompt: "go",
+        completion_promise: "  DONE\n",
+        abort_promise: "\tFAIL  ",
+    });
+    assert.ok(r.value, r.error);
+    assert.equal(r.value.completionPromise, "DONE");
+    assert.equal(r.value.abortPromise, "FAIL");
+
+    // Length validation runs against the *original* (pre-trim) string, so a
+    // user can't smuggle an oversized promise through with leading spaces.
+    const padded = " ".repeat(MAX_PROMISE_CHARS) + "DONE";
+    const r2 = validateArgs({ prompt: "go", completion_promise: padded });
+    assert.match(r2.error, /completion_promise exceeds/, r2.error);
+});
+
 test("validateArgs: rejects negative/non-integer/=1 stagnation_limit", () => {
     assert.match(validateArgs({ prompt: "x", stagnation_limit: -1 }).error, /stagnation_limit/);
     assert.match(validateArgs({ prompt: "x", stagnation_limit: 1.5 }).error, /stagnation_limit/);

@@ -169,7 +169,11 @@ export function validateArgs(args) {
         if (args.completion_promise.length > MAX_PROMISE_CHARS) {
             return { error: `ralph_loop: completion_promise exceeds ${MAX_PROMISE_CHARS} characters (got ${args.completion_promise.length}). Use a short signal phrase.` };
         }
-        completionPromise = args.completion_promise;
+        // Trim padding so a copy-paste artifact like `"  COMPLETE\n"` still
+        // matches a clean `COMPLETE` in the assistant's reply. Without this
+        // the substring check requires exact surrounding whitespace and the
+        // loop silently never terminates.
+        completionPromise = args.completion_promise.trim();
     }
 
     let abortPromise = null;
@@ -180,7 +184,7 @@ export function validateArgs(args) {
         if (args.abort_promise.length > MAX_PROMISE_CHARS) {
             return { error: `ralph_loop: abort_promise exceeds ${MAX_PROMISE_CHARS} characters (got ${args.abort_promise.length}). Use a short signal phrase.` };
         }
-        abortPromise = args.abort_promise;
+        abortPromise = args.abort_promise.trim();
     }
 
     if (abortPromise !== null && abortPromise === completionPromise) {

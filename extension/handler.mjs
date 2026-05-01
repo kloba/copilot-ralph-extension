@@ -33,6 +33,19 @@ const MAX_PROMISE_CHARS = 200;
 // extremely chatty turns shouldn't be allowed to consume unbounded memory.
 const MAX_CONTENT_CHARS = 1_048_576; // 1 MiB
 
+// Map finish reason → log-line verb. Anything not listed falls through to
+// the "⏹ stopped" default (max_iterations, abort_promise, stagnation,
+// user_stopped, detached). Hoisted to module scope so it isn't rebuilt on
+// every finish() call.
+//   ✅ completed — completion_promise
+//   ⚠️  ended   — send_error, aborted (something went wrong)
+//   ⏹ stopped   — everything else
+const VERB_BY_REASON = Object.freeze({
+    completion_promise: "✅ completed",
+    send_error: "⚠️ ended",
+    aborted: "⚠️ ended",
+});
+
 // Find a slice length ≤ `cut` that doesn't split a UTF-16 surrogate
 // pair (4-byte chars like emoji). Used by both previewOf and truncateNote
 // so a string ending mid-emoji never produces an invalid lone surrogate.
@@ -397,19 +410,6 @@ export function createRalphController() {
             durationMs: clampedElapsed(startedAt),
         };
         if (note) result.note = truncateNote(note);
-        // Differentiate the log marker by category so an error finish doesn't
-        // visually read like a clean cancellation. Lookup table mirrors the
-        // mapping in the comment below; everything not listed falls through
-        // to "⏹ stopped" (max_iter, abort_promise, stagnation, user_stopped,
-        // detached).
-        //   ✅ completed — completion_promise
-        //   ⚠️  ended   — send_error, aborted (something went wrong)
-        //   ⏹ stopped   — everything else
-        const VERB_BY_REASON = {
-            completion_promise: "✅ completed",
-            send_error: "⚠️ ended",
-            aborted: "⚠️ ended",
-        };
         const verb = VERB_BY_REASON[reason] ?? "⏹ stopped";
         // Collapse note whitespace for the single-line log format (a multi-
         // line Error stack would otherwise break alignment in the timeline).

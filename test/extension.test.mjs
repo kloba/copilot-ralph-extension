@@ -4772,6 +4772,33 @@ test("README + RELEASING install loops list every extension/*.mjs file", () => {
     }
 });
 
+test(".nvmrc pins the Node major that matches package.json#engines.node floor", () => {
+    // The `.nvmrc` file lets contributors run `nvm use` (or `fnm use`,
+    // or `asdf reshim nodejs`) to land on the same Node major CI runs
+    // against. If the project's engines floor changes (e.g. >=20 →
+    // >=22), .nvmrc must move with it or contributors silently develop
+    // against an unsupported runtime. Pin the agreement here so the
+    // single-source-of-truth (package.json) drives both.
+    const nvmrc = readFileSync(resolve(REPO_ROOT, ".nvmrc"), "utf8").trim();
+    assert.match(
+        nvmrc,
+        /^\d+(?:\.\d+){0,2}$/,
+        `.nvmrc must hold a bare semver-ish version like "20" or "20.11.1" (got ${JSON.stringify(nvmrc)})`,
+    );
+    const nvmMajor = Number(nvmrc.split(".")[0]);
+    const pkg = JSON.parse(readFileSync(resolve(REPO_ROOT, "package.json"), "utf8"));
+    const engines = pkg.engines && pkg.engines.node;
+    assert.ok(engines, "package.json must declare engines.node");
+    const m = String(engines).match(/(\d+)/);
+    assert.ok(m, `engines.node (${engines}) must contain a major version`);
+    const engineMajor = Number(m[1]);
+    assert.equal(
+        nvmMajor,
+        engineMajor,
+        `.nvmrc major (${nvmMajor}) must match engines.node floor (${engineMajor}) — bump both together`,
+    );
+});
+
 test("install.sh: --help prints the leading comment block", () => {
     // Smoke test: the script must be syntactically valid bash (otherwise
     // bash would crash before reaching the --help branch) and the awk

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Internal
+- Added `.nvmrc` pinning Node major **20** so
+  contributors who run `nvm use` / `fnm use` /
+  `asdf install` land on the same Node major CI's
+  primary matrix runs against (and `engines.node`
+  declares as the floor). New
+  `test/extension.test.mjs` drift guard parses
+  `.nvmrc` plus `package.json#engines.node` and
+  asserts the majors agree — bumping the engines
+  floor without bumping `.nvmrc` (or vice versa)
+  now fails CI loudly instead of silently
+  diverging.
+
 ### Documentation
 - README + `docs/RELEASING.md` — install / pin
   snippets now include `events-emit.mjs` in their

@@ -90,7 +90,7 @@ The tool **arms** the loop and returns immediately. Iterations then play out as 
 
 ### Companion tool
 
-`ralph_stop` cancels an active loop and returns the iteration count. No-op (failure) if nothing is running. Optionally takes a `reason` string (≤500 chars) which is recorded on the result as `note` and surfaced in the log line and `additionalContext` injection — handy when the agent (or user) wants to record *why* the loop was stopped manually.
+`ralph_stop` cancels an active loop and returns the iteration count. Optionally takes a `reason` string (≤500 chars) which is recorded on the result as `note` and surfaced in the log line and `additionalContext` injection — handy when the agent (or user) wants to record *why* the loop was stopped manually.
 
 ```js
 ralph_stop({ reason: "user changed plan" })

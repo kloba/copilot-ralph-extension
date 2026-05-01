@@ -1346,6 +1346,26 @@ test("self_improve schema properties match SELF_IMPROVE_KEYS membership exactly"
     ], "schema property names must match SELF_IMPROVE_KEYS exactly");
 });
 
+test("grow_project schema properties match GROW_PROJECT_KEYS membership exactly", () => {
+    // Mirror of the SELF_IMPROVE_KEYS pin above. validateOptionalArgShape
+    // gates which keys grow_project's handler accepts, but the LLM
+    // dispatcher reads the schema. If a future contributor ADDS a new
+    // property to the schema without adding it to the runtime KEYS
+    // allowlist (or vice-versa), the LLM will pass an arg that the
+    // handler then rejects as "unknown" — a confusing UX regression.
+    // Pin the property name set so any drift fails this test loudly.
+    const c = createRalphController();
+    const gp = c.tools.find((t) => t.name === "grow_project");
+    assert.deepEqual(Object.keys(gp.parameters.properties).sort(), [
+        "abort_promise",
+        "completion_promise",
+        "focus",
+        "max_iterations",
+        "min_iterations",
+        "stagnation_limit",
+    ], "schema property names must match GROW_PROJECT_KEYS exactly");
+});
+
 test("grow_project schema declares max/min/completion/abort/stagnation/focus bounds matching runtime", () => {
     // One consolidated schema-parity pin for grow_project, mirroring
     // the four self_improve schema tests above. A future tweak to

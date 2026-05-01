@@ -641,10 +641,9 @@ export function createRalphController() {
             },
             handler: async (args) => {
                 if (!state.active) return failure("ralph_stop: no ralph_loop is currently running.");
-                // ralph_stop's `reason` is optional, so null/undefined are
-                // valid. Anything else goes through the same shape +
-                // unknown-keys gate as ralph_loop so typos and bogus
-                // shapes surface loudly.
+                // ralph_stop's `reason` is optional (null/undefined valid).
+                // Anything else goes through the same shape + unknown-keys
+                // gate as ralph_loop so typos surface loudly.
                 if (args !== null && args !== undefined) {
                     const shape = validateArgShape("ralph_stop", args, RALPH_STOP_KEYS);
                     if (shape) return failure(shape.error);

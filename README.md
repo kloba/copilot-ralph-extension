@@ -296,7 +296,7 @@ RALPH_NO_ATTRIBUTION=1 copilot   # subsequent self_improve/grow_project loops om
 
 - **Only public-repo commits are searchable.** GitHub's commit search API does not index private repositories, so private-repo loops are invisible to `gh search commits` regardless of the trailer. The bot-account profile likewise only shows public contributions.
 - **This is effectively opt-in telemetry via git metadata.** No data leaves your machine — the trailer is just text in the commit object — but anyone reading the public commit log can correlate it with extension usage. The opt-out exists so you can disable that correlation per session without forking the extension.
-- **The bot account must exist before commits are made.** Unregistered noreply emails do not link retroactively to a GitHub account once the account is created — the `+copilot-ralph@users.noreply.github.com` mailbox has to be claimed first, then the trailers will associate going forward.
+- **The bot account must exist before commits are made.** Unregistered noreply emails do not link retroactively to a GitHub account once the account is created — the `copilot-ralph@users.noreply.github.com` mailbox (matching the trailer format used in the example block above) has to be claimed first, then the trailers will associate going forward.
 
 ## Troubleshooting
 

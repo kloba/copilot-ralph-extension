@@ -37,7 +37,7 @@ done
 
 Then in any Copilot CLI session, run:
 
-```
+```text
 /extensions
 ```
 
@@ -217,7 +217,7 @@ The SDK emits one `session.idle` per *root-level* agentic loop completion — no
 
 `onUserPromptSubmitted` is the only hook the extension registers. It does **not** drive iterations. It runs on the *next* user prompt after the loop has finished and injects a single `additionalContext` line so the agent silently learns the outcome:
 
-```
+```text
 [ralph_loop just finished — iterations=4, reason=completion_promise, durationMs=12345]
 ```
 

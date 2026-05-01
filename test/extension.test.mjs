@@ -304,8 +304,19 @@ test("validateArgs: rejects unknown keys (typo guard)", () => {
     // Multiple unknowns reported together.
     const r2 = validateArgs({ prompt: "x", foo: 1, bar: 2 });
     assert.match(r2.error, /unknown arguments.*"foo".*"bar"/);
-    // Lists valid keys to help the caller fix their call.
-    assert.match(r1.error, /Valid keys:.*max_iterations/);
+    // Lists valid keys to help the caller fix their call. The error
+    // message must enumerate ALL six accepted keys, not just one — a
+    // single-key check passes even if a refactor accidentally drops
+    // five of them from the rendered list. Pin all six explicitly so
+    // a regression in RALPH_LOOP_KEYS membership or the join logic
+    // shows up immediately.
+    for (const key of [
+        "prompt", "max_iterations", "min_iterations",
+        "completion_promise", "abort_promise", "stagnation_limit",
+    ]) {
+        assert.match(r1.error, new RegExp(`Valid keys:.*\\b${key}\\b`),
+            `expected '${key}' to appear in valid-keys hint`);
+    }
     // All-known keys still pass.
     assert.ok(validateArgs({
         prompt: "x", max_iterations: 5, min_iterations: 1,

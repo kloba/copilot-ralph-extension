@@ -926,6 +926,33 @@ test("self_improve schema declares max_iterations / min_iterations bounds matchi
     assert.equal(min.default, 5);
 });
 
+test("self_improve schema declares completion/abort/stagnation bounds matching runtime", () => {
+    // Same drift-prevention rationale as the focus & max/min bounds
+    // tests: the JSON-schema must mirror the runtime validation for
+    // the remaining three fields too — completion_promise (default
+    // "COMPLETE", 1..200 chars), abort_promise (no default, 1..200
+    // chars), stagnation_limit (default 3, integer ≥ 0, with the
+    // {not:{const:1}} carve-out forbidding the value 1 since a single
+    // sample can't establish stagnation).
+    const c = createRalphController();
+    const si = c.tools.find((t) => t.name === "self_improve");
+    const cp = si.parameters.properties.completion_promise;
+    assert.equal(cp.type, "string");
+    assert.equal(cp.default, "COMPLETE");
+    assert.equal(cp.minLength, 1);
+    assert.equal(cp.maxLength, 200);
+    const ap = si.parameters.properties.abort_promise;
+    assert.equal(ap.type, "string");
+    assert.equal(ap.default, undefined, "abort_promise must NOT declare a default — opt-in only");
+    assert.equal(ap.minLength, 1);
+    assert.equal(ap.maxLength, 200);
+    const sl = si.parameters.properties.stagnation_limit;
+    assert.equal(sl.type, "integer");
+    assert.equal(sl.default, 3);
+    assert.equal(sl.minimum, 0);
+    assert.deepEqual(sl.not, { const: 1 }, "the value 1 is rejected at the schema layer too");
+});
+
 test("self_improve schema declares focus bounds matching runtime validation", () => {
     // The runtime focus validator caps length at MAX_FOCUS_CHARS (500)
     // and rejects empty strings; the JSON-schema MUST mirror those

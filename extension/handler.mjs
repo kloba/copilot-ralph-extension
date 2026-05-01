@@ -239,6 +239,18 @@ function validateArgShape(toolName, args, knownKeys) {
     return null;
 }
 
+// Variant of validateArgShape used by tools where "no args" is a valid
+// call (ralph_stop, self_improve — both have only optional fields).
+// Treats null/undefined as "use defaults" and returns a ready-to-return
+// `failure(...)` result on bad shape, so the caller's call site is just
+// `const bad = validateOptionalArgShape(...); if (bad) return bad;` —
+// keeping the "null/undefined = not supplied" decision in one place.
+function validateOptionalArgShape(label, args, knownKeys) {
+    if (args === null || args === undefined) return null;
+    const shape = validateArgShape(label, args, knownKeys);
+    return shape ? failure(shape.error) : null;
+}
+
 const RALPH_LOOP_KEYS = new Set([
     "prompt",
     "max_iterations",
@@ -728,10 +740,8 @@ export function createRalphController() {
                 // ralph_stop's `reason` is optional (null/undefined valid).
                 // Anything else goes through the same shape + unknown-keys
                 // gate as ralph_loop so typos surface loudly.
-                if (args !== null && args !== undefined) {
-                    const shape = validateArgShape("ralph_stop", args, RALPH_STOP_KEYS);
-                    if (shape) return failure(shape.error);
-                }
+                const bad = validateOptionalArgShape("ralph_stop", args, RALPH_STOP_KEYS);
+                if (bad) return bad;
                 const { i, max, label } = state.active;
                 // truncateNote caps the stored value so a giant user-supplied
                 // reason can't pollute the LLM context.
@@ -799,10 +809,8 @@ export function createRalphController() {
                 if (notAttached) return notAttached;
                 const guard = activeLoopGuard();
                 if (guard) return guard;
-                if (args !== null && args !== undefined) {
-                    const shape = validateArgShape("self_improve", args, SELF_IMPROVE_KEYS);
-                    if (shape) return failure(shape.error);
-                }
+                const bad = validateOptionalArgShape("self_improve", args, SELF_IMPROVE_KEYS);
+                if (bad) return bad;
                 const a = args ?? {};
                 // Validate `focus` independently (the rest is delegated to
                 // validateArgs via the constructed prompt below).

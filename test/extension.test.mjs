@@ -920,6 +920,58 @@ test("self_improve trims surrounding whitespace from focus before appending", as
     assert.doesNotMatch(sent, /\n\t/, "trailing tab/newline must not survive into the prompt");
 });
 
+test("grow_project actually arms with PROMPT_GROW_PROJECT", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "grow_project");
+    const r = await t.handler({});
+    assert.equal(r.resultType, "success");
+    session.emit("session.idle", { data: {} });
+    await new Promise((rs) => setTimeout(rs, 0));
+    assert.equal(session.sent[0]?.prompt, PROMPT_GROW_PROJECT);
+});
+
+test("grow_project appends focus text to PROMPT_GROW_PROJECT", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "grow_project");
+    const r = await t.handler({ focus: "ship CSV export feature first" });
+    assert.equal(r.resultType, "success");
+    session.emit("session.idle", { data: {} });
+    await new Promise((rs) => setTimeout(rs, 0));
+    assert.match(session.sent[0]?.prompt, /Focus this run on: ship CSV export feature first$/);
+    assert.ok(session.sent[0].prompt.startsWith(PROMPT_GROW_PROJECT));
+});
+
+test("calling grow_project before attach fails fast with a grow_project-labelled error and does NOT arm", async () => {
+    // Mirror of the self_improve / ralph_loop pins. requireAttachedSession()
+    // weaves the calling tool's name through the message; a regression that
+    // drops the label would lie about which tool the caller invoked.
+    const c = createRalphController();
+    const gp = c.tools.find((t) => t.name === "grow_project");
+    const r = await gp.handler({});
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /^grow_project: session not attached/);
+    assert.equal(c.state.active, null, "must not leave armed state behind");
+});
+
+test("grow_project rejects unknown keys with a grow_project-prefixed error", async () => {
+    // validateOptionalArgShape catches typos and stale arg names before
+    // they silently pass through validateArgs unrecognised. The error
+    // must carry the grow_project: prefix, not ralph_loop:.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const gp = c.tools.find((t) => t.name === "grow_project");
+    const r = await gp.handler({ stagnationLimit: 5 });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /^grow_project:/);
+    assert.match(r.textResultForLlm, /unknown.*stagnationLimit/i);
+    assert.equal(c.state.active, null, "rejected args must not leave armed state behind");
+});
+
 test("self_improve respects max_iterations / min_iterations overrides", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

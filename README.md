@@ -2,6 +2,7 @@
 
 > Ralph Wiggum-style autonomous iterative loop for **GitHub Copilot CLI**, implemented as an in-session extension.
 
+[![CI](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml)
 [![Inspired by](https://img.shields.io/badge/inspired_by-Anthropic_Ralph_Wiggum-blue)](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)
 
 **Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [How it works](#how-it-works) · [Commit attribution](#commit-attribution) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)

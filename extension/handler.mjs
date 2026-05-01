@@ -101,6 +101,41 @@ function isSubAgentEvent(ev) {
  * @property {string} [note] - Optional human-readable context: caller-supplied via ralph_stop({reason}), or the underlying error message on send_error, or the SDK abort reason on aborted. Truncated to 500 chars (surrogate-safe).
  */
 
+// Shared helper: every tool handler that accepts an args object should
+// (a) reject malformed shapes (null/array/primitive) and (b) reject
+// unknown keys — so a typo like `resaon` or `max_iter` surfaces loudly
+// instead of being silently dropped. Returning a string means "no error",
+// otherwise returns `{ error: <message> }`. Centralising this logic keeps
+// ralph_loop and ralph_stop's validation in lockstep.
+function describeArgType(args) {
+    if (args === null) return "null";
+    if (Array.isArray(args)) return "array";
+    return typeof args;
+}
+
+function validateArgShape(toolName, args, knownKeys) {
+    if (args === null || args === undefined || typeof args !== "object" || Array.isArray(args)) {
+        return { error: `${toolName}: arguments must be an object (got ${describeArgType(args)}).` };
+    }
+    const unknown = Object.keys(args).filter((k) => !knownKeys.has(k));
+    if (unknown.length > 0) {
+        return {
+            error: `${toolName}: unknown argument${unknown.length === 1 ? "" : "s"}: ${unknown.map((k) => JSON.stringify(k)).join(", ")}. Valid keys: ${[...knownKeys].join(", ")}.`,
+        };
+    }
+    return null;
+}
+
+const RALPH_LOOP_KEYS = new Set([
+    "prompt",
+    "max_iterations",
+    "min_iterations",
+    "completion_promise",
+    "abort_promise",
+    "stagnation_limit",
+]);
+const RALPH_STOP_KEYS = new Set(["reason"]);
+
 /**
  * Validate ralph_loop arguments.
  *
@@ -108,27 +143,8 @@ function isSubAgentEvent(ev) {
  * @returns {{value: object} | {error: string}} Validated values or a single human-readable error.
  */
 export function validateArgs(args) {
-    if (args === null || args === undefined || typeof args !== "object" || Array.isArray(args)) {
-        return { error: "ralph_loop: arguments must be an object (got " + (args === null ? "null" : Array.isArray(args) ? "array" : typeof args) + ")." };
-    }
-    // Reject unknown keys so a typo like `max_iter` (instead of
-    // `max_iterations`) fails loudly rather than silently falling back to
-    // the default. Without this, the caller thinks they configured the
-    // loop but the runtime ignores their value.
-    const KNOWN_KEYS = new Set([
-        "prompt",
-        "max_iterations",
-        "min_iterations",
-        "completion_promise",
-        "abort_promise",
-        "stagnation_limit",
-    ]);
-    const unknown = Object.keys(args).filter((k) => !KNOWN_KEYS.has(k));
-    if (unknown.length > 0) {
-        return {
-            error: `ralph_loop: unknown argument${unknown.length === 1 ? "" : "s"}: ${unknown.map((k) => JSON.stringify(k)).join(", ")}. Valid keys: ${[...KNOWN_KEYS].join(", ")}.`,
-        };
-    }
+    const shape = validateArgShape("ralph_loop", args, RALPH_LOOP_KEYS);
+    if (shape) return shape;
     if (args.prompt !== undefined && args.prompt !== null && typeof args.prompt !== "string") {
         return { error: `ralph_loop: prompt must be a string (got ${Array.isArray(args.prompt) ? "array" : typeof args.prompt}).` };
     }
@@ -532,25 +548,13 @@ export function createRalphController() {
             },
             handler: async (args) => {
                 if (!state.active) return failure("ralph_stop: no ralph_loop is currently running.");
-                // Reject malformed arg shapes the same way ralph_loop does:
-                // an array or non-object would otherwise silently fall through
-                // to "no reason" instead of telling the caller their input
-                // was wrong.
+                // ralph_stop's `reason` is optional, so null/undefined are
+                // valid. Anything else goes through the same shape +
+                // unknown-keys gate as ralph_loop so typos and bogus
+                // shapes surface loudly.
                 if (args !== null && args !== undefined) {
-                    if (typeof args !== "object" || Array.isArray(args)) {
-                        return failure(
-                            `ralph_stop: arguments must be an object (got ${
-                                Array.isArray(args) ? "array" : typeof args
-                            }).`,
-                        );
-                    }
-                    // Reject unknown keys to mirror ralph_loop's runtime guard
-                    // (typos like `resaon` instead of `reason` would otherwise
-                    // silently drop the user's note instead of surfacing it).
-                    const unknown = Object.keys(args).filter((k) => k !== "reason");
-                    if (unknown.length > 0) {
-                        return failure(`ralph_stop: unknown argument${unknown.length === 1 ? "" : "s"}: ${unknown.map((k) => JSON.stringify(k)).join(", ")}. Valid keys: reason.`);
-                    }
+                    const shape = validateArgShape("ralph_stop", args, RALPH_STOP_KEYS);
+                    if (shape) return failure(shape.error);
                 }
                 const i = state.active.i;
                 const max = state.active.max;

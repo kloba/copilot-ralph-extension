@@ -990,6 +990,107 @@ export function createRalphController() {
                 return armLoop(parsed.value, "self_improve");
             },
         },
+        {
+            name: "grow_project",
+            description:
+                "Arms ralph_loop with a baked-in SDLC prompt that grows a project from a GitHub-issue backlog (via the `gh` CLI). On the first iter it ideates 5-10 small, well-scoped feature issues; on each subsequent iter it picks one `proposed` issue, ships it end-to-end against a three-part gate (tests green + executable acceptance check + demo invocation), commits with `Closes #N`, and closes the issue. Optional `focus` narrows the run. Only one loop runs per session; cancel with ralph_stop. Returns failure if a ralph_loop, self_improve, or grow_project loop is already active.",
+            parameters: {
+                type: "object",
+                properties: {
+                    max_iterations: {
+                        type: "integer",
+                        description: `Maximum iterations before stopping (default ${GROW_PROJECT_DEFAULTS.max_iterations}, max ${MAX_ALLOWED_ITERATIONS}).`,
+                        default: GROW_PROJECT_DEFAULTS.max_iterations,
+                        minimum: 1,
+                        maximum: MAX_ALLOWED_ITERATIONS,
+                    },
+                    min_iterations: {
+                        type: "integer",
+                        description: `Minimum iterations before completion_promise / abort_promise are honored (default ${GROW_PROJECT_DEFAULTS.min_iterations}; must not exceed max_iterations). Use this to force the agent to drain a baseline portion of the backlog before honoring an early ABORT_NO_BACKLOG.`,
+                        default: GROW_PROJECT_DEFAULTS.min_iterations,
+                        minimum: 1,
+                        maximum: MAX_ALLOWED_ITERATIONS,
+                    },
+                    focus: {
+                        type: "string",
+                        description: `Optional focus area appended to the SDLC prompt as "Focus this run on: <focus>". Steers ideation and feature selection without altering the SDLC scaffolding. Max ${MAX_FOCUS_CHARS} chars.`,
+                        minLength: 1,
+                        maxLength: MAX_FOCUS_CHARS,
+                    },
+                    completion_promise: {
+                        type: "string",
+                        description: `Substring that, when present in an assistant turn's response, signals completion (default '${DEFAULTS.completion_promise}'). The baked SDLC prompt instructs the agent to emit '${DEFAULTS.completion_promise}'; overriding here without also editing the prompt body silently runs the loop to max_iterations. Max ${MAX_PROMISE_CHARS} chars.`,
+                        default: DEFAULTS.completion_promise,
+                        minLength: 1,
+                        maxLength: MAX_PROMISE_CHARS,
+                    },
+                    abort_promise: {
+                        type: "string",
+                        description: `Optional substring that, when present in an assistant turn's response, aborts the loop early (default '${BAKED_BACKLOG_ABORT_TOKEN}', emitted by the agent when the backlog is drained). Max ${MAX_PROMISE_CHARS} chars.`,
+                        default: BAKED_BACKLOG_ABORT_TOKEN,
+                        minLength: 1,
+                        maxLength: MAX_PROMISE_CHARS,
+                    },
+                    stagnation_limit: {
+                        type: "integer",
+                        description: `Abort if the assistant returns N consecutive byte-identical responses (default ${DEFAULTS.stagnation_limit}, 0 to disable). Must be 0 or ≥ 2 — the value 1 is rejected at runtime since no comparison is possible after a single response.`,
+                        default: DEFAULTS.stagnation_limit,
+                        minimum: 0,
+                        not: { const: 1 },
+                    },
+                },
+                additionalProperties: false,
+            },
+            handler: async (args) => {
+                const notAttached = requireAttachedSession("grow_project");
+                if (notAttached) return notAttached;
+                const guard = activeLoopGuard();
+                if (guard) return guard;
+                const bad = validateOptionalArgShape("grow_project", args, GROW_PROJECT_KEYS);
+                if (bad) return bad;
+                const a = args ?? {};
+                const focusParse = parseFocus(a.focus);
+                if (focusParse.error) return failure(focusParse.error);
+                const focus = focusParse.value;
+                const prompt = focus
+                    ? `${PROMPT_GROW_PROJECT}\n\nFocus this run on: ${focus}`
+                    : PROMPT_GROW_PROJECT;
+                // Same footgun guard as self_improve: PROMPT_GROW_PROJECT
+                // bakes in "emit COMPLETE" / "emit ABORT_NO_BACKLOG" as
+                // the literal signal tokens. If the caller overrides
+                // completion_promise / abort_promise, prompt and runtime
+                // watch different tokens — silently running to
+                // max_iterations on an otherwise-successful drain.
+                const warnPromiseDrift = (fieldName, raw, expected, consequence) => {
+                    if (typeof raw !== "string") return;
+                    const trimmed = raw.trim();
+                    if (!trimmed || trimmed === expected) return;
+                    log(`grow_project: warning — ${fieldName}=${JSON.stringify(trimmed)} differs from the baked SDLC prompt's "${expected}" emit instruction; ${consequence}.`);
+                };
+                warnPromiseDrift("completion_promise", a.completion_promise, DEFAULTS.completion_promise, "loop may run to max_iterations");
+                warnPromiseDrift("abort_promise", a.abort_promise, BAKED_BACKLOG_ABORT_TOKEN, "abort signal may never fire");
+                const parsed = validateArgs({
+                    prompt,
+                    max_iterations: a.max_iterations ?? GROW_PROJECT_DEFAULTS.max_iterations,
+                    min_iterations: a.min_iterations ?? GROW_PROJECT_DEFAULTS.min_iterations,
+                    completion_promise: a.completion_promise,
+                    abort_promise: a.abort_promise ?? BAKED_BACKLOG_ABORT_TOKEN,
+                    stagnation_limit: a.stagnation_limit,
+                });
+                if (parsed.error) {
+                    // Re-prefix delegated validateArgs errors so users see
+                    // grow_project in the error stream rather than ralph_loop.
+                    // Defensive fallback mirroring iter 17 self_improve fix:
+                    // force a "grow_project:" prefix even if a future
+                    // validateArgs path forgets the ralph_loop: prefix.
+                    const msg = parsed.error.startsWith("ralph_loop:")
+                        ? parsed.error.replace(/^ralph_loop:/, "grow_project:")
+                        : `grow_project: ${parsed.error}`;
+                    return failure(msg);
+                }
+                return armLoop(parsed.value, "grow_project");
+            },
+        },
     ];
     // Deep-freeze the public tool surface so consumers can't swap handlers
     // or desync declared schema bounds from runtime validation.

@@ -1007,6 +1007,28 @@ test("BAKED_ABORT_TOKEN and BAKED_BACKLOG_ABORT_TOKEN pin distinct canonical str
     assert.equal(BAKED_ABORT_TOKEN.includes(BAKED_BACKLOG_ABORT_TOKEN), false);
 });
 
+test("self_improve and grow_project focus descriptions both disclose steering semantics", async () => {
+    // Documents that the focus arg STEERS what the agent picks, but
+    // does not change the SDLC stages it runs. Both descriptions must
+    // carry the steering callout so users browsing either tool's
+    // schema understand the same contract — without it, callers
+    // reasonably assume focus is a free-form addendum that might
+    // skip stages.
+    const c = createRalphController();
+    const si = c.tools.find((t) => t.name === "self_improve");
+    const gp = c.tools.find((t) => t.name === "grow_project");
+    const siFocus = si.parameters.properties.focus.description;
+    const gpFocus = gp.parameters.properties.focus.description;
+    assert.match(siFocus, /Steers ideation/);
+    assert.match(siFocus, /without altering the SDLC stages/);
+    assert.match(gpFocus, /Steers ideation/);
+    assert.match(gpFocus, /without altering the SDLC scaffolding/);
+    // Both must still mention the appended-suffix shape — that's the
+    // mechanical contract; the steering sentence is the semantic one.
+    assert.match(siFocus, /Focus this run on:/);
+    assert.match(gpFocus, /Focus this run on:/);
+});
+
 test("self_improve appends focus text to the SDLC prompt", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

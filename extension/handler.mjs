@@ -907,7 +907,7 @@ export function createRalphController() {
                     },
                     focus: {
                         type: "string",
-                        description: `Optional focus area appended to the SDLC prompt as "Focus this run on: <focus>". Max ${MAX_FOCUS_CHARS} chars.`,
+                        description: `Optional focus area appended to the SDLC prompt as "Focus this run on: <focus>". Steers ideation and improvement selection without altering the SDLC stages. Max ${MAX_FOCUS_CHARS} chars.`,
                         minLength: 1,
                         maxLength: MAX_FOCUS_CHARS,
                     },

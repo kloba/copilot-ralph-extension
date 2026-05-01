@@ -366,11 +366,9 @@ export function createRalphController() {
     // a previous arming can't poison a freshly-armed loop.
     //
     // Queue-bloat protection: refuse to fire if a previously-fired prompt
-    // hasn't been picked up by the agent yet (no assistant.message
-    // observed since the last fire). Without this, the SDK can emit
-    // multiple turn_ends back-to-back (sub-turn boundaries, tool-call
-    // events, etc.) and each one would queue another copy of the same
-    // prompt — visible to the user as `Queued (3)` of identical messages.
+    // hasn't been picked up yet (no assistant.message observed since the
+    // last fire). Without this, back-to-back signals would queue duplicate
+    // prompts — visible to the user as `Queued (3)` of identical messages.
     const tryFire = (prompt) => {
         const armedFor = state.active;
         if (!armedFor) return;

@@ -1985,6 +1985,28 @@ test("self_improve rejects overlapping completion/abort phrases with self_improv
     assert.doesNotMatch(r.textResultForLlm, /ralph_loop:/);
 });
 
+test("grow_project rejects overlapping completion/abort phrases with grow_project prefix", async () => {
+    // Mirror of the self_improve overlap-rejection test for grow_project's
+    // error-prefix rewrite (`ralph_loop:` → `grow_project:`). The most
+    // intuitive footgun here is *swapping* the baked tokens — passing
+    // completion_promise: "ABORT_NO_BACKLOG", abort_promise: "COMPLETE"
+    // — because both substrings are baked into PROMPT_GROW_PROJECT and
+    // would fire on every iteration if the validator let them through.
+    // The substring-overlap check ("ABORT_NO_BACKLOG" ⊃ "COMPLETE"? no;
+    // but identical-or-substring catches the more common "DONE"/"DONE_NOW"
+    // case) must surface with the `grow_project:` prefix, not the inner
+    // `ralph_loop:` prefix from the shared validator.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "grow_project");
+    const r = await t.handler({ completion_promise: "DONE", abort_promise: "DONE_NOW" });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /^grow_project:/);
+    assert.match(r.textResultForLlm, /overlap/i);
+    assert.doesNotMatch(r.textResultForLlm, /ralph_loop:/);
+});
+
 test("public tools and hooks surface is frozen (defensive against accidental mutation)", () => {
     const c = createRalphController();
     assert.ok(Object.isFrozen(c.tools));

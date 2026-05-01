@@ -455,10 +455,9 @@ export function createRalphController() {
         const a = state.active;
         if (!a) return;
 
-        // Only refire on the root agent's idle transitions — sub-agents
-        // (task / explore / code-review / rubber-duck …) report their own
-        // session.idle on the shared bus and would otherwise queue an
-        // extra copy of our prompt every time one finishes.
+        // Only react to root-agent idles — see isSubAgentEvent() rationale.
+        // A sub-agent finishing its own loop (task / explore / …) must NOT
+        // queue an extra copy of our prompt.
         if (isSubAgentEvent(ev)) return;
 
         // The turn that *called* ralph_loop will go idle before any

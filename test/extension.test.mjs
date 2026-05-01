@@ -2247,7 +2247,7 @@ test("ralph_stop with no active loop reports 'no loop' even if args have a typo"
     const stop = c.tools.find((t) => t.name === "ralph_stop");
     const r = await stop.handler({ resaon: "typo" });
     assert.equal(r.resultType, "failure");
-    assert.match(r.textResultForLlm, /no ralph_loop or self_improve is currently running/);
+    assert.match(r.textResultForLlm, /no ralph_loop, self_improve, or grow_project is currently running/);
     assert.doesNotMatch(r.textResultForLlm, /unknown argument/);
 });
 
@@ -2482,7 +2482,7 @@ test("calling ralph_stop twice in a row: 2nd call reports no active loop", async
     assert.equal(controller.state.lastResult.reason, "user_stopped");
     const r2 = await stop.handler({ reason: "second" });
     assert.equal(r2.resultType, "failure");
-    assert.match(r2.textResultForLlm, /no ralph_loop or self_improve is currently running/);
+    assert.match(r2.textResultForLlm, /no ralph_loop, self_improve, or grow_project is currently running/);
     // The original result must NOT be overwritten by the failed second stop.
     assert.equal(controller.state.lastResult.note, "first");
 });
@@ -2578,6 +2578,34 @@ test("onUserPromptSubmitted bracket reflects the calling tool's label (self_impr
     assert.ok(
         session.logs.some((l) => /^self_improve: injecting post-loop context/.test(l)),
         "expected the self_improve-prefixed injection log line",
+    );
+});
+
+test("onUserPromptSubmitted bracket reflects the calling tool's label (grow_project)", async () => {
+    // Mirror of the self_improve post-loop hook test for the new
+    // tool: a finished grow_project run must produce
+    // "[grow_project just finished …]" in the additionalContext
+    // injection AND a "grow_project: injecting post-loop context"
+    // log line — proves state.lastResult.label is plumbed through the
+    // hook end-to-end. A regression that hardcodes "ralph_loop" or
+    // "self_improve" anywhere in the post-loop pipeline is caught.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const gp = c.tools.find((x) => x.name === "grow_project");
+    const stop = c.tools.find((x) => x.name === "ralph_stop");
+    await gp.handler({ max_iterations: 5, min_iterations: 1 });
+    await stop.handler({ reason: "test" });
+    assert.equal(c.state.lastResult.label, "grow_project");
+    const r = await c.hooks.onUserPromptSubmitted({ prompt: "next" });
+    assert.ok(r?.additionalContext, "expected additionalContext after a finished grow_project loop");
+    assert.match(r.additionalContext, /^\[grow_project just finished/,
+        `expected bracket prefix to be grow_project, got: ${r.additionalContext}`);
+    assert.doesNotMatch(r.additionalContext, /ralph_loop just finished/);
+    assert.doesNotMatch(r.additionalContext, /self_improve just finished/);
+    assert.ok(
+        session.logs.some((l) => /^grow_project: injecting post-loop context/.test(l)),
+        "expected the grow_project-prefixed injection log line",
     );
 });
 

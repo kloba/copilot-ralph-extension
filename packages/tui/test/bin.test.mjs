@@ -127,6 +127,15 @@ test("bin replay: missing runId fails with code 2", () => {
     assert.match(r.stderr, /<runId> is required/);
 });
 
+test("bin replay: path-traversal runId exits 2 with clean validation error (no stack trace)", () => {
+    const r = runBin(["replay", "../etc/passwd"]);
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /path separators or traversal segments/);
+    // Stack frames should NOT leak — validation errors render as a
+    // single tidy line, not a Node trace with `at file://...:line:col`.
+    assert.doesNotMatch(r.stderr, /\n\s+at /);
+});
+
 test("bin: unknown subcommand fails", () => {
     const r = runBin(["nope"]);
     assert.equal(r.status, 2);

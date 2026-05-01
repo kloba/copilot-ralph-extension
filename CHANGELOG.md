@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Fixes
+- `packages/tui/bin/tui.mjs` — render `TypeError` validation
+  failures (e.g. `resolveRunEventsPath` rejecting a
+  path-traversal runId) as a clean one-line stderr message
+  with exit code 2 instead of dumping a Node stack trace.
+  Genuinely unexpected errors keep their full stack so they
+  remain debuggable. Together with the previous commit, a
+  stray `ralph-tui replay ../etc/passwd` now produces
+  `ralph-tui: resolveRunEventsPath: runId "../etc/passwd"
+  contains path separators or traversal segments` and
+  exits 2 — instead of a confusing multi-line trace.
 - `packages/tui/src/writer.mjs` — `resolveRunEventsPath` now
   rejects runIds containing path separators (`/`, `\`),
   null bytes, or `..` traversal segments with a clear

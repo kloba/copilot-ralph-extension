@@ -343,6 +343,15 @@ try {
 }
 if (isDirectRun) {
     main().then((code) => process.exit(code ?? 0)).catch((err) => {
+        // Validation failures throw TypeError by convention in this
+        // codebase (e.g. resolveRunEventsPath rejecting path-traversal
+        // runIds). Render those as clean one-line messages so the user
+        // sees the actionable error, not a stack trace. Genuinely
+        // unexpected failures keep the full stack for debuggability.
+        if (err instanceof TypeError) {
+            process.stderr.write(`ralph-tui: ${err.message}\n`);
+            process.exit(2);
+        }
         process.stderr.write(`ralph-tui: ${err?.stack ?? err}\n`);
         process.exit(1);
     });

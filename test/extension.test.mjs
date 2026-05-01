@@ -60,6 +60,13 @@ test("validateArgs: whitespace-only prompt gets a distinct, more actionable erro
     // separate message points the agent at the actual layer to fix.
     assert.match(validateArgs({ prompt: "   " }).error, /whitespace-only/);
     assert.match(validateArgs({ prompt: "\t\n" }).error, /whitespace-only/);
+    // String.prototype.trim removes the full Unicode whitespace class —
+    // a prompt of NBSP / IDEOGRAPHIC SPACE / ZERO WIDTH NO-BREAK SPACE
+    // collapses to "" and must surface the same actionable message
+    // (otherwise a templating bug that interpolates U+00A0 would
+    // bypass the guard with a misleading "prompt is required" branch).
+    assert.match(validateArgs({ prompt: "\u00A0" }).error, /whitespace-only/);
+    assert.match(validateArgs({ prompt: "\u3000\u2003" }).error, /whitespace-only/);
 });
 
 test("validateArgs: explicit prompt:null is treated as missing (not 'wrong type')", () => {

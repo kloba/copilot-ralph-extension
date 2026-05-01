@@ -641,10 +641,14 @@
 <h2 id="source-layout">Source layout<a class="headerlink" href="#source-layout" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>extension/
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── extension.mjs   # SDK glue — joinSession + createRalphController() + register tools/hooks
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>└── handler.mjs     # The entire controller: state machine, validation, tool defs, baked prompts
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>test/
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>└── extension.test.mjs   # node:test suite, exercises handler against a fake session
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>install.sh          # User- or project-scoped install into ~/.copilot/extensions or .github/extensions
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── handler.mjs     # The entire controller: state machine, validation, tool defs, baked prompts
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>└── events-emit.mjs # Zero-dep JSONL event emitter (writes ~/.copilot/ralph/runs/&lt;runId&gt;/events.jsonl)
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>test/
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>├── extension.test.mjs       # node:test suite — controller against a fake session
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>├── events-emit.test.mjs     # Unit tests for the JSONL emitter helpers
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>└── handler-events.test.mjs  # Integration tests covering controller↔emitter wiring
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>packages/tui/       # Stand-alone TUI consumer (`ralph-tui`) — see packages/tui/README.md
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>install.sh          # User- or project-scoped install into ~/.copilot/extensions or .github/extensions
 </code></pre></div>
 <h3 id="extensionmjs-vs-handlermjs-split"><code>extension.mjs</code> vs <code>handler.mjs</code> split<a class="headerlink" href="#extensionmjs-vs-handlermjs-split" title="Permanent link">&para;</a></h3>
 <ul>
@@ -659,6 +663,7 @@
 <li><code>prompt</code> / <code>completionPromise</code> / <code>abortPromise</code> — the strings re-fed each iter and the substrings that terminate the loop.</li>
 <li><code>prev</code> / <code>streak</code> / <code>stagnationLimit</code> — byte-identical-response detector that aborts a stuck loop.</li>
 <li><code>pendingFire</code> / <code>fireInFlight</code> / <code>observedMessageThisFire</code> — per-iteration dispatch guards. The first idle (the one that <em>armed</em> the loop) consumes <code>pendingFire</code> to fire iter 1; the in-flight markers prevent stale-idle bloat from cancelled tool calls or sub-agents.</li>
+<li><code>paused</code> / <code>pauseReason</code> / <code>pausedAt</code> / <code>totalPausedMs</code> — pause-state fields (issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/3">#3</a>). When <code>paused === true</code>, <code>onIdle</code> short-circuits before firing the next iteration so the user can chat freely without consuming iterations. <code>ralph_resume</code> re-arms by zeroing the streak detector (manual intervention almost always changes context) and folding <code>pausedFor</code> into <code>totalPausedMs</code> for accurate elapsed-time reporting in <code>ralph_status</code>.</li>
 <li>Adaptive-budget fields (issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/4">#4</a>): <code>adaptiveBudget</code>, <code>adaptiveExtension</code>, <code>adaptiveMaxTotal</code>, <code>originalMax</code>, <code>adaptiveContentHashes</code>, <code>adaptiveExtensionHistory</code>.</li>
 </ul>
 <p>When the loop finishes, <code>state.active</code> becomes <code>null</code> and the immutable <code>state.lastResult</code> (a deep-frozen <code>RalphResult</code>) holds the post-mortem.</p>
@@ -691,6 +696,16 @@
 <td><code>ralph_status</code></td>
 <td>Live structured snapshot of the active loop</td>
 <td>Issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/5">#5</a> — read-only; safe to call mid-loop.</td>
+</tr>
+<tr>
+<td><code>ralph_pause</code></td>
+<td>Pause the active loop without losing state</td>
+<td>Issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/3">#3</a>. Idempotent; <code>onIdle</code> short-circuits while <code>paused === true</code>. Returns failure if no loop is active.</td>
+</tr>
+<tr>
+<td><code>ralph_resume</code></td>
+<td>Resume a paused loop</td>
+<td>Returns failure if no loop is active or the loop is not paused. Stagnation streak is reset on resume.</td>
 </tr>
 <tr>
 <td><code>self_improve</code></td>

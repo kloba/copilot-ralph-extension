@@ -709,6 +709,21 @@ test("abort event with whitespace-only reason ignores it (no note)", async () =>
     assert.equal(controller.state.lastResult.note, undefined);
 });
 
+test("calling ralph_stop immediately after arm (before any session.idle) finishes with iterations=0", async () => {
+    // Arm but never emit session.idle — so the loop never even gets to
+    // iteration 1. ralph_stop must still be able to clean up cleanly,
+    // and the recorded iteration count must reflect reality (0), not
+    // the user-facing "iter 1/max" label that pre-fire arming uses
+    // for the "already armed" error message.
+    const { controller, stop } = await arm({ max_iterations: 5 });
+    const r = await stop.handler({ reason: "armed but never fired" });
+    assert.equal(r.resultType, "success");
+    assert.match(r.textResultForLlm, /stopped after 0\/5 iterations/);
+    assert.equal(controller.state.lastResult.reason, "user_stopped");
+    assert.equal(controller.state.lastResult.iterations, 0);
+    assert.equal(controller.state.active, null, "state.active must be cleared");
+});
+
 test("calling ralph_stop twice in a row: 2nd call reports no active loop", async () => {
     // After ralph_stop succeeds, finish() nulls state.active. A retried
     // stop (e.g. caller wasn't sure the first one landed) must not

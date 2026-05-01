@@ -201,9 +201,8 @@ function validatePromiseField(fieldName, raw, { whenProvided = false } = {}) {
     return { value: trimmed };
 }
 
-// Wrap validatePromiseField with the "if not supplied, fall back" branch.
-// Both undefined and null count as "not supplied", so `{ abort_promise:
-// null }` means "no abort signal" rather than failing the type check.
+// Like validatePromiseField but treats undefined/null as "not supplied"
+// (so `{ abort_promise: null }` means "no abort signal", not a type error).
 function resolveOptionalPromise(fieldName, raw, fallback, opts) {
     if (raw === undefined || raw === null) return { value: fallback };
     return validatePromiseField(fieldName, raw, opts);

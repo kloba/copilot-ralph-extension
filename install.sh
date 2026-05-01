@@ -44,10 +44,13 @@ for f in "${FILES[@]}"; do
 done
 
 # Sanity: source files must parse as valid ES modules before we copy them.
+# Capture node's stderr so we can surface the actual SyntaxError + line
+# number — the previous `2>/dev/null` swallowed the most useful piece of
+# debugging info and left the user with only a generic "failed" message.
 if command -v node >/dev/null 2>&1; then
   for f in "${FILES[@]}"; do
-    if ! node --check "$SOURCE_DIR/$f" 2>/dev/null; then
-      echo "Error: $SOURCE_DIR/$f failed Node.js syntax check; refusing to install." >&2
+    if ! err=$(node --check "$SOURCE_DIR/$f" 2>&1); then
+      printf 'Error: %s failed Node.js syntax check; refusing to install.\n%s\n' "$SOURCE_DIR/$f" "$err" >&2
       exit 1
     fi
   done

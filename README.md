@@ -101,7 +101,7 @@ ralph_stop({ reason: "user changed plan" })
 
 ```js
 {
-  textResultForLlm: "ralph_loop stopped after 4/20 iterations (user changed plan).",
+  textResultForLlm: "ralph_loop stopped after 4/20 iterations (user changed plan).",   // leading "ralph_loop" reflects the calling tool's label — a self_improve-armed loop reads "self_improve stopped after …"
   resultType: "success",
   iterations: 4,
   note: "user changed plan"   // omitted when no reason was supplied

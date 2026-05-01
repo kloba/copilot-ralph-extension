@@ -28,7 +28,11 @@
   or "self_improve") flow into the per-iteration log line
   (`🔁 self_improve iter N/M`), the send-error log, the idle-skip
   log, the finish log, and the post-loop `additionalContext`
-  bracket (`[self_improve just finished — …]`). New `label`
+  bracket (`[self_improve just finished — …]`). The `ralph_stop`
+  success text (`textResultForLlm`) now also carries the calling
+  tool's label — a self_improve-armed loop reports
+  "self_improve stopped after N/M iterations …" instead of the
+  previous hardcoded "ralph_loop stopped …". New `label`
   property is documented on the `RalphResult` typedef.
 - Only one loop runs per session at a time, so calling
   `self_improve` while a `ralph_loop` is active fails fast with

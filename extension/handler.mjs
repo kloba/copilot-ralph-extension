@@ -524,11 +524,8 @@ export function createRalphController() {
         }
 
         if (a.stagnationLimit > 0) {
-            // text is always a string (lastAssistantContent is initialized
-            // to "" and only ever assigned strings), so dropping the
-            // redundant `a.prev !== null` guard is safe: when prev is null,
-            // `text === null` is always false and we still take the reset
-            // branch.
+            // First iteration: a.prev is null, text is a string — `text ===
+            // a.prev` is false so we take the reset branch and set streak=1.
             a.streak = text === a.prev ? a.streak + 1 : 1;
             a.prev = text;
             if (a.streak >= a.stagnationLimit) return finish("stagnation");

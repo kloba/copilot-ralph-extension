@@ -82,12 +82,14 @@ function truncateNote(text) {
     if (s.length <= PREVIEW_CHARS) return s;
     return s.slice(0, safeSliceEnd(s, PREVIEW_CHARS));
 }
+
 // Collapse whitespace (newlines, tabs, runs of spaces) into single spaces and
 // trim. Used to flatten a multi-line note (e.g. an Error stack) into the
 // single-line log marker and additionalContext bracket.
 function collapseNote(text) {
     return text ? String(text).replace(/\s+/g, " ").trim() : "";
 }
+
 // Bound an arbitrary user/SDK-supplied string for embedding in a single-line
 // log message: cap length at PREVIEW_CHARS (surrogate-safely) and flatten
 // whitespace. Used by every log site that interpolates an external value
@@ -96,6 +98,7 @@ function collapseNote(text) {
 function boundedNoteForLog(text) {
     return collapseNote(truncateNote(text));
 }
+
 // Recursively freeze obj and all nested object/array values. Skips
 // already-frozen objects so cycles or shared sub-graphs terminate.
 // Returns the input for fluent use (e.g. `return deepFreeze({...})`).
@@ -105,9 +108,11 @@ function deepFreeze(obj) {
     for (const v of Object.values(obj)) deepFreeze(v);
     return obj;
 }
+
 function failure(message, extra = {}) {
     return { ...extra, textResultForLlm: message, resultType: "failure" };
 }
+
 function success(message, extra = {}) {
     return { ...extra, textResultForLlm: message, resultType: "success" };
 }

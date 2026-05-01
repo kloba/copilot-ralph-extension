@@ -194,12 +194,10 @@ const RALPH_LOOP_KEYS = new Set([
 ]);
 const RALPH_STOP_KEYS = new Set(["reason"]);
 
-// Validate completion_promise / abort_promise once. Both fields share the
-// same shape rules (string, non-whitespace, ≤ MAX_PROMISE_CHARS, trimmed
-// before substring matching so a stray `"  COMPLETE\n"` still finds a
-// clean `COMPLETE` in the assistant's reply). The only difference is the
-// "when provided," interjection in the empty-string error for abort_promise,
-// since completion_promise has a default while abort_promise doesn't.
+// Shared rules for completion_promise / abort_promise: string,
+// non-whitespace, ≤ MAX_PROMISE_CHARS, trimmed before substring
+// matching. `whenProvided` adds a ", when provided," to the
+// empty-string error for abort_promise (which has no default).
 function validatePromiseField(fieldName, raw, { whenProvided = false } = {}) {
     if (typeof raw !== "string") {
         return { error: `ralph_loop: ${fieldName} must be a string (got ${describeArgType(raw)}).` };

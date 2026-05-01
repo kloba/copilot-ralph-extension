@@ -198,7 +198,7 @@ const detach = controller.attach(session);    // wires session.idle / assistant.
 
 ### Arming
 
-`ralph_loop(...)` returns immediately with `{ armed: true }`. It does **not** loop synchronously. The validated arguments (`prompt`, `max`, `min`, `completion_promise`, `abort_promise`, `stagnation_limit`) are stored on `controller.state.active`; the loop is now driven entirely by SDK events.
+`ralph_loop(...)` returns immediately with `{ armed: true }`. It does **not** loop synchronously. The validated arguments (`prompt`, `max`, `min`, `completionPromise`, `abortPromise`, `stagnationLimit`) are stored on `controller.state.active`; the loop is now driven entirely by SDK events.
 
 ### Iterations are driven by events, not by a hook
 

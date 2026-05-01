@@ -1254,6 +1254,25 @@ test("calling ralph_stop twice in a row: 2nd call reports no active loop", async
 
 // ── hook ──────────────────────────────────────────────────────────────────
 
+test("onUserPromptSubmitted is arg-tolerant: returns undefined with no arg, no arg, or {} when no lastResult is staged", async () => {
+    // The hook's signature is `async ()` — it never consults its
+    // argument. Pin the contract that callers passing nothing,
+    // undefined, null, an empty object, or a populated `{prompt}`
+    // all behave identically when state.lastResult is null: return
+    // undefined (no additionalContext), no throw. Without this the
+    // host CLI is free to evolve its own hook calling convention
+    // (e.g. drop the prompt arg entirely) and our hook must keep
+    // working.
+    const c = createRalphController();
+    c.attach(makeFakeSession());
+    assert.equal(c.state.lastResult, null);
+    assert.equal(await c.hooks.onUserPromptSubmitted(), undefined);
+    assert.equal(await c.hooks.onUserPromptSubmitted(undefined), undefined);
+    assert.equal(await c.hooks.onUserPromptSubmitted(null), undefined);
+    assert.equal(await c.hooks.onUserPromptSubmitted({}), undefined);
+    assert.equal(await c.hooks.onUserPromptSubmitted({ prompt: "anything" }), undefined);
+});
+
 test("onUserPromptSubmitted surfaces send_error note (Error message) in additionalContext", async () => {
     // After a send failure, the next user prompt's bracketed context must
     // include both reason=send_error and note=<error message> so the agent

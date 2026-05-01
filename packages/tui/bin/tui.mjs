@@ -225,19 +225,7 @@ export function cmdDoctor() {
 
     // node + tui version
     lines.push(`node: ${process.version}`);
-    let tuiVersion = "unknown";
-    try {
-        const pkgPath = nodePath.resolve(
-            nodePath.dirname(fileURLToPath(import.meta.url)),
-            "..",
-            "package.json",
-        );
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-        tuiVersion = pkg.version || "unknown";
-    } catch {
-        // best-effort; leave as "unknown"
-    }
-    lines.push(`tui version: ${tuiVersion}`);
+    lines.push(`tui version: ${readTuiVersion()}`);
 
     process.stdout.write(lines.join("\n") + "\n");
     if (!healthy) {

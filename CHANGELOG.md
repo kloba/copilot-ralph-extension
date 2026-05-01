@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Refactor
+- `packages/tui/bin/tui.mjs` — `cmdDoctor` now calls the
+  existing `readTuiVersion()` helper instead of re-implementing
+  the same package.json read inline. Pure deduplication: the
+  doctor output is byte-identical (existing
+  `bin doctor: healthy case` test continues to pass) but the
+  package.json resolution logic (path computation,
+  `JSON.parse`, "unknown" fallback) now lives in exactly one
+  place. Future work that needs to surface the TUI version
+  has a single helper to reach for.
+
 ### Documentation
 - `README.md` — replace the duplicated `**Contents:**` line
   pair with a single, accurate ToC. The two lines had drifted:

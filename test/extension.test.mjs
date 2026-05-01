@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
-const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, previewOf } = __test__;
+const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, SELF_IMPROVE_DEFAULTS, previewOf } = __test__;
 
 function makeFakeSession({ failSend = false, rejectSend = false, sendErrorMessage } = {}) {
     const sent = [];
@@ -933,11 +933,19 @@ test("self_improve schema declares max_iterations / min_iterations bounds matchi
     assert.equal(max.minimum, 1);
     assert.equal(max.maximum, 1000);
     assert.equal(max.default, 100);
+    assert.equal(max.default, SELF_IMPROVE_DEFAULTS.max_iterations,
+        "schema default must come from SELF_IMPROVE_DEFAULTS — drift between the two = silent UX regression");
     const min = si.parameters.properties.min_iterations;
     assert.equal(min.type, "integer");
     assert.equal(min.minimum, 1);
     assert.equal(min.maximum, 1000);
     assert.equal(min.default, 5);
+    assert.equal(min.default, SELF_IMPROVE_DEFAULTS.min_iterations,
+        "schema default must come from SELF_IMPROVE_DEFAULTS");
+    // Pin the const itself so a future "100→200" or "5→10" tweak can
+    // only happen with a deliberate test update.
+    assert.deepEqual(SELF_IMPROVE_DEFAULTS, { max_iterations: 100, min_iterations: 5 });
+    assert.ok(Object.isFrozen(SELF_IMPROVE_DEFAULTS), "SELF_IMPROVE_DEFAULTS must be frozen");
 });
 
 test("ralph_loop schema declares max/min/stagnation/completion/abort bounds matching runtime", () => {

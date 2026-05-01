@@ -18,6 +18,15 @@ const DEFAULTS = Object.freeze({
     completion_promise: "COMPLETE",
     stagnation_limit: 3,
 });
+// self_improve has different max/min defaults than ralph_loop because the
+// SDLC loop is meant to run long-haul (whole-repo polish across many
+// categories), while ralph_loop is a generic primitive that often arms
+// short, targeted runs. Extract them here so the schema's `default:` hints
+// and the handler's `?? <fallback>` use the SAME source of truth.
+const SELF_IMPROVE_DEFAULTS = Object.freeze({
+    max_iterations: 100,
+    min_iterations: 5,
+});
 const MAX_ALLOWED_ITERATIONS = 1000;
 const PREVIEW_CHARS = 500;
 const MAX_PROMPT_CHARS = 65536;
@@ -730,15 +739,15 @@ export function createRalphController() {
                 properties: {
                     max_iterations: {
                         type: "integer",
-                        description: `Maximum iterations before stopping (default 100, max ${MAX_ALLOWED_ITERATIONS}).`,
-                        default: 100,
+                        description: `Maximum iterations before stopping (default ${SELF_IMPROVE_DEFAULTS.max_iterations}, max ${MAX_ALLOWED_ITERATIONS}).`,
+                        default: SELF_IMPROVE_DEFAULTS.max_iterations,
                         minimum: 1,
                         maximum: MAX_ALLOWED_ITERATIONS,
                     },
                     min_iterations: {
                         type: "integer",
-                        description: "Minimum iterations before completion_promise / abort_promise are honored (default 5).",
-                        default: 5,
+                        description: `Minimum iterations before completion_promise / abort_promise are honored (default ${SELF_IMPROVE_DEFAULTS.min_iterations}).`,
+                        default: SELF_IMPROVE_DEFAULTS.min_iterations,
                         minimum: 1,
                         maximum: MAX_ALLOWED_ITERATIONS,
                     },
@@ -810,8 +819,8 @@ export function createRalphController() {
                     : PROMPT_SELF_IMPROVE;
                 const parsed = validateArgs({
                     prompt,
-                    max_iterations: a.max_iterations ?? 100,
-                    min_iterations: a.min_iterations ?? 5,
+                    max_iterations: a.max_iterations ?? SELF_IMPROVE_DEFAULTS.max_iterations,
+                    min_iterations: a.min_iterations ?? SELF_IMPROVE_DEFAULTS.min_iterations,
                     completion_promise: a.completion_promise,
                     abort_promise: a.abort_promise,
                     stagnation_limit: a.stagnation_limit,
@@ -933,4 +942,4 @@ export function createRalphController() {
     };
 }
 
-export const __test__ = { DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, PROMPT_SELF_IMPROVE, previewOf };
+export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, PROMPT_SELF_IMPROVE, previewOf };

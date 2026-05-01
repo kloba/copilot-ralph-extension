@@ -1228,6 +1228,79 @@ test("self_improve schema properties match SELF_IMPROVE_KEYS membership exactly"
     ], "schema property names must match SELF_IMPROVE_KEYS exactly");
 });
 
+test("grow_project schema declares max/min/completion/abort/stagnation/focus bounds matching runtime", () => {
+    // One consolidated schema-parity pin for grow_project, mirroring
+    // the four self_improve schema tests above. A future tweak to
+    // GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, MAX_PROMISE_CHARS,
+    // or MAX_FOCUS_CHARS that doesn't update the schema simultaneously
+    // is caught here. Crucially: abort_promise.default must be the new
+    // BAKED_BACKLOG_ABORT_TOKEN — a regression to undefined (mirroring
+    // self_improve) or to BAKED_ABORT_TOKEN (copy-paste) would silently
+    // break the runtime watcher.
+    const c = createRalphController();
+    const gp = c.tools.find((t) => t.name === "grow_project");
+    const p = gp.parameters.properties;
+
+    assert.equal(p.max_iterations.type, "integer");
+    assert.equal(p.max_iterations.minimum, 1);
+    assert.equal(p.max_iterations.maximum, 1000);
+    assert.equal(p.max_iterations.default, 200);
+    assert.equal(p.max_iterations.default, GROW_PROJECT_DEFAULTS.max_iterations,
+        "schema default must come from GROW_PROJECT_DEFAULTS — drift = silent UX regression");
+
+    assert.equal(p.min_iterations.type, "integer");
+    assert.equal(p.min_iterations.minimum, 1);
+    assert.equal(p.min_iterations.maximum, 1000);
+    assert.equal(p.min_iterations.default, 10);
+    assert.equal(p.min_iterations.default, GROW_PROJECT_DEFAULTS.min_iterations,
+        "schema default must come from GROW_PROJECT_DEFAULTS");
+
+    assert.deepEqual(GROW_PROJECT_DEFAULTS, { max_iterations: 200, min_iterations: 10 });
+    assert.ok(Object.isFrozen(GROW_PROJECT_DEFAULTS), "GROW_PROJECT_DEFAULTS must be frozen");
+
+    assert.equal(p.completion_promise.type, "string");
+    assert.equal(p.completion_promise.default, "COMPLETE");
+    assert.equal(p.completion_promise.minLength, 1);
+    assert.equal(p.completion_promise.maxLength, 200);
+
+    // The crucial difference from self_improve: abort_promise has a
+    // default (the new BAKED_BACKLOG_ABORT_TOKEN), not undefined, so
+    // an omitted abort_promise still wires the agent's literal
+    // ABORT_NO_BACKLOG emit to the runtime watcher.
+    assert.equal(p.abort_promise.type, "string");
+    assert.equal(p.abort_promise.default, "ABORT_NO_BACKLOG");
+    assert.equal(p.abort_promise.default, BAKED_BACKLOG_ABORT_TOKEN,
+        "abort_promise.default must come from BAKED_BACKLOG_ABORT_TOKEN — drift would silently break the abort signal");
+    assert.notEqual(p.abort_promise.default, "ABORT_NO_IMPROVEMENTS",
+        "abort_promise must NOT inherit self_improve's token via copy-paste");
+    assert.equal(p.abort_promise.minLength, 1);
+    assert.equal(p.abort_promise.maxLength, 200);
+
+    const sl = p.stagnation_limit;
+    assert.equal(sl.type, "integer");
+    assert.equal(sl.default, 3);
+    assert.equal(sl.minimum, 0);
+    assert.deepEqual(sl.not, { const: 1 }, "the value 1 is rejected at the schema layer too");
+
+    assert.equal(p.focus.type, "string");
+    assert.equal(p.focus.minLength, 1);
+    assert.equal(p.focus.maxLength, MAX_FOCUS_CHARS);
+});
+
+test("grow_project schema description mentions the active-loop conflict siblings", () => {
+    // Schema description is the public contract the LLM sees. It must
+    // explicitly call out that grow_project / ralph_loop / self_improve
+    // share state — otherwise the model has no way to learn about the
+    // conflict until it hits a runtime failure. Pin the contract so a
+    // future "trim the description" refactor can't silently drop the
+    // disclosure.
+    const c = createRalphController();
+    const gp = c.tools.find((t) => t.name === "grow_project");
+    assert.match(gp.description, /ralph_loop/, "must disclose conflict with ralph_loop");
+    assert.match(gp.description, /self_improve/, "must disclose conflict with self_improve");
+    assert.match(gp.description, /ralph_stop/, "must disclose ralph_stop as the cancel mechanism");
+});
+
 test("self_improve schema declares completion/abort/stagnation bounds matching runtime", () => {
     // Same drift-prevention rationale as the focus & max/min bounds
     // tests: the JSON-schema must mirror the runtime validation for

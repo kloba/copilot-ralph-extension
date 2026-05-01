@@ -907,6 +907,21 @@ test("self_improve rejects array/primitive args; accepts null/undefined", async 
     assert.equal(c.state.active.label, "self_improve");
 });
 
+test("self_improve schema declares focus bounds matching runtime validation", () => {
+    // The runtime focus validator caps length at MAX_FOCUS_CHARS (500)
+    // and rejects empty strings; the JSON-schema MUST mirror those
+    // bounds so a schema-validating client (LLM tool dispatcher,
+    // contract test, OpenAPI generator) catches the same offences as
+    // the handler. A drift here = silent acceptance at the schema
+    // layer with a runtime rejection, surprising callers.
+    const c = createRalphController();
+    const si = c.tools.find((t) => t.name === "self_improve");
+    const focus = si.parameters.properties.focus;
+    assert.equal(focus.type, "string");
+    assert.equal(focus.minLength, 1);
+    assert.equal(focus.maxLength, 500);
+});
+
 test("self_improve rejects focus over 500 chars", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

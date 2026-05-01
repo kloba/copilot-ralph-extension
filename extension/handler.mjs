@@ -443,6 +443,15 @@ export function createRalphController() {
             : next;
     };
 
+    // Run an iteration: log start, clear the accumulator (so a silent
+    // iteration is evaluated as empty rather than the prior turn), and
+    // fire the prompt. Caller is responsible for incrementing `a.i`.
+    const fireIteration = (a) => {
+        logIterStart(a);
+        state.lastAssistantContent = "";
+        tryFire(a.prompt);
+    };
+
     const onIdle = (ev) => {
         const a = state.active;
         if (!a) return;
@@ -459,11 +468,7 @@ export function createRalphController() {
         if (a.pendingFire) {
             a.pendingFire = false;
             a.i = 1;
-            logIterStart(a);
-            // Clear before firing so a silent iteration (no assistant.message)
-            // is correctly evaluated as empty content rather than the prior turn.
-            state.lastAssistantContent = "";
-            tryFire(a.prompt);
+            fireIteration(a);
             return;
         }
 
@@ -497,9 +502,7 @@ export function createRalphController() {
         if (a.i >= a.max) return finish("max_iterations");
 
         a.i += 1;
-        logIterStart(a);
-        state.lastAssistantContent = "";
-        tryFire(a.prompt);
+        fireIteration(a);
     };
 
     const onAbort = (ev) => {

@@ -907,6 +907,25 @@ test("self_improve rejects array/primitive args; accepts null/undefined", async 
     assert.equal(c.state.active.label, "self_improve");
 });
 
+test("self_improve schema declares max_iterations / min_iterations bounds matching runtime", () => {
+    // Same drift-prevention rationale as the focus-bounds test: a
+    // schema-validating dispatcher must catch the same out-of-range
+    // ints the handler would reject (so callers don't see the
+    // confusing schema-accept/runtime-reject mismatch).
+    const c = createRalphController();
+    const si = c.tools.find((t) => t.name === "self_improve");
+    const max = si.parameters.properties.max_iterations;
+    assert.equal(max.type, "integer");
+    assert.equal(max.minimum, 1);
+    assert.equal(max.maximum, 1000);
+    assert.equal(max.default, 100);
+    const min = si.parameters.properties.min_iterations;
+    assert.equal(min.type, "integer");
+    assert.equal(min.minimum, 1);
+    assert.equal(min.maximum, 1000);
+    assert.equal(min.default, 5);
+});
+
 test("self_improve schema declares focus bounds matching runtime validation", () => {
     // The runtime focus validator caps length at MAX_FOCUS_CHARS (500)
     // and rejects empty strings; the JSON-schema MUST mirror those

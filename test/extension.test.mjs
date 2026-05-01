@@ -982,6 +982,10 @@ test("arming twice while active is rejected", async () => {
     // one runTurn we're on iteration 1 of 9.
     assert.match(r.textResultForLlm, /iteration 1\/9/);
     assert.equal(controller.state.active.i, 1);
+    // Same paren-balance guard as the "already armed" branch — the
+    // "running" template path is rendered separately, so pin it too.
+    assert.match(r.textResultForLlm, /\(iteration 1\/9\) — call ralph_stop first\.$/);
+    assert.doesNotMatch(r.textResultForLlm, /first\)\./);
 });
 
 test("arming twice before first turn_end shows clearer 'armed' message", async () => {

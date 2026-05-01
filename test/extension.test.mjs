@@ -331,6 +331,15 @@ test("controller exposes ralph_loop and ralph_stop tools and hooks", () => {
     // will treat it as a registered hook and start invoking it. The
     // shipping contract is exactly one hook: onUserPromptSubmitted.
     assert.deepEqual(Object.keys(c.hooks), ["onUserPromptSubmitted"]);
+    // Pin the tools-array ORDER: dozens of integration tests in this file
+    // index `c.tools[0]` for the ralph_loop handler. A future refactor
+    // that reorders the array (e.g. puts ralph_stop first) would break
+    // every one of those tests with confusing "wrong tool name" or
+    // "missing prompt" failures. Surface the regression with one focused
+    // assertion instead of a cascade of cryptic ones.
+    assert.equal(c.tools[0].name, "ralph_loop", "tools[0] must be ralph_loop");
+    assert.equal(c.tools[1].name, "ralph_stop", "tools[1] must be ralph_stop");
+    assert.equal(c.tools.length, 2, "tools array must have exactly two entries");
 });
 
 test("public tools and hooks surface is frozen (defensive against accidental mutation)", () => {

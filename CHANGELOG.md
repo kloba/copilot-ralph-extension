@@ -20,6 +20,24 @@
   read via `packages/tui/src/writer.mjs`'s
   `readRunIndex`, assert the run surfaces.
 
+### Tests
+- `test/extension.test.mjs` — three new tests pin
+  the `warnPromiseDrift` runtime warning for both
+  `self_improve` and `grow_project`. Until now the
+  helper's log line ("self_improve: warning —
+  completion_promise=… differs from the baked SDLC
+  prompt's "COMPLETE" emit instruction; loop may
+  run to max_iterations") had zero direct
+  coverage — only schema-description tests hinted
+  at it. A future tweak to the message format
+  (which is what users / log-grep tooling read)
+  could regress silently. Now pinned: structured
+  form (tool prefix + field name + JSON-stringified
+  override + baked-token quote + consequence), the
+  no-warning path when promises match, and the
+  grow_project variant (ABORT_NO_BACKLOG vs
+  ABORT_NO_IMPROVEMENTS).
+
 ### Refactor
 - `extension/handler.mjs` — extracted the
   `warnPromiseDrift` helper to closure scope so

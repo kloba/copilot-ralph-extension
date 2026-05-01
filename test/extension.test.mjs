@@ -2124,6 +2124,79 @@ test("self_improve treats focus: null as 'not supplied' and arms with the bare S
     assert.ok(!/Focus this run on:/.test(sentPrompt), "null focus must not emit Focus suffix");
 });
 
+test("self_improve logs a drift warning when completion_promise / abort_promise differ from baked tokens", async () => {
+    // The warnPromiseDrift helper is the ONLY arm-time signal that the
+    // caller's promise overrides will silently desync from the baked
+    // SDLC prompt (which instructs the agent to emit COMPLETE /
+    // ABORT_NO_IMPROVEMENTS by name). Without this pin a refactor could
+    // change the message format, drop the field name, or skip a call
+    // site and nothing would notice — the loop would just appear to run
+    // longer than expected. Pin the structured form: tool name prefix,
+    // field name, JSON-stringified override value, baked expected
+    // token, and the "loop may run to max_iterations" / "abort signal
+    // may never fire" consequences.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({
+        max_iterations: 1,
+        min_iterations: 1,
+        completion_promise: "ALL_DONE",
+        abort_promise: "GIVE_UP",
+    });
+    assert.equal(r.resultType, "success");
+    const drift = session.logs.filter((l) => /^self_improve: warning —/.test(l));
+    assert.equal(drift.length, 2, "both completion_promise and abort_promise overrides must log a drift warning");
+    const cp = drift.find((l) => /completion_promise=/.test(l));
+    const ap = drift.find((l) => /abort_promise=/.test(l));
+    assert.ok(cp, "completion_promise drift line missing");
+    assert.ok(ap, "abort_promise drift line missing");
+    assert.match(cp, /completion_promise="ALL_DONE"/);
+    assert.match(cp, /"COMPLETE" emit instruction/);
+    assert.match(cp, /loop may run to max_iterations/);
+    assert.match(ap, /abort_promise="GIVE_UP"/);
+    assert.match(ap, /"ABORT_NO_IMPROVEMENTS" emit instruction/);
+    assert.match(ap, /abort signal may never fire/);
+});
+
+test("self_improve does NOT log a drift warning when promises match baked tokens (or are omitted)", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({
+        max_iterations: 1,
+        min_iterations: 1,
+        completion_promise: "COMPLETE",
+        abort_promise: "ABORT_NO_IMPROVEMENTS",
+    });
+    assert.equal(r.resultType, "success");
+    const drift = session.logs.filter((l) => /^self_improve: warning —/.test(l));
+    assert.equal(drift.length, 0, "matching tokens must NOT trigger drift warnings");
+});
+
+test("grow_project logs a drift warning when completion_promise differs from COMPLETE or abort_promise differs from ABORT_NO_BACKLOG", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "grow_project");
+    const r = await t.handler({
+        max_iterations: 1,
+        min_iterations: 1,
+        completion_promise: "SHIPPED",
+        abort_promise: "EMPTY_QUEUE",
+    });
+    assert.equal(r.resultType, "success");
+    const drift = session.logs.filter((l) => /^grow_project: warning —/.test(l));
+    assert.equal(drift.length, 2, "grow_project must emit a warning per drifting promise field");
+    const cp = drift.find((l) => /completion_promise=/.test(l));
+    const ap = drift.find((l) => /abort_promise=/.test(l));
+    assert.ok(cp && ap);
+    assert.match(cp, /"COMPLETE" emit instruction/);
+    assert.match(ap, /"ABORT_NO_BACKLOG" emit instruction/);
+});
+
 test("grow_project treats focus: null as 'not supplied' and arms with the bare SDLC prompt", async () => {
     // Mirror of the iter 21 self_improve null-focus pin.
     const session = makeFakeSession();

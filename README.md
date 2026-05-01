@@ -305,6 +305,7 @@ RALPH_NO_ATTRIBUTION=1 copilot   # subsequent self_improve/grow_project loops om
 - **`abort_promise … overlap as substrings`.** `completion_promise` and `abort_promise` must be disjoint phrases (e.g. `"DONE"` and `"DONE_FAIL"` is rejected because one contains the other). Pick non-overlapping tokens.
 - **Loop ends immediately with `reason: send_error`.** The first `session.send` call rejected — usually because `controller.attach(session)` was not called or the session is no longer live. Check `result.note` for the underlying error.
 - **Loop runs N+ times instead of stopping.** Check that the prompt actually instructs the agent to emit the `completion_promise` literally; with a quoted/paraphrased completion phrase the loop only stops at `max_iterations`.
+- **Commit is missing the `copilot-ralph` `Co-authored-by:` trailer (or shipping it despite `RALPH_NO_ATTRIBUTION=1`).** The dual-trailer + opt-out behaviour lives in the [baked SDLC prompt](#commit-attribution), not in the extension code path — the agent reads the env var during COMMIT and decides accordingly. If the second trailer is missing on a commit you expected to attribute, re-run the iteration with the var unset (or audit `git log -1 --pretty=%B` to confirm); if it's still present despite the opt-out, the sub-agent likely couldn't see `process.env` (Limitations).
 
 ## Limitations
 
@@ -315,6 +316,7 @@ RALPH_NO_ATTRIBUTION=1 copilot   # subsequent self_improve/grow_project loops om
 - **Iteration timing is loop-arm-relative.** The `(elapsed Xms)` value in iter logs and the final `durationMs` measure time from arming, not per-turn latency. Per-turn timing isn't tracked.
 - **One loop per session.** Arming a second `ralph_loop` (or a `self_improve`, or a `grow_project`) while one is active fails fast — you must `ralph_stop` the active loop first. The guard applies symmetrically across all three tools: a `ralph_loop` while `self_improve` or `grow_project` is active is also rejected, and vice versa.
 - **`self_improve` keeps re-iterating with no commits.** The baked SDLC prompt instructs the agent to emit `COMPLETE` when the staircase is done. Until that token appears in an iteration, the loop runs to `max_iterations`. To stop early, either `ralph_stop` it manually or prepend a tighter `focus` so each iteration converges faster.
+- **Attribution opt-out is honored by the prompt, not enforced by the runtime.** [`RALPH_NO_ATTRIBUTION=1`](#opt-out) suppresses the second `copilot-ralph` `Co-authored-by:` trailer only because the baked SDLC prompt instructs the agent to read the env var during the COMMIT stage and omit the trailer. The extension does not rewrite commits — if a sub-agent ignores the env var (or runs in a context where `process.env` isn't visible), the trailer can still ship. Audit a commit afterwards with `git log -1 --pretty=%B` if attribution must be guaranteed off.
 
 ## Requirements
 

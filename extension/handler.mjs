@@ -123,8 +123,8 @@ function isSubAgentEvent(ev) {
 // Shared helper: every tool handler that accepts an args object should
 // (a) reject malformed shapes (null/array/primitive) and (b) reject
 // unknown keys — so a typo like `resaon` or `max_iter` surfaces loudly
-// instead of being silently dropped. Returning a string means "no error",
-// otherwise returns `{ error: <message> }`. Centralising this logic keeps
+// instead of being silently dropped. Returns `null` when the shape is
+// valid, otherwise `{ error: <message> }`. Centralising this logic keeps
 // ralph_loop and ralph_stop's validation in lockstep.
 function describeArgType(args) {
     if (args === null) return "null";

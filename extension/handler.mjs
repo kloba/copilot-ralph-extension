@@ -33,10 +33,9 @@ const MAX_PROMISE_CHARS = 200;
 // extremely chatty turns shouldn't be allowed to consume unbounded memory.
 const MAX_CONTENT_CHARS = 1_048_576; // 1 MiB
 
-// Map finish reason → log-line verb. Anything not listed falls through to
-// the "⏹ stopped" default (max_iterations, abort_promise, stagnation,
-// user_stopped, detached). Hoisted to module scope so it isn't rebuilt on
-// every finish() call.
+// Map finish reason → log-line verb. Reasons not listed fall through
+// to "⏹ stopped" (max_iterations, abort_promise, stagnation,
+// user_stopped, detached).
 //   ✅ completed — completion_promise
 //   ⚠️  ended   — send_error, aborted (something went wrong)
 //   ⏹ stopped   — everything else

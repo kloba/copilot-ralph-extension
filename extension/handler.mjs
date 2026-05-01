@@ -7,10 +7,8 @@
 // `assistant.turn_end` is critical: the SDK emits a turn_end per agentic-loop
 // sub-turn (one per tool-call boundary), so a single root response with N
 // tool calls produces N+ turn_ends. Only `session.idle` fires exactly once
-// per root response. This avoids
-// the deadlock that the older `sendAndWait`-based design hit when invoked
-// in-session, while still keeping full conversation context — every
-// iteration is a real assistant turn the user sees.
+// per root response. Every iteration is a real assistant turn the user sees,
+// keeping full conversation context across the loop.
 //
 // Inspired by the Stop-hook re-injection pattern.
 

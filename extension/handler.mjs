@@ -428,9 +428,6 @@ export function createRalphController() {
 
     const finish = (reason, note) => {
         if (!state.active) return;
-        // clampedElapsed (defined above) clamps Date.now() - startedAt to ≥ 0
-        // so a backward clock jump mid-loop (NTP correction) reports 0 in
-        // durationMs / log line instead of a negative number.
         const { startedAt, i: iterations } = state.active;
         const finishedAt = Date.now();
         const durationMs = clampedElapsed(startedAt);

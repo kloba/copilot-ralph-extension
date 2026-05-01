@@ -695,6 +695,42 @@ test("completion_promise wins over max_iterations when both could fire on same i
     assert.equal(controller.state.lastResult.iterations, 3);
 });
 
+test("completion_promise wins over abort_promise when both substrings are present", async () => {
+    // Decision ladder checks completion BEFORE abort. If the agent's final
+    // message happens to contain both phrases (e.g. "DONE — would have
+    // emitted FAIL but recovered"), the loop must report `completion_promise`
+    // rather than `abort_promise`. Success takes precedence over abort.
+    const { session, controller } = await arm({
+        max_iterations: 5,
+        completion_promise: "DONE",
+        abort_promise: "FAIL",
+    });
+    session.emit("session.idle", { data: {} });
+    runTurn(session, "recovered after FAIL — DONE");
+    assert.equal(controller.state.lastResult.reason, "completion_promise");
+    assert.equal(controller.state.lastResult.iterations, 1);
+});
+
+test("abort_promise wins over stagnation when both fire on same idle", async () => {
+    // For a stagnation streak to be at limit, the current text must equal
+    // prev — which means prev *also* contained the abort phrase. With min=2
+    // we force the first abort-bearing iteration past the gate AND also
+    // satisfy the streak; ladder must finish `abort_promise`, not
+    // `stagnation`. Pin so a future ladder reorder can't silently relabel
+    // a clean abort as "stuck".
+    const { session, controller } = await arm({
+        max_iterations: 10,
+        min_iterations: 2,
+        abort_promise: "FAIL",
+        stagnation_limit: 2,
+    });
+    session.emit("session.idle", { data: {} });
+    runTurn(session, "FAIL hit");
+    runTurn(session, "FAIL hit");
+    assert.equal(controller.state.lastResult.reason, "abort_promise");
+    assert.equal(controller.state.lastResult.iterations, 2);
+});
+
 test("stagnation_limit=0 disables detection", async () => {
     const { session, controller } = await arm({ max_iterations: 4, stagnation_limit: 0 });
     session.emit("session.idle", { data: {} });

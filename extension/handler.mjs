@@ -146,7 +146,7 @@ export function validateArgs(args) {
     const shape = validateArgShape("ralph_loop", args, RALPH_LOOP_KEYS);
     if (shape) return shape;
     if (args.prompt !== undefined && args.prompt !== null && typeof args.prompt !== "string") {
-        return { error: `ralph_loop: prompt must be a string (got ${Array.isArray(args.prompt) ? "array" : typeof args.prompt}).` };
+        return { error: `ralph_loop: prompt must be a string (got ${describeArgType(args.prompt)}).` };
     }
     const prompt = (args.prompt ?? "").trim();
     if (!prompt) return { error: "ralph_loop: prompt is required and must be non-empty." };
@@ -158,7 +158,7 @@ export function validateArgs(args) {
 
     const rawMax = args.max_iterations ?? DEFAULTS.max_iterations;
     if (typeof rawMax !== "number" && typeof rawMax !== "string") {
-        return { error: `ralph_loop: max_iterations must be a number (got ${Array.isArray(rawMax) ? "array" : typeof rawMax}).` };
+        return { error: `ralph_loop: max_iterations must be a number (got ${describeArgType(rawMax)}).` };
     }
     const max = Number(rawMax);
     if (!Number.isInteger(max) || max < 1 || max > MAX_ALLOWED_ITERATIONS) {
@@ -169,7 +169,7 @@ export function validateArgs(args) {
 
     const rawMin = args.min_iterations ?? DEFAULTS.min_iterations;
     if (typeof rawMin !== "number" && typeof rawMin !== "string") {
-        return { error: `ralph_loop: min_iterations must be a number (got ${Array.isArray(rawMin) ? "array" : typeof rawMin}).` };
+        return { error: `ralph_loop: min_iterations must be a number (got ${describeArgType(rawMin)}).` };
     }
     const min = Number(rawMin);
     if (!Number.isInteger(min) || min < 1 || min > max) {
@@ -217,7 +217,7 @@ export function validateArgs(args) {
 
     const rawStagnation = args.stagnation_limit ?? DEFAULTS.stagnation_limit;
     if (typeof rawStagnation !== "number" && typeof rawStagnation !== "string") {
-        return { error: `ralph_loop: stagnation_limit must be a number (got ${Array.isArray(rawStagnation) ? "array" : typeof rawStagnation}).` };
+        return { error: `ralph_loop: stagnation_limit must be a number (got ${describeArgType(rawStagnation)}).` };
     }
     const stagnationLimit = Number(rawStagnation);
     if (!Number.isInteger(stagnationLimit) || stagnationLimit < 0 || stagnationLimit === 1) {

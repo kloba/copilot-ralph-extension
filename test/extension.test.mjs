@@ -4747,6 +4747,27 @@ test("README documents every ralph_loop parameter the schema advertises", () => 
     }
 });
 
+test("handler.mjs: only one spawnSync('git', …) call site (defaultGitExec + defaultAdaptiveGitExec share runGitCommand)", () => {
+    // Drift guard. Both production gitExec entry points
+    // (defaultGitExec + defaultAdaptiveGitExec) used to be near-byte-
+    // identical clones differing only in their timeout constant and a
+    // missing `code` field on the adaptive variant. They were
+    // consolidated into a single `runGitCommand(args, cwd, timeoutMs)`
+    // helper. If a future contributor inlines the spawn back into
+    // either entry point, this test fires before the duplication can
+    // ossify into a maintenance burden again — every env-hardening or
+    // timeout-policy tweak should be made in exactly one place.
+    const src = readFileSync(resolve(REPO_ROOT, "extension/handler.mjs"), "utf8");
+    const matches = src.match(/spawnSync\s*\(\s*["']git["']/g) ?? [];
+    assert.equal(
+        matches.length,
+        1,
+        `extension/handler.mjs must call \`spawnSync("git", …)\` exactly once (in runGitCommand) — got ${matches.length} occurrences. Both gitExec entry points must delegate to the shared helper.`,
+    );
+    // And the runGitCommand helper itself must be present.
+    assert.match(src, /function runGitCommand\(/, "runGitCommand helper must remain defined");
+});
+
 test("ci.yml: install step uses deterministic `npm ci` with no silent fallback", () => {
     // Drift guard. The previous CI form was
     //   npm ci --no-audit --no-fund || npm install --no-audit --no-fund

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Refactor
+- `extension/handler.mjs` — consolidated
+  `defaultGitExec` and `defaultAdaptiveGitExec`
+  (the two production gitExec entry points) into
+  a single `runGitCommand(args, cwd, timeoutMs)`
+  helper. The two functions were near-byte-
+  identical clones differing only in their
+  timeout constant (`GIT_TIMEOUT_MS` vs
+  `ADAPTIVE_GIT_TIMEOUT_MS`) and a missing `code`
+  field on the adaptive variant. Future env-
+  hardening or timeout-policy tweaks now live in
+  one place. Behaviour-preserving (the adaptive
+  result shape gained the `code` field — its only
+  caller, `evaluateAdaptiveSignals`, reads `.ok`
+  and `.stdout` only). Drift guard in
+  `test/extension.test.mjs` asserts exactly one
+  `spawnSync("git", …)` call site remains in
+  `extension/handler.mjs` so the duplication
+  can't ossify back.
+
 ### Fixes
 - `extension/handler.mjs` — `ralph_status` now
   surfaces pause state. The snapshot's active

@@ -513,7 +513,20 @@ const GIT_TIMEOUT_MS = 2000;
  *
  * @returns {{ ok: boolean, stdout: string, stderr: string, code: number|null }}
  */
-function defaultGitExec(args, cwd) {
+// Shared spawnSync wrapper for the two production gitExec entry points
+// (defaultGitExec for ralph_status / armLoop diagnostics, and
+// defaultAdaptiveGitExec for the end-of-iteration adaptive-budget
+// signal evaluation). Both call sites need the same total-function
+// guarantees:
+//   - never throw out of the wrapper (every error path collapses to
+//     `{ ok: false, stdout: "", stderr, code }`);
+//   - `child_process` import failure (e.g. exotic embedders) is also
+//     normalized rather than throwing;
+//   - process env is filtered through GIT_TERMINAL_PROMPT=0 + GIT_PAGER=cat
+//     so a misconfigured git on the host can't deadlock spawnSync.
+// The only difference between the two callers is the timeout budget,
+// which is the helper's only required parameter.
+function runGitCommand(args, cwd, timeoutMs) {
     let spawnSync;
     try {
         ({ spawnSync } = moduleRequire("node:child_process"));
@@ -524,14 +537,14 @@ function defaultGitExec(args, cwd) {
     try {
         res = spawnSync("git", args, {
             cwd,
-            timeout: GIT_TIMEOUT_MS,
+            timeout: timeoutMs,
             encoding: "utf8",
             env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_PAGER: "cat" },
         });
     } catch (err) {
         return { ok: false, stdout: "", stderr: err?.message ?? String(err), code: null };
     }
-    if (res.error) {
+    if (res?.error) {
         return { ok: false, stdout: "", stderr: res.error.message ?? String(res.error), code: res.status ?? null };
     }
     return {
@@ -540,6 +553,10 @@ function defaultGitExec(args, cwd) {
         stderr: typeof res.stderr === "string" ? res.stderr : "",
         code: res.status ?? null,
     };
+}
+
+function defaultGitExec(args, cwd) {
+    return runGitCommand(args, cwd, GIT_TIMEOUT_MS);
 }
 
 function captureGitArmSnapshot(gitExec, cwd) {
@@ -656,29 +673,14 @@ function djb2Hash(s) {
 }
 
 function defaultAdaptiveGitExec(args, cwd) {
-    let spawnSync;
-    try {
-        ({ spawnSync } = moduleRequire("node:child_process"));
-    } catch {
-        return { ok: false, stdout: "", stderr: "child_process unavailable" };
-    }
-    let res;
-    try {
-        res = spawnSync("git", args, {
-            cwd,
-            timeout: ADAPTIVE_GIT_TIMEOUT_MS,
-            encoding: "utf8",
-            env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_PAGER: "cat" },
-        });
-    } catch (err) {
-        return { ok: false, stdout: "", stderr: err?.message ?? String(err) };
-    }
-    if (res?.error) return { ok: false, stdout: "", stderr: res.error.message ?? String(res.error) };
-    return {
-        ok: res.status === 0,
-        stdout: typeof res.stdout === "string" ? res.stdout : "",
-        stderr: typeof res.stderr === "string" ? res.stderr : "",
-    };
+    // Adaptive-budget evaluation runs synchronously inside onIdle and
+    // is best-effort; a stuck git invocation must not stall the loop.
+    // Hence the tighter ADAPTIVE_GIT_TIMEOUT_MS budget vs the
+    // ralph_status default. Shape is identical to defaultGitExec
+    // (including the `code` field — `evaluateAdaptiveSignals` only
+    // reads `.ok` / `.stdout`, so the extra field is harmless and
+    // keeps both entry points to a single helper).
+    return runGitCommand(args, cwd, ADAPTIVE_GIT_TIMEOUT_MS);
 }
 
 function evaluateAdaptiveSignals(a, gitExec) {

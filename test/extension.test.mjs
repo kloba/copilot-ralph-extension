@@ -965,6 +965,11 @@ test("PROMPT_GROW_PROJECT references the gh-issue backlog + acceptance + demo co
     const p = PROMPT_GROW_PROJECT;
     // gh CLI is the backlog substrate
     assert.match(p, /gh issue list/, "must instruct the agent to list backlog with gh issue list");
+    // The ORIENT-stage backlog query MUST filter to --state open. Without
+    // this filter (or with --state all), the SELECT stage would pick up
+    // already-closed (shipped) issues and try to re-ship them every iter
+    // — burning the backlog into a busy loop. Pin the literal flag.
+    assert.match(p, /gh issue list[^\n]*--state\s+open/, "ORIENT must scope the backlog query to --state open");
     assert.match(p, /gh issue create/, "must instruct the agent to create proposed issues");
     assert.match(p, /gh issue close/, "must instruct the agent to close completed issues");
     // Three-part completion gate

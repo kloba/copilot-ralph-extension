@@ -315,6 +315,36 @@ test("aggregateRuns: mean is arithmetic over runs with iterations", () => {
     assert.equal(r.iters.mean, 5);
 });
 
+test("aggregateRuns: handles >150k recorded runs without blowing the call stack", () => {
+    // Regression: the previous implementation computed iters.max via
+    // `Math.max(...iterCounts)`. That spread form throws "Maximum
+    // call stack size exceeded" once iterCounts crosses Node's
+    // argument-count limit (~150k on V8). A long-lived user with
+    // daily self_improve runs would eventually hit that ceiling and
+    // `ralph-tui stats` would crash silently. We pump 200_001
+    // synthetic entries through aggregateRuns via an in-memory fs
+    // stub and assert it returns the expected aggregates.
+    const N = 200_001;
+    const armedLine = '{"type":"armed","runId":"r","label":"ralph_loop"}';
+    const completeLine = '{"type":"complete","runId":"r","reason":"completion_promise","iteration":42}';
+    const indexContent = (armedLine + "\n").repeat(N);
+    const eventsContent = completeLine + "\n";
+    const fakeFs = {
+        readFileSync(p) {
+            if (typeof p === "string" && p.endsWith("index.jsonl")) return indexContent;
+            return eventsContent;
+        },
+    };
+    const r = aggregateRuns({
+        fs: fakeFs,
+        env: { RALPH_EVENTS_DIR: "/fake" },
+    });
+    assert.equal(r.total, N);
+    assert.equal(r.iters.max, 42);
+    assert.equal(r.iters.mean, 42);
+    assert.equal(r.byTool.ralph_loop, N);
+});
+
 test("pruneRuns: refuses to delete entries whose runId contains traversal segments", () => {
     const root = mkTmp();
     const indexPath = path.join(root, "index.jsonl");

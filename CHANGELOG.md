@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Performance
+- `packages/tui/src/writer.mjs` — `aggregateRuns`
+  no longer computes `iters.max` via
+  `Math.max(...iterCounts)`. The spread form throws
+  "Maximum call stack size exceeded" once the iter
+  counts array crosses Node's argument-count limit
+  (~150k entries on V8). A long-lived user with
+  daily `self_improve` runs would eventually
+  accumulate enough recorded runs that `ralph-tui
+  stats` would silently crash. Switched to a
+  `reduce` pass that handles arbitrary array sizes
+  in O(n). Regression test pumps 200_001 synthetic
+  runs through `aggregateRuns` via an in-memory fs
+  stub and asserts no throw plus correct totals.
+
 ### Documentation
 - README — `ralph_loop` "Tool parameters" table now
   lists `adaptive_budget`, `adaptive_extension`, and

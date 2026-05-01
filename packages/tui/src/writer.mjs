@@ -275,7 +275,15 @@ export function aggregateRuns({
         }
         if (lastIter > 0) iterCounts.push(lastIter);
     }
-    const max = iterCounts.length ? Math.max(...iterCounts) : 0;
+    // Use reduce instead of `Math.max(...iterCounts)`: the spread form
+    // throws "Maximum call stack size exceeded" once iterCounts grows
+    // past ~150k entries (Node's argument-count limit). A long-lived
+    // user with daily self_improve runs would eventually hit that
+    // ceiling and `ralph-tui stats` would silently crash. Reduce
+    // handles arbitrary array sizes in O(n) without the spread.
+    const max = iterCounts.length
+        ? iterCounts.reduce((a, b) => (a > b ? a : b), 0)
+        : 0;
     const mean = iterCounts.length
         ? iterCounts.reduce((a, b) => a + b, 0) / iterCounts.length
         : 0;

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Fixes
+- `self_improve` argument-validation errors are now guaranteed to
+  carry the `self_improve:` prefix even if a future `validateArgs`
+  path forgets the delegated `ralph_loop:` prefix. The previous
+  bare regex rewrite (`replace(/^ralph_loop:/, "self_improve:")`)
+  would silently no-op on a missing prefix and leak a tool-less
+  error message to callers; the rewrite now falls back to an
+  explicit `self_improve: <msg>` prepend so the tool name is
+  always present in the error stream.
+
 ### Changes
 - `self_improve` `focus` length cap raised from 500 → 2000 characters.
   The previous 500-char cap was tight enough that real-world focus

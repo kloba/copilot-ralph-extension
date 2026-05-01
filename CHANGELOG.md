@@ -11,6 +11,17 @@
   error message to callers; the rewrite now falls back to an
   explicit `self_improve: <msg>` prepend so the tool name is
   always present in the error stream.
+- `self_improve` now emits a one-shot arm-time warning when the
+  caller overrides `completion_promise` / `abort_promise` with a
+  value that differs from the baked SDLC prompt's literal emit
+  tokens (`COMPLETE` and `ABORT_NO_IMPROVEMENTS`). Previously the
+  prompt would instruct the agent to emit one token while the
+  runtime watched for another, silently running the loop to
+  `max_iterations` on an otherwise-successful turn. The warning
+  names the offending field, the supplied value, the expected
+  baked token, and the consequence so operators can spot the
+  mismatch in the timeline instead of diagnosing a stuck loop
+  after the fact.
 
 ### Changes
 - `self_improve` `focus` length cap raised from 500 → 2000 characters.

@@ -1007,6 +1007,32 @@ test("ralph_stop cancels an active loop and reports iteration count", async () =
     assert.equal(controller.state.lastResult.reason, "user_stopped");
 });
 
+test("ralph_stop success result has EXACTLY { textResultForLlm, resultType, iterations, note } — no stray keys", async () => {
+    // Mirrors the arm-success "no stray keys" pin. ralph_stop returns
+    // `success(message, { iterations, note })`, where note is undefined
+    // when no reason is supplied. Lock the closed key set so a future
+    // refactor can't silently widen the LLM-facing return with internal
+    // scratch (sessionRef, currentDetach, etc.). Both the with-reason
+    // and without-reason branches must share the same key set — `note`
+    // is *always* present, valued undefined when omitted. A change
+    // that conditionally drops the key would also break this lock.
+    const { stop } = await arm({ max_iterations: 5 });
+    const r1 = await stop.handler({});
+    assert.deepEqual(
+        Object.keys(r1).sort(),
+        ["iterations", "note", "resultType", "textResultForLlm"],
+    );
+    assert.equal(r1.note, undefined);
+
+    const { stop: stop2 } = await arm({ max_iterations: 5 });
+    const r2 = await stop2.handler({ reason: "explicit" });
+    assert.deepEqual(
+        Object.keys(r2).sort(),
+        ["iterations", "note", "resultType", "textResultForLlm"],
+    );
+    assert.equal(r2.note, "explicit");
+});
+
 test("ralph_stop accepts an optional reason and records it as note", async () => {
     const { stop, controller, session } = await arm({ max_iterations: 5 });
     runTurn(session, "still working");

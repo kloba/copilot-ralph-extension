@@ -106,6 +106,9 @@ The tool **arms** the loop and returns immediately. Iterations then play out as 
 | `stagnation_limit` | `3` | Abort after N consecutive byte-identical responses (0 disables, must be ≥ 2 if set — `1` is rejected since no comparison is possible after a single response) |
 | `max_tokens` | _(none)_ | Optional cumulative token cap (input + output combined). Loop stops with reason `max_tokens` when crossed at end of an iteration. Useful to bound spend on long-running self-improve / grow-project runs. |
 | `warn_at_pct` | `80` | First context-window warning threshold (percent of model's total window). A second hard-coded warning fires at 95%. Each fires at most once per loop run. |
+| `adaptive_budget` | `false` | Opt-in adaptive iteration budget (issue [#4](https://github.com/kloba/copilot-ralph-extension/issues/4)). When the loop reaches `max_iterations` and progress signals are positive (see [Adaptive iteration budget](#adaptive-iteration-budget) below), grants `adaptive_extension` more iterations, capped at `adaptive_max_total`. |
+| `adaptive_extension` | `10` | Iterations granted per adaptive extension. Ignored when `adaptive_budget` is `false`. Integer, 1–1000. |
+| `adaptive_max_total` | `min(max_iterations*5, 1000)` | Hard ceiling for the effective max even after adaptive extensions. Must be ≥ `max_iterations` and ≤ 1000. |
 
 ### Companion tool
 

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Documentation
+- README — `ralph_loop` "Tool parameters" table now
+  lists `adaptive_budget`, `adaptive_extension`, and
+  `adaptive_max_total` with their canonical defaults
+  (`false`, `10`, `min(max_iterations*5, 1000)`).
+  These three were missing from the canonical
+  defaults table even though the JSON schema has
+  advertised them since the adaptive-budget feature
+  landed (issue #4); users had to dig into the
+  prose section further down to find them. Adds a
+  `test/extension.test.mjs` drift guard that
+  enumerates every `ralph_loop` schema property and
+  asserts a backtick-wrapped row exists in the
+  README — so a new param can never silently land
+  without a README entry again.
+
 ### Fixes
 - `extension/events-emit.mjs` — `makeRunId` now
   substitutes `Date.now()` when `startedAt` is

@@ -4652,6 +4652,27 @@ test("ARCHITECTURE.md tool surface table lists every registered tool", () => {
     }
 });
 
+test("README documents every ralph_loop parameter the schema advertises", () => {
+    // Pin the docs↔code agreement: the README "Tool parameters" table
+    // is where users look up defaults. Until iter 19 it omitted the
+    // three adaptive_* params even though the JSON schema had been
+    // advertising them with defaults. A new param landing without a
+    // README row would silently drift again. This test fails fast.
+    const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf8");
+    const c = createRalphController();
+    const ralphLoop = c.tools.find((t) => t.name === "ralph_loop");
+    const props = Object.keys(ralphLoop.parameters.properties);
+    assert.ok(props.length > 0, "schema must declare ralph_loop properties");
+    for (const name of props) {
+        // Each row uses backtick-wrapped param name in the leading cell.
+        const needle = `\`${name}\``;
+        assert.ok(
+            readme.includes(needle),
+            `README must mention the ralph_loop param ${name} (in the Tool parameters table)`,
+        );
+    }
+});
+
 test("install.sh FILES array matches actual extension/*.mjs on disk", () => {
     // Drift guard. install.sh hardcodes
     //   FILES=(extension.mjs handler.mjs events-emit.mjs)

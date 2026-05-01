@@ -1059,6 +1059,18 @@ test("PROMPT_GROW_PROJECT references the gh-issue backlog + acceptance + demo co
     // instruction so a refactor can't quietly drop the durable
     // trace and reduce DEMO to "I ran it, trust me".
     assert.match(p, /gh issue comment/, "DEMO must persist demo output as a durable gh issue comment");
+    // TEST stage must require same-or-higher pass count vs
+    // baseline. Without this rule, an iter that accidentally
+    // deletes a flaky test it couldn't fix would still report
+    // "green" (zero failures) even though coverage shrank — a
+    // silent regression in the test surface. The "same or
+    // higher count" wording is the monotonicity contract; pin
+    // both halves (the count rule AND the fix-forward-or-revert
+    // recovery branch) so a refactor can't drop either.
+    assert.match(p, /same or higher count|at least as many/i,
+        "TEST must require same-or-higher pass count vs baseline (monotonicity)");
+    assert.match(p, /fix forward or revert/i,
+        "TEST must offer fix-forward-or-revert recovery, not just abort");
 });
 
 test("both baked prompts retain the cwd guardrail and the trigger-phrase footgun caveat", () => {

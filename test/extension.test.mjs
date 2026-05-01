@@ -1385,6 +1385,34 @@ test("sub-agent idle events (agentId set) do not refire — root only", async ()
     assert.equal(session.sent.length, 2);
 });
 
+test("sub-agent idle BEFORE iter 1 (during pendingFire) does NOT consume pendingFire", async () => {
+    // Subtle ordering bug guard: in onIdle the sub-agent filter runs BEFORE
+    // the `pendingFire` check. If those two were swapped (or someone
+    // refactored to filter sub-agents *after* the pending-fire branch), a
+    // sub-agent idle that arrives between arm-time and the first root
+    // idle would silently consume `pendingFire`, fire iter 1 against
+    // whatever was on the bus, and leave the *real* first root idle
+    // mis-classified as a regular iteration boundary.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    await c.tools[0].handler({ prompt: "go", max_iterations: 5, stagnation_limit: 0 });
+    assert.equal(c.state.active.pendingFire, true, "loop must be armed pre-fire");
+    // 3 sub-agent idles in a row — pendingFire must remain true and no
+    // prompt may have been fired yet.
+    for (let k = 0; k < 3; k++) {
+        session.emit("session.idle", { agentId: `sub-${k}`, data: {} });
+    }
+    assert.equal(c.state.active.pendingFire, true, "pendingFire must survive sub-agent idles");
+    assert.equal(session.sent.length, 0, "no fire should have happened yet");
+    assert.equal(c.state.active.i, 0, "iter must still be 0");
+    // Root idle finally fires iter 1.
+    session.emit("session.idle", { data: {} });
+    assert.equal(c.state.active.pendingFire, false);
+    assert.equal(c.state.active.i, 1);
+    assert.equal(session.sent.length, 1);
+});
+
 test("sub-agent assistant.message content is NOT scanned for completion_promise", async () => {
     // A sub-agent's response containing the completion token must not
     // terminate the root loop early — only the root agent's own message

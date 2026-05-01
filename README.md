@@ -217,6 +217,8 @@ The SDK emits one `session.idle` per *root-level* agentic loop completion — no
 
 This mirrors how Anthropic's Claude Code `ralph-wiggum` plugin uses the `Stop` hook to re-prompt — same architectural shape, just expressed via the Copilot CLI extension SDK.
 
+If you arm a new `ralph_loop` *before* the next user prompt fires, the prior run's result is wiped during arming — the post-loop context from the previous run will **not** leak into the new loop's first prompt.
+
 ## Limitations
 
 - **Substring-match completion can self-trigger.** Both `completion_promise` and `abort_promise` use plain substring matching against the assistant's accumulated turn output. If the agent quotes the trigger phrase mid-thought (e.g. *"I'll mark this COMPLETE when done"*), the loop will finish on that turn. Pick a phrase the agent is unlikely to mention casually; emoji or unusual tokens (e.g. `RALPH_DONE_42`) work well.

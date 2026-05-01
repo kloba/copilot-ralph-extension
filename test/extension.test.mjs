@@ -1178,6 +1178,23 @@ test("result includes durationMs, startedAt, finishedAt", async () => {
     assert.equal(r.durationMs, r.finishedAt - r.startedAt);
 });
 
+test("arming a fresh ralph_loop clears stale lastResult from prior run", async () => {
+    // First loop completes and records a result.
+    const { session, controller, ralph } = await arm({ max_iterations: 2 });
+    session.emit("session.idle", { data: {} });   // first idle fires iter 1 prompt
+    runTurn(session, "first run done COMPLETE");  // second idle detects completion
+    assert.equal(controller.state.lastResult.reason, "completion_promise");
+    assert.equal(controller.state.lastResult.iterations, 1);
+
+    // Arming a brand-new loop must wipe the prior result so a downstream
+    // consumer (e.g. onUserPromptSubmitted) cannot accidentally inject the
+    // previous run's preview into the next user prompt.
+    const armResult = await ralph.handler({ prompt: "next", max_iterations: 3 });
+    assert.equal(armResult.resultType, "success");
+    assert.equal(controller.state.lastResult, null,
+        "prior lastResult must be cleared on re-arm to prevent stale post-loop context");
+});
+
 test("lastResult is frozen so consumers can't mutate the historical record", async () => {
     const { session, controller } = await arm({ max_iterations: 3 });
     session.emit("session.idle", { data: {} });

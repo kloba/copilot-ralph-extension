@@ -4,18 +4,19 @@ import assert from "node:assert/strict";
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
 const { MAX_PROMISE_CHARS, PREVIEW_CHARS } = __test__;
 
-function makeFakeSession({ failSend = false, rejectSend = false } = {}) {
+function makeFakeSession({ failSend = false, rejectSend = false, sendErrorMessage } = {}) {
     const sent = [];
     const logs = [];
     const handlers = new Map();
+    const errMsg = sendErrorMessage ?? null;
     return {
         sent,
         logs,
         log: (m) => logs.push(m),
         send: (opts) => {
-            if (failSend) throw new Error("simulated send failure");
+            if (failSend) throw new Error(errMsg ?? "simulated send failure");
             sent.push(opts);
-            if (rejectSend) return Promise.reject(new Error("simulated async rejection"));
+            if (rejectSend) return Promise.reject(new Error(errMsg ?? "simulated async rejection"));
             return Promise.resolve("msg-" + sent.length);
         },
         on: (type, handler) => {
@@ -740,6 +741,27 @@ test("send rejecting asynchronously finishes with reason=send_error", async () =
     // tells the operator the failure surfaced as an async promise rejection
     // rather than a thrown exception inside session.send().
     assert.match(c.state.lastResult.note, /^send rejected: simulated async rejection$/);
+});
+
+test("send_error log line bounded for oversized err.message (sync and async paths)", async () => {
+    // Mirror of the abort-log-bound test: pre-finish log line must not
+    // dump megabytes into the timeline if err.message is pathological.
+    // Exercises BOTH the sync-throw branch and the async-rejection branch.
+    const huge = "Q".repeat(50_000);
+    for (const opts of [{ failSend: true, sendErrorMessage: huge }, { rejectSend: true, sendErrorMessage: huge }]) {
+        const session = makeFakeSession(opts);
+        const c = createRalphController();
+        c.attach(session);
+        await c.tools[0].handler({ prompt: "go", max_iterations: 5 });
+        session.emit("session.idle", { data: {} });
+        await new Promise((r) => setImmediate(r));
+        const errLog = session.logs.find((l) => /send (failed|rejected):/.test(l));
+        assert.ok(errLog, `expected send-error log line for opts=${JSON.stringify(Object.keys(opts))}`);
+        assert.ok(errLog.length < PREVIEW_CHARS + 200, `send-error log too long: ${errLog.length}`);
+        // result.note still carries the full prefixed (truncated) form.
+        assert.match(c.state.lastResult.note, /^send (failed|rejected): /);
+        assert.ok(c.state.lastResult.note.length <= PREVIEW_CHARS + "send rejected: ".length);
+    }
 });
 
 test("session.log throwing does not crash the controller", async () => {

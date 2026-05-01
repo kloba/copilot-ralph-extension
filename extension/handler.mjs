@@ -323,6 +323,15 @@ export function createRalphController() {
         }
         armedFor.fireInFlight = true;
         armedFor.observedMessageThisFire = false;
+        // Bound logged err.message so a pathologically large error payload
+        // (giant JSON, multi-line stack) doesn't dump megabytes into the
+        // timeline. result.note is already truncated by finish(); mirror
+        // the same cap on the pre-finish log line. Match onAbort's
+        // approach (truncateNote + collapseNote).
+        const formatErrForLog = (err) => {
+            const msg = err?.message ?? String(err);
+            return collapseNote(truncateNote(msg));
+        };
         try {
             const r = sendPrompt(prompt);
             if (r && typeof r.then === "function") {
@@ -330,7 +339,7 @@ export function createRalphController() {
                     if (state.active !== armedFor) return;
                     armedFor.fireInFlight = false;
                     const msg = err?.message ?? String(err);
-                    log(`ralph_loop: send rejected: ${msg}`);
+                    log(`ralph_loop: send rejected: ${formatErrForLog(err)}`);
                     finish("send_error", `send rejected: ${msg}`);
                 });
             }
@@ -338,7 +347,7 @@ export function createRalphController() {
             if (state.active !== armedFor) return;
             armedFor.fireInFlight = false;
             const msg = err?.message ?? String(err);
-            log(`ralph_loop: send failed: ${msg}`);
+            log(`ralph_loop: send failed: ${formatErrForLog(err)}`);
             finish("send_error", `send failed: ${msg}`);
         }
     };

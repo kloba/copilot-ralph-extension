@@ -694,8 +694,9 @@ test("send throwing during arm fire-out finishes with reason=send_error", async 
     session.emit("session.idle", { data: {} });
     assert.equal(c.state.active, null);
     assert.equal(c.state.lastResult.reason, "send_error");
-    // The underlying error message should be surfaced on the result.
-    assert.match(c.state.lastResult.note, /simulated send failure/);
+    // Prefix `send failed: ` distinguishes the sync-throw path from the
+    // async-rejection path (`send rejected: `) for diagnosability.
+    assert.match(c.state.lastResult.note, /^send failed: simulated send failure$/);
 });
 
 test("send rejecting asynchronously finishes with reason=send_error", async () => {
@@ -708,7 +709,10 @@ test("send rejecting asynchronously finishes with reason=send_error", async () =
     await new Promise((r) => setImmediate(r));
     assert.equal(c.state.active, null);
     assert.equal(c.state.lastResult.reason, "send_error");
-    assert.match(c.state.lastResult.note, /simulated async rejection/);
+    // Prefix `send rejected: ` (note: ≠ `send failed:` for the sync path)
+    // tells the operator the failure surfaced as an async promise rejection
+    // rather than a thrown exception inside session.send().
+    assert.match(c.state.lastResult.note, /^send rejected: simulated async rejection$/);
 });
 
 test("session.log throwing does not crash the controller", async () => {

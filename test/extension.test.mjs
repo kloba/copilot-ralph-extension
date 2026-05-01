@@ -568,6 +568,19 @@ test("self_improve refuses when ralph_loop is already active", async () => {
     assert.match(r.textResultForLlm, /ralph_loop is already/);
 });
 
+test("ralph_loop refuses when self_improve is already active", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const ralph = c.tools.find((x) => x.name === "ralph_loop");
+    const si = c.tools.find((x) => x.name === "self_improve");
+    const armed = await si.handler({ max_iterations: 5 });
+    assert.equal(armed.resultType, "success");
+    const r = await ralph.handler({ prompt: "go", max_iterations: 5 });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /already/i);
+});
+
 test("PROMPT_SELF_IMPROVE mentions every required SDLC category and stage", () => {
     const p = PROMPT_SELF_IMPROVE;
     // Stages

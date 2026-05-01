@@ -716,9 +716,8 @@ export function createRalphController() {
         // session.on throws partway through — without rollback the
         // earlier listeners would leak.
         const unsubs = [];
-        // Best-effort teardown: swallow per-unsub throws so one buggy
-        // listener can't strand the rest. Shared by subscribeOrFail's
-        // rollback path and by detach.
+        // Best-effort teardown: swallow per-unsub throws so one buggy listener
+        // can't strand the rest. Shared by subscribeOrFail's rollback and detach.
         const unsubscribeAll = () => {
             for (const u of unsubs) {
                 try { u(); } catch { /* ignore */ }

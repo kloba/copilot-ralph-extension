@@ -388,7 +388,7 @@ export function createRalphController() {
         const armedFor = state.active;
         if (!armedFor) return;
         if (armedFor.fireInFlight) {
-            log(`ralph_loop: skipping refire — previous prompt still queued (no assistant.message observed yet)`);
+            log("ralph_loop: skipping refire — previous prompt still queued (no assistant.message observed yet)");
             return;
         }
         armedFor.fireInFlight = true;
@@ -506,7 +506,7 @@ export function createRalphController() {
         // (e.g. the SDK fired idle before the agent picked up our send).
         // Refiring here would queue another identical copy.
         if (a.fireInFlight && !a.observedMessageThisFire) {
-            log(`ralph_loop: skipping idle — previous prompt not yet picked up by agent`);
+            log("ralph_loop: skipping idle — previous prompt not yet picked up by agent");
             return;
         }
         // Consume the in-flight marker now that the agent has fully

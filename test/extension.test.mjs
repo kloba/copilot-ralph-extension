@@ -1129,6 +1129,21 @@ test("self_improve rejects non-string focus", async () => {
     assert.match(r.textResultForLlm, /self_improve: focus must be a string/);
 });
 
+test("self_improve treats focus: null as 'not supplied' and arms with the bare SDLC prompt", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "self_improve");
+    const r = await t.handler({ focus: null, max_iterations: 1, min_iterations: 1 });
+    assert.equal(r.resultType, "success");
+    // Pin the contract: a null focus must NOT be type-rejected the way `42`
+    // is, and must NOT inject the "Focus this run on:" suffix into the
+    // armed prompt (which would otherwise read as an empty/null focus).
+    session.emit("session.idle", { data: {} });
+    const sentPrompt = session.sent[0]?.prompt ?? "";
+    assert.ok(!/Focus this run on:/.test(sentPrompt), "null focus must not emit Focus suffix");
+});
+
 test("self_improve rewrites delegated bound errors with self_improve prefix", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

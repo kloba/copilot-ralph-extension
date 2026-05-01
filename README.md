@@ -4,7 +4,7 @@
 
 [![Inspired by](https://img.shields.io/badge/inspired_by-Anthropic_Ralph_Wiggum-blue)](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)
 
-**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Self-improve](#self-improve-self_improve-tool) · [How it works](#how-it-works) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)
+**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [How it works](#how-it-works) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)
 
 ## What is Ralph Wiggum?
 
@@ -174,6 +174,29 @@ Each iteration walks the agent through nine stages: **ORIENT** (read recent comm
 `self_improve` reuses the same internal state machine as `ralph_loop` — the same `controller.state.active` shape, the same `finish()` pipeline, the same timeline log line (just with `self_improve` as the label), and the same `additionalContext` post-loop hook. Only one loop runs per session at a time, so a `self_improve` while a `ralph_loop` is active fails fast (and vice versa). Cancel with `ralph_stop` exactly as you would for any `ralph_loop`.
 
 > ⚠️ **The baked SDLC prompt instructs the agent to emit `COMPLETE` at the end of every iteration.** That means `completion_promise` would fire on iter 1 if `min_iterations` allowed it. The default `min_iterations: 5` defers honoring `COMPLETE` until iter 5 (so a 100-iter call usually stops there). To run the full budget, set `min_iterations` equal to `max_iterations` — e.g. `self_improve({ max_iterations: 100, min_iterations: 100 })`. Use `ralph_stop` to tear down a long-running session early.
+
+### Grow-project (`grow_project` tool)
+
+`grow_project` is a third long-running loop tool, parallel to `self_improve`. Where `self_improve` polishes an existing codebase, `grow_project` *grows* one: on the first iteration it ideates a backlog of small, well-scoped features and persists them as **GitHub issues** (`gh issue create --label grow-project --label proposed`); subsequent iterations each pick one proposed issue, implement it, and close it. The per-feature completion gate is **three-part**: (a) tests stay green, (b) every checkbox in the issue's `acceptance_criteria` block passes, (c) the issue's `demo_command` is executed and its output is pasted back as a comment.
+
+> *"Use grow_project to bootstrap and ship features for this project."*
+
+Each iteration walks the agent through thirteen stages: **ORIENT** (`gh issue list --label grow-project --state open` + recent commits + docs) → **IDEATE** (only on iter 1 with empty backlog: 5–10 well-scoped issues with spec, acceptance_criteria checkbox list, and demo_command) → **SELECT** (pick oldest `proposed` issue whose `Depends-on:` lines are all closed; re-label `in-progress`) → **CRITIQUE** (rubber-duck the spec) → **BASELINE** (run tests; bail if red) → **IMPLEMENT** (surgical edits in the file allowlist) → **TEST** (stay green at same-or-higher count) → **ACCEPTANCE** (execute every checkbox check) → **DEMO** (run the issue's `demo_command`, paste output as a comment) → **COMMIT** (conventional commit `feat(#N): <title>` with `Closes #N` + `Co-authored-by` trailers) → **PUSH** → **CLOSE** (`gh issue close N --reason completed`) → **END** (`COMPLETE`, or `ABORT_NO_BACKLOG` when no ready issues remain).
+
+| Param | Default | Purpose |
+|---|---|---|
+| `max_iterations` | `200` | Hard iteration cap (1–1000). Larger than `self_improve` because feature work takes more turns than polish. |
+| `min_iterations` | `10` | Honors completion / abort phrases only after N iterations. Drains a baseline portion of the backlog before honoring early `ABORT_NO_BACKLOG`. |
+| `focus` | _(none)_ | Optional ≤2000-char string. Appended verbatim as `Focus this run on: <focus>` after the SDLC scaffolding — narrows the backlog ideation/selection to one area without altering the SDLC stages. |
+| `completion_promise` | `"COMPLETE"` | Substring → stop. Trimmed; max 200 chars. |
+| `abort_promise` | `"ABORT_NO_BACKLOG"` | Substring → early abort (signaled by the agent when no proposed issue is ready). Same disjoint-substring rule as `ralph_loop`. |
+| `stagnation_limit` | `3` | Same rules as `ralph_loop` (≥ 2 or `0` to disable; `1` is rejected). |
+
+`grow_project` reuses the same internal state machine as `ralph_loop` and `self_improve` — the same `controller.state.active` shape, the same `finish()` pipeline, the same timeline log line (just with `grow_project` as the label), and the same `additionalContext` post-loop hook. **Only one loop runs per session at a time**, so calling `grow_project` while a `ralph_loop` or `self_improve` is active fails fast (and vice versa). Cancel with `ralph_stop` exactly as you would for any `ralph_loop`.
+
+> ⚠️ **The baked prompt drives `gh` CLI calls.** Make sure the agent has a working `gh auth status` before arming `grow_project` — without auth, the very first `gh issue list` call fails and the agent will burn iterations trying to recover. Run `gh auth login` once per repo / once per machine. The `grow-project` and `proposed` labels do not need to exist beforehand; `gh issue create --label X` will refuse on first use, but the agent is instructed to create them with `gh label create grow-project` / `gh label create proposed` on the first iter.
+
+> ⚠️ **The baked prompt instructs the agent to emit `COMPLETE` at the end of every iteration and `ABORT_NO_BACKLOG` when the backlog is exhausted.** As with `self_improve`, `completion_promise` would fire on iter 1 if `min_iterations` allowed it; the default `min_iterations: 10` defers honoring `COMPLETE` until iter 10. Set `min_iterations` equal to `max_iterations` to drain the full budget. Use `ralph_stop` to tear down a long-running session early.
 
 ## Development
 

@@ -300,7 +300,7 @@ function isSubAgentEvent(ev) {
  * @typedef {Object} RalphResult
  * @property {string} reason - One of: completion_promise, abort_promise, stagnation, max_iterations, send_error, aborted, user_stopped, detached.
  * @property {number} iterations - Number of iterations completed (post-fire count).
- * @property {string} label - Tool that armed the loop ("ralph_loop" or "self_improve"). Used for the post-loop additionalContext bracket and the "<verb> <label> after N iterations" finish log line.
+ * @property {string} label - Tool that armed the loop ("ralph_loop", "self_improve", or "grow_project"). Used for the post-loop additionalContext bracket and the "<verb> <label> after N iterations" finish log line.
  * @property {string} preview - Up to PREVIEW_CHARS (500) chars of the LAST iteration's accumulated assistant content. If the content was longer, an ellipsis ("…") is appended (so the truncated form is 501 chars). If finish runs before any iteration produced output (e.g. send_error before iter 1, or ralph_stop right after arm), this is the empty string. Surrogate-safe — never ends on a lone high surrogate.
  * @property {number} startedAt - Epoch ms when the loop was armed.
  * @property {number} finishedAt - Epoch ms when the loop finished.
@@ -522,7 +522,7 @@ export function validateArgs(args) {
 /**
  * @typedef {Object} ActiveLoopState
  * @property {string} prompt - Validated, trimmed prompt re-fired each iteration.
- * @property {string} label - Tool that armed the loop ("ralph_loop" or "self_improve"). Stamps every per-iteration log line and the finish() log line with the calling tool's name.
+ * @property {string} label - Tool that armed the loop ("ralph_loop", "self_improve", or "grow_project"). Stamps every per-iteration log line and the finish() log line with the calling tool's name.
  * @property {number} max - Hard iteration cap (1..MAX_ALLOWED_ITERATIONS).
  * @property {number} min - Iterations that must complete before completion/abort phrases are honored (1..max).
  * @property {string} completionPromise - Trimmed substring whose presence finishes with reason "completion_promise".

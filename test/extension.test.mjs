@@ -1644,6 +1644,25 @@ test("grow_project treats focus: null as 'not supplied' and arms with the bare S
     assert.ok(!/Focus this run on:/.test(sentPrompt), "null focus must not emit Focus suffix");
 });
 
+test("grow_project arms with abortPromise=ABORT_NO_BACKLOG when caller omits abort_promise", async () => {
+    // Schema-level default is pinned elsewhere, but JSON-schema defaults
+    // are NOT auto-applied by the SDK — the handler must explicitly
+    // substitute BAKED_BACKLOG_ABORT_TOKEN when a.abort_promise is
+    // undefined. Without this pin, a refactor that drops the `?? BAKED_…`
+    // fallback would leave grow_project with abortPromise=null and the
+    // ABORT_NO_BACKLOG signal would never fire — silent regression.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const t = c.tools.find((x) => x.name === "grow_project");
+    const r = await t.handler({ max_iterations: 1, min_iterations: 1 });
+    assert.equal(r.resultType, "success");
+    assert.equal(c.state.active.abortPromise, BAKED_BACKLOG_ABORT_TOKEN);
+    assert.equal(c.state.active.abortPromise, "ABORT_NO_BACKLOG");
+    assert.notEqual(c.state.active.abortPromise, BAKED_ABORT_TOKEN,
+        "grow_project must not arm with self_improve's abort token");
+});
+
 test("grow_project rewrites delegated bound errors with grow_project prefix", async () => {
     // Mirror of iter 17/the equivalent self_improve test: validateArgs
     // emits ralph_loop:-prefixed errors; the handler rewrites them so

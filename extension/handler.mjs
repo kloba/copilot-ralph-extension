@@ -259,7 +259,10 @@ export function createRalphController() {
         try { sessionRef?.log?.(msg); } catch { /* swallow */ }
     };
     const logIterStart = (a) => {
-        log(`🔁 ralph_loop iter ${a.i}/${a.max} (elapsed ${Date.now() - a.startedAt}ms)`);
+        // Math.max(0, …) so a backward clock jump (NTP correction) doesn't
+        // surface a confusing negative elapsed time in the timeline log
+        // — same defense as the durationMs clamp in finish().
+        log(`🔁 ralph_loop iter ${a.i}/${a.max} (elapsed ${Math.max(0, Date.now() - a.startedAt)}ms)`);
     };
     const sendPrompt = (prompt) => {
         if (!sessionRef?.send) throw new Error("session not attached");

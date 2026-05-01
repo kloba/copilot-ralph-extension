@@ -1248,6 +1248,25 @@ test("lastResult is frozen so consumers can't mutate the historical record", asy
     assert.equal(r.reason, "completion_promise");
 });
 
+test("iter log elapsed is clamped to ≥ 0 against backward clock jumps", async () => {
+    // Same defense as durationMs: a backward clock jump (NTP) between
+    // arming and the next idle would surface "elapsed -5000ms" otherwise,
+    // which is confusing in the timeline. Stub Date.now so finish-time
+    // < arm-time and assert the elapsed marker reads 0.
+    const realNow = Date.now;
+    let calls = 0;
+    Date.now = () => (calls++ === 0 ? 10_000 : 5_000);
+    try {
+        const { session } = await arm({ max_iterations: 3 });
+        session.emit("session.idle", { data: {} });   // fires iter 1, calls Date.now for elapsed
+        const elapsedLine = session.logs.find((l) => /iter 1\/3 \(elapsed/.test(l));
+        assert.ok(elapsedLine, "expected an iter-start log line");
+        assert.match(elapsedLine, /elapsed 0ms/, `should clamp negative elapsed (got: ${elapsedLine})`);
+    } finally {
+        Date.now = realNow;
+    }
+});
+
 test("session.log records arming, iter markers, and finish reason", async () => {
     const { session, controller } = await arm({ max_iterations: 3 });
     session.emit("session.idle", { data: {} });

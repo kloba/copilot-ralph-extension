@@ -5,7 +5,7 @@
 [![CI](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml)
 [![Inspired by](https://img.shields.io/badge/inspired_by-Anthropic_Ralph_Wiggum-blue)](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)
 
-**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [Inspecting a running loop](#inspecting-a-running-loop-ralph_status-tool) · [Documentation](#documentation) · [How it works](#how-it-works) · [Commit attribution](#commit-attribution) · [Keep system awake](#keep-system-awake-caffeinate-macos) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)
+**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [Inspecting a running loop](#inspecting-a-running-loop-ralph_status-tool) · [Adaptive budget](#adaptive-iteration-budget) · [Documentation](#documentation) · [How it works](#how-it-works) · [Commit attribution](#commit-attribution) · [Keep system awake](#keep-system-awake-caffeinate-macos) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog)
 
 ## What is Ralph Wiggum?
 
@@ -299,6 +299,29 @@ Behaviour notes:
 - **Read-only.** Never mutates loop state — calling it during a loop never advances iterations, resets stagnation, or moves any timer.
 - **Files-changed window.** Computed by diffing the current working tree (`git status --porcelain`) plus `git diff --name-status` against the HEAD captured at arm-time. Untracked files surface in `added`. Outside a git repo the entire `git` block is `null` and `files_changed` is omitted.
 - **No external API calls.** Only synchronous local `git` invocations with a 2-second timeout each; if any individual call fails, the corresponding field is `null` and the rest of the snapshot still returns.
+
+## Adaptive iteration budget
+
+By default, `ralph_loop` (and `self_improve`, `grow_project`) hard-stops at `max_iterations`. Sometimes the loop is genuinely making progress at the terminator and a flat cap aborts useful work. Issue [#4](https://github.com/kloba/copilot-ralph-extension/issues/4) adds an opt-in **adaptive budget**: when the loop hits `max_iterations`, the controller checks two cheap signals — and if either is positive, grants `adaptive_extension` more iterations (capped by `adaptive_max_total`).
+
+Signals (positive ⇒ extend):
+
+1. **File-change signal** — `git diff --shortstat HEAD` reports any uncommitted changes, OR `git status --porcelain` is non-empty. Best-effort: if `git` isn't available or cwd isn't a repo, this signal stays unset.
+2. **Response novelty** — ≥ 2 distinct response hashes among the last 3 iterations. Stagnation already covers hard-identical streaks, so novelty is genuinely additive.
+
+Stagnation, `completion_promise`, and `abort_promise` always win over the adaptive extension. The hard ceiling `adaptive_max_total` is never crossed.
+
+```js
+ralph_loop({
+  prompt: "Fix the failing build, run tests, commit. Emit COMPLETE when green.",
+  max_iterations: 20,
+  adaptive_budget: true,
+  adaptive_extension: 10,
+  adaptive_max_total: 80,
+});
+```
+
+Each granted extension is logged (`adaptive budget extended N → M (reason: …)`) and surfaced on the loop's final `RalphResult` as `result.adaptive = { enabled, originalMax, effectiveMax, extensions, history }`.
 
 ## How it works
 

@@ -15,8 +15,8 @@
 import { createRequire } from "node:module";
 
 // Lazy-resolved sync `require` so we can pull child_process only when needed
-// (caffeinate when enabled, git for ralph_status, etc.) without paying the
-// import cost up front.
+// (caffeinate when enabled, git for ralph_status / adaptive-budget, etc.)
+// without paying the import cost up front.
 const moduleRequire = createRequire(import.meta.url);
 
 const DEFAULTS = Object.freeze({
@@ -25,6 +25,11 @@ const DEFAULTS = Object.freeze({
     completion_promise: "COMPLETE",
     stagnation_limit: 3,
     warn_at_pct: 80,
+    adaptive_budget: false,
+    adaptive_extension: 10,
+    // adaptive_max_total has no flat default — when omitted, it's resolved
+    // to min(max_iterations * 5, MAX_ALLOWED_ITERATIONS) at validation time
+    // so the ceiling scales with the user's chosen base budget.
 });
 // self_improve has different max/min defaults than ralph_loop because the
 // SDLC loop is meant to run long-haul (whole-repo polish across many
@@ -433,9 +438,6 @@ function startCaffeinate({ env, platform, pid, spawnFn, log, label }) {
         log(`${label}: caffeinate spawn returned no child handle; continuing without sleep prevention`);
         return null;
     }
-    // Async error (binary missing, ENOENT) reported via 'error' event — never
-    // crash the host. Log + treat as a no-op; the kill() in stop() is safe
-    // even if the child never started.
     if (typeof child.on === "function") {
         child.on("error", (err) => {
             log(`${label}: caffeinate error (${err?.message ?? err}); sleep prevention inactive`);
@@ -480,8 +482,6 @@ function defaultGitExec(args, cwd) {
             cwd,
             timeout: GIT_TIMEOUT_MS,
             encoding: "utf8",
-            // Suppress the user's interactive credential helpers / pagers so
-            // the call stays cheap and never blocks on a TTY.
             env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_PAGER: "cat" },
         });
     } catch (err) {
@@ -519,7 +519,6 @@ function classifyPorcelainLine(line) {
     const x = line[0];
     const y = line[1];
     const rest = line.slice(3);
-    // Renames carry " -> " in the path portion: "old -> new".
     let path = rest;
     if (x === "R" || y === "R") {
         const arrow = rest.indexOf(" -> ");
@@ -534,13 +533,10 @@ function classifyPorcelainLine(line) {
 }
 
 function buildFilesChangedSinceArm(gitExec, cwd, armedHead) {
-    // 1) committed changes since arm-time HEAD via diff --name-status
-    // 2) uncommitted (working tree + index) via status --porcelain
     const out = { added: new Set(), modified: new Set(), deleted: new Set(), renamed: new Set() };
     if (armedHead) {
         const diff = gitExec(["diff", "--name-status", "-z", `${armedHead}..HEAD`], cwd);
         if (diff.ok && diff.stdout) {
-            // -z output: STATUS\0path\0  (or for renames: STATUS\0old\0new\0)
             const tokens = diff.stdout.split("\0").filter(Boolean);
             for (let i = 0; i < tokens.length; i++) {
                 const status = tokens[i];
@@ -566,8 +562,6 @@ function buildFilesChangedSinceArm(gitExec, cwd, armedHead) {
             if (!line) continue;
             const c = classifyPorcelainLine(line);
             if (!c) continue;
-            // Don't double-count: if a path is already tracked in another bucket
-            // (committed delta), the porcelain entry just confirms current state.
             if (out.added.has(c.path) || out.modified.has(c.path) || out.deleted.has(c.path) || out.renamed.has(c.path)) continue;
             out[c.kind].add(c.path);
         }
@@ -594,7 +588,6 @@ function gitAheadBehind(gitExec, cwd) {
 function gitUncommittedLines(gitExec, cwd) {
     const r = gitExec(["diff", "--shortstat", "HEAD"], cwd);
     if (!r.ok) return null;
-    // Sample: " 2 files changed, 12 insertions(+), 3 deletions(-)"
     const txt = r.stdout;
     let total = 0;
     const ins = /(\d+) insertion/.exec(txt);
@@ -602,6 +595,71 @@ function gitUncommittedLines(gitExec, cwd) {
     if (ins) total += Number.parseInt(ins[1], 10) || 0;
     if (del) total += Number.parseInt(del[1], 10) || 0;
     return total;
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive iteration budget (issue #4)
+// ---------------------------------------------------------------------------
+const ADAPTIVE_WINDOW = 3;
+const ADAPTIVE_GIT_TIMEOUT_MS = 2000;
+
+function djb2Hash(s) {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) {
+        h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    }
+    return h.toString(16);
+}
+
+function defaultAdaptiveGitExec(args, cwd) {
+    let spawnSync;
+    try {
+        ({ spawnSync } = moduleRequire("node:child_process"));
+    } catch {
+        return { ok: false, stdout: "", stderr: "child_process unavailable" };
+    }
+    let res;
+    try {
+        res = spawnSync("git", args, {
+            cwd,
+            timeout: ADAPTIVE_GIT_TIMEOUT_MS,
+            encoding: "utf8",
+            env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_PAGER: "cat" },
+        });
+    } catch (err) {
+        return { ok: false, stdout: "", stderr: err?.message ?? String(err) };
+    }
+    if (res?.error) return { ok: false, stdout: "", stderr: res.error.message ?? String(res.error) };
+    return {
+        ok: res.status === 0,
+        stdout: typeof res.stdout === "string" ? res.stdout : "",
+        stderr: typeof res.stderr === "string" ? res.stderr : "",
+    };
+}
+
+function evaluateAdaptiveSignals(a, gitExec) {
+    const reasons = [];
+    try {
+        const stat = gitExec(["diff", "--shortstat", "HEAD"]);
+        if (stat?.ok && /\d+\s+(insertion|deletion|file)/.test(stat.stdout)) {
+            reasons.push(`uncommitted changes (${stat.stdout.trim()})`);
+        } else {
+            const porcelain = gitExec(["status", "--porcelain"]);
+            if (porcelain?.ok && porcelain.stdout.trim().length > 0) {
+                const lines = porcelain.stdout.split("\n").filter(Boolean).length;
+                reasons.push(`${lines} working-tree change${lines === 1 ? "" : "s"}`);
+            }
+        }
+    } catch { /* swallow — signal stays unset */ }
+    const hashes = a.adaptiveContentHashes;
+    if (hashes && hashes.length >= 2) {
+        const distinct = new Set(hashes).size;
+        if (distinct >= 2) {
+            reasons.push(`${distinct} distinct responses in last ${hashes.length} iterations`);
+        }
+    }
+    if (reasons.length === 0) return null;
+    return reasons.join(", ");
 }
 
 function failure(message, extra = {}) {
@@ -698,6 +756,9 @@ const RALPH_LOOP_KEYS = new Set([
     "stagnation_limit",
     "max_tokens",
     "warn_at_pct",
+    "adaptive_budget",
+    "adaptive_extension",
+    "adaptive_max_total",
 ]);
 const RALPH_STOP_KEYS = new Set(["reason"]);
 const SELF_IMPROVE_KEYS = new Set([
@@ -881,7 +942,34 @@ export function validateArgs(args) {
         };
     }
 
-    return { value: { prompt, max, min, completionPromise, abortPromise, stagnationLimit, maxTokens, warnAtPct } };
+    // Adaptive iteration budget (issue #4). Opt-in. When disabled, the other
+    // adaptive fields are accepted-and-ignored so a user can keep
+    // adaptive_extension / adaptive_max_total presets in their tooling without
+    // having to remember to flip them off when adaptive_budget is false.
+    const rawAdaptive = args.adaptive_budget;
+    let adaptiveBudget = DEFAULTS.adaptive_budget;
+    if (rawAdaptive !== undefined && rawAdaptive !== null) {
+        if (typeof rawAdaptive !== "boolean") {
+            return { error: `ralph_loop: adaptive_budget must be a boolean (got ${describeArgType(rawAdaptive)}).` };
+        }
+        adaptiveBudget = rawAdaptive;
+    }
+    const rawExt = args.adaptive_extension ?? DEFAULTS.adaptive_extension;
+    const extC = coerceNumberField("adaptive_extension", rawExt);
+    if (extC.error) return extC;
+    const adaptiveExtension = extC.value;
+    if (!Number.isInteger(adaptiveExtension) || adaptiveExtension < 1 || adaptiveExtension > MAX_ALLOWED_ITERATIONS) {
+        return { error: `ralph_loop: adaptive_extension must be an integer in [1, ${MAX_ALLOWED_ITERATIONS}] (got ${displayValue(rawExt)}).` };
+    }
+    const rawTotal = args.adaptive_max_total ?? Math.min(max * 5, MAX_ALLOWED_ITERATIONS);
+    const totalC = coerceNumberField("adaptive_max_total", rawTotal);
+    if (totalC.error) return totalC;
+    const adaptiveMaxTotal = totalC.value;
+    if (!Number.isInteger(adaptiveMaxTotal) || adaptiveMaxTotal < max || adaptiveMaxTotal > MAX_ALLOWED_ITERATIONS) {
+        return { error: `ralph_loop: adaptive_max_total must be an integer in [max_iterations=${max}, ${MAX_ALLOWED_ITERATIONS}] (got ${displayValue(rawTotal)}).` };
+    }
+
+    return { value: { prompt, max, min, completionPromise, abortPromise, stagnationLimit, maxTokens, warnAtPct, adaptiveBudget, adaptiveExtension, adaptiveMaxTotal } };
 }
 
 /**
@@ -906,6 +994,12 @@ export function validateArgs(args) {
  * @property {(() => void) | null} stopCaffeinate - Idempotent killer for the optional caffeinate child (issue #8); null when sleep prevention is disabled or unsupported.
  * @property {number|null} lastIterationAt - Epoch ms of the most recent iteration fire (issue #5); null until the first iteration starts.
  * @property {{isRepo: boolean, head?: string, branch?: string|null}} armedGit - Snapshot of git HEAD/branch at arm-time (issue #5); `isRepo: false` when the cwd isn't a git repo.
+ * @property {boolean} adaptiveBudget - Issue #4: when true, max may be extended at the terminator if progress signals are positive.
+ * @property {number} adaptiveExtension - Issue #4: iterations granted per extension (≥ 1).
+ * @property {number} adaptiveMaxTotal - Issue #4: hard ceiling regardless of extensions (≥ originalMax, ≤ MAX_ALLOWED_ITERATIONS).
+ * @property {number} originalMax - Issue #4: snapshot of `max` at arm-time so logs/results can report the user-supplied vs effective budget.
+ * @property {string[]} adaptiveContentHashes - Issue #4: rolling djb2 hashes of the last ADAPTIVE_WINDOW iterations' assistant content; powers the response-novelty signal.
+ * @property {Array<{atIter: number, from: number, to: number, reason: string}>} adaptiveExtensionHistory - Issue #4: append-only log of every extension granted; surfaced in ralph_status and the finish result.
  */
 
 /**
@@ -939,6 +1033,11 @@ export function createRalphController(opts = {}) {
     const gitCwd = opts.git?.cwd ?? process.cwd();
     const gitExecRaw = opts.git?.exec ?? ((args) => defaultGitExec(args, gitCwd));
     const gitExec = (args) => gitExecRaw(args);
+    // Adaptive-budget DI (issue #4). Tests inject a stub gitExec to drive
+    // signals deterministically; production resolves spawnSync lazily so the
+    // import cost is paid only when adaptive_budget is actually enabled.
+    const adaptiveCwd = opts.adaptive?.cwd ?? process.cwd();
+    const adaptiveGitExec = opts.adaptive?.gitExec ?? ((args) => defaultAdaptiveGitExec(args, adaptiveCwd));
     const state = {
         active: null,           // ActiveLoopState; null when no loop is armed.
         lastAssistantContent: "",
@@ -993,7 +1092,7 @@ export function createRalphController(opts = {}) {
 
     const finish = (reason, note) => {
         if (!state.active) return;
-        const { startedAt, i: iterations, label, tokens, stopCaffeinate } = state.active;
+        const { startedAt, i: iterations, label, tokens, stopCaffeinate, originalMax, max, adaptiveBudget, adaptiveExtensionHistory } = state.active;
         const finishedAt = Date.now();
         const durationMs = clampedElapsed(startedAt);
         const result = {
@@ -1018,13 +1117,23 @@ export function createRalphController(opts = {}) {
                 byModel: { ...tokens.byModel },
             };
         }
+        // Surface adaptive-budget info on the frozen result whenever the
+        // feature was enabled — even if no extension fired — so callers can
+        // tell "feature was on but never triggered" from "feature was off".
+        if (adaptiveBudget) {
+            result.adaptive = {
+                enabled: true,
+                originalMax,
+                effectiveMax: max,
+                extensions: adaptiveExtensionHistory.length,
+                history: [...adaptiveExtensionHistory],
+            };
+        }
         const verb = VERB_BY_REASON[reason] ?? "⏹ stopped";
-        // Single-line log format: collapse newlines/tabs in note (Error
-        // stacks would otherwise break alignment in the timeline).
         const noteForLog = collapseNote(result.note);
         log(`${verb} ${label} after ${iterations} iteration${pluralS(iterations)} (reason: ${reason}${noteForLog ? `, note: ${noteForLog}` : ""}, ${durationMs}ms)`);
         state.active = null;
-        state.lastResult = Object.freeze(result);
+        state.lastResult = deepFreeze(result);
         // Tear down caffeinate AFTER state.active is cleared and lastResult is
         // frozen so a kill-time crash can't leave the loop in a half-finished
         // state.
@@ -1196,6 +1305,34 @@ export function createRalphController(opts = {}) {
             if (a.streak >= a.stagnationLimit) return finish("stagnation");
         }
 
+        // Track per-iteration response signature for the adaptive-budget
+        // novelty signal (issue #4). Cheap djb2 hash — we only need
+        // distinct/identical, not collision resistance. Window is the last
+        // ADAPTIVE_WINDOW iterations; stagnation already covers the
+        // hard-identical case so this is purely additive.
+        if (a.adaptiveBudget) {
+            a.adaptiveContentHashes.push(djb2Hash(text));
+            if (a.adaptiveContentHashes.length > ADAPTIVE_WINDOW) {
+                a.adaptiveContentHashes.shift();
+            }
+        }
+
+        // Adaptive-budget extension check (issue #4). Run BEFORE the
+        // max-iterations terminator so a positive progress signal can
+        // grant more iterations for this loop. Stagnation/completion/
+        // abort already had their chance above and win unconditionally.
+        if (a.i >= a.max && a.adaptiveBudget && a.max < a.adaptiveMaxTotal) {
+            const reason = evaluateAdaptiveSignals(a, adaptiveGitExec);
+            if (reason) {
+                const newMax = Math.min(a.max + a.adaptiveExtension, a.adaptiveMaxTotal);
+                if (newMax > a.max) {
+                    log(`${a.label}: adaptive budget extended ${a.max} → ${newMax} (reason: ${reason})`);
+                    a.adaptiveExtensionHistory.push({ atIter: a.i, from: a.max, to: newMax, reason });
+                    a.max = newMax;
+                }
+            }
+        }
+
         if (a.i >= a.max) return finish("max_iterations");
 
         // Issue #7: check max_tokens cap *after* min_iterations have
@@ -1303,22 +1440,26 @@ export function createRalphController(opts = {}) {
             stopCaffeinate,
             lastIterationAt: null,
             armedGit,
+            originalMax: parsedValue.max,
+            adaptiveContentHashes: [],
+            adaptiveExtensionHistory: [],
         };
         state.lastAssistantContent = "";
         state.lastResult = null;
 
         // Build the arm log line as an array of "key=value" parts
         // so optional fields drop out cleanly without nested ternaries.
-        const { max, min, completionPromise, abortPromise, stagnationLimit } = parsedValue;
+        const { max, min, completionPromise, abortPromise, stagnationLimit, adaptiveBudget, adaptiveExtension, adaptiveMaxTotal } = parsedValue;
         const armParts = [`max=${max}`];
         if (min > 1) armParts.push(`min=${min}`);
         armParts.push(`completion=${JSON.stringify(completionPromise)}`);
         if (abortPromise) armParts.push(`abort=${JSON.stringify(abortPromise)}`);
         if (stagnationLimit > 0) armParts.push(`stagnation_limit=${stagnationLimit}`);
+        if (adaptiveBudget) armParts.push(`adaptive=${adaptiveExtension}/${adaptiveMaxTotal}`);
         log(`🔁 ${label} armed — ${armParts.join(", ")}`);
         return success(
-            `${label} armed (max=${max}${min > 1 ? `, min=${min}` : ""}). Iterations will run as conversation turns. Use ralph_stop to cancel.`,
-            { armed: true, max, min },
+            `${label} armed (max=${max}${min > 1 ? `, min=${min}` : ""}${adaptiveBudget ? `, adaptive_max_total=${adaptiveMaxTotal}` : ""}). Iterations will run as conversation turns. Use ralph_stop to cancel.`,
+            { armed: true, max, min, adaptive_budget: adaptiveBudget, adaptive_extension: adaptiveExtension, adaptive_max_total: adaptiveMaxTotal },
         );
     }
 
@@ -1449,6 +1590,24 @@ export function createRalphController(opts = {}) {
                         default: DEFAULTS.warn_at_pct,
                         minimum: 1,
                         maximum: 99,
+                    },
+                    adaptive_budget: {
+                        type: "boolean",
+                        description: `Opt-in adaptive iteration budget (issue #4). When the loop reaches \`max_iterations\` and progress signals are positive (uncommitted changes OR ≥ 2 distinct responses in the last ${ADAPTIVE_WINDOW} iterations), grant \`adaptive_extension\` more iterations — capped at \`adaptive_max_total\`. Stagnation, completion_promise, and abort_promise still win over the adaptive extension. Default ${DEFAULTS.adaptive_budget} (off).`,
+                        default: DEFAULTS.adaptive_budget,
+                    },
+                    adaptive_extension: {
+                        type: "integer",
+                        description: `Iterations granted per adaptive extension (default ${DEFAULTS.adaptive_extension}, ignored when adaptive_budget is false).`,
+                        default: DEFAULTS.adaptive_extension,
+                        minimum: 1,
+                        maximum: MAX_ALLOWED_ITERATIONS,
+                    },
+                    adaptive_max_total: {
+                        type: "integer",
+                        description: `Hard ceiling for the effective max even after extensions (default min(max_iterations*5, ${MAX_ALLOWED_ITERATIONS}); must be ≥ max_iterations and ≤ ${MAX_ALLOWED_ITERATIONS}).`,
+                        minimum: 1,
+                        maximum: MAX_ALLOWED_ITERATIONS,
                     },
                 },
                 required: ["prompt"],

@@ -4175,4 +4175,13 @@ test("README documents both Co-authored-by trailers and RALPH_NO_ATTRIBUTION opt
     assert.ok(readme.includes(BAKED_ATTRIBUTION_OPT_OUT), `README must document the ${BAKED_ATTRIBUTION_OPT_OUT} opt-out env var`);
     // The public-only caveat is a required disclosure per the issue.
     assert.match(readme, /\bpublic[-\s]?repo[-\s]?(commits|only)\b/i, "README must disclose the public-repo-only searchability caveat");
+    // Trailer order matters: GitHub's commit UI surfaces the first
+    // co-author more prominently, so Copilot must precede copilot-ralph
+    // in the canonical example block. The load-time guard already pins
+    // this for the prompts; mirror the order pin for the README so the
+    // user-facing example can't silently swap the trailers.
+    const copilotIdx = readme.indexOf(BAKED_COPILOT_TRAILER);
+    const ralphIdx = readme.indexOf(BAKED_RALPH_TRAILER);
+    assert.ok(copilotIdx >= 0 && ralphIdx >= 0, "both trailer literals must appear in README");
+    assert.ok(copilotIdx < ralphIdx, `README must list Copilot trailer (idx ${copilotIdx}) BEFORE copilot-ralph trailer (idx ${ralphIdx}) — GitHub UI surfaces the first co-author more prominently`);
 });

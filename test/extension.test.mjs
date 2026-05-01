@@ -950,6 +950,21 @@ test("PROMPT_GROW_PROJECT bakes COMPLETE and ABORT_NO_BACKLOG tokens + fits MAX_
     assert.ok(p.length <= MAX_PROMPT_CHARS, `prompt is ${p.length} chars; cap is ${MAX_PROMPT_CHARS}`);
 });
 
+test("PROMPT_GROW_PROJECT + max-sized focus suffix fits under MAX_PROMPT_CHARS", () => {
+    // Worst-case prompt construction: baked PROMPT_GROW_PROJECT plus the
+    // " Focus this run on: <focus>" suffix, with focus at the runtime
+    // cap (MAX_FOCUS_CHARS). If someone bloats PROMPT_GROW_PROJECT to
+    // ≥ ~63 KiB, this test fires BEFORE the runtime "prompt exceeds
+    // 65536 characters" guard would surface — turning a runtime
+    // user-facing failure into a unit-test regression.
+    const SUFFIX_OVERHEAD = " Focus this run on: ".length; // 20 chars
+    const worstCase = PROMPT_GROW_PROJECT.length + SUFFIX_OVERHEAD + MAX_FOCUS_CHARS;
+    assert.ok(
+        worstCase <= MAX_PROMPT_CHARS,
+        `PROMPT_GROW_PROJECT (${PROMPT_GROW_PROJECT.length}) + max focus suffix (${SUFFIX_OVERHEAD + MAX_FOCUS_CHARS}) = ${worstCase}; cap is ${MAX_PROMPT_CHARS}. Trim PROMPT_GROW_PROJECT.`,
+    );
+});
+
 test("GROW_PROJECT_DEFAULTS exposes wider budget than self_improve", () => {
     // Documented contract: max=200 (features take longer than polish
     // iters), min=10 (small backlog drains naturally).

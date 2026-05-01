@@ -111,6 +111,19 @@ HARD RULES:
 - Do not delete or rewrite the project's existing license, README, or CHANGELOG wholesale; surgical edits only.
 - Each iteration is a paid turn — the smallest correct step is the right step.`;
 
+// Literal abort token baked into PROMPT_SELF_IMPROVE. The completion
+// counterpart is DEFAULTS.completion_promise ("COMPLETE") and is reused
+// directly. Centralising the abort token here keeps the warnPromiseDrift
+// call site (in the self_improve handler) and the prompt body in lockstep
+// — if either drifts, the load-time parity guard below throws.
+const BAKED_ABORT_TOKEN = "ABORT_NO_IMPROVEMENTS";
+if (!PROMPT_SELF_IMPROVE.includes(DEFAULTS.completion_promise) ||
+    !PROMPT_SELF_IMPROVE.includes(BAKED_ABORT_TOKEN)) {
+    throw new Error(
+        `handler.mjs: PROMPT_SELF_IMPROVE must contain both "${DEFAULTS.completion_promise}" and "${BAKED_ABORT_TOKEN}" — the self_improve drift warning depends on this invariant.`,
+    );
+}
+
 // Find a slice length ≤ `cut` that doesn't split a UTF-16 surrogate pair
 // (4-byte chars like emoji), so we never produce a lone-surrogate tail.
 function safeSliceEnd(s, cut) {
@@ -854,7 +867,7 @@ export function createRalphController() {
                     log(`self_improve: warning — ${fieldName}=${JSON.stringify(trimmed)} differs from the baked SDLC prompt's "${expected}" emit instruction; ${consequence}.`);
                 };
                 warnPromiseDrift("completion_promise", a.completion_promise, DEFAULTS.completion_promise, "loop may run to max_iterations");
-                warnPromiseDrift("abort_promise", a.abort_promise, "ABORT_NO_IMPROVEMENTS", "abort signal may never fire");
+                warnPromiseDrift("abort_promise", a.abort_promise, BAKED_ABORT_TOKEN, "abort signal may never fire");
                 const parsed = validateArgs({
                     prompt,
                     max_iterations: a.max_iterations ?? SELF_IMPROVE_DEFAULTS.max_iterations,

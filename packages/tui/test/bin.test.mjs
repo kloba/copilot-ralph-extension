@@ -73,6 +73,36 @@ test("bin list: enumerates seeded runs newest-first", () => {
     rmSync(dir, { recursive: true, force: true });
 });
 
+test("bin list --json: empty runs root prints []", () => {
+    const dir = tmp();
+    const r = runBin(["list", "--json"], { RALPH_EVENTS_DIR: dir });
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, "[]\n");
+    assert.deepEqual(JSON.parse(r.stdout), []);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("bin list --json: emits parseable run index newest-first", () => {
+    const dir = tmp();
+    const idx = join(dir, "index.jsonl");
+    writeFileSync(idx,
+        JSON.stringify({ type: "armed", ts: 1000, runId: "ralph_loop-1000", label: "ralph_loop", maxIterations: 5, minIterations: 1 }) + "\n"
+        + JSON.stringify({ type: "armed", ts: 2000, runId: "self_improve-2000", label: "self_improve", maxIterations: 100, minIterations: 5 }) + "\n",
+    );
+    const r = runBin(["list", "--json"], { RALPH_EVENTS_DIR: dir });
+    assert.equal(r.status, 0);
+    const parsed = JSON.parse(r.stdout);
+    assert.ok(Array.isArray(parsed));
+    assert.equal(parsed.length, 2);
+    assert.equal(parsed[0].runId, "self_improve-2000", "newest first");
+    assert.equal(parsed[1].runId, "ralph_loop-1000");
+    for (const e of parsed) {
+        assert.ok(typeof e.runId === "string");
+        assert.ok(typeof e.ts === "number");
+    }
+    rmSync(dir, { recursive: true, force: true });
+});
+
 test("bin replay: prints all events for a run", () => {
     const dir = tmp();
     const runDir = join(dir, "ralph_loop-1");

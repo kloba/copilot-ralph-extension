@@ -26,7 +26,7 @@ const USAGE = `\
 ralph-tui — terminal visualizer for ralph_loop runs (issue #22).
 
 USAGE
-  ralph-tui list
+  ralph-tui list [--json]
   ralph-tui replay <runId>
   ralph-tui watch [runId] [--plain]
   ralph-tui --help | -h
@@ -34,6 +34,8 @@ USAGE
 OPTIONS
   --plain     Emit log lines instead of an interactive UI (auto-enabled
               when stdout is not a TTY, e.g. piped to a file or in CI).
+  --json      For \`list\`: emit the run index as a JSON array (one
+              object per run, newest first) for scripting/dashboards.
   --help, -h  Show this help.
 
 ENV
@@ -65,8 +67,14 @@ function fail(msg, code = 2) {
     process.exit(code);
 }
 
-function cmdList() {
+function cmdList(opts = {}) {
     const entries = readRunIndex();
+    if (opts.json) {
+        // Emit a stable JSON array (newest first) for scripts/dashboards.
+        // Empty index → "[]\n" so consumers can JSON.parse unconditionally.
+        process.stdout.write(JSON.stringify(entries) + "\n");
+        return 0;
+    }
     if (!entries.length) {
         process.stdout.write(
             `No runs found.\nRoot: ${resolveRunsRoot()}\n`
@@ -130,7 +138,7 @@ export async function main(argv = process.argv.slice(2)) {
         return 0;
     }
     switch (cmd) {
-        case "list": return cmdList();
+        case "list": return cmdList({ json: Boolean(flags.json) });
         case "replay": return cmdReplay(positional[0]);
         case "watch": return await cmdWatch(positional[0], { plain: flags.plain });
         default:

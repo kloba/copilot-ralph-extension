@@ -213,6 +213,62 @@ export function readRunIndex({ fs = fsDefault, path = pathDefault, os = osDefaul
 export { makeRunId };
 
 /**
+ * Aggregate stats across all recorded runs. Returns:
+ *   { total, byTool: {...}, byReason: {...}, iters: { mean, max } }
+ *
+ * Reads the run index for tool labels, then per-run events.jsonl to find
+ * each run's terminal event (complete | abort) for reason + iteration.
+ * Best-effort: unreadable run dirs are skipped silently.
+ */
+export function aggregateRuns({
+    fs = fsDefault,
+    path = pathDefault,
+    os = osDefault,
+    env = process.env,
+} = {}) {
+    const entries = readRunIndex({ fs, path, os, env });
+    const root = resolveRunsRoot({ env, os, path });
+    const byTool = {};
+    const byReason = {};
+    const iterCounts = [];
+    for (const e of entries) {
+        const tool = typeof e.label === "string" ? e.label : "unknown";
+        byTool[tool] = (byTool[tool] || 0) + 1;
+        const evPath = path.join(root, e.runId, "events.jsonl");
+        let raw;
+        try { raw = fs.readFileSync(evPath, "utf8"); } catch { continue; }
+        let terminal = null;
+        let lastIter = 0;
+        for (const line of raw.split("\n")) {
+            const t = line.trim();
+            if (!t) continue;
+            let obj;
+            try { obj = JSON.parse(t); } catch { continue; }
+            if (!obj || typeof obj.type !== "string") continue;
+            if (typeof obj.iteration === "number" && obj.iteration > lastIter) lastIter = obj.iteration;
+            if (obj.type === "complete" || obj.type === "abort") terminal = obj;
+        }
+        if (terminal) {
+            const key = typeof terminal.reason === "string" && terminal.reason
+                ? `${terminal.type}:${terminal.reason}`
+                : terminal.type;
+            byReason[key] = (byReason[key] || 0) + 1;
+        }
+        if (lastIter > 0) iterCounts.push(lastIter);
+    }
+    const max = iterCounts.length ? Math.max(...iterCounts) : 0;
+    const mean = iterCounts.length
+        ? iterCounts.reduce((a, b) => a + b, 0) / iterCounts.length
+        : 0;
+    return {
+        total: entries.length,
+        byTool,
+        byReason,
+        iters: { mean, max },
+    };
+}
+
+/**
  * Parse a duration string like "30d", "12h", "5m" into milliseconds.
  * Strict: returns null for invalid input. No fractional values.
  */

@@ -221,3 +221,47 @@ test("parseDuration: accepts d/h/m, rejects garbage", async () => {
     assert.equal(parseDuration(""), null);
     assert.equal(parseDuration(undefined), null);
 });
+
+test("bin stats: empty index prints No runs found", () => {
+    const dir = tmp();
+    const r = runBin(["stats"], { RALPH_EVENTS_DIR: dir });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /No runs found/);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("bin stats: aggregates by tool, reason and iterations", () => {
+    const dir = tmp();
+    // Two runs: one ralph_loop completing, one self_improve aborting.
+    const r1 = "ralph_loop-100";
+    const r2 = "self_improve-200";
+    mkdirSync(join(dir, r1), { recursive: true });
+    mkdirSync(join(dir, r2), { recursive: true });
+    writeFileSync(join(dir, r1, "events.jsonl"),
+        JSON.stringify({ type: "armed", ts: 100, runId: r1, label: "ralph_loop" }) + "\n"
+        + JSON.stringify({ type: "iteration_start", ts: 101, runId: r1, iteration: 1 }) + "\n"
+        + JSON.stringify({ type: "iteration_end", ts: 102, runId: r1, iteration: 1 }) + "\n"
+        + JSON.stringify({ type: "complete", ts: 103, runId: r1, reason: "completion_promise", iteration: 3 }) + "\n",
+    );
+    writeFileSync(join(dir, r2, "events.jsonl"),
+        JSON.stringify({ type: "armed", ts: 200, runId: r2, label: "self_improve" }) + "\n"
+        + JSON.stringify({ type: "abort", ts: 201, runId: r2, reason: "max_tokens", iteration: 7 }) + "\n",
+    );
+    writeFileSync(join(dir, "index.jsonl"),
+        JSON.stringify({ type: "armed", ts: 100, runId: r1, label: "ralph_loop", maxIterations: 5, minIterations: 1 }) + "\n"
+        + JSON.stringify({ type: "armed", ts: 200, runId: r2, label: "self_improve", maxIterations: 100, minIterations: 5 }) + "\n",
+    );
+    const r = runBin(["stats"], { RALPH_EVENTS_DIR: dir });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Totals/);
+    assert.match(r.stdout, /By tool/);
+    assert.match(r.stdout, /By reason/);
+    assert.match(r.stdout, /Iterations/);
+    assert.match(r.stdout, /runs: 2/);
+    assert.match(r.stdout, /ralph_loop: 1/);
+    assert.match(r.stdout, /self_improve: 1/);
+    assert.match(r.stdout, /complete:completion_promise: 1/);
+    assert.match(r.stdout, /abort:max_tokens: 1/);
+    assert.match(r.stdout, /max: 7/);
+    rmSync(dir, { recursive: true, force: true });
+});

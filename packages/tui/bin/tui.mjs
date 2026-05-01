@@ -21,7 +21,7 @@ import fs from "node:fs";
 import nodePath from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { readRunIndex, resolveRunsRoot, resolveRunEventsPath, parseDuration, pruneRuns } from "../src/writer.mjs";
+import { readRunIndex, resolveRunsRoot, resolveRunEventsPath, parseDuration, pruneRuns, aggregateRuns } from "../src/writer.mjs";
 import { readEventsFile, tailEventsFile } from "../src/tail.mjs";
 import { formatEventLine } from "../src/plain.mjs";
 
@@ -34,6 +34,7 @@ USAGE
   ralph-tui watch [runId] [--plain]
   ralph-tui doctor
   ralph-tui prune [--older-than 30d] [--dry-run]
+  ralph-tui stats
   ralph-tui --help | -h
 
 OPTIONS
@@ -253,6 +254,28 @@ export function cmdPrune(opts = {}) {
     return 0;
 }
 
+export function cmdStats() {
+    const stats = aggregateRuns();
+    if (stats.total === 0) {
+        process.stdout.write("No runs found.\n");
+        return 0;
+    }
+    const lines = [];
+    lines.push(`# Totals`);
+    lines.push(`runs: ${stats.total}`);
+    lines.push(`# By tool`);
+    for (const [k, v] of Object.entries(stats.byTool).sort()) lines.push(`${k}: ${v}`);
+    lines.push(`# By reason`);
+    const reasons = Object.entries(stats.byReason).sort();
+    if (reasons.length === 0) lines.push(`(no terminal events recorded)`);
+    else for (const [k, v] of reasons) lines.push(`${k}: ${v}`);
+    lines.push(`# Iterations`);
+    lines.push(`mean: ${stats.iters.mean.toFixed(2)}`);
+    lines.push(`max: ${stats.iters.max}`);
+    process.stdout.write(lines.join("\n") + "\n");
+    return 0;
+}
+
 export async function main(argv = process.argv.slice(2)) {
     const { cmd, positional, flags } = parseArgv(argv);
     if (flags.help || cmd === "help" || (!cmd && !positional.length)) {
@@ -265,6 +288,7 @@ export async function main(argv = process.argv.slice(2)) {
         case "watch": return await cmdWatch(positional[0], { plain: flags.plain });
         case "doctor": return cmdDoctor();
         case "prune": return cmdPrune(flags);
+        case "stats": return cmdStats();
         default:
             fail(`unknown command: ${cmd}\n${USAGE}`);
             return 2;

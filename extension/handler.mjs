@@ -729,19 +729,33 @@ export function createRalphController() {
         // to remove the listener on detach (memory/listener leak). Warn
         // loudly with the event name so the issue is debuggable, then
         // drop the bogus value so detach doesn't crash.
-        const subs = [
-            ["assistant.message", session.on("assistant.message", onAssistantMessage)],
-            ["session.idle", session.on("session.idle", onIdle)],
-            ["abort", session.on("abort", onAbort)],
-        ];
+        //
+        // Subscribe one-at-a-time and collect unsubs eagerly so a throw
+        // mid-subscribe (e.g. session.on for "abort" rejects an unknown
+        // event) leaves NO orphaned listeners behind: we roll back the
+        // ones we already wired before re-throwing. Without this the
+        // first call's listener would leak indefinitely.
         const unsubs = [];
-        for (const [evName, ret] of subs) {
+        const subscribeOrFail = (evName, handler) => {
+            let ret;
+            try {
+                ret = session.on(evName, handler);
+            } catch (err) {
+                for (const u of unsubs) {
+                    try { u(); } catch { /* ignore */ }
+                }
+                sessionRef = null;
+                throw err;
+            }
             if (typeof ret === "function") {
                 unsubs.push(ret);
             } else {
                 log(`ralph: warning — session.on(${JSON.stringify(evName)}) did not return an unsubscribe function (got ${describeArgType(ret)}); listener may leak on detach.`);
             }
-        }
+        };
+        subscribeOrFail("assistant.message", onAssistantMessage);
+        subscribeOrFail("session.idle", onIdle);
+        subscribeOrFail("abort", onAbort);
         const detach = () => {
             // If THIS detach is still the current wiring AND a loop is in flight,
             // finish it gracefully instead of leaving orphaned state behind.

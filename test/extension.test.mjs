@@ -1918,6 +1918,38 @@ test("calling ralph_loop before attach fails fast with a clear error and does NO
     assert.equal(c.state.active, null, "must not leave armed state behind");
 });
 
+test("attach is transactional: if session.on throws mid-subscribe, earlier listeners are rolled back", () => {
+    // Without the rollback, a session.on() that rejects (say) the third
+    // event ("abort") with an unknown-event error would leave the first
+    // two listeners (assistant.message, session.idle) attached to the
+    // session, leaking memory and continuing to fire forever even though
+    // attach() reported failure. Pin the all-or-nothing contract.
+    const calls = [];
+    const session = {
+        send: () => Promise.resolve(),
+        log: () => {},
+        on: (event, _h) => {
+            calls.push(event);
+            if (event === "abort") {
+                throw new Error("simulated unknown event");
+            }
+            // Successful subscribe returns an unsubscribe fn. We track
+            // the unsub call to confirm rollback happened.
+            return () => calls.push(`unsub:${event}`);
+        },
+    };
+    const c = createRalphController();
+    assert.throws(() => c.attach(session), /simulated unknown event/);
+    // Rolled back: the two listeners we did attach must have been
+    // unsubscribed (in some order — implementation can iterate either way).
+    assert.deepEqual(
+        calls.sort(),
+        ["abort", "assistant.message", "session.idle", "unsub:assistant.message", "unsub:session.idle"],
+        "all earlier subscriptions must be rolled back",
+    );
+});
+
+
 test("attach validates session shape (must have send and on)", () => {
     const c = createRalphController();
     assert.throws(() => c.attach(null), /requires a session object/);

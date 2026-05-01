@@ -685,6 +685,33 @@ test("self_improve per-iteration log line uses self_improve label, not ralph_loo
     );
 });
 
+test("arm-time log line '🔁 <label> armed —' carries the calling tool's label", async () => {
+    // The log line emitted during armLoop() (before any iteration runs)
+    // is rendered separately from the per-iteration log; pin both
+    // directions to prevent a regression where one branch loses the
+    // label propagation while the other keeps it.
+    const session1 = makeFakeSession();
+    const c1 = createRalphController();
+    c1.attach(session1);
+    await c1.tools.find((x) => x.name === "ralph_loop").handler({ prompt: "go", max_iterations: 5 });
+    assert.ok(
+        session1.logs.some((l) => /^🔁 ralph_loop armed — /.test(l)),
+        `expected "🔁 ralph_loop armed —" log line, got: ${JSON.stringify(session1.logs)}`,
+    );
+    const session2 = makeFakeSession();
+    const c2 = createRalphController();
+    c2.attach(session2);
+    await c2.tools.find((x) => x.name === "self_improve").handler({ max_iterations: 5 });
+    assert.ok(
+        session2.logs.some((l) => /^🔁 self_improve armed — /.test(l)),
+        `expected "🔁 self_improve armed —" log line, got: ${JSON.stringify(session2.logs)}`,
+    );
+    assert.ok(
+        !session2.logs.some((l) => /^🔁 ralph_loop armed/.test(l)),
+        "must not leak ralph_loop label into a self_improve arm log",
+    );
+});
+
 test("ralph_loop per-iteration log line uses ralph_loop label, not self_improve", async () => {
     // Mirror of the self_improve label test above — when armed via
     // ralph_loop, the iter-log line must read "🔁 ralph_loop iter N/M"

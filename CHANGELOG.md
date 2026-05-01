@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Documentation
+- `README.md` — replace the duplicated `**Contents:**` line
+  pair with a single, accurate ToC. The two lines had drifted:
+  the first was missing `Pause/resume`, the second was
+  missing `Documentation`, `Inspecting a running loop`,
+  `Adaptive budget`, `Development`, and `License`. Readers
+  saw two near-identical bullet lines and either followed a
+  broken link or didn't know the section existed at all. The
+  merged line now includes every top-level (H2) section in
+  document order: What is Ralph? · What's different · Install
+  · Usage · Development · Documentation · Self-improve ·
+  Grow-project · Inspecting a running loop · Adaptive budget
+  · Pause/resume · How it works · Commit attribution · Keep
+  system awake · Troubleshooting · Limitations · Requirements
+  · Changelog · License. Anchors verified against the actual
+  H2 / H3 headings.
+
 ### Tests
 - Add 16 unit tests for `extension/events-emit.mjs`
   (`test/events-emit.test.mjs`). Until now the zero-dep

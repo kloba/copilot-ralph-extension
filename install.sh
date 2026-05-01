@@ -12,6 +12,17 @@ DRY_RUN=0
 TARGET_FLAG=""
 SEEN_DRY_RUN=0
 SEEN_PROJECT=0
+# Reject duplicates so a copy-paste typo (`./install.sh --dry-run --dry-run`)
+# surfaces loudly instead of being silently accepted — the user almost
+# certainly meant a different second flag. Bash indirect ref `${!var}`
+# lets one helper handle every flag's sentinel without per-flag boilerplate.
+reject_duplicate() {
+  local flag="$1" sentinel="$2"
+  if [[ "${!sentinel}" == "1" ]]; then
+    echo "Error: $flag specified more than once." >&2
+    exit 1
+  fi
+}
 for arg in "$@"; do
   case "$arg" in
     --help|-h)
@@ -22,21 +33,12 @@ for arg in "$@"; do
       exit 0
       ;;
     --dry-run)
-      # Reject duplicates so a copy-paste typo (`./install.sh --dry-run
-      # --dry-run`) surfaces loudly instead of being silently accepted.
-      # The user almost certainly meant a different second flag.
-      if [[ "$SEEN_DRY_RUN" == "1" ]]; then
-        echo "Error: --dry-run specified more than once." >&2
-        exit 1
-      fi
+      reject_duplicate --dry-run SEEN_DRY_RUN
       SEEN_DRY_RUN=1
       DRY_RUN=1
       ;;
     --project)
-      if [[ "$SEEN_PROJECT" == "1" ]]; then
-        echo "Error: --project specified more than once." >&2
-        exit 1
-      fi
+      reject_duplicate --project SEEN_PROJECT
       SEEN_PROJECT=1
       TARGET_FLAG="--project"
       ;;

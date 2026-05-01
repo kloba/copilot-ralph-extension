@@ -441,8 +441,8 @@ export function createRalphController() {
         };
         if (note) result.note = truncateNote(note);
         const verb = VERB_BY_REASON[reason] ?? "⏹ stopped";
-        // Collapse note whitespace for the single-line log format (a multi-
-        // line Error stack would otherwise break alignment in the timeline).
+        // Single-line log format: collapse newlines/tabs in note (Error
+        // stacks would otherwise break alignment in the timeline).
         const noteForLog = collapseNote(result.note);
         log(`${verb} ralph_loop after ${iterations} iteration${pluralS(iterations)} (reason: ${reason}${noteForLog ? `, note: ${noteForLog}` : ""}, ${durationMs}ms)`);
         state.active = null;

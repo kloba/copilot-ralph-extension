@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
-const { MAX_PROMISE_CHARS, PREVIEW_CHARS } = __test__;
+const { MAX_PROMISE_CHARS, PREVIEW_CHARS, previewOf } = __test__;
 
 function makeFakeSession({ failSend = false, rejectSend = false, sendErrorMessage } = {}) {
     const sent = [];
@@ -1337,6 +1337,37 @@ test("preview is truncated to PREVIEW_CHARS + ellipsis", async () => {
     assert.equal(controller.state.lastResult.preview.length, 501);
     assert.ok(controller.state.lastResult.preview.endsWith("…"));
 });
+
+test("previewOf: returns '' for empty / null / undefined inputs (defensive)", () => {
+    // previewOf is called on state.lastAssistantContent which can briefly
+    // hold any of these values during a loop's lifecycle (pre-iter-1 reset,
+    // immediately post-arm). Pin the falsy short-circuit so a refactor that
+    // accidentally drops the `!text` guard surfaces here, not as a runtime
+    // TypeError reading `.length` of null.
+    assert.equal(previewOf(""), "");
+    assert.equal(previewOf(null), "");
+    assert.equal(previewOf(undefined), "");
+});
+
+test("previewOf: short text passes through unchanged (no ellipsis added)", () => {
+    // The "…" indicator is reserved for actual truncation. Adding it to
+    // short content would mislead callers (and break tests like the
+    // exact-PREVIEW_CHARS boundary below).
+    assert.equal(previewOf("short"), "short");
+    assert.equal(previewOf("X".repeat(PREVIEW_CHARS)), "X".repeat(PREVIEW_CHARS));
+});
+
+test("previewOf: text exactly PREVIEW_CHARS+1 chars truncates to PREVIEW_CHARS + '…'", () => {
+    // Off-by-one regression guard: `<=` (correct) vs `<` (would add "…"
+    // even at the exact-cap boundary).
+    const overByOne = "X".repeat(PREVIEW_CHARS + 1);
+    const out = previewOf(overByOne);
+    assert.ok(out.endsWith("…"));
+    // PREVIEW_CHARS code units of content + the single "…" character.
+    assert.equal(out.length, PREVIEW_CHARS + 1);
+    assert.equal(out.slice(0, PREVIEW_CHARS), "X".repeat(PREVIEW_CHARS));
+});
+
 
 test("preview does not split UTF-16 surrogate pairs (no lone high surrogate)", async () => {
     // 499 'a's + "🎉" (D83C DF89) + filler. Naive slice(0, 500) would leave

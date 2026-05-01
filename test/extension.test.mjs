@@ -589,6 +589,44 @@ test("min_iterations: stagnation still triggers before min (safety override)", a
     assert.equal(controller.state.lastResult.reason, "stagnation");
 });
 
+test("min_iterations === max_iterations: completion at iter N wins over max cap", async () => {
+    // Boundary: when min === max, the very FIRST iteration eligible for the
+    // completion check is also the LAST iteration overall. The decision
+    // ladder runs completion BEFORE the max cap, so an agent that emits the
+    // promise on iter N must finish "completion_promise", not
+    // "max_iterations". This pins the `>=` (vs `>`) comparison in the min
+    // gate AND the ladder ordering at a single tight boundary.
+    const { session, controller } = await arm({
+        max_iterations: 3,
+        min_iterations: 3,
+    });
+    session.emit("session.idle", { data: {} });
+    runTurn(session, "still working");        // iter 1: i < min, skip
+    runTurn(session, "still working");        // iter 2: i < min, skip
+    runTurn(session, "all done COMPLETE");    // iter 3: i >= min, completion fires
+    assert.equal(controller.state.lastResult.reason, "completion_promise");
+    assert.equal(controller.state.lastResult.iterations, 3);
+});
+
+test("min_iterations === max_iterations: no completion phrase still hits max cap exactly", async () => {
+    // Same boundary, the other branch: if iter N runs without the promise,
+    // the max cap fires on the SAME idle and reports `max_iterations` with
+    // iterations === min === max (no off-by-one — N+1 iterations would
+    // mean the gate let an extra fire through past the cap). Disable
+    // stagnation so identical filler text doesn't pre-empt the max check.
+    const { session, controller } = await arm({
+        max_iterations: 3,
+        min_iterations: 3,
+        stagnation_limit: 0,
+    });
+    session.emit("session.idle", { data: {} });
+    runTurn(session, "still working");
+    runTurn(session, "still working");
+    runTurn(session, "still working");
+    assert.equal(controller.state.lastResult.reason, "max_iterations");
+    assert.equal(controller.state.lastResult.iterations, 3);
+});
+
 test("validateArgs guards against null/undefined/array args", async () => {
     const session = makeFakeSession();
     const c = createRalphController();

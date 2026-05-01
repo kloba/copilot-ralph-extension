@@ -749,6 +749,20 @@ test("ralph_loop stamps state.active.label and lastResult.label", async () => {
     assert.equal(c.state.lastResult.label, "ralph_loop");
 });
 
+test("PROMPT_SELF_IMPROVE does not leak internal tool names (ralph_loop/ralph_stop/self_improve)", () => {
+    // Defence against copy-paste drift: the SDLC prompt is text shown
+    // to the agent doing the work, not to a tool dispatcher. Mentioning
+    // ralph_loop / ralph_stop / self_improve inside it would either
+    // confuse the agent (does it call ralph_stop itself?) or make the
+    // prompt project-specific (the goal is project-AGNOSTIC). Pin
+    // their absence so a future "let's reference the tool by name"
+    // edit fails loudly.
+    const p = PROMPT_SELF_IMPROVE;
+    assert.equal(/\bralph_loop\b/.test(p), false, "PROMPT_SELF_IMPROVE must not mention ralph_loop");
+    assert.equal(/\bralph_stop\b/.test(p), false, "PROMPT_SELF_IMPROVE must not mention ralph_stop");
+    assert.equal(/\bself_improve\b/.test(p), false, "PROMPT_SELF_IMPROVE must not mention self_improve (it IS self_improve)");
+});
+
 test("PROMPT_SELF_IMPROVE mentions every required SDLC category and stage", () => {
     const p = PROMPT_SELF_IMPROVE;
     // Stages

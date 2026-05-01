@@ -681,6 +681,20 @@ test("stagnation streak resets on different response", async () => {
     assert.equal(controller.state.lastResult.iterations, 5);
 });
 
+test("completion_promise wins over max_iterations when both could fire on same idle (boundary)", async () => {
+    // Decision ladder runs completion check BEFORE max check. If the agent
+    // emits the completion phrase on the very iteration where i == max, the
+    // loop must report `completion_promise`, not `max_iterations` — the agent
+    // *did* finish, the cap just happened to coincide.
+    const { session, controller } = await arm({ max_iterations: 3 });
+    session.emit("session.idle", { data: {} });
+    runTurn(session, "still going");
+    runTurn(session, "still going");
+    runTurn(session, "all done COMPLETE");
+    assert.equal(controller.state.lastResult.reason, "completion_promise");
+    assert.equal(controller.state.lastResult.iterations, 3);
+});
+
 test("stagnation_limit=0 disables detection", async () => {
     const { session, controller } = await arm({ max_iterations: 4, stagnation_limit: 0 });
     session.emit("session.idle", { data: {} });

@@ -422,9 +422,8 @@ export function createRalphController() {
         // Ignore sub-agent messages — see isSubAgentEvent() rationale.
         // Otherwise their content would be checked for completion/abort tokens.
         if (isSubAgentEvent(ev)) return;
-        // Mark the in-flight fire as "consumed by the agent" so the next
-        // idle is treated as a real response cycle rather than a spurious
-        // signal that would queue another copy of the prompt.
+        // Mark this fire "consumed" so the next idle is treated as a real
+        // response cycle, not a spurious signal that would queue another copy.
         if (state.active?.fireInFlight) {
             state.active.observedMessageThisFire = true;
         }

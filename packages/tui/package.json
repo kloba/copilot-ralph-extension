@@ -33,7 +33,7 @@
     "test": "node --test test/*.test.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "dependencies": {
     "commander": "^14.0.3",

@@ -5287,6 +5287,104 @@ test("install.sh: rejects duplicate flags and unknown arguments", () => {
     assert.match(unknown.stderr, /unknown argument/);
 });
 
+test("scripts/ralph-tui-fresh.sh: shape, shebang, and only-when-run gate", () => {
+    // Drift guard for the auto-upgrade wrapper. Each assertion below
+    // pins a specific safety property documented in the script's
+    // header comment + the `Auto-upgrade for each run` subsection
+    // of packages/tui/README.md. A refactor that breaks any of these
+    // properties (e.g. firing the upgrade on every subcommand,
+    // dropping `set -euo pipefail`, removing the `|| true` failure
+    // swallow, or relocating the entry point Node script) trips the
+    // matching assertion before merge.
+    const wrapperPath = resolve(REPO_ROOT, "scripts/ralph-tui-fresh.sh");
+    const src = readFileSync(wrapperPath, "utf8");
+    // Shebang — invocation via `./scripts/ralph-tui-fresh.sh` requires
+    // the kernel to find `bash` via env.
+    assert.match(src, /^#!\/usr\/bin\/env bash\n/,
+        "wrapper must start with `#!/usr/bin/env bash` shebang");
+    // Strict mode — install.sh uses the same triple, mirror it so a
+    // future refactor that strips errexit cannot silently let a typo
+    // through.
+    assert.match(src, /^set -euo pipefail$/m,
+        "wrapper must `set -euo pipefail` so typos surface loudly");
+    // Only-when-`run` gate. Pin the literal "$1" branch shape so a
+    // refactor that fires the upgrade on every invocation (which
+    // would make `ralph-tui list` feel laggy) trips this test.
+    assert.match(src, /\[\[ "\$\{1:-\}" == "run" \]\]/,
+        'wrapper must guard the upgrade behind `[[ "${1:-}" == "run" ]]`');
+    // Silent failure mode — pin the `git pull --quiet --ff-only`
+    // followed by `|| true` so a future "simplify" pass that drops
+    // either side (no network = hard failure, dirty tree = hard
+    // failure) trips this test. The `2>/dev/null` is also pinned
+    // because losing it would surface git's "no tracking branch"
+    // message on every run, defeating the silent-on-failure contract.
+    assert.match(src, /git pull --quiet --ff-only/,
+        "wrapper must use `git pull --quiet --ff-only`");
+    assert.match(src, /\) 2>\/dev\/null \|\| true/,
+        "wrapper must redirect stderr and append `|| true` so git failures fall through silently");
+    // Canonical exec line. The exec is what makes the wrapper a true
+    // passthrough: signals reach Node directly, exit code is Node's,
+    // and the wrapper process disappears from `ps`. Pin both the
+    // `exec` keyword and the entry-point path so a relocation of
+    // bin/tui.mjs (or a `node -e` shim) trips this assertion.
+    assert.match(src, /^exec node "\$ROOT\/packages\/tui\/bin\/tui\.mjs" "\$@"$/m,
+        'wrapper must end with `exec node "$ROOT/packages/tui/bin/tui.mjs" "$@"` so signals + exit code propagate from Node, not from bash');
+});
+
+test("scripts/ralph-tui-fresh.sh: file mode includes execute bit", () => {
+    // Without the +x bit, `./scripts/ralph-tui-fresh.sh` from a fresh
+    // clone fails with EACCES even though the shebang line is correct.
+    // chmod is set at file-creation time; this test pins it so a
+    // future commit that recreates the file (e.g. via a string-edit
+    // tool that drops mode bits) doesn't silently regress to 644.
+    const wrapperPath = resolve(REPO_ROOT, "scripts/ralph-tui-fresh.sh");
+    const st = statSync(wrapperPath);
+    // Owner execute bit (0o100). Group/other bits are not pinned —
+    // umask differs per contributor, but +x for owner is mandatory.
+    assert.ok((st.mode & 0o100) !== 0,
+        `scripts/ralph-tui-fresh.sh must be executable (got mode 0${(st.mode & 0o777).toString(8)})`);
+});
+
+test("scripts/ralph-tui-fresh.sh: non-`run` subcommand skips upgrade and passes through to bin/tui.mjs", () => {
+    // End-to-end smoke: invoke the wrapper with `--help` (which is
+    // NOT `run`) and assert that bin/tui.mjs's USAGE is printed and
+    // the exit code is 0. Two failure modes this catches:
+    //   1. The only-when-`run` gate broke (fires on `--help`, hangs
+    //      on a network round-trip in CI).
+    //   2. The exec line broke (typoed entry-point path → ENOENT;
+    //      missing `exec` → wrapper process stays alive and signals
+    //      may not propagate cleanly).
+    // Running with `--help` keeps the test sub-second and offline.
+    const r = spawnSync(
+        "bash",
+        [resolve(REPO_ROOT, "scripts/ralph-tui-fresh.sh"), "--help"],
+        { encoding: "utf8", timeout: 10_000 },
+    );
+    assert.equal(r.status, 0, `--help exited ${r.status}; stderr=${r.stderr}`);
+    assert.match(r.stdout, /ralph-tui — terminal visualizer/,
+        "wrapper must passthrough `--help` to bin/tui.mjs's USAGE block");
+});
+
+test("packages/tui/README.md: documents the ralph-tui-fresh.sh wrapper", () => {
+    // Drift guard. The wrapper is opt-in — users have to alias it in
+    // their dotfiles — so the README subsection is the ONLY discovery
+    // path. A refactor that ships scripts/ralph-tui-fresh.sh without
+    // documenting it (or vice versa) silently breaks adoption.
+    const readme = readFileSync(
+        resolve(REPO_ROOT, "packages/tui/README.md"),
+        "utf8",
+    );
+    assert.match(readme, /## Auto-upgrade for each `run`/,
+        "packages/tui/README.md must keep the `## Auto-upgrade for each \\`run\\`` section");
+    assert.match(readme, /scripts\/ralph-tui-fresh\.sh/,
+        "the Auto-upgrade section must name the wrapper script by its repo-relative path");
+    // Pin the ff-only contract in prose so a future doc-trim that
+    // drops the safety story (and inadvertently signals "this can
+    // clobber your local edits") trips this test.
+    assert.match(readme, /--ff-only/,
+        "the Auto-upgrade section must explain that `--ff-only` refuses to clobber local work-in-progress");
+});
+
 test(".gitignore protects against committing common secret-bearing files", () => {
     // Regression guard: `.gitignore` started minimal (4 lines) and any
     // future "simplify" PR that drops `.env*` could let a contributor's

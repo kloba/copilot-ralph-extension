@@ -3,6 +3,61 @@
 ## Unreleased
 
 ### Features
+- `ralph-tui run` now mounts the Ink TUI by default on a TTY,
+  giving daemon / live-loop users the iter -> stage -> substage
+  hierarchy + backlog pressure header that issue #48 specced
+  (slice 8). Headless mode kicks in automatically when stdout
+  isn't a TTY (CI / pipe / asciinema), or explicitly via the
+  new `--headless` flag (alias for `--plain`) for `nohup`-style
+  daemons. Falls back to plain text when the `ink` dependency
+  isn't installed (ERR_MODULE_NOT_FOUND on a fresh checkout).
+  Fixes three runtime concerns in the same slice:
+  * Runner `# iter N/M` writes are routed to a no-op stdout
+    sink while the TUI is mounted so they no longer interleave
+    with Ink frames; stderr stays attached so unrecoverable
+    errors still surface above the TUI.
+  * Ctrl-C in Ink raw mode (which does NOT produce SIGINT,
+    only the `\x03` byte) is caught by a new useInput handler
+    that calls `runner.stopRun(runId, { reason: "signal_SIGINT" })`
+    via a new `onUserAbort` callback prop on `<App>`. The same
+    callback fires on `q` with reason `user_quit`, so pressing
+    `q` to "quit the TUI" while a self-improve loop is burning
+    tokens now also stops the run instead of orphaning it.
+  * The TUI's tail starts from offset 0 of `events.jsonl`; we
+    seed `<App>` with an empty initial array (instead of
+    pre-reading the file) so events written before mount don't
+    appear twice and inflate the foldEvents snapshot.
+  New module `packages/tui/src/run-ui.mjs` (lazy-loaded by
+  `bin/tui.mjs`) holds the mount logic; the `<App>` keybinding
+  hook is back-compat — `ralph-tui watch` callers that omit
+  `onUserAbort` just get exit-only behaviour as before.
+
+- `scripts/ralph-tui-fresh.sh` — new Bash wrapper that runs
+  `git pull --quiet --ff-only` from the repo root before
+  `exec node packages/tui/bin/tui.mjs` *only* when the first arg
+  is `run`, so each long-haul out-of-session loop (e.g.
+  `ralph-tui run --self-improve` draining a backlog over hours)
+  starts on the freshest source. Quick read-only subcommands
+  (`list`, `replay`, `watch`, `doctor`, `prune`, `stats`,
+  `where`) skip the upgrade — they're millisecond-fast read ops
+  on local files and adding a `git pull` would just make `list`
+  feel laggy. Self-overwrite races are impossible by
+  construction: the TUI binary is loaded into memory once at
+  Node startup and the wrapper's `git pull` lands the new source
+  *before* `exec node` imports the module graph. Mid-loop
+  version skew is impossible for the same reason — iter 1 and
+  iter 100 of a single run always execute identical code. All
+  failure modes are silent (`|| true`): no network, dirty
+  working tree, non-fast-forward, detached HEAD all fall through
+  to the existing checkout. `--ff-only` deliberately refuses to
+  clobber local work-in-progress. Documented under a new
+  `Auto-upgrade for each run` subsection of
+  `packages/tui/README.md`. Pinned by drift-guard tests in
+  `test/extension.test.mjs` covering shebang, executable bit,
+  `set -euo pipefail`, the only-when-`run` gate, the silent
+  `|| true`, and the canonical
+  `exec node "$ROOT/packages/tui/bin/tui.mjs" "$@"` line.
+
 - `ralph-tui watch` Ink components now render the 3-level hierarchy
   the runner has been emitting since slices 4–6 (issue #48 slice 7).
   `<Header>` gained a backlog row showing

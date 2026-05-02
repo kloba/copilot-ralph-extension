@@ -125,6 +125,47 @@ Useful for:
 * Replaying a captured `events.jsonl` from a teammate (drop their
   file at `$RALPH_EVENTS_DIR/<runId>/events.jsonl`).
 
+## Auto-upgrade for each `run`
+
+Long-haul `ralph-tui run` loops (e.g. `--self-improve` draining a
+backlog over hours) often want to start on the freshest source. The
+repo ships `scripts/ralph-tui-fresh.sh` — a thin Bash wrapper that
+runs `git pull --quiet --ff-only` from the repo root *only* when the
+first arg is `run`, then `exec`s `node packages/tui/bin/tui.mjs`
+with the same args.
+
+```sh
+# In ~/.zshrc or ~/.bashrc — point at your local clone:
+alias ralph-tui="$HOME/repos/copilot-ralph-extension/scripts/ralph-tui-fresh.sh"
+
+# Then long-haul runs auto-upgrade before iter 1:
+ralph-tui run --self-improve --continue
+
+# Quick read-only subcommands skip the upgrade (no `git pull` cost):
+ralph-tui list
+ralph-tui watch
+```
+
+Why this is safe:
+
+* **No self-overwrite race.** The TUI binary is loaded into memory
+  once at Node startup. The wrapper's `git pull` lands the new
+  source *before* `exec node …/tui.mjs` imports the module graph —
+  there's no window in which Node sees a half-written file.
+* **No mid-loop version skew.** Once Node has imported the module
+  graph, a concurrent `git pull` in another shell cannot change
+  the running iter's behaviour. Iter 1 and iter 100 of a single
+  run always execute identical code.
+* **Silent on failure.** No network, dirty tree, non-fast-forward,
+  or detached HEAD all silently fall through (`|| true`) to the
+  existing checkout. The wrapper never blocks a run on git
+  issues, and `--ff-only` deliberately refuses to clobber local
+  work-in-progress.
+
+This is opt-in by design: pinning a specific commit (e.g. for
+reproducibility in CI) is still possible by invoking
+`node packages/tui/bin/tui.mjs run …` directly.
+
 ## Architecture notes
 
 * `src/events.mjs` — pure event contract: `EVENT_TYPES`, `makeRunId`,

@@ -9,6 +9,20 @@ on:
 permissions:
   contents: read
 
+# Cancel redundant in-progress runs on the SAME branch / PR so a
+# fast-typing contributor pushing several commits to a PR doesn't
+# burn one runner-pair (Node 20 + Node 22) per push. The grouping
+# rule:
+#   - PR pushes share `CI-refs/pull/<n>/merge` → cancel old run.
+#   - main-branch pushes share `CI-refs/heads/main` but explicitly
+#     do NOT cancel (cancel-in-progress=false on push events) so
+#     the green/red signal on every merged commit is preserved.
+# Manual workflow_dispatch / schedule runs (none today) would also
+# be guarded by the per-event cancel toggle if added later.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: test (Node ${{ matrix.node }})

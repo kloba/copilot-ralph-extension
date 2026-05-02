@@ -8207,3 +8207,38 @@ test("self_improve + grow_project tool descriptions document the min_iterations 
         );
     }
 });
+
+test("ci.yml has a concurrency block that cancels stale PR runs but preserves main-branch signal", async () => {
+    // Iter 92 added a concurrency block to ci.yml so a contributor
+    // pushing several commits to the same PR cancels in-flight
+    // runs (saving 2 runner pairs × Node 20 + Node 22 per push).
+    // Main-branch pushes intentionally do NOT cancel (the green /
+    // red signal on each merged commit is part of the project's
+    // changelog discipline — Conventional Commits + Keep-a-
+    // Changelog rely on every main HEAD having a fresh CI verdict).
+    //
+    // Drift guard pins:
+    //   1. concurrency.group references both github.workflow and
+    //      github.ref (so the grouping is per-workflow per-ref, not
+    //      a single global lock that would serialize PRs);
+    //   2. cancel-in-progress is gated on pull_request (any
+    //      regression that flips it to a literal `true` would
+    //      start cancelling main-branch CI signal).
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const url = await import("node:url");
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const repoRoot = path.join(here, "..");
+    const ci = await fs.readFile(path.join(repoRoot, ".github/workflows/ci.yml"), "utf8");
+    assert.match(ci, /^concurrency:/m, "ci.yml must declare a top-level concurrency block");
+    assert.match(
+        ci,
+        /group:\s*\$\{\{\s*github\.workflow\s*\}\}-\$\{\{\s*github\.ref\s*\}\}/,
+        "concurrency.group must combine github.workflow + github.ref so PR runs share a group across pushes but distinct workflows / branches don't collide",
+    );
+    assert.match(
+        ci,
+        /cancel-in-progress:\s*\$\{\{\s*github\.event_name\s*==\s*'pull_request'\s*\}\}/,
+        "cancel-in-progress must be gated on pull_request — main pushes must NEVER cancel an in-flight CI run, otherwise the green/red signal on merged commits is silently lost",
+    );
+});

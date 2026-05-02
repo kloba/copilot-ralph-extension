@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Internal
+- `.github/workflows/ci.yml` now declares a `concurrency` block
+  so a fast-typing contributor pushing several commits to the
+  same PR cancels old in-progress CI runs (saving the Node 20 +
+  Node 22 runner pair per push). Grouping is per-workflow
+  per-ref so distinct PRs / branches still run independently;
+  cancel-in-progress is gated on `github.event_name ==
+  'pull_request'` so main-branch pushes are never cancelled —
+  preserving the per-merged-commit green/red CI signal that
+  the Conventional Commits + Keep-a-Changelog release flow
+  depends on. Drift-guard test pins both halves (group key
+  shape AND the pull_request cancel gate).
+
 ### Documentation
 - The `self_improve` and `grow_project` tool descriptions now
   document the `min_iterations` default-clamp behaviour

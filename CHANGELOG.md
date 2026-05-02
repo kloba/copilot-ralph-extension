@@ -395,6 +395,21 @@
   time instead of as a misleading green check on `main`.
 
 ### Documentation
+- AGENTS.md's "Section names (in order)" chain now matches the
+  actual order observed in `CHANGELOG.md`'s `## Unreleased`
+  block, and now documents the `### Tests` and `### CI`
+  sections that were previously omitted from the chain. Adds a
+  drift-guard test that pins both files in lockstep — every
+  section heading the current top sub-batch of `## Unreleased`
+  uses must (a) be documented in AGENTS.md and (b) appear in
+  the relative order AGENTS.md declares. Older sub-batches and
+  legacy section names (`Changes`, `Hardening (post-0.6.0)`,
+  `Tests / docs`) are silently skipped so the guard catches new
+  drift at the top without forcing a retroactive rewrite of
+  already-accumulated entries. Also replaces a stale README
+  example referencing a hypothetical `RALPH_NO_UPDATE_CHECK`
+  with the real opt-out `RALPH_NO_ATTRIBUTION` env var.
+
 - `docs/RELEASING.md`'s end-user pinning curl loop now uses
   the leaf-first order (`events-emit.mjs handler.mjs
   extension.mjs`) — entry point LAST — that `install.sh`'s

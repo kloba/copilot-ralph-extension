@@ -9600,3 +9600,90 @@ test("install.sh --dry-run: distinguishes (none) from (unknown) when target hand
         rmSync(sandboxHome, { recursive: true, force: true });
     }
 });
+
+test("AGENTS.md section-name order matches the order used in CHANGELOG.md's ## Unreleased block", () => {
+    // Iter 134 — drift guard. AGENTS.md's "Section names (in order)"
+    // line is the canonical contract for new CHANGELOG entries:
+    // contributors (and self-improve loop iters) consult it to know
+    // where to insert a new section without re-reading the entire
+    // file. Before this iter, AGENTS.md and the actual CHANGELOG had
+    // diverged on TWO points:
+    //   (1) AGENTS.md placed `Documentation` BEFORE `Internal`, but
+    //       every release section in CHANGELOG.md (and `## Unreleased`)
+    //       has used `Internal` before `Documentation` for many iters.
+    //   (2) AGENTS.md never mentioned `### Tests`, even though the
+    //       project routinely emits `test:` Conventional Commit
+    //       entries that land under their own section.
+    // A new contributor reading AGENTS.md would file `Tests` content
+    // under `Internal` (or invent a new section), and would put
+    // `Documentation` above `Internal` — silently fragmenting future
+    // release notes. This test pins both files in lockstep.
+    const agentsMd = readFileSync(resolve(REPO_ROOT, "AGENTS.md"), "utf8");
+    // Extract the canonical section-name chain from AGENTS.md.
+    // Format: "`Breaking` → `Features` → `Fixes` → ... ." Captures the
+    // backtick-wrapped tokens in order.
+    const orderMatch = agentsMd.match(/Section names \(in order\)[\s\S]*?\n\n([\s\S]+?)\. Skip empty sections\./);
+    assert.ok(orderMatch, "AGENTS.md must contain a 'Section names (in order)' chain");
+    const declaredOrder = [...orderMatch[1].matchAll(/`([A-Z][a-zA-Z]+)`/g)].map((m) => m[1]);
+    assert.ok(declaredOrder.length >= 5, `AGENTS.md must list ≥5 section names; got ${declaredOrder.join(", ")}`);
+    // Sanity: must include the four sections currently present in
+    // ## Unreleased — without these, the contract is meaningless.
+    for (const required of ["Features", "Fixes", "Internal", "Tests", "Documentation"]) {
+        assert.ok(
+            declaredOrder.includes(required),
+            `AGENTS.md section-name chain must include "${required}" — found ${declaredOrder.join(", ")}`,
+        );
+    }
+    // Pin the relative position constraints that previously drifted.
+    const idx = (s) => declaredOrder.indexOf(s);
+    assert.ok(idx("Internal") < idx("Documentation"),
+        `AGENTS.md must place "Internal" BEFORE "Documentation" (matches actual CHANGELOG.md ## Unreleased order); got ${declaredOrder.join(", ")}`);
+    assert.ok(idx("Tests") < idx("Documentation"),
+        `AGENTS.md must place "Tests" BEFORE "Documentation"; got ${declaredOrder.join(", ")}`);
+    // Now extract CHANGELOG ## Unreleased's actual ### heading order
+    // and assert it respects AGENTS.md's chain.
+    const changelog = readFileSync(resolve(REPO_ROOT, "CHANGELOG.md"), "utf8");
+    const unreleasedBlock = changelog.match(/## Unreleased\n([\s\S]+?)\n## /);
+    assert.ok(unreleasedBlock, "CHANGELOG.md must have a ## Unreleased block followed by another ## heading");
+    const unreleasedHeadings = [...unreleasedBlock[1].matchAll(/^### ([A-Z][a-zA-Z]+)/gm)].map((m) => m[1]);
+    assert.ok(unreleasedHeadings.length >= 1, "## Unreleased must contain at least one ### subsection");
+    // Every ### heading in ## Unreleased that AGENTS.md DOES document
+    // must respect AGENTS.md's relative order; legacy headings older
+    // batches use that AGENTS.md doesn't document (e.g. "Changes",
+    // "Hardening (post-0.6.0)", "Tests / docs") are silently skipped
+    // — we don't want to force a retroactive rewrite of old
+    // sub-batches under ## Unreleased that have already been
+    // released downstream as draft notes. Going forward, every NEW
+    // section must be documented in AGENTS.md AND honoured in
+    // ## Unreleased's first-seen ordering.
+    const knownHeadings = unreleasedHeadings.filter((h) => declaredOrder.includes(h));
+    // Pairwise on first occurrences only: a multi-batch ## Unreleased
+    // can repeat the same heading several times (one per sub-batch);
+    // we only enforce that the FIRST appearance of each section
+    // respects AGENTS.md's chain. This catches new drift at the top
+    // of ## Unreleased without forcing churn rewrites of older
+    // sub-batches farther down.
+    // The ## Unreleased block can stack multiple historical
+    // sub-batches (when several iters' worth of entries accumulate
+    // before a release cut). We only enforce ordering on the
+    // CURRENT (top) sub-batch — defined as the prefix of headings
+    // up to (and excluding) the first repeated heading. Once a
+    // section name re-appears, we know we've crossed into an older
+    // sub-batch and stop checking — older sub-batches predate this
+    // ordering convention and we don't want to force a churn rewrite.
+    const seen = new Set();
+    const topBatch = [];
+    for (const h of knownHeadings) {
+        if (seen.has(h)) break;
+        seen.add(h);
+        topBatch.push(h);
+    }
+    for (let i = 0; i + 1 < topBatch.length; i += 1) {
+        const a = topBatch[i];
+        const b = topBatch[i + 1];
+        assert.ok(
+            idx(a) < idx(b),
+            `CHANGELOG.md ## Unreleased section order violates AGENTS.md: "${a}" appears before "${b}" in the current sub-batch but AGENTS.md says "${b}" comes first. Reorder ## Unreleased.`,
+        );
+    }
+});

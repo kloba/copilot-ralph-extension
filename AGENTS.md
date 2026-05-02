@@ -136,7 +136,13 @@ has no matching section.
 ### Fixes
 - …
 
-### Breaking
+### Internal
+- …
+
+### Tests
+- …
+
+### Documentation
 - …
 
 ## 0.7.0 — 2026-05-15
@@ -148,13 +154,53 @@ has no matching section.
 ### Section names (in order)
 
 `Breaking` → `Features` → `Fixes` → `Performance` → `Refactor` →
-`Documentation` → `Internal`. Skip empty sections.
+`Internal` → `Tests` → `CI` → `Documentation`. Skip empty sections.
+
+This is the order actually used by `## Unreleased` in
+`CHANGELOG.md` — pinned by a drift-guard test
+(`test/extension.test.mjs`: "AGENTS.md section-name order matches
+the order used in CHANGELOG.md's `## Unreleased` block"). New
+sections must be added to AGENTS.md AND respected at the
+position shown when next inserted into `## Unreleased`. The
+guard only enforces the relative order of the FIRST occurrence
+of each section in `## Unreleased` so a multi-batch unreleased
+block (e.g. when several iters have stacked entries before the
+next release cut) can keep older sub-batches intact while still
+catching new drift at the top.
+
+The placement reasoning:
+
+- `Breaking` first so a release-note reader sees compatibility
+  warnings before any other change.
+- `Features` / `Fixes` / `Performance` / `Refactor` cover
+  user-facing source changes in decreasing order of "did the
+  user need to know about this".
+- `Internal` covers under-the-hood changes that don't directly
+  affect public surface (helpers extracted, drift-guard tests
+  reorganised, build hygiene). Goes BEFORE `Tests` so the
+  reasoning for a behaviour change sits next to the behaviour
+  change itself.
+- `Tests` covers test-only commits (regression pins, drift
+  guards, coverage backfills). Separated from `Internal`
+  because `test:` is its own Conventional Commits type and
+  reads as a distinct slice of work.
+- `CI` covers CI workflow changes (`.github/workflows/`,
+  `scripts/check.mjs`). Per AGENTS.md's commit-type table
+  `ci:` commits don't bump the version, but when their effect
+  is user-visible (e.g. matrix Node version bump that changes
+  contributor expectations), a `### CI` entry surfaces it.
+  Goes after `Tests` because CI changes typically validate
+  test/source changes already documented above.
+- `Documentation` last because documentation is the "settled"
+  artifact: it describes what the section above already
+  shipped.
 
 ### Per-entry rules
 
 - Reference the issue or PR (`(issue #25)` or `(#42)`).
 - Write what the user observes, not the diff. ("Adds opt-out env var
-  `RALPH_NO_UPDATE_CHECK`" — not "added new branch in handler.mjs").
+  `RALPH_NO_ATTRIBUTION` to suppress the second `copilot-ralph`
+  trailer" — not "added new branch in handler.mjs").
 - Wrap prose at ~72 chars for readable git diffs.
 
 ### Release flow

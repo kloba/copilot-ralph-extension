@@ -1304,3 +1304,146 @@ test("main: 'claude --help' surfaces the run-style flags", () => {
     assert.equal(r.status, 0);
     assert.match(r.stdout, /--self-improve/);
     assert.match(r.stdout, /--grow-project/);});
+
+// ─── --min N flag ─────────────────────────────────────────────────
+//
+// `--min N` is a token-suppression floor that mirrors `--max N`. It
+// gates when the runner honors COMPLETE / abort tokens. Default 1
+// preserves pre-flag behavior; 0 is a kill-switch ("disable
+// early-stop entirely"); anything else must satisfy 1 ≤ N ≤ max.
+
+test("parseArgv: --min N parses as a value flag (number stays string)", () => {
+    const r = parseArgv(["run", "--self-improve", "--min", "5"]);
+    assert.equal(r.cmd, "run");
+    assert.equal(r.flags["self-improve"], true);
+    assert.equal(r.flags.min, "5");
+});
+
+test("parseArgv: --min=N (equals form) also parses", () => {
+    const r = parseArgv(["run", "--self-improve", "--min=3"]);
+    assert.equal(r.flags.min, "3");
+});
+
+test("parseArgv: --min 0 (disable sentinel) parses", () => {
+    const r = parseArgv(["run", "--self-improve", "--min", "0"]);
+    assert.equal(r.flags.min, "0");
+});
+
+test("USAGE documents --min option for run", () => {
+    const r = runBin(["--help"]);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /--min N/);
+    // Mention the 0 sentinel explicitly so users can find the
+    // kill-switch from --help alone.
+    assert.match(r.stdout, /disable early-stop/);
+});
+
+test("USAGE shows --min in the run signature alongside --max", () => {
+    const r = runBin(["--help"]);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /\[--max N\] \[--min N\]/);
+});
+
+test("run --min: rejects non-integer with a friendly error and exit code 2", () => {
+    // Use --headless so the run path doesn't try to mount Ink in a
+    // non-TTY test process; we want the validation to fire BEFORE
+    // any runtime mount anyway, but be defensive.
+    const r = runBin(
+        ["run", "--self-improve", "--min", "foo", "--headless"],
+        { AUTOPILOT_RUNS_DIR: tmp() },
+    );
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /run --min/);
+    assert.match(r.stderr, /expected 0/);
+});
+
+test("run --min: rejects negative integer", () => {
+    const r = runBin(
+        ["run", "--self-improve", "--min", "-1", "--headless"],
+        { AUTOPILOT_RUNS_DIR: tmp() },
+    );
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /run --min/);
+});
+
+test("run --min: rejects min > max with a max-aware error message", () => {
+    const r = runBin(
+        ["run", "--self-improve", "--max", "5", "--min", "6", "--headless"],
+        { AUTOPILOT_RUNS_DIR: tmp() },
+    );
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /run --min/);
+    assert.match(r.stderr, /max=5/);
+});
+
+test("run --min: bare --min (no value) is rejected", () => {
+    const r = runBin(
+        ["run", "--self-improve", "--min", "--headless"],
+        { AUTOPILOT_RUNS_DIR: tmp() },
+    );
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /run --min/);
+    assert.match(r.stderr, /requires an integer value/);
+});
+
+test("run --status: summary surfaces min when set", () => {
+    // Write a synthetic state.json so the --status path doesn't have
+    // to launch a real run. Pin the new `min=…` field (and the
+    // already-present iter/max fields) so a future drift in the
+    // summary format breaks loudly. Existing summary tests don't pin
+    // the format at all — this one establishes the contract.
+    const dir = tmp();
+    const runId = "test-status-min-1";
+    mkdirSync(join(dir, runId), { recursive: true });
+    const state = {
+        runId,
+        mode: "self-improve",
+        contextMode: "fresh",
+        resetOn: "iter",
+        startedAt: 1000,
+        max: 10,
+        min: 3,
+        iter: 0,
+        paused: false,
+        stopRequested: false,
+        terminated: false,
+        terminationReason: null,
+        sessionId: null,
+        totalPausedMs: 0,
+    };
+    writeFileSync(join(dir, runId, "state.json"), JSON.stringify(state));
+
+    const r = runBin(["run", "--status", runId], { AUTOPILOT_RUNS_DIR: dir });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /min=3/);
+    assert.match(r.stdout, /iter=0\/10/);
+});
+
+test("run --status: summary omits min for legacy state.json without the field (back-compat)", () => {
+    // Pin that pre-feature state.json files (no `min` key) still
+    // produce a clean summary line. Without the Number.isFinite
+    // guard, the printer would emit `min=undefined` or trip a JS
+    // error, breaking dashboards built against existing runs.
+    const dir = tmp();
+    const runId = "test-status-legacy-1";
+    mkdirSync(join(dir, runId), { recursive: true });
+    const state = {
+        runId,
+        mode: "self-improve",
+        contextMode: "fresh",
+        startedAt: 1000,
+        max: 10,
+        iter: 0,
+        paused: false,
+        stopRequested: false,
+        terminated: false,
+        terminationReason: null,
+        sessionId: null,
+    };
+    writeFileSync(join(dir, runId, "state.json"), JSON.stringify(state));
+
+    const r = runBin(["run", "--status", runId], { AUTOPILOT_RUNS_DIR: dir });
+    assert.equal(r.status, 0);
+    assert.doesNotMatch(r.stdout, /min=/, "legacy state without `min` must not print `min=…`");
+    assert.match(r.stdout, /iter=0\/10/);
+});

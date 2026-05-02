@@ -93,7 +93,7 @@ USAGE
   autopilot where
   autopilot run (--self-improve | --grow-project | --prompt TEXT)
                 [--reset-on={workitem|iter|never}]
-                [--max N] [--focus TEXT] [--headless | --plain]
+                [--max N] [--min N] [--focus TEXT] [--headless | --plain]
                 [--completion-promise TOKEN] [--abort-promise TOKEN]
   autopilot run --pause <runId>
   autopilot run --resume <runId>
@@ -126,6 +126,19 @@ OPTIONS
   --max N     For \`run\`: iteration cap (default 100; default 1000 —
               effectively unbounded — for --self-improve since the
               loop is scope-driven, not iter-driven; max 1000).
+  --min N     For \`run\`: floor on iteration count BEFORE the runner
+              honors the completion / abort tokens (default 1 — match
+              the historical behavior). Tokens emitted on \`iter < N\`
+              are logged and ignored, the loop keeps running. Pass
+              \`--min 0\` as the "disable early-stop" sentinel: the
+              loop runs all the way to --max, ignoring both tokens
+              entirely. Useful for self-improve runs where the agent
+              fat-iters through the whole SDLC and emits COMPLETE in
+              iter 1 even though more passes were wanted. Must be 0
+              or in [1, max]. NOTE: under the default --reset-on=workitem,
+              extra iters start a fresh Copilot session each time —
+              use --reset-on=never if you want N continuations of the
+              SAME conversation rather than N independent retries.
   --focus TEXT  For \`run\`: focus suffix appended to the SDLC prompt
               (max 2000 chars). Ignored when --prompt is set.
   --completion-promise TOKEN  For \`run\`: substring whose presence in
@@ -171,12 +184,12 @@ ENV
  *  Supports `--flag`, `--flag=value`, and `--flag value` for the
  *  known value-taking flags listed in `VALUE_FLAGS` below
  *  (currently: --older-than for `prune`, --limit for `list`, plus
- *  the `run` subcommand's --max, --focus, --prompt,
+ *  the `run` subcommand's --max, --min, --focus, --prompt,
  *  --completion-promise, --abort-promise, --reset-on, --pause,
  *  --resume, --stop, --status). When adding a new value flag, append
  *  it to `VALUE_FLAGS` AND update the USAGE block above so
  *  `autopilot --help` keeps matching the parser. */
-const VALUE_FLAGS = new Set(["older-than", "limit", "max", "focus", "prompt", "completion-promise", "abort-promise", "pause", "resume", "stop", "status", "reset-on"]);
+const VALUE_FLAGS = new Set(["older-than", "limit", "max", "min", "focus", "prompt", "completion-promise", "abort-promise", "pause", "resume", "stop", "status", "reset-on"]);
 
 /** Default `--max` iterations per loop mode for `autopilot run`.
  *
@@ -724,6 +737,7 @@ export async function cmdRun(flags) {
             else if (sibling === "resume") after = runner.resumeRun(runId);
             else if (sibling === "stop") after = runner.stopRun(runId);
             const summary = `runId=${after.runId} mode=${after.mode} ctx=${after.contextMode} iter=${after.iter}/${after.max}`
+                + (Number.isFinite(after.min) ? ` min=${after.min}` : "")
                 + ` paused=${after.paused ? "yes" : "no"}`
                 + ` stopRequested=${after.stopRequested ? "yes" : "no"}`
                 + (after.terminated ? ` terminated=${after.terminationReason}` : "")
@@ -812,6 +826,23 @@ export async function cmdRun(flags) {
         max = n;
     } else {
         max = defaultMaxIterationsFor(mode, runner);
+    }
+
+    // `--min N` floor on iteration count BEFORE the runner honors
+    // the completion / abort tokens. Default 1 = byte-identical to
+    // pre-flag behavior. `0` is the "disable early-stop" sentinel
+    // (mirrors stagnation_limit=0 in ralph_loop). Anything else
+    // must satisfy `1 <= N <= max` — `N > max` would silently turn
+    // the flag into a no-op which is worse than rejecting up-front.
+    let min = 1;
+    if (flags.min !== undefined) {
+        if (flags.min === true) { fail(`run --min: requires an integer value (use 0 to disable early-stop)`); return 2; }
+        const n = Number(String(flags.min).trim());
+        if (!Number.isInteger(n) || n < 0 || (n > 0 && n > max)) {
+            fail(`run --min: expected 0 (disable early-stop) or integer in [1, max=${max}], got '${flags.min}'`);
+            return 2;
+        }
+        min = n;
     }
 
     const focus = flags.focus !== undefined && flags.focus !== true ? String(flags.focus) : undefined;
@@ -923,6 +954,7 @@ export async function cmdRun(flags) {
             prompt: promptText,
             focus,
             max,
+            min,
             completionPromise,
             abortPromise: abortPromise ?? undefined,
             worktree,

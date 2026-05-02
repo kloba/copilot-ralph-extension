@@ -2724,3 +2724,317 @@ test("runOneIteration: inline fallback returns agent.defaultBin when nothing els
     });
     assert.equal(captured.bin, "fallback-default");
 });
+
+// ─── --min N: token-suppression floor (issue: --min flag) ─────────
+//
+// `min` gates the per-iter completion / abort token detection.
+// Default is 1 (byte-identical to pre-flag behavior). Higher values
+// force the loop to keep iterating even when the agent emits the
+// completion / abort token early — useful for self-improve runs
+// where the agent fat-iters through the whole SDLC and emits
+// COMPLETE in iter 1 even though more passes were wanted. `0` is a
+// kill-switch for early-stop entirely (loop runs to `max`,
+// terminationReason="max_iterations"). `min > max` is a TypeError
+// at the runner boundary because it would silently turn the flag
+// into a no-op.
+
+test("runRalphTui: min=1 (default) honors COMPLETE on iter 1 (back-compat)", async () => {
+    const argLog = [];
+    const spawn = function (_bin, args) {
+        argLog.push([...args]);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            const events = [
+                JSON.stringify({ type: "assistant.message", data: { content: "fat-iter COMPLETE" } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "S" } }),
+            ];
+            for (const fn of handlers.stdout) fn(Buffer.from(events.join("\n") + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+    const result = await runRalphTui({
+        mode: "self-improve", worktree: false,
+        contextMode: "fresh",
+        max: 5,
+        env: makeEnv(),
+        spawn,
+    });
+    assert.equal(result.terminationReason, "complete");
+    assert.equal(argLog.length, 1, "loop must stop after iter 1 when min defaults to 1");
+});
+
+test("runRalphTui: min=3 suppresses COMPLETE on iters 1-2, honors on iter 3", async () => {
+    const argLog = [];
+    const spawn = function (_bin, args) {
+        argLog.push([...args]);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            const events = [
+                JSON.stringify({ type: "assistant.message", data: { content: `iter ${argLog.length} COMPLETE` } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "S" } }),
+            ];
+            for (const fn of handlers.stdout) fn(Buffer.from(events.join("\n") + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+    const stderrCaptured = [];
+    const result = await runRalphTui({
+        mode: "self-improve", worktree: false,
+        contextMode: "fresh",
+        max: 10,
+        min: 3,
+        env: makeEnv(),
+        spawn,
+        stderr: { write: (s) => { stderrCaptured.push(String(s)); } },
+    });
+    assert.equal(result.terminationReason, "complete");
+    assert.equal(argLog.length, 3, "loop must run iters 1-3 (1 + 2 suppressed + 3 honored)");
+    const notices = stderrCaptured.filter((s) => s.includes("COMPLETE") && s.includes("continuing"));
+    assert.equal(notices.length, 2);
+    assert.match(notices[0], /iter 1.*min 3/);
+    assert.match(notices[1], /iter 2.*min 3/);
+});
+
+test("runRalphTui: min=3 suppresses ABORT_NO_IMPROVEMENTS on iters 1-2, honors on iter 3", async () => {
+    const argLog = [];
+    const spawn = function (_bin, args) {
+        argLog.push([...args]);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            const events = [
+                JSON.stringify({ type: "assistant.message", data: { content: `iter ${argLog.length} ABORT_NO_IMPROVEMENTS` } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "S" } }),
+            ];
+            for (const fn of handlers.stdout) fn(Buffer.from(events.join("\n") + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+    const result = await runRalphTui({
+        mode: "self-improve", worktree: false,
+        contextMode: "fresh",
+        max: 10,
+        min: 3,
+        env: makeEnv(),
+        spawn,
+        stderr: { write: () => {} },
+    });
+    assert.equal(result.terminationReason, "abort");
+    assert.equal(argLog.length, 3);
+});
+
+test("runRalphTui: min=0 disables early-stop entirely (loop runs to max)", async () => {
+    const argLog = [];
+    const spawn = function (_bin, args) {
+        argLog.push([...args]);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            const events = [
+                JSON.stringify({ type: "assistant.message", data: { content: "COMPLETE" } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "S" } }),
+            ];
+            for (const fn of handlers.stdout) fn(Buffer.from(events.join("\n") + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+    const stderrCaptured = [];
+    const result = await runRalphTui({
+        mode: "self-improve", worktree: false,
+        contextMode: "fresh",
+        max: 4,
+        min: 0,
+        env: makeEnv(),
+        spawn,
+        stderr: { write: (s) => { stderrCaptured.push(String(s)); } },
+    });
+    assert.equal(result.terminationReason, "max_iterations");
+    assert.equal(argLog.length, 4, "min=0 must run all 4 iters despite COMPLETE in every response");
+    const notices = stderrCaptured.filter((s) => s.includes("early-stop disabled"));
+    assert.equal(notices.length, 4);
+});
+
+test("runRalphTui: min suppression composes with --reset-on=workitem (no resume across the boundary)", async () => {
+    // Pin the seam the rubber-duck called out: a suppressed COMPLETE
+    // is treated as an iter-exit (which workitem-mode interprets as
+    // an implicit work-item boundary), so iter 2 spawns WITHOUT a
+    // `--resume=<sessionId>` arg even though iter 1 captured one. If
+    // a future refactor accidentally couples session reuse to "did
+    // the agent emit COMPLETE", that regression would silently re-
+    // pollinate iter 2 with iter 1's already-fat-iter context.
+    const argLog = [];
+    const spawn = function (_bin, args) {
+        argLog.push([...args]);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            const events = [
+                JSON.stringify({ type: "assistant.message", data: { content: `iter ${argLog.length} COMPLETE` } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "SID-WORKITEM" } }),
+            ];
+            for (const fn of handlers.stdout) fn(Buffer.from(events.join("\n") + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+    const result = await runRalphTui({
+        mode: "self-improve", worktree: false,
+        resetOn: "workitem",
+        max: 3,
+        min: 3,
+        env: makeEnv(),
+        spawn,
+        stderr: { write: () => {} },
+    });
+    assert.equal(result.terminationReason, "complete");
+    assert.equal(argLog.length, 3);
+    // Iter 2 must NOT carry a --resume=… arg. workitem mode resets
+    // at every iter exit, so a suppressed COMPLETE on iter 1 still
+    // trips the reset before iter 2 spawns.
+    assert.ok(!argLog[1].some((a) => typeof a === "string" && a.startsWith("--resume=")),
+        "iter 2 must spawn without --resume under workitem reset, even when COMPLETE was suppressed on iter 1");
+    assert.ok(!argLog[2].some((a) => typeof a === "string" && a.startsWith("--resume=")),
+        "iter 3 must spawn without --resume (workitem reset every iter exit)");
+});
+
+test("runRalphTui: min suppression composes with --reset-on=never (resume IS preserved)", async () => {
+    // Counterpart to the workitem test: with --reset-on=never the
+    // runner keeps the SAME Copilot session for the whole run, so
+    // iter 2 must resume iter 1's session. Suppressed COMPLETE in
+    // iter 1 must NOT flip this to "fresh session" mode — that
+    // would defeat the user's explicit choice to keep one
+    // continuous reasoning chain.
+    const argLog = [];
+    const spawn = function (_bin, args) {
+        argLog.push([...args]);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            const events = [
+                JSON.stringify({ type: "assistant.message", data: { content: `iter ${argLog.length} COMPLETE` } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "SID-NEVER" } }),
+            ];
+            for (const fn of handlers.stdout) fn(Buffer.from(events.join("\n") + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+    const result = await runRalphTui({
+        mode: "self-improve", worktree: false,
+        resetOn: "never",
+        max: 3,
+        min: 3,
+        env: makeEnv(),
+        spawn,
+        stderr: { write: () => {} },
+    });
+    assert.equal(result.terminationReason, "complete");
+    assert.equal(argLog.length, 3);
+    assert.ok(argLog[1].some((a) => a === "--resume=SID-NEVER"),
+        "iter 2 must resume the captured session under --reset-on=never, even when COMPLETE was suppressed on iter 1");
+    assert.ok(argLog[2].some((a) => a === "--resume=SID-NEVER"),
+        "iter 3 must keep resuming the same session");
+});
+
+test("runRalphTui: min validation — rejects non-integer", () => {
+    return assert.rejects(
+        () => runRalphTui({
+            mode: "self-improve", worktree: false,
+            contextMode: "fresh",
+            max: 5,
+            min: 1.5,
+            env: makeEnv(),
+            spawn: makeMockSpawn([{ stdout: "", exitCode: 0 }]),
+        }),
+        /min must be 0/,
+    );
+});
+
+test("runRalphTui: min validation — rejects negative", () => {
+    return assert.rejects(
+        () => runRalphTui({
+            mode: "self-improve", worktree: false,
+            contextMode: "fresh",
+            max: 5,
+            min: -1,
+            env: makeEnv(),
+            spawn: makeMockSpawn([{ stdout: "", exitCode: 0 }]),
+        }),
+        /min must be 0/,
+    );
+});
+
+test("runRalphTui: min validation — rejects min > max (would be a silent no-op)", () => {
+    return assert.rejects(
+        () => runRalphTui({
+            mode: "self-improve", worktree: false,
+            contextMode: "fresh",
+            max: 5,
+            min: 6,
+            env: makeEnv(),
+            spawn: makeMockSpawn([{ stdout: "", exitCode: 0 }]),
+        }),
+        /min must be 0.*\[1, max=5\]/,
+    );
+});
+
+test("runRalphTui: armed event carries minIterations: <min>", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "test-min-armed",
+        eventsPath: "/dev/null",
+        write: (e) => events.push(e),
+        close: () => {},
+    };
+    await runRalphTui({
+        mode: "self-improve", worktree: false,
+        contextMode: "fresh",
+        max: 5,
+        min: 3,
+        env: makeEnv(),
+        spawn: makeMockSpawn([
+            { stdout: JSON.stringify({ type: "assistant.message", data: { content: "iter 3 COMPLETE" } }) + "\n", exitCode: 0 },
+        ]),
+        eventEmitter,
+    });
+    const armed = events.find((e) => e.type === "armed");
+    assert.ok(armed, "armed event must be emitted");
+    assert.equal(armed.minIterations, 3);
+    assert.equal(armed.maxIterations, 5);
+});

@@ -1383,6 +1383,17 @@ export { RESET_ON_VALUES };
  *   prompt              Required when mode === "prompt".
  *   focus               Optional suffix; capped at MAX_FOCUS_CHARS.
  *   max                 Default DEFAULT_MAX_ITERATIONS.
+ *   min                 Default 1. Floor on iteration count BEFORE the
+ *                       runner honors the completion / abort tokens —
+ *                       any matching token emitted on `iter < min` is
+ *                       logged to stderr and the loop continues. Set
+ *                       to 0 as the "disable early-stop" sentinel: the
+ *                       loop ignores both tokens entirely and runs all
+ *                       the way to `max`. Validation: must equal 0 OR
+ *                       satisfy `1 <= min <= max`. Useful for
+ *                       counter-acting fat-iter prompt-following
+ *                       failures (e.g. self-improve emitting COMPLETE
+ *                       in iter 1 after walking the whole SDLC).
  *   completionPromise   Default COMPLETION_PROMISE ("COMPLETE").
  *   abortPromise        Default = abort token of the chosen mode.
  *   spawn               Inject for tests.
@@ -1413,6 +1424,7 @@ export async function runRalphTui(opts) {
         prompt,
         focus,
         max = DEFAULT_MAX_ITERATIONS,
+        min = 1,
         completionPromise = COMPLETION_PROMISE,
         abortPromise = defaultAbortPromise(mode),
         spawn = nodeSpawn,
@@ -1491,6 +1503,23 @@ export async function runRalphTui(opts) {
     if (!Number.isInteger(max) || max < 1 || max > MAX_ALLOWED_ITERATIONS) {
         throw new TypeError(`runRalphTui: max must be an integer in [1, ${MAX_ALLOWED_ITERATIONS}], got ${max}`);
     }
+    // `min` follows a tri-modal contract:
+    //   - 0           → "disable early-stop" sentinel; the runner skips
+    //                   completion/abort token detection and the loop
+    //                   runs to `max`. Mirrors stagnation_limit=0 in
+    //                   ralph_loop.
+    //   - 1..max      → token suppression floor; tokens are ignored on
+    //                   `iter < min` and honored from `iter >= min`.
+    //                   Default 1 = byte-identical to pre-flag behavior.
+    //   - anything else → TypeError. We reject `min > max` here because
+    //                   the loop could never honor a token at iter > max,
+    //                   which makes the flag a silent no-op — surfacing
+    //                   the contradiction at the API boundary is friendlier
+    //                   than running max iters and then realising the
+    //                   flag was meaningless.
+    if (!Number.isInteger(min) || min < 0 || (min > 0 && min > max)) {
+        throw new TypeError(`runRalphTui: min must be 0 (disable early-stop) or an integer in [1, max=${max}], got ${min}`);
+    }
     const focusCheck = validateFocus(focus);
     if (focusCheck.error) throw new TypeError(`runRalphTui: ${focusCheck.error}`);
 
@@ -1511,6 +1540,7 @@ export async function runRalphTui(opts) {
         resetOn,
         startedAt,
         max,
+        min,
         iter: 0,
         paused: false,
         stopRequested: false,
@@ -1551,7 +1581,7 @@ export async function runRalphTui(opts) {
         label,
         startedAt,
         maxIterations: max,
-        minIterations: 1,
+        minIterations: min,
         contextMode: contextModeForEmit,
         resetOn,
         mode,
@@ -2378,14 +2408,38 @@ export async function runRalphTui(opts) {
 
         // Promise detection runs AFTER iteration_end so the run
         // history shows the iter that emitted COMPLETE / ABORT_*.
+        //
+        // `min` gates this: when `min === 0` the user explicitly
+        // disabled early-stop (loop runs to `max`); when `iter < min`
+        // the user wants more iters before tokens are honored. In
+        // both suppression cases we log to stderr so the agent's
+        // intent is visible to the operator — silently ignoring a
+        // COMPLETE that the agent worked hard to emit would be
+        // confusing in `--plain` / log-tail debugging.
+        const earlyStopDisabled = min === 0;
+        const beforeMinFloor = min > 0 && iter < min;
         if (completionPromise && lastAssistantContent.includes(completionPromise)) {
-            terminationReason = "complete";
-            break;
+            if (earlyStopDisabled || beforeMinFloor) {
+                const why = earlyStopDisabled
+                    ? `early-stop disabled (--min 0)`
+                    : `iter ${iter} < min ${min}`;
+                stderr.write?.(`autopilot run: agent emitted ${completionPromise} on iter ${iter} but ${why} — continuing\n`);
+            } else {
+                terminationReason = "complete";
+                break;
+            }
         }
         if (abortPromise && lastAssistantContent.includes(abortPromise)) {
-            terminationReason = "abort";
-            terminationNote = `agent emitted ${abortPromise}`;
-            break;
+            if (earlyStopDisabled || beforeMinFloor) {
+                const why = earlyStopDisabled
+                    ? `early-stop disabled (--min 0)`
+                    : `iter ${iter} < min ${min}`;
+                stderr.write?.(`autopilot run: agent emitted ${abortPromise} on iter ${iter} but ${why} — continuing\n`);
+            } else {
+                terminationReason = "abort";
+                terminationNote = `agent emitted ${abortPromise}`;
+                break;
+            }
         }
     }
 

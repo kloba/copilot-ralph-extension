@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Features
+- `autopilot run` now accepts `--min N` — a floor on iteration count BEFORE the runner honors the `COMPLETE` / abort tokens. Tokens emitted on `iter < N` are logged to stderr (`agent emitted COMPLETE on iter K but iter K < min N — continuing`) and the loop keeps running. `--min 0` is the "disable early-stop" sentinel: the loop runs all the way to `--max`, ignoring both tokens entirely. Useful for `--self-improve` runs where the agent fat-iters through the whole SDLC and emits `COMPLETE` on iter 1 even though more passes were wanted. Default 1 = byte-identical to pre-flag behavior. The CLI rejects `--min` outside `{0} ∪ [1, max]` up-front so a misuse surfaces before the loop arms.
 - Runner now executes each iter in a per-iter git worktree under `$RALPH_TUI_RUNS_DIR/<runId>/worktrees/iter-<N>/` for `--self-improve` and `--grow-project` (`--worktree` opts in for `--prompt`); merged iters tear down on END, unmerged ones are preserved on disk and emit a `worktree_kept` event with the absolute path. (#66)
 
 ### Internal

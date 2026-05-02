@@ -53,7 +53,16 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$SCRIPT_DIR/extension"
-FILES=(extension.mjs handler.mjs events-emit.mjs)
+# Order matters: leaf modules first, entry point LAST. The Copilot CLI
+# loads `extension.mjs` and that file imports handler.mjs + events-emit.mjs.
+# If a concurrent `/extensions reload` fires mid-install, replacing the
+# entry point last means the SDK either sees the old fully-coherent set
+# (entry not yet replaced → still imports old siblings, which the trap-
+# preserving atomic per-file mv has already left intact at that instant)
+# OR the new fully-coherent set (entry replaced → imports the already-
+# replaced new siblings). It can never see an old entry against new
+# siblings whose API contract may have shifted under it.
+FILES=(events-emit.mjs handler.mjs extension.mjs)
 
 # Extract the extension's version from `extension/handler.mjs`'s
 # `export const VERSION = "X.Y.Z";` declaration so the install

@@ -9080,3 +9080,37 @@ test("install.sh: source-level drift guard pins the mkdir error guard wrapper", 
         "install.sh's mkdir failure path must keep the --project recovery hint",
     );
 });
+
+// Iter 113 — install.sh's FILES array order matters for atomic-reload
+// safety. The Copilot CLI loads `extension.mjs` and that file imports
+// `handler.mjs` + `events-emit.mjs`. If a concurrent `/extensions
+// reload` fires mid-install, replacing the entry point LAST means the
+// SDK either sees the old fully-coherent set (entry not yet replaced →
+// still imports the original siblings, intact thanks to the
+// temp+mv atomicity) OR the new fully-coherent set (entry replaced →
+// imports the already-replaced new siblings). It can never see an old
+// entry against new siblings whose API may have shifted. Pin
+// `extension.mjs` as the LAST element so a future "alphabetize" or
+// "tidy" PR can't silently regress this contract.
+test("install.sh: FILES array places entry-point extension.mjs LAST for atomic-reload safety", () => {
+    const sh = readFileSync(resolve(REPO_ROOT, "install.sh"), "utf8");
+    const m = /^FILES=\(([^)]*)\)/m.exec(sh);
+    assert.ok(m, "install.sh must declare FILES=(...)");
+    const list = m[1].trim().split(/\s+/).filter(Boolean);
+    assert.equal(
+        list[list.length - 1],
+        "extension.mjs",
+        `FILES order must end with extension.mjs (the entry point) so a concurrent /extensions reload mid-install never sees an old entry against new siblings. Got: [${list.join(", ")}]`,
+    );
+    // Companion: handler.mjs and events-emit.mjs are leaf modules and
+    // should appear before the entry point — pin both for the same
+    // atomic-reload reason.
+    assert.ok(
+        list.indexOf("handler.mjs") < list.indexOf("extension.mjs"),
+        `handler.mjs must precede extension.mjs in FILES; got: [${list.join(", ")}]`,
+    );
+    assert.ok(
+        list.indexOf("events-emit.mjs") < list.indexOf("extension.mjs"),
+        `events-emit.mjs must precede extension.mjs in FILES; got: [${list.join(", ")}]`,
+    );
+});

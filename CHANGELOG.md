@@ -91,6 +91,18 @@
   `1 character.` and `N characters.`.
 
 ### Internal
+- `install.sh` reorders the `FILES=(…)` array so the entry
+  point `extension.mjs` is moved LAST (was first). The
+  Copilot CLI loads `extension.mjs` and that file imports
+  `handler.mjs` + `events-emit.mjs`; replacing the entry
+  last means a concurrent `/extensions reload` mid-install
+  either sees the old fully-coherent set (entry not yet
+  replaced → still imports the intact original siblings) or
+  the new fully-coherent set (entry replaced → imports the
+  already-replaced new siblings). It can never see an old
+  entry against new siblings whose API may have shifted.
+  Surgical reorder + drift-guard test pinning extension.mjs
+  as the trailing element.
 - Untrack the `package-lock.json` exclusion in
   `packages/tui/.gitignore` and commit the existing 631-line
   lockfile. Iter 103 wired up Dependabot for the

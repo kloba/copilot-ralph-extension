@@ -598,6 +598,24 @@
   time instead of as a misleading green check on `main`.
 
 ### Documentation
+- `.github/copilot-instructions.md`'s CHANGELOG section-order
+  summary drifted away from `AGENTS.md`'s canonical chain on
+  TWO points: it placed `Documentation` BEFORE `Internal`
+  (AGENTS.md is the other way), and it omitted `Tests` and
+  `CI` entirely. AI assistants that load
+  `copilot-instructions.md` automatically would have filed
+  test-related entries under `Internal` (or invented a new
+  section), and inverted the Internal/Documentation ordering
+  used by every release section in `CHANGELOG.md`. Synced the
+  bullet to AGENTS.md's canonical chain
+  (`Breaking → Features → Fixes → Performance → Refactor →
+  Internal → Tests → CI → Documentation`) and pinned both
+  files in lockstep with a drift-guard test in
+  `test/extension.test.mjs`: every section
+  `copilot-instructions.md` cites must exist in AGENTS.md's
+  chain in the same relative order, with explicit pins that
+  `Internal` precedes `Documentation` and `Tests` is
+  mentioned.
 - `extension/handler.mjs`'s `VERB_BY_REASON` header comment
   drifted away from the table: pre-iter-143 it claimed
   `max_tokens` "falls through to ⏹ stopped" alongside

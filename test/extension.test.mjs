@@ -9952,3 +9952,72 @@ test("caffeinateFlagsForScope: idle+display → -id; everything else → -i (iss
             `unexpected scope ${JSON.stringify(v)} must default to -i, not -id`);
     }
 });
+
+test(".github/copilot-instructions.md section order agrees with AGENTS.md (drift guard)", () => {
+    // Iter 147 — `.github/copilot-instructions.md` summarises the
+    // CHANGELOG section order for AI assistants that load it
+    // automatically. Pre-iter-147 it listed:
+    //
+    //   "Breaking → Features → Fixes → Performance → Refactor →
+    //    Documentation → Internal, skip empties"
+    //
+    // …which contradicts the canonical AGENTS.md chain on TWO points
+    // (Documentation listed before Internal, and Tests + CI sections
+    // missing entirely). An AI assistant honouring this stale summary
+    // would drop new `### Tests` entries into `### Internal` (or invent
+    // a section), AND would invert Internal/Documentation ordering —
+    // silently fragmenting future release notes.
+    //
+    // This test pins both files in lockstep so a future edit to either
+    // forces a matching edit to the other.
+    const agentsMd = readFileSync(resolve(REPO_ROOT, "AGENTS.md"), "utf8");
+    const copilotMd = readFileSync(resolve(REPO_ROOT, ".github/copilot-instructions.md"), "utf8");
+
+    // Extract canonical chain from AGENTS.md (re-using the regex shape
+    // pinned by the sibling test above).
+    const agentsMatch = agentsMd.match(/Section names \(in order\)[\s\S]*?\n\n([\s\S]+?)\. Skip empty sections\./);
+    assert.ok(agentsMatch, "AGENTS.md must contain a 'Section names (in order)' chain");
+    const agentsOrder = [...agentsMatch[1].matchAll(/`([A-Z][a-zA-Z]+)`/g)].map((m) => m[1]);
+
+    // Extract the order copilot-instructions.md cites. The format is a
+    // single-line summary in the bullet that names the changelog file:
+    //   "(sections, in order: Breaking → Features → ...; skip empties)"
+    // We look for an arrow chain that mentions ≥3 backtick-free
+    // capitalised tokens to stay tolerant of minor wording shifts.
+    const copilotMatch = copilotMd.match(/sections[^:]*:\s*((?:[A-Z][a-zA-Z]+\s*(?:→|->)\s*)+[A-Z][a-zA-Z]+)/);
+    assert.ok(copilotMatch,
+        ".github/copilot-instructions.md must cite a section-order chain (e.g. 'Breaking → Features → ...') in its CHANGELOG bullet");
+    const copilotOrder = copilotMatch[1].split(/\s*(?:→|->)\s*/).map((s) => s.trim());
+
+    // Every section copilot-instructions.md mentions must be in
+    // AGENTS.md's canonical chain.
+    for (const section of copilotOrder) {
+        assert.ok(
+            agentsOrder.includes(section),
+            `copilot-instructions.md cites section "${section}" but AGENTS.md does NOT — drift! Update AGENTS.md or copilot-instructions.md.`,
+        );
+    }
+
+    // Pairwise: every adjacent pair in copilot-instructions.md must
+    // respect AGENTS.md's relative order.
+    for (let i = 0; i < copilotOrder.length - 1; i++) {
+        const before = copilotOrder[i];
+        const after = copilotOrder[i + 1];
+        const ia = agentsOrder.indexOf(before);
+        const ib = agentsOrder.indexOf(after);
+        assert.ok(
+            ia < ib,
+            `copilot-instructions.md places "${before}" before "${after}", but AGENTS.md orders them ${ia < ib ? "consistently" : "the OTHER way"}. AGENTS.md is canonical (${agentsOrder.join(" → ")}); update copilot-instructions.md to match.`,
+        );
+    }
+
+    // Specifically pin the two regressions from iter 147: copilot-
+    // instructions.md MUST place Internal before Documentation AND must
+    // mention Tests so AI assistants don't drop test-related entries
+    // into Internal.
+    const cIdx = (s) => copilotOrder.indexOf(s);
+    assert.ok(cIdx("Internal") !== -1 && cIdx("Documentation") !== -1 && cIdx("Internal") < cIdx("Documentation"),
+        `copilot-instructions.md must explicitly place "Internal" before "Documentation" (got ${copilotOrder.join(" → ")})`);
+    assert.ok(cIdx("Tests") !== -1,
+        `copilot-instructions.md must mention "Tests" so contributors don't file test-related entries under Internal (got ${copilotOrder.join(" → ")})`);
+});

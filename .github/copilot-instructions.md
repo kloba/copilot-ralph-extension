@@ -17,8 +17,9 @@ the single source of truth:
   `revert`. Append `!` for breaking changes.
 - **Changelog** follows [Keep a Changelog 1.1.0][kac]. Every
   user-visible change adds an entry under `## Unreleased` in
-  `CHANGELOG.md` (sections: Breaking → Features → Fixes → Performance
-  → Refactor → Documentation → Internal, skip empties).
+  `CHANGELOG.md` (sections, in order: Breaking → Features → Fixes
+  → Performance → Refactor → Internal → Tests → CI →
+  Documentation; skip empties).
 - **Version** in `package.json` is the single source of truth. Tags
   match `v<version>`; the release workflow at
   `.github/workflows/release.yml` enforces the match.

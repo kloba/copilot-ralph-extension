@@ -187,6 +187,18 @@
   time instead of as a misleading green check on `main`.
 
 ### Documentation
+- README's "Pause visibility" bullet now documents BOTH
+  `ralph_status` `textResultForLlm` summary forms — the
+  with-reason em-dash variant `(PAUSED — <reason>, for
+  <ms>ms)` AND the bare no-reason variant `(PAUSED, for
+  <ms>ms)` (no em-dash, no reason slot). Iter 111 pinned
+  the no-reason format as the implementation contract via
+  test, but the README still claimed the em-dash form was
+  unconditional. A contributor consuming only the README to
+  build a regex against `ralph_status` output would have
+  written `/PAUSED — /` and missed every reasonless pause.
+  Drift-guard test pins both forms in the README so a
+  future "shorten" PR can't silently regress.
 - AGENTS.md and docs/RELEASING.md now describe the same
   canonical `## X.Y.Z` CHANGELOG release-heading shape that
   the existing CHANGELOG actually uses. Previously AGENTS.md

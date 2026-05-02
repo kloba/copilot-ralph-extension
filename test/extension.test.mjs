@@ -9114,3 +9114,31 @@ test("install.sh: FILES array places entry-point extension.mjs LAST for atomic-r
         `events-emit.mjs must precede extension.mjs in FILES; got: [${list.join(", ")}]`,
     );
 });
+
+// Iter 114 — README's "Pause visibility" bullet must describe BOTH
+// `textResultForLlm` summary forms — the with-reason em-dash variant
+// AND the bare no-reason variant. Iter 111 added a test pinning the
+// no-reason summary as ` (PAUSED, for {ms}ms)` (no em-dash) but the
+// README still claimed the em-dash form was unconditional. A
+// contributor consuming the README to write a regex against
+// ralph_status output would have built `/PAUSED — /` and missed every
+// reasonless pause. Pin the docs accuracy so a future "shorten the
+// README" PR can't silently re-introduce the drift.
+test("README documents both PAUSED summary forms (with-reason em-dash + bare no-reason)", () => {
+    const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf8");
+    // The Pause visibility bullet must mention the with-reason form.
+    assert.match(
+        readme,
+        /\(PAUSED — <reason>, for <ms>ms\)/,
+        "README's Pause visibility bullet must document the em-dash with-reason summary form",
+    );
+    // The Pause visibility bullet must ALSO mention the bare no-reason
+    // form. Without this guard, the iter 111 behaviour (and the
+    // canonical concepts.md grammar) is invisible to anyone reading
+    // only the README.
+    assert.match(
+        readme,
+        /\(PAUSED, for <ms>ms\)/,
+        "README's Pause visibility bullet must document the bare no-reason summary form (no em-dash)",
+    );
+});

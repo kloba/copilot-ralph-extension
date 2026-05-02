@@ -103,6 +103,7 @@ export const EVENT_TYPES = Object.freeze([
     "task_start",
     "task_end",
     "commit_observed",
+    "usage_update",
 ]);
 
 /** Recognised L1 work-item kinds — the categorisation used in the
@@ -318,6 +319,16 @@ export function serializeEvent(ev) {
         const input = Number.isFinite(ev.tokens.input) ? ev.tokens.input : 0;
         const output = Number.isFinite(ev.tokens.output) ? ev.tokens.output : 0;
         out.tokens = { input, output };
+    }
+    // `premiumRequests` is a cumulative-for-the-run counter emitted on
+    // `iteration_end` (post-iter reconciled) and on each `usage_update`
+    // (live, mid-iter). Reject NaN / Infinity / negative values rather
+    // than coercing to 0 so a runner bug surfaces instead of silently
+    // resetting the displayed counter mid-run. The runner clamps at
+    // emit time too, but a defensive serializer means a third-party
+    // event source can't poison the stream.
+    if (Number.isFinite(ev.premiumRequests) && ev.premiumRequests >= 0) {
+        out.premiumRequests = ev.premiumRequests;
     }
     if (typeof ev.note === "string") out.note = safeSliceChars(ev.note, 500);
 
@@ -584,6 +595,12 @@ export function foldEvents(events) {
         stagnationStreak: 0,
         reason: null,
         tokens: { input: 0, output: 0 },
+        // Cumulative-for-the-run Copilot premium-request count. `null`
+        // means "no data yet" — the TUI Header hides the counter in
+        // that state rather than rendering `premium 0`. First credible
+        // value comes from a `usage_update` (mid-iter) or
+        // `iteration_end` event the runner emits.
+        premiumRequests: null,
         lastExcerpt: null,
         startedAt: null,
         updatedAt: null,
@@ -642,6 +659,7 @@ export function foldEvents(events) {
                 snap.stagnationStreak = 0;
                 snap.reason = null;
                 snap.tokens = { input: 0, output: 0 };
+                snap.premiumRequests = null;
                 snap.lastExcerpt = null;
                 snap.startedAt = ev.ts;
                 snap.iterations = [];
@@ -690,6 +708,28 @@ export function foldEvents(events) {
                         input: Number.isFinite(ev.tokens.input) ? ev.tokens.input : snap.tokens.input,
                         output: Number.isFinite(ev.tokens.output) ? ev.tokens.output : snap.tokens.output,
                     };
+                }
+                if (Number.isFinite(ev.premiumRequests) && ev.premiumRequests >= 0) {
+                    snap.premiumRequests = ev.premiumRequests;
+                }
+                break;
+            }
+            // Live mid-iter usage update emitted by the runner whenever
+            // a root-agent `assistant.message` (per-message
+            // outputTokens delta) or terminal `result` (premiumRequests
+            // for that iter) lands. Carries cumulative-for-the-run
+            // totals so the TUI Header / DetailPane snapshot updates
+            // within seconds of agent output rather than waiting for
+            // `iteration_end` at iter close.
+            case "usage_update": {
+                if (ev.tokens) {
+                    snap.tokens = {
+                        input: Number.isFinite(ev.tokens.input) ? ev.tokens.input : snap.tokens.input,
+                        output: Number.isFinite(ev.tokens.output) ? ev.tokens.output : snap.tokens.output,
+                    };
+                }
+                if (Number.isFinite(ev.premiumRequests) && ev.premiumRequests >= 0) {
+                    snap.premiumRequests = ev.premiumRequests;
                 }
                 break;
             }

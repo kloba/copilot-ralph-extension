@@ -47,6 +47,10 @@ test("EVENT_TYPES is the closed set documented in the issue", () => {
         "task_start",
         "task_end",
         "commit_observed",
+        // TUI tokens + premium-request live update. Strictly
+        // additive (appended at end); see `usage_update` semantics
+        // in events.mjs.
+        "usage_update",
     ]);
 });
 
@@ -1176,4 +1180,95 @@ test("slice9: formatEventLine renders commit_observed with short sha + subject +
     assert.match(line, /\bsha=abcdef123456\b/);
     assert.match(line, /subject="fix\(parser\): trailing whitespace"/);
     assert.match(line, /\btrailers=2\b/);
+});
+
+// ─── usage_update / premiumRequests round-trip + fold ───────────────
+// The runner emits `usage_update` mid-iter (per assistant.message
+// outputTokens delta + per result.usage.premiumRequests) so the
+// TUI Header / DetailPane snapshot updates while the agent is
+// still working — pre-fix, `tokens 0` / no premium counter were
+// stuck for the entire iter because `iteration_end` was the only
+// event carrying usage.
+
+test("usage_update: serializeEvent + round-trip carries tokens + premiumRequests", () => {
+    const parsed = parseEventLine(serializeEvent({
+        type: "usage_update",
+        ts: 7_000,
+        runId: "run-x",
+        label: "self_improve",
+        iteration: 3,
+        tokens: { input: 0, output: 415 },
+        premiumRequests: 7,
+    }));
+    assert.equal(parsed.type, "usage_update");
+    assert.equal(parsed.iteration, 3);
+    assert.deepEqual(parsed.tokens, { input: 0, output: 415 });
+    assert.equal(parsed.premiumRequests, 7);
+});
+
+test("usage_update: serializeEvent rejects malformed premiumRequests (NaN, Infinity, negative)", () => {
+    // Each malformed value drops the premiumRequests field rather
+    // than throwing — the runner is the source of truth and
+    // upstream clamps; the serializer is a defensive line.
+    for (const bad of [Number.NaN, Infinity, -1, -100, "5", null, undefined]) {
+        const out = serializeEvent({
+            type: "usage_update",
+            ts: 1,
+            runId: "r",
+            tokens: { input: 0, output: 10 },
+            premiumRequests: bad,
+        });
+        assert.equal(out.premiumRequests, undefined, `bad value ${bad} must be dropped`);
+    }
+});
+
+test("foldEvents: usage_update mid-iter updates snap.tokens and snap.premiumRequests before iteration_end", () => {
+    const events = [
+        { type: "armed", ts: 100, runId: "r", label: "self_improve", maxIterations: 10 },
+        { type: "iteration_start", ts: 200, runId: "r", iteration: 1 },
+        // Mid-iter usage update arrives BEFORE iteration_end.
+        { type: "usage_update", ts: 300, runId: "r", iteration: 1,
+          tokens: { input: 0, output: 150 } },
+        { type: "usage_update", ts: 400, runId: "r", iteration: 1,
+          tokens: { input: 0, output: 240 }, premiumRequests: 2 },
+    ];
+    const snap = foldEvents(events);
+    // Without the usage_update path, snap.tokens.output would still
+    // be 0 at this point — that was the pre-fix `tokens 0` symptom.
+    assert.equal(snap.tokens.output, 240);
+    assert.equal(snap.premiumRequests, 2);
+});
+
+test("foldEvents: armed resets snap.premiumRequests back to null", () => {
+    const events = [
+        { type: "armed", ts: 100, runId: "r1", label: "self_improve" },
+        { type: "iteration_start", ts: 200, runId: "r1", iteration: 1 },
+        { type: "usage_update", ts: 300, runId: "r1", iteration: 1,
+          tokens: { input: 0, output: 50 }, premiumRequests: 5 },
+        // A second armed (e.g. tail attached to a new run on the
+        // same emitter) must zero the counters out so the new run's
+        // numbers don't accumulate on top of the old.
+        { type: "armed", ts: 400, runId: "r2", label: "self_improve" },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.premiumRequests, null);
+    assert.deepEqual(snap.tokens, { input: 0, output: 0 });
+});
+
+test("foldEvents: iteration_end with tokens + premiumRequests pins snapshot to cumulative-for-run totals", () => {
+    const events = [
+        { type: "armed", ts: 100, runId: "r", label: "self_improve" },
+        { type: "iteration_start", ts: 200, runId: "r", iteration: 1 },
+        { type: "iteration_end", ts: 300, runId: "r", iteration: 1, excerpt: "ok",
+          tokens: { input: 0, output: 200 }, premiumRequests: 3 },
+        { type: "iteration_start", ts: 400, runId: "r", iteration: 2 },
+        { type: "iteration_end", ts: 500, runId: "r", iteration: 2, excerpt: "ok2",
+          tokens: { input: 0, output: 350 }, premiumRequests: 5 },
+    ];
+    const snap = foldEvents(events);
+    // Cumulative semantics: each iter_end carries run-total (not
+    // per-iter delta), matching the runner's
+    // `runOutputTokens` / `runPremiumRequests` rollover.
+    assert.equal(snap.tokens.output, 350);
+    assert.equal(snap.premiumRequests, 5);
 });

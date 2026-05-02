@@ -89,6 +89,57 @@ test("DetailPane shows tokens, reason, and last excerpt", { skip }, () => {
     assert.match(out, /no progress for 2 turns/);
 });
 
+// ─── premiumRequests rendering ───────────────────────────────────
+// The Header's right row appends ` premium <N>` after the tokens
+// counter when snapshot.premiumRequests is finite; the DetailPane
+// adds a `premium req <N>` row below the tokens row. Both surfaces
+// hide the field when the value is null (pre-iter-1 / post-armed)
+// so the user doesn't see a confident `premium 0`.
+
+test("Header: shows premium counter when snapshot.premiumRequests is set", { skip }, () => {
+    const snapshot = {
+        status: "running", label: "ralph_loop",
+        runId: "ralph_loop-1700000000000",
+        iteration: 2, maxIterations: 10,
+        tokens: { input: 0, output: 415 },
+        premiumRequests: 7,
+    };
+    const out = render(React.createElement(Header, { snapshot })).lastFrame();
+    assert.match(out, /premium\s+7/);
+});
+
+test("Header: hides premium counter when premiumRequests is null", { skip }, () => {
+    const snapshot = {
+        status: "running", label: "ralph_loop",
+        runId: "ralph_loop-1700000000000",
+        iteration: 1, maxIterations: 10,
+        tokens: { input: 0, output: 0 },
+        premiumRequests: null,
+    };
+    const out = render(React.createElement(Header, { snapshot })).lastFrame();
+    assert.doesNotMatch(out, /premium/);
+});
+
+test("DetailPane: renders 'premium req N' row when set", { skip }, () => {
+    const snapshot = {
+        tokens: { input: 0, output: 415 },
+        stagnationStreak: 0, status: "running", lastExcerpt: "doing things",
+        premiumRequests: 7,
+    };
+    const out = render(React.createElement(DetailPane, { snapshot })).lastFrame();
+    assert.match(out, /premium req\s+7/);
+});
+
+test("DetailPane: hides 'premium req' row when premiumRequests is null", { skip }, () => {
+    const snapshot = {
+        tokens: { input: 0, output: 0 },
+        stagnationStreak: 0, status: "idle", lastExcerpt: null,
+        premiumRequests: null,
+    };
+    const out = render(React.createElement(DetailPane, { snapshot })).lastFrame();
+    assert.doesNotMatch(out, /premium/);
+});
+
 test("Controls hint row shows live indicator when status is running", { skip }, () => {
     const out = render(React.createElement(Controls, { status: "running" })).lastFrame();
     assert.match(out, /quit/);

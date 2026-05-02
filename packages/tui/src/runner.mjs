@@ -841,6 +841,21 @@ function parseJsonLine(line) {
  *    - `sessionId`: from the terminal `result` event's
  *      `result.sessionId`. May be null if the run did not produce one.
  *    - `exitOk`: whether the terminal `result` event indicated success.
+ *    - `outputTokens`: sum of `data.outputTokens` across all root-agent
+ *      `assistant.message` events. The Copilot CLI JSONL stream emits
+ *      `outputTokens` as a per-message DELTA (not cumulative-so-far),
+ *      so summing is correct. Sub-agent (`agentId`) events are
+ *      excluded — their token cost is folded into the parent's
+ *      premium-request tally already, and counting them here would
+ *      double-count tool work the user didn't initiate. Malformed
+ *      values (non-finite, negative, non-numeric) are skipped rather
+ *      than coerced to 0 so a partial / corrupted stream returns the
+ *      best-available total instead of mass-zeroing.
+ *    - `premiumRequests`: cost-weighted Copilot premium-request count
+ *      from the terminal `result.usage.premiumRequests`. `null` when
+ *      the field is absent or malformed (distinguishes "no data" from
+ *      a credible 0). The runner sums per-iter values into a run
+ *      total in its main loop.
  *  This module is a pure data extractor — the runner glues it to
  *  child stdout. Exported so the test suite can exercise it
  *  independently of subprocess plumbing. */
@@ -848,6 +863,8 @@ export function reduceCopilotEvents(events) {
     let assistantContent = "";
     let sessionId = null;
     let exitOk = null;
+    let outputTokens = 0;
+    let premiumRequests = null;
     for (const ev of events) {
         if (!ev || typeof ev !== "object") continue;
         if (ev.type === "assistant.message" && ev.data && typeof ev.data.content === "string") {
@@ -857,12 +874,28 @@ export function reduceCopilotEvents(events) {
             // agent to emit COMPLETE / ABORT_* in.
             if (!ev.agentId) assistantContent += ev.data.content;
         }
+        if (ev.type === "assistant.message" && ev.data && !ev.agentId) {
+            // outputTokens is intentionally read independently of
+            // content presence — a model-only / no-content message
+            // (rare but legal in the JSONL stream) still bills tokens
+            // and must count toward the cumulative total.
+            const tok = ev.data.outputTokens;
+            if (typeof tok === "number" && Number.isFinite(tok) && tok >= 0) {
+                outputTokens += tok;
+            }
+        }
         if (ev.type === "result") {
             if (ev.result && typeof ev.result.sessionId === "string") sessionId = ev.result.sessionId;
             if (typeof ev.success === "boolean") exitOk = ev.success;
+            if (ev.usage && typeof ev.usage === "object") {
+                const pr = ev.usage.premiumRequests;
+                if (typeof pr === "number" && Number.isFinite(pr) && pr >= 0) {
+                    premiumRequests = pr;
+                }
+            }
         }
     }
-    return { assistantContent, sessionId, exitOk };
+    return { assistantContent, sessionId, exitOk, outputTokens, premiumRequests };
 }
 
 // ─── Single-iter subprocess driver ─────────────────────────────────
@@ -1084,6 +1117,18 @@ export async function runRalphTui(opts) {
     let lastAssistantContent = "";
     let stopRequested = false;
     let capturedSessionId = null;
+    // Cumulative-for-the-run usage rolled up across iters so each
+    // iteration_end carries run-total values for tokens (output) and
+    // Copilot premium-request count. The post-iter reconciler folds
+    // `reduceCopilotEvents(result.events)` into these (authoritative);
+    // the live `onLine` path uses iter-scoped local counters
+    // (iterLiveOutputTokens, iterLivePremiumRequests) ONLY to drive
+    // the mid-iter `usage_update` events for live-UI visibility.
+    // premiumRequests stays `null` until a credible value lands so
+    // the TUI Header can hide the counter rather than confidently
+    // rendering `premium 0` pre-iter-1.
+    let runOutputTokens = 0;
+    let runPremiumRequests = null;
 
     for (let iter = 1; iter <= max; iter++) {
         // Honor pause/stop via state file.
@@ -1384,6 +1429,19 @@ export async function runRalphTui(opts) {
             }
             emittedItemsCount = timeline.length;
         };
+        // Per-iter live counters that the `onLine` callback accrues
+        // from streamed `assistant.message` and `result` events. They
+        // exist solely so the live `usage_update` emits show
+        // monotonically-increasing totals as the iter unfolds; they
+        // are NOT the source of truth for the cumulative-run totals.
+        // After the iter completes, `reduceCopilotEvents` re-aggregates
+        // the iter's full event list (canonical post-iter), and that
+        // is what flows into `runOutputTokens` / `runPremiumRequests`.
+        // This way an `onLine` throw that silently dropped a delta
+        // can drift the live UI temporarily, but the iter-close
+        // reconciliation pulls everything back into agreement.
+        let iterLiveOutputTokens = 0;
+        let iterLivePremiumRequests = null;
         const onLine = (rawEvent) => {
             // `runOneIteration` already wraps this in try/catch so a
             // throw here is silently swallowed — but a swallowed
@@ -1393,6 +1451,53 @@ export async function runRalphTui(opts) {
             liveEvents.push(rawEvent);
             try { emitTimelineSuffix(liveEvents); }
             catch { /* swallow — suffix replay below recovers */ }
+            // Live usage emission. `iteration_end` (the canonical
+            // post-iter event) only fires ONCE at iter close, so
+            // without this path the TUI Header was stuck at
+            // `tokens 0` for the whole iter. Stream a lightweight
+            // `usage_update` event whenever a root-agent
+            // `assistant.message` (per-message outputTokens delta)
+            // or terminal `result` (per-iter premiumRequests) lands,
+            // carrying the cumulative-for-the-run totals so
+            // foldEvents updates `snap.tokens` /
+            // `snap.premiumRequests` immediately.
+            try {
+                if (rawEvent && rawEvent.type === "assistant.message" && rawEvent.data && !rawEvent.agentId) {
+                    const tok = Number(rawEvent.data.outputTokens);
+                    if (Number.isFinite(tok) && tok > 0) {
+                        iterLiveOutputTokens += tok;
+                        const ev = {
+                            type: "usage_update",
+                            ts: now(),
+                            runId,
+                            label,
+                            iteration: iter,
+                            tokens: { input: 0, output: runOutputTokens + iterLiveOutputTokens },
+                        };
+                        if (runPremiumRequests !== null || iterLivePremiumRequests !== null) {
+                            ev.premiumRequests = (runPremiumRequests ?? 0) + (iterLivePremiumRequests ?? 0);
+                        }
+                        emitter.write(ev);
+                    }
+                } else if (rawEvent && rawEvent.type === "result") {
+                    const pr = Number(rawEvent.usage?.premiumRequests);
+                    if (Number.isFinite(pr) && pr >= 0) {
+                        iterLivePremiumRequests = (iterLivePremiumRequests ?? 0) + pr;
+                        emitter.write({
+                            type: "usage_update",
+                            ts: now(),
+                            runId,
+                            label,
+                            iteration: iter,
+                            tokens: { input: 0, output: runOutputTokens + iterLiveOutputTokens },
+                            premiumRequests: (runPremiumRequests ?? 0) + iterLivePremiumRequests,
+                        });
+                    }
+                }
+            } catch { /* swallow — defensive against a future
+                         emitter / serializer change that throws on a
+                         malformed payload; the iteration_end backfill
+                         below is the safety net */ }
         };
 
         try {
@@ -1410,7 +1515,16 @@ export async function runRalphTui(opts) {
             terminationReason = "error";
             terminationNote = err?.message ?? String(err);
             stderr.write?.(`ralph-tui run: subprocess error: ${terminationNote}\n`);
-            emitter.write({
+            // Even on subprocess error, fold in any iter-live usage
+            // counters (the child may have emitted some
+            // assistant.message events before crashing) so the final
+            // iteration_end carries the partial totals rather than
+            // resetting to whatever the previous iter had.
+            runOutputTokens += iterLiveOutputTokens;
+            if (iterLivePremiumRequests !== null) {
+                runPremiumRequests = (runPremiumRequests ?? 0) + iterLivePremiumRequests;
+            }
+            const errEv = {
                 type: "iteration_end",
                 ts: now(),
                 runId,
@@ -1418,7 +1532,10 @@ export async function runRalphTui(opts) {
                 iteration: iter,
                 excerpt: "",
                 note: terminationNote,
-            });
+                tokens: { input: 0, output: runOutputTokens },
+            };
+            if (runPremiumRequests !== null) errEv.premiumRequests = runPremiumRequests;
+            emitter.write(errEv);
             break;
         }
 
@@ -1427,6 +1544,20 @@ export async function runRalphTui(opts) {
         if (contextMode === "continue" && iter === 1 && reduced.sessionId) {
             capturedSessionId = reduced.sessionId;
             updateState(runId, (s) => { s.sessionId = capturedSessionId; return s; }, env);
+        }
+        // Iter-close reconciliation: the canonical reducer ran over
+        // `result.events` (the iter's full event list) — use it as
+        // the source of truth for the iter contribution rather than
+        // the iterLive* counters that the streaming `onLine` path
+        // accrued. They normally match (both look at the same
+        // events); when they diverge it's because an `onLine`
+        // invocation threw and silently swallowed an event. Discard
+        // iterLive* and fold the reducer's totals so the
+        // iteration_end emit ALWAYS carries the right
+        // cumulative-for-the-run values.
+        runOutputTokens += reduced.outputTokens;
+        if (reduced.premiumRequests !== null) {
+            runPremiumRequests = (runPremiumRequests ?? 0) + reduced.premiumRequests;
         }
 
         // Issue #48 / streaming emission: the live `onLine` path
@@ -1493,14 +1624,17 @@ export async function runRalphTui(opts) {
         }
 
         const excerpt = lastAssistantContent.slice(0, 500);
-        emitter.write({
+        const iterEndEv = {
             type: "iteration_end",
             ts: now(),
             runId,
             label,
             iteration: iter,
             excerpt,
-        });
+            tokens: { input: 0, output: runOutputTokens },
+        };
+        if (runPremiumRequests !== null) iterEndEv.premiumRequests = runPremiumRequests;
+        emitter.write(iterEndEv);
         updateState(runId, (s) => { s.iter = iter; return s; }, env);
         if (onIteration) {
             try { onIteration({ iter, excerpt, sessionId: capturedSessionId, exitCode: result.exitCode }); }

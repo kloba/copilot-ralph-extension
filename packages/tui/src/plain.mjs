@@ -71,6 +71,12 @@ const VERB = {
     task_start: "tsk+ ",
     task_end: "tsk- ",
     commit_observed: "commt",
+    // 5-char verb so the column layout under awk/grep stays uniform.
+    // Emitted live from the runner each time a root-agent
+    // assistant.message (per-message outputTokens delta) or terminal
+    // result (premiumRequests) lands during an iter, carrying
+    // cumulative-for-the-run counters.
+    usage_update: "usage",
 };
 
 /**
@@ -100,6 +106,9 @@ export function formatEventLine(ev) {
         const i = Number.isFinite(ev.tokens.input) ? ev.tokens.input : 0;
         const o = Number.isFinite(ev.tokens.output) ? ev.tokens.output : 0;
         parts.push(`tokens=${i}/${o}`);
+    }
+    if (Number.isFinite(ev.premiumRequests) && ev.premiumRequests >= 0) {
+        parts.push(`premium=${ev.premiumRequests}`);
     }
     if (Number.isFinite(ev.streak)) parts.push(`streak=${ev.streak}`);
     if (Number.isFinite(ev.pausedForMs)) parts.push(`pausedForMs=${ev.pausedForMs}`);

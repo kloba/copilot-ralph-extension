@@ -547,3 +547,47 @@ test("formatEventLine: workitem_end without closesN omits the field (PR / red_ci
     assert.match(line, /kind=pr/);
     assert.doesNotMatch(line, /closesN=/);
 });
+
+// ─── usage_update verb + premium= field ─────────────────────────────
+// `usage_update` is the live mid-iter usage event the runner streams
+// so the TUI Header / DetailPane snapshot updates while an iter is
+// still running. Plain-mode log lines should render its 5-char verb
+// AND the new `premium=N` column so `awk`/`grep` users can extract
+// the same info from a tail.
+
+test("formatEventLine: usage_update renders the 'usage' verb and tokens=I/O", () => {
+    const line = formatEventLine({
+        type: "usage_update", ts: 0, runId: "r", iteration: 2,
+        tokens: { input: 0, output: 415 },
+    });
+    assert.match(line, /\busage\b/);
+    assert.match(line, /\btokens=0\/415\b/);
+    assert.match(line, /\biter=2\b/);
+});
+
+test("formatEventLine: usage_update with premiumRequests renders premium=N", () => {
+    const line = formatEventLine({
+        type: "usage_update", ts: 0, runId: "r", iteration: 2,
+        tokens: { input: 0, output: 415 }, premiumRequests: 7,
+    });
+    assert.match(line, /\bpremium=7\b/);
+});
+
+test("formatEventLine: iteration_end with premiumRequests renders premium=N alongside tokens", () => {
+    const line = formatEventLine({
+        type: "iteration_end", ts: 0, runId: "r", iteration: 1,
+        excerpt: "done", tokens: { input: 0, output: 100 }, premiumRequests: 2,
+    });
+    assert.match(line, /\btokens=0\/100\b/);
+    assert.match(line, /\bpremium=2\b/);
+});
+
+test("formatEventLine: omits premium= when the field is absent or malformed", () => {
+    for (const bad of [undefined, null, Number.NaN, Infinity, -1]) {
+        const line = formatEventLine({
+            type: "iteration_end", ts: 0, runId: "r", iteration: 1,
+            excerpt: "x", tokens: { input: 0, output: 0 }, premiumRequests: bad,
+        });
+        assert.doesNotMatch(line, /\bpremium=/, `should omit for ${bad}`);
+    }
+});

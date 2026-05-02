@@ -83,6 +83,7 @@ export default function Header({ snapshot }) {
     const min = snapshot?.minIterations ?? null;
     const tokens = snapshot?.tokens ?? { input: 0, output: 0 };
     const total = (tokens.input || 0) + (tokens.output || 0);
+    const premiumRequests = snapshot?.premiumRequests;
     const backlog = snapshot?.backlog ?? null;
     const activeWorkItem = snapshot?.activeWorkItem ?? null;
     const closedByLoop = snapshot?.closedByLoop ?? 0;
@@ -104,6 +105,18 @@ export default function Header({ snapshot }) {
         h(Text, null, "   "),
         h(Text, { dimColor: true }, "tokens "),
         h(Text, null, String(total)),
+        // Premium-request counter — hidden until the first credible
+        // value arrives (`snapshot.premiumRequests` is `null`
+        // pre-iter-1 and after each `armed` event). Once shown, value
+        // is the cumulative-for-the-run cost-weighted count from
+        // `result.usage.premiumRequests` per iter, summed.
+        Number.isFinite(premiumRequests)
+            ? h(Box, { flexDirection: "row" },
+                h(Text, null, "   "),
+                h(Text, { dimColor: true }, "premium "),
+                h(Text, null, String(premiumRequests)),
+              )
+            : null,
     );
 
     const topRow = h(Box, {

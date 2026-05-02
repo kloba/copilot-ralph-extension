@@ -77,6 +77,23 @@
   either value is caught at test time.
 
 ### Fixes
+- `ralph_resume` now clamps `pausedFor` to `>= 0` symmetric
+  with the `Math.max(0, …)` guard `finish()` already uses on
+  the same window. Pre-iter-154 a system-clock rewind during
+  a pause (NTP correction, manual clock change, daylight
+  savings on a host without monotonic-time backing) would
+  compute `Date.now() - pausedAt` as negative, credit a
+  negative duration to `totalPausedMs`, and — because
+  `totalPausedMs` is subtracted from `durationMs` in
+  `finish()` — make the run's reported wall-clock LONGER
+  than the true elapsed time. The caller also saw a
+  nonsensical negative `pausedForMs` on the resume return
+  value. The fix mirrors the existing finish-path clamp;
+  happy-path behaviour is unchanged because `Math.max(0, X)`
+  for non-negative `X` returns `X`. A regression test in
+  `test/extension.test.mjs` shoves `pausedAt` into the
+  future to simulate the skew and pins `pausedForMs >= 0`
+  plus `totalPausedMs >= 0` post-resume.
 - Removed three install artifacts that were accidentally
   swept into the repo via `git add -A` in iter 149's first
   commit (1f4f509): `.github/extensions/ralph/events-emit.mjs`,

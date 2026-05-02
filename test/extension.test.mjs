@@ -10173,3 +10173,45 @@ test("docs/concepts.md mentions zero/zero pair rejection in token-credit contrac
     assert.match(slice, /at least one|strictly positive|one (?:peer|of them)/i,
         "concepts.md credit-rejection bullet must mention the at-least-one-positive clause");
 });
+
+test("ralph_resume: clamps pausedFor to >= 0 when system clock skews backward (clock-rewind guard)", async () => {
+    // Iter 154 — `finish()` (handler.mjs:1400) already guards
+    // currentPauseMs with `Math.max(0, finishedAt - pausedAt)` for
+    // exactly the case where the system clock moves backward
+    // between pause and finish (NTP correction, manual clock change,
+    // a daylight-savings transition on a host without monotonic-time
+    // backing). The companion `ralph_resume` path computed
+    // `pausedFor = a.pausedAt > 0 ? Date.now() - a.pausedAt : 0`
+    // with NO clamp, so a clock rewind during a pause would credit
+    // a NEGATIVE pause duration to `totalPausedMs` — which is
+    // subtracted from durationMs in finish() — making the run's
+    // reported wall-clock time LONGER than the true elapsed time
+    // (and also returning a negative `pausedForMs` to the caller,
+    // which is nonsense). Pin the symmetric `Math.max(0, …)` guard.
+    const controller = createRalphController();
+    const sess = makeFakeSession();
+    controller.attach(sess);
+    await controller.tools.find((t) => t.name === "ralph_loop").handler({
+        prompt: "x", max_iterations: 5, min_iterations: 1,
+    });
+    const pauseTool = controller.tools.find((t) => t.name === "ralph_pause");
+    const resumeTool = controller.tools.find((t) => t.name === "ralph_resume");
+    await pauseTool.handler({ reason: "clock-skew test" });
+    // Simulate clock skew: shove pausedAt INTO the future so the
+    // resume's `Date.now() - pausedAt` would compute negative.
+    const a = controller.state.active;
+    assert.equal(a.paused, true, "loop must be paused before the skew test");
+    a.pausedAt = Date.now() + 60_000; // 60s in the future
+    const r = await resumeTool.handler({});
+    assert.equal(r.resultType, "success");
+    // The clamp must have kicked in — pausedForMs MUST NOT be
+    // negative, even though raw `Date.now() - pausedAt` was.
+    assert.ok(r.pausedForMs >= 0,
+        `pausedForMs must be clamped to >= 0 under clock skew (got ${r.pausedForMs})`);
+    assert.equal(r.pausedForMs, 0,
+        "with pausedAt in the future, the clamp should produce exactly 0");
+    // And totalPausedMs must NOT have been credited a negative value.
+    assert.ok(controller.state.active.totalPausedMs >= 0,
+        `totalPausedMs must remain >= 0 (got ${controller.state.active.totalPausedMs})`);
+    await controller.tools.find((t) => t.name === "ralph_stop").handler({});
+});

@@ -2218,7 +2218,7 @@ export function createRalphController(opts = {}) {
                 if (!a.paused) {
                     return failure(`ralph_resume: ${a.label} is not paused. Use ralph_pause first, or ralph_stop to cancel.`);
                 }
-                const pausedFor = a.pausedAt > 0 ? Date.now() - a.pausedAt : 0;
+                const pausedFor = a.pausedAt > 0 ? Math.max(0, Date.now() - a.pausedAt) : 0;
                 a.totalPausedMs += pausedFor;
                 a.paused = false;
                 a.pauseReason = null;

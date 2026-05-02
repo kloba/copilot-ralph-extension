@@ -228,3 +228,38 @@ test("events: pause event reason is null when reason is whitespace-only", async 
         "whitespace-only reason must collapse to null end-to-end (matching parseUserReason's contract)",
     );
 });
+
+// Iter 124 — pin that the JSONL `pause` event is emitted exactly ONCE
+// per logical pause. `ralph_pause` is idempotent at the handler level
+// (test/extension.test.mjs:"ralph_pause is idempotent — pausing an
+// already-paused loop is a no-op success") — the second call returns
+// success with the FIRST pause's reason and does not mutate state. But
+// the JSONL emitter side has no equivalent runtime guard: if a future
+// refactor accidentally moved `safeEmit({ type: "pause", ... })` above
+// the `if (a.paused) return` short-circuit, every redundant `pause`
+// call would write a fresh JSONL line. That breaks the pause-state
+// fold any TUI consumer (or downstream tooling) does over the event
+// stream — `foldEvents` would see two pause transitions for the same
+// run and the iter timeline would render two pause markers where the
+// user only paused once. The handler.mjs structure is correct today
+// (the early-return precedes safeEmit), but pinning the emitter-side
+// invariant directly catches a copy-paste regression that test
+// 5959-5968 would not — that test only inspects in-memory state, not
+// the durable JSONL trace.
+test("events: ralph_pause is idempotent on the JSONL emit side too — exactly one pause event per logical pause", async () => {
+    const { session, controller, calls } = await arm({ max_iterations: 5 });
+    session.emit("session.idle", { data: {} });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    await pause.handler({ reason: "first" });
+    await pause.handler({ reason: "second" });
+    await pause.handler({ reason: "third" });
+    const pauseEvents = calls[0].events.filter((e) => e.type === "pause");
+    assert.equal(
+        pauseEvents.length,
+        1,
+        `idempotent ralph_pause must emit exactly ONE pause event in the JSONL stream; got ${pauseEvents.length}: ${JSON.stringify(pauseEvents)}`,
+    );
+    // First pause's reason wins (first-write-wins matches the in-memory
+    // pauseReason semantics asserted in test 5959-5968).
+    assert.equal(pauseEvents[0].reason, "first");
+});

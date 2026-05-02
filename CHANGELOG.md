@@ -211,6 +211,18 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Pin that `ralph_pause` is idempotent on the JSONL emit
+  side too — exactly ONE `pause` event written to the
+  durable event stream per logical pause, regardless of
+  how many times `ralph_pause` is called. The handler's
+  in-memory state is already pinned idempotent (the
+  second call returns success without mutating state),
+  but the emitter side had no test guarding against a
+  refactor that accidentally moved `safeEmit({ type:
+  "pause", ... })` above the early-return short-circuit
+  — such a regression would emit duplicate JSONL entries
+  and corrupt the pause-state fold any TUI consumer or
+  downstream tool computes over the event stream.
 - Direct unit-test coverage for `safeSliceChars`'s
   defensive guards (extracted in iter 119): non-string
   input → returned unchanged (null, undefined, number,

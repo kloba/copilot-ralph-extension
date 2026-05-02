@@ -646,13 +646,13 @@
 </div>
 <p>Topics planned:</p>
 <ul>
-<li>The arming → subprocess-per-iter model used by <code>ralph-tui run</code></li>
+<li>The arming → subprocess-per-iter model used by <code>autopilot run</code></li>
 <li>Completion / abort / stagnation finish reasons</li>
 <li>Pause / resume semantics</li>
 <li>Adaptive iteration budget</li>
 </ul>
 <h2 id="pause-resume-semantics">Pause / resume semantics<a class="headerlink" href="#pause-resume-semantics" title="Permanent link">&para;</a></h2>
-<p><code>ralph-tui run --pause &lt;runId&gt;</code> and <code>ralph-tui run --resume &lt;runId&gt;</code> let you stop the next iteration from firing without losing the iteration counter or the captured Copilot session id (in <code>--continue</code> mode). The currently-running <code>copilot -p</code> subprocess is <strong>never killed mid-iter</strong> — the driver waits for it to finish naturally before honoring the pause flag at the next iter boundary.</p>
+<p><code>autopilot run --pause &lt;runId&gt;</code> and <code>autopilot run --resume &lt;runId&gt;</code> let you stop the next iteration from firing without losing the iteration counter or the captured Copilot session id (in <code>--continue</code> mode). The currently-running <code>copilot -p</code> subprocess is <strong>never killed mid-iter</strong> — the driver waits for it to finish naturally before honoring the pause flag at the next iter boundary.</p>
 <p>State writes are CAS-protected via a per-run lockfile so a concurrent <code>--pause</code> + <code>--stop</code> from two terminals do not lose updates.</p>
 <p><code>--resume</code> flips <code>pauseRequested</code> back to <code>false</code>. <code>--stop</code> sets <code>stopRequested</code> and the driver emits a terminal <code>abort</code> event with <code>reason: "user_stopped"</code> after the in-flight iter exits.</p>
 <h2 id="completion-abort-triggers">Completion / abort triggers<a class="headerlink" href="#completion-abort-triggers" title="Permanent link">&para;</a></h2>

@@ -513,9 +513,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#running-ralph-tui-locally" class="md-nav__link">
+  <a href="#running-autopilot-locally" class="md-nav__link">
     <span class="md-ellipsis">
-      Running ralph-tui locally
+      Running autopilot locally
     </span>
   </a>
   
@@ -594,7 +594,7 @@
 <p>The repository has <strong>zero npm runtime dependencies</strong> for the non-render layer (<code>prompts.mjs</code>, <code>runner.mjs</code>, <code>events*.mjs</code>, <code>writer.mjs</code>, <code>tail.mjs</code>, <code>plain.mjs</code>, <code>bin/tui.mjs</code>). <code>npm install</code> is only required when developing the Ink-rendered watch / run UI:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">cd</span><span class="w"> </span>packages/tui<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>install<span class="w">   </span><span class="c1"># pulls Ink + React + Yoga + Commander</span>
 </code></pre></div>
-<h2 id="running-ralph-tui-locally">Running ralph-tui locally<a class="headerlink" href="#running-ralph-tui-locally" title="Permanent link">&para;</a></h2>
+<h2 id="running-autopilot-locally">Running autopilot locally<a class="headerlink" href="#running-autopilot-locally" title="Permanent link">&para;</a></h2>
 <p>For day-to-day iteration:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># From the repo root, no install needed for plain mode:</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>run<span class="w"> </span>--self-improve<span class="w"> </span>--fresh<span class="w"> </span>--max<span class="w"> </span><span class="m">5</span>

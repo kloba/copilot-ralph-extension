@@ -929,9 +929,9 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>checkout<span class="w"> </span>vX.Y.Z
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>--help
 </code></pre></div>
-<p>Tags are immutable, so a pinned checkout never silently shifts. A future release will publish <code>ralph-tui</code> to npm so <code>npm i -g ralph-tui@X.Y.Z</code> works.</p>
+<p>Tags are immutable, so a pinned checkout never silently shifts. A future release will publish <code>autopilot</code> to npm so <code>npm i -g autopilot@X.Y.Z</code> works.</p>
 <h3 id="what-happened-to-the-copilotextensionsralph-install">What happened to the <code>~/.copilot/extensions/ralph</code> install?<a class="headerlink" href="#what-happened-to-the-copilotextensionsralph-install" title="Permanent link">&para;</a></h3>
-<p>The previous in-session Copilot CLI extension was retired — see <a href="../CHANGELOG.md"><code>CHANGELOG.md</code></a>. If you still have <code>~/.copilot/extensions/ralph</code> from an older install, <code>rm -rf ~/.copilot/extensions/ralph</code> and switch to <code>ralph-tui run</code> as documented in the <a href="../README.md#usage">README</a>.</p>
+<p>The previous in-session Copilot CLI extension was retired — see <a href="../CHANGELOG.md"><code>CHANGELOG.md</code></a>. If you still have <code>~/.copilot/extensions/ralph</code> from an older install, <code>rm -rf ~/.copilot/extensions/ralph</code> and switch to <code>autopilot run</code> as documented in the <a href="../README.md#usage">README</a>.</p>
 <h2 id="running-a-loop">Running a loop<a class="headerlink" href="#running-a-loop" title="Permanent link">&para;</a></h2>
 <h3 id="why-did-my-loop-stop-after-exactly-one-iteration">Why did my loop stop after exactly one iteration?<a class="headerlink" href="#why-did-my-loop-stop-after-exactly-one-iteration" title="Permanent link">&para;</a></h3>
 <p>The most common cause is an early <code>--completion-promise</code> match. Both <code>--completion-promise</code> and <code>--abort-promise</code> use plain substring matching against the assistant's response — if the agent quotes the trigger phrase mid-thought (e.g. <em>"I'll mark this COMPLETE when done"</em>), the loop finishes. Pick a phrase the agent is unlikely to mention casually; <code>RALPH_DONE_42</code> and similar unusual tokens work well. See README → <a href="https://github.com/kloba/autopilot#limitations">Limitations</a>.</p>
@@ -943,7 +943,7 @@
 <li><code>min_iterations</code> is high and the agent emits the completion promise too early — the runtime ignores the promise until <code>min_iterations</code> is reached. This is by design.</li>
 </ol>
 <h3 id="how-do-i-stop-a-loop-thats-running-away">How do I stop a loop that's running away?<a class="headerlink" href="#how-do-i-stop-a-loop-thats-running-away" title="Permanent link">&para;</a></h3>
-<p>Run <code>ralph-tui run --stop &lt;runId&gt;</code> from another terminal — it sets <code>stopRequested</code> in <code>state.json</code>. The currently-running iteration finishes normally; the driver emits a terminal <code>abort</code> event with <code>reason: "user_stopped"</code> afterwards. <code>SIGINT</code> / <code>SIGTERM</code> at the driver process flips the same flag.</p>
+<p>Run <code>autopilot run --stop &lt;runId&gt;</code> from another terminal — it sets <code>stopRequested</code> in <code>state.json</code>. The currently-running iteration finishes normally; the driver emits a terminal <code>abort</code> event with <code>reason: "user_stopped"</code> afterwards. <code>SIGINT</code> / <code>SIGTERM</code> at the driver process flips the same flag.</p>
 <h3 id="pause-resume-whats-the-difference-vs-stop">Pause / resume — what's the difference vs stop?<a class="headerlink" href="#pause-resume-whats-the-difference-vs-stop" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>--stop</code> clears the active loop after the in-flight iter finishes.</li>
@@ -955,13 +955,13 @@
 <h3 id="where-does-a-running-loops-event-log-live">Where does a running loop's event log live?<a class="headerlink" href="#where-does-a-running-loops-event-log-live" title="Permanent link">&para;</a></h3>
 <p>By default: <code>~/.copilot/ralph-tui/runs/&lt;runId&gt;/events.jsonl</code>. Override the runs root with <code>RALPH_TUI_RUNS_DIR</code>. The <code>&lt;runId&gt;</code> shape is <code>${label}-${startedAt}</code> — sortable, filesystem-safe, and surfaced in the <code>armed</code> event.</p>
 <h3 id="how-do-i-tail-a-running-loops-events">How do I tail a running loop's events?<a class="headerlink" href="#how-do-i-tail-a-running-loops-events" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>ralph-tui<span class="w"> </span>watch<span class="w">              </span><span class="c1"># tail the most recent run</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>ralph-tui<span class="w"> </span>watch<span class="w"> </span>&lt;runId&gt;<span class="w">      </span><span class="c1"># tail a specific run</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>ralph-tui<span class="w"> </span>list<span class="w">               </span><span class="c1"># enumerate recorded runs newest-first</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>ralph-tui<span class="w"> </span>replay<span class="w"> </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># print every event in a past run</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>autopilot<span class="w"> </span>watch<span class="w">              </span><span class="c1"># tail the most recent run</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>autopilot<span class="w"> </span>watch<span class="w"> </span>&lt;runId&gt;<span class="w">      </span><span class="c1"># tail a specific run</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>autopilot<span class="w"> </span>list<span class="w">               </span><span class="c1"># enumerate recorded runs newest-first</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>autopilot<span class="w"> </span>replay<span class="w"> </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># print every event in a past run</span>
 </code></pre></div>
 <h3 id="how-do-i-get-a-structured-snapshot-of-a-live-run">How do I get a structured snapshot of a live run?<a class="headerlink" href="#how-do-i-get-a-structured-snapshot-of-a-live-run" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ralph-tui<span class="w"> </span>run<span class="w"> </span>--status<span class="w"> </span>&lt;runId&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>autopilot<span class="w"> </span>run<span class="w"> </span>--status<span class="w"> </span>&lt;runId&gt;
 </code></pre></div>
 <p>Reads the run's <code>state.json</code> and renders iter counter, pause/stop flags, and (in <code>--continue</code> mode) the captured Copilot session id.</p>
 <h2 id="commit-attribution">Commit attribution<a class="headerlink" href="#commit-attribution" title="Permanent link">&para;</a></h2>

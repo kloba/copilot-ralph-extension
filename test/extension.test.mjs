@@ -7,7 +7,7 @@ import { dirname, resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
-const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW } = __test__;
+const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError } = __test__;
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -6179,4 +6179,36 @@ test("evaluateAdaptiveSignals: gitExec returning ok:false is treated as no signa
 
 test("evaluateAdaptiveSignals: ADAPTIVE_WINDOW is the documented constant 3", () => {
     assert.equal(ADAPTIVE_WINDOW, 3);
+});
+
+test("reprefixRalphLoopError: rewrites a `ralph_loop:` prefix to the calling tool", () => {
+    // self_improve / grow_project both delegate validation to validateArgs
+    // (which prefixes errors with "ralph_loop:") and then rewrite the
+    // prefix to their own tool name. Pin the rewrite branch so a future
+    // refactor that, say, swaps the regex anchor doesn't silently let
+    // "ralph_loop:" leak into self_improve / grow_project error streams.
+    const out = reprefixRalphLoopError("ralph_loop: prompt is required and must be non-empty.", "self_improve");
+    assert.equal(out, "self_improve: prompt is required and must be non-empty.");
+    const out2 = reprefixRalphLoopError("ralph_loop: max_iterations must be …", "grow_project");
+    assert.equal(out2, "grow_project: max_iterations must be …");
+});
+
+test("reprefixRalphLoopError: forces a tool prefix on errors lacking the `ralph_loop:` prefix", () => {
+    // Defensive fallback: if a future validateArgs path forgets the
+    // "ralph_loop:" prefix (e.g. a new validation branch returns a bare
+    // string), the helper must STILL stamp the calling tool's name on
+    // the front so the user's error stream never carries a prefix-less
+    // message. Pin both prefix-less and other-prefix variants.
+    assert.equal(
+        reprefixRalphLoopError("focus exceeds 2000 characters.", "self_improve"),
+        "self_improve: focus exceeds 2000 characters.",
+    );
+    // A wrong-prefix string (e.g. some hypothetical ralph_v2:) must be
+    // wrapped, NOT rewritten — the helper only swaps the exact
+    // "ralph_loop:" anchor, so any other prefix gets the tool name
+    // glued to its left.
+    assert.equal(
+        reprefixRalphLoopError("ralph_v2: bogus", "grow_project"),
+        "grow_project: ralph_v2: bogus",
+    );
 });

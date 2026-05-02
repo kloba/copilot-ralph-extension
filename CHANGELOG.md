@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Refactor
+- Consolidate self_improve / grow_project's
+  validation-error re-prefix logic into a shared
+  `reprefixRalphLoopError(error, tool)` helper. Both
+  tools delegated validation to `validateArgs()`
+  (which prefixes errors with `"ralph_loop:"`) and
+  then rewrote the prefix in-place — two near-
+  identical 6-line blocks of regex-replace + string-
+  fallback. Now one helper handles both branches
+  (rewrite + defensive forced-prefix) and any future
+  wrapper tool inherits the same behaviour for free.
+  Helper is exported via `__test__` and pinned by
+  two new tests covering rewrite and fallback.
+
 ### Fixes
 - TUI plain-mode renderer now surfaces `pausedForMs`
   on resume events. Previously the field was silently

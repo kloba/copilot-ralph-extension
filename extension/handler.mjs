@@ -817,6 +817,19 @@ function noActiveLoopFailure(tool) {
     return failure(`${tool}: no ralph_loop, self_improve, or grow_project is currently running.`);
 }
 
+// self_improve and grow_project both delegate validation to validateArgs()
+// (which prefixes errors with "ralph_loop:") and then re-prefix the result
+// with their own tool name so the user sees the actual tool they called in
+// the error stream. Centralise the swap so a future validation path that
+// forgets the "ralph_loop:" prefix still surfaces the right tool name —
+// and so adding a new wrapper tool ("ralph_replay" etc.) inherits the
+// behaviour for free.
+function reprefixRalphLoopError(error, toolName) {
+    return error.startsWith("ralph_loop:")
+        ? error.replace(/^ralph_loop:/, `${toolName}:`)
+        : `${toolName}: ${error}`;
+}
+
 const RALPH_LOOP_KEYS = new Set([
     "prompt",
     "max_iterations",
@@ -2075,17 +2088,13 @@ export function createRalphController(opts = {}) {
                     stagnation_limit: a.stagnation_limit,
                 });
                 if (parsed.error) {
-                    // Re-prefix delegated validateArgs errors so users see
-                    // self_improve in the error stream rather than ralph_loop.
-                    // Defensive fallback: if a future validateArgs path forgets
-                    // the "ralph_loop:" prefix, the regex rewrite would no-op
-                    // and leak an un-prefixed error to self_improve callers.
-                    // Force a "self_improve:" prefix instead so the tool name
-                    // is always present in the error stream.
-                    const msg = parsed.error.startsWith("ralph_loop:")
-                        ? parsed.error.replace(/^ralph_loop:/, "self_improve:")
-                        : `self_improve: ${parsed.error}`;
-                    return failure(msg);
+                    // Re-prefix delegated validateArgs errors via shared
+                    // helper so users see self_improve in the error stream
+                    // rather than ralph_loop. The helper handles the
+                    // defensive fallback (forced "self_improve:" prefix
+                    // even if a future validateArgs path forgets the
+                    // ralph_loop: prefix).
+                    return failure(reprefixRalphLoopError(parsed.error, "self_improve"));
                 }
                 return armLoop(parsed.value, "self_improve");
             },
@@ -2173,15 +2182,11 @@ export function createRalphController(opts = {}) {
                     stagnation_limit: a.stagnation_limit,
                 });
                 if (parsed.error) {
-                    // Re-prefix delegated validateArgs errors so users see
-                    // grow_project in the error stream rather than ralph_loop.
-                    // Defensive fallback mirroring iter 17 self_improve fix:
-                    // force a "grow_project:" prefix even if a future
-                    // validateArgs path forgets the ralph_loop: prefix.
-                    const msg = parsed.error.startsWith("ralph_loop:")
-                        ? parsed.error.replace(/^ralph_loop:/, "grow_project:")
-                        : `grow_project: ${parsed.error}`;
-                    return failure(msg);
+                    // Re-prefix delegated validateArgs errors via shared
+                    // helper (mirrors self_improve handling) so users see
+                    // grow_project in the error stream rather than
+                    // ralph_loop, with the same defensive fallback.
+                    return failure(reprefixRalphLoopError(parsed.error, "grow_project"));
                 }
                 return armLoop(parsed.value, "grow_project");
             },
@@ -2295,4 +2300,4 @@ export function createRalphController(opts = {}) {
     };
 }
 
-export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW };
+export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError };

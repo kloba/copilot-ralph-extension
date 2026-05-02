@@ -1,4 +1,4 @@
-# Copilot Instructions for copilot-ralph-extension
+# Copilot Instructions for autopilot
 
 This is the canonical filename GitHub Copilot (and other AI coding
 assistants that load `.github/copilot-instructions.md` automatically)
@@ -25,10 +25,11 @@ the single source of truth:
   `.github/workflows/release.yml` enforces the match.
 - **AI-authored commits** must include both
   `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`
-  and (unless `RALPH_NO_ATTRIBUTION=1` is set in the environment)
+  and (unless `AUTOPILOT_NO_ATTRIBUTION=1` is set in the environment)
   `Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>`
   trailers so loop-driven commits are passively searchable across
-  public GitHub.
+  public GitHub. Legacy `RALPH_*` env vars (e.g. `RALPH_NO_ATTRIBUTION`)
+  still work via fallback for one release.
 - **Tests**: the project is pure-stdlib Node; run them with `npm test`.
   No build, no lint, no transpiler — `node --test test/*.test.mjs
   packages/*/test/*.test.mjs` covers everything.

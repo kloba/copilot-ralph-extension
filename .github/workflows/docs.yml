@@ -1,6 +1,6 @@
 name: Deploy docs site
 
-# Tracked in issue #2: https://github.com/kloba/copilot-ralph-extension/issues/2
+# Tracked in issue #2: https://github.com/kloba/autopilot/issues/2
 # Deploys the MkDocs Material site under /docs/ to the gh-pages branch
 # whenever the docs/, mkdocs.yml, or this workflow itself change on main.
 

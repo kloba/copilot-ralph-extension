@@ -121,6 +121,9 @@ const STATE_COLOR = {
 };
 
 export default function TasksPane({ snapshot }) {
+    // Issue #54 slice 1 — heading "Tasks" matches the inside-border
+    // convention used by Timeline / DetailPane / LastCommit.
+    const heading = h(Text, { bold: true, underline: true }, "Tasks");
     const rows = computeTaskRows(snapshot);
     if (rows.length === 0) {
         return h(Box, {
@@ -129,6 +132,7 @@ export default function TasksPane({ snapshot }) {
             paddingX: 1,
             flexDirection: "column",
         },
+            heading,
             h(Text, { dimColor: true }, "tasks: (no task list yet)"),
         );
     }
@@ -157,5 +161,5 @@ export default function TasksPane({ snapshot }) {
         borderColor: "gray",
         paddingX: 1,
         flexDirection: "column",
-    }, ...elements);
+    }, heading, ...elements);
 }

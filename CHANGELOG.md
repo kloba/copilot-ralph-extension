@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Refactor
+- `activeLoopGuard` now reports a paused active
+  loop as `paused (iteration N/M)` instead of
+  the previous `running (iteration N/M)`. The
+  guard fires when ralph_loop / self_improve /
+  grow_project is invoked while another loop is
+  already active; if that other loop has been
+  paused with ralph_pause, the legacy "running"
+  wording was misleading — the right remedy is
+  often `ralph_resume` rather than `ralph_stop`.
+  Rendering priority is now:
+  paused > pendingFire > running.
+  Tools using the guard (every loop-arming tool)
+  inherit the corrected wording for free.
+
 ### Fixes
 - Replace the awkward `Valid keys: .` error
   rendering for tools that accept no arguments

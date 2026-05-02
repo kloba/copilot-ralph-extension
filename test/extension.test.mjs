@@ -6368,3 +6368,49 @@ test("ralph_resume: pluralizes 'unknown arguments' when more than one bogus key 
     assert.match(r.textResultForLlm, /unknown arguments: "foo", "bar"/);
     assert.match(r.textResultForLlm, /takes no arguments/i);
 });
+
+// -----------------------------------------------------------------------------
+// activeLoopGuard: when the active loop is paused, the refusal must say
+// "paused" rather than "running". The legacy form rendered "running
+// (iteration N/M)" even after ralph_pause, which was confusing — call sites
+// got told to ralph_stop first when ralph_resume might have been the right
+// remedy. Pin the priority order: paused > pendingFire > running.
+// -----------------------------------------------------------------------------
+
+test("activeLoopGuard: reports 'paused' status when the active loop has been paused", async () => {
+    const { controller, ralph, session } = await arm({ max_iterations: 9 });
+    // Drive the iteration counter to 1 so we can distinguish paused
+    // (iteration N>0) from the armed (iteration 1/M pending) branch.
+    runTurn(session, "first response");
+    await new Promise((r) => setImmediate(r));
+    assert.equal(controller.state.active.i, 1);
+    // Pause via the ralph_pause tool (mirrors a real caller).
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pr = await pause.handler({});
+    assert.equal(pr.resultType, "success");
+    assert.equal(controller.state.active.paused, true);
+    // Now attempt to arm a second loop — expect "paused", not "running".
+    const r = await ralph.handler({ prompt: "again" });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /is already paused/);
+    assert.match(r.textResultForLlm, /\(iteration 1\/9\)/);
+    assert.doesNotMatch(r.textResultForLlm, /running/);
+    // Sentence-end remains clean (paren balance + period in the right place).
+    assert.match(r.textResultForLlm, /\(iteration 1\/9\) — call ralph_stop first\.$/);
+});
+
+test("activeLoopGuard: paused beats pendingFire when both flags are set", async () => {
+    // ralph_loop was armed but no turn_end fired yet; ralph_pause then runs
+    // before iter 1 lands. paused should still be the headline status.
+    const { controller, ralph } = await arm({ max_iterations: 4 });
+    assert.equal(controller.state.active.pendingFire, true);
+    assert.equal(controller.state.active.i, 0);
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pr = await pause.handler({});
+    assert.equal(pr.resultType, "success");
+    assert.equal(controller.state.active.paused, true);
+    assert.equal(controller.state.active.pendingFire, true);
+    const r = await ralph.handler({ prompt: "again" });
+    assert.match(r.textResultForLlm, /is already paused/);
+    assert.doesNotMatch(r.textResultForLlm, /armed.*pending/);
+});

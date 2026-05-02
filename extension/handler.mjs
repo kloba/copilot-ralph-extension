@@ -1593,12 +1593,23 @@ export function createRalphController(opts = {}) {
     // Single source of truth for the "another loop is already active"
     // refusal — used by ralph_loop, self_improve, and grow_project so
     // the message and iteration-counter logic can never drift.
+    //
+    // Rendering priority: paused > pendingFire > running. A paused loop
+    // would otherwise be reported as "running (iteration N/M)", which
+    // misleads the caller — "ralph_stop first" is still the right
+    // remedy, but a `ralph_resume` may also be appropriate, so the
+    // status string must mention the pause explicitly.
     function activeLoopGuard() {
         if (!state.active) return null;
-        const { pendingFire, i, max } = state.active;
-        const status = pendingFire
-            ? `armed (iteration 1/${max} pending)`
-            : `running (iteration ${i}/${max})`;
+        const { pendingFire, paused, i, max } = state.active;
+        let status;
+        if (paused) {
+            status = `paused (iteration ${i}/${max})`;
+        } else if (pendingFire) {
+            status = `armed (iteration 1/${max} pending)`;
+        } else {
+            status = `running (iteration ${i}/${max})`;
+        }
         return failure(`${state.active.label} is already ${status} — call ralph_stop first.`);
     }
 

@@ -7,7 +7,7 @@ import { dirname, resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
-const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError } = __test__;
+const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines } = __test__;
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -6243,4 +6243,77 @@ test("no CR (\\r) bytes in any shipped source file (LF-only line endings)", () =
         const idx = buf.indexOf(0x0d);
         assert.equal(idx, -1, `${rel} contains CR (\\r) at byte ${idx} — must be LF-only. Re-save the file with Unix line endings (most editors: "Save with line endings: LF").`);
     }
+});
+
+// -----------------------------------------------------------------------------
+// gitAheadBehind / gitUncommittedLines: pin the parsing edge cases that feed
+// ralph_status's "git" snapshot block. Both helpers degrade to null on parse
+// failure (a noisy snapshot is worse than a missing one), so verify each
+// failure mode produces null instead of a thrown TypeError or a partial
+// numeric result.
+// -----------------------------------------------------------------------------
+
+function fakeGitExec(reply) {
+    return () => reply;
+}
+
+test("gitAheadBehind: returns null when git exits non-zero (no upstream tracked)", () => {
+    const r = gitAheadBehind(fakeGitExec({ ok: false, stdout: "", stderr: "fatal: no upstream" }));
+    assert.strictEqual(r, null);
+});
+
+test("gitAheadBehind: parses `<behind>\\t<ahead>` stdout into { ahead, behind }", () => {
+    // git rev-list --left-right --count @{u}...HEAD prints "<left>\t<right>"
+    // with left=upstream-only=behind, right=HEAD-only=ahead.
+    const r = gitAheadBehind(fakeGitExec({ ok: true, stdout: "2\t5\n" }));
+    assert.deepStrictEqual(r, { ahead: 5, behind: 2 });
+});
+
+test("gitAheadBehind: returns null when stdout has the wrong field count", () => {
+    // Only one field — malformed input from a future git change must not
+    // surface a NaN-laced snapshot.
+    assert.strictEqual(gitAheadBehind(fakeGitExec({ ok: true, stdout: "5\n" })), null);
+    assert.strictEqual(gitAheadBehind(fakeGitExec({ ok: true, stdout: "1\t2\t3\n" })), null);
+});
+
+test("gitAheadBehind: returns null when either field is non-numeric", () => {
+    assert.strictEqual(gitAheadBehind(fakeGitExec({ ok: true, stdout: "abc\t5\n" })), null);
+    assert.strictEqual(gitAheadBehind(fakeGitExec({ ok: true, stdout: "5\txyz\n" })), null);
+});
+
+test("gitAheadBehind: handles leading/trailing whitespace + empty stdout", () => {
+    assert.deepStrictEqual(
+        gitAheadBehind(fakeGitExec({ ok: true, stdout: "  0\t0  \n" })),
+        { ahead: 0, behind: 0 },
+    );
+    // Empty stdout splits to [""] — length 1, returns null.
+    assert.strictEqual(gitAheadBehind(fakeGitExec({ ok: true, stdout: "" })), null);
+});
+
+test("gitUncommittedLines: returns null when git exits non-zero", () => {
+    assert.strictEqual(gitUncommittedLines(fakeGitExec({ ok: false, stdout: "", stderr: "boom" })), null);
+});
+
+test("gitUncommittedLines: returns 0 for clean working tree (empty shortstat)", () => {
+    // `git diff --shortstat HEAD` prints nothing when there are no changes.
+    assert.strictEqual(gitUncommittedLines(fakeGitExec({ ok: true, stdout: "" })), 0);
+});
+
+test("gitUncommittedLines: sums insertions and deletions", () => {
+    const r = gitUncommittedLines(fakeGitExec({
+        ok: true,
+        stdout: " 3 files changed, 12 insertions(+), 5 deletions(-)\n",
+    }));
+    assert.strictEqual(r, 17);
+});
+
+test("gitUncommittedLines: handles insertion-only and deletion-only output", () => {
+    assert.strictEqual(
+        gitUncommittedLines(fakeGitExec({ ok: true, stdout: " 1 file changed, 4 insertions(+)\n" })),
+        4,
+    );
+    assert.strictEqual(
+        gitUncommittedLines(fakeGitExec({ ok: true, stdout: " 1 file changed, 7 deletions(-)\n" })),
+        7,
+    );
 });

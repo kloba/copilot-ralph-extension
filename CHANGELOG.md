@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Tests
+- Pin gitAheadBehind / gitUncommittedLines edge
+  cases — the two helpers that feed ralph_status's
+  "git" snapshot block. Cover: non-zero exit (no
+  upstream tracked) → null; happy path parses
+  `behind\\tahead`; wrong-field-count stdout →
+  null; non-numeric fields → null; empty stdout →
+  null; clean working tree → 0; insertions-only,
+  deletions-only, and combined shortstat output.
+  Both helpers must degrade to null on parse
+  failure rather than emit a NaN-laced snapshot,
+  so each failure mode is now a behaviour test.
+
 ### Internal
 - Add `.gitattributes` pinning every shipped text
   file to LF line endings (`* text=auto eol=lf`,

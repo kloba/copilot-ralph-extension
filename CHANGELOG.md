@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Documentation
+- README's `ralph_status` behaviour-notes block now spells out
+  that `elapsed_ms` is wall-clock — counted from arm-time to
+  "now" and including pause time. A loop paused for 60s reports
+  `elapsed_ms` 60_000 higher than its active-time peer would.
+  The note points readers at `total_paused_ms` (and
+  `paused_for_ms` when currently paused) for computing
+  active-only time, and links to the matching contract in
+  `docs/concepts.md` (iter 77). A drift-guard test reads
+  README at runtime and asserts the bullet is still present —
+  without this guard a refactor that quietly switched
+  `elapsed_ms` to active-only time would let the README lie.
+
 ### Refactor
 - `validateArgs` adaptive-budget block now uses a single closure
   helper `validateAdaptiveIntField(fieldName, raw, lo, loLabel)`

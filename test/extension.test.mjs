@@ -7860,3 +7860,22 @@ test("compareSemver: spec example chain (SemVer §11)", () => {
         );
     }
 });
+
+test("README pins ralph_status elapsed_ms wall-clock semantics (drift guard)", async () => {
+    // Iter 77 documented in docs/concepts.md that elapsed_ms is
+    // wall-clock (includes pause time). Iter 82 surfaces the same
+    // claim in README's ralph_status behaviour-notes block, since
+    // README is the doc most users read first. This drift guard
+    // pins the README sentence so a future refactor that switches
+    // elapsed_ms to active-only time (or quietly subtracts pause
+    // duration) is forced to update the doc — without this guard,
+    // the README would silently lie.
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const url = await import("node:url");
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const readme = await fs.readFile(path.join(here, "..", "README.md"), "utf8");
+    assert.match(readme, /\*\*`elapsed_ms` is wall-clock\.\*\*/, "elapsed_ms wall-clock bullet missing");
+    assert.match(readme, /includes pause time/, "wall-clock bullet must call out pause-time inclusion");
+    assert.match(readme, /Subtract `total_paused_ms`/, "wall-clock bullet must point users at total_paused_ms for active-only time");
+});

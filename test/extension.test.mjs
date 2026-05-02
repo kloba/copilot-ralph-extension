@@ -8179,3 +8179,31 @@ test("grow_project mirrors the self_improve min_iterations clamp (default min=10
     assert.equal(r.max, 5);
     assert.equal(r.min, 5, "unsupplied min clamps to min(GROW_PROJECT_DEFAULTS.min_iterations=10, max=5) = 5");
 });
+
+test("self_improve + grow_project tool descriptions document the min_iterations default-clamp behaviour", async () => {
+    // Iter 90 silently clamped the unsupplied min_iterations
+    // default to max_iterations when max is smaller. Iter 91
+    // surfaces that contract in the tool description so an
+    // agent reading the schema understands why a small max
+    // doesn't trigger a "got 5"/"got 10" rejection. This
+    // drift guard pins the wording in both descriptions so a
+    // future revert of the clamp (or a description rewrite
+    // that drops the clamp note) is caught at test time.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    for (const name of ["self_improve", "grow_project"]) {
+        const tool = c.tools.find((t) => t.name === name);
+        const desc = tool.parameters.properties.min_iterations.description;
+        assert.match(
+            desc,
+            /clamped down to max_iterations/,
+            `${name}.min_iterations description must explain the default-clamp behaviour`,
+        );
+        assert.match(
+            desc,
+            /explicitly-supplied min_iterations still must not exceed max_iterations/,
+            `${name}.min_iterations description must keep the user-explicit-min strictness call-out so the clamp doesn't read as a global escape hatch`,
+        );
+    }
+});

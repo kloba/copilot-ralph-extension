@@ -2261,7 +2261,7 @@ export function createRalphController(opts = {}) {
                     },
                     min_iterations: {
                         type: "integer",
-                        description: `Minimum iterations before completion_promise / abort_promise are honored (default ${SELF_IMPROVE_DEFAULTS.min_iterations}; must not exceed max_iterations). Use this to force the agent to run additional verification passes even if it declares completion early.`,
+                        description: `Minimum iterations before completion_promise / abort_promise are honored (default ${SELF_IMPROVE_DEFAULTS.min_iterations}, automatically clamped down to max_iterations when max is smaller; an explicitly-supplied min_iterations still must not exceed max_iterations). Use this to force the agent to run additional verification passes even if it declares completion early.`,
                         default: SELF_IMPROVE_DEFAULTS.min_iterations,
                         minimum: 1,
                         maximum: MAX_ALLOWED_ITERATIONS,
@@ -2371,7 +2371,7 @@ export function createRalphController(opts = {}) {
                     },
                     min_iterations: {
                         type: "integer",
-                        description: `Minimum iterations before completion_promise / abort_promise are honored (default ${GROW_PROJECT_DEFAULTS.min_iterations}; must not exceed max_iterations). Use this to force the agent to drain a baseline portion of the backlog before honoring an early ABORT_NO_BACKLOG.`,
+                        description: `Minimum iterations before completion_promise / abort_promise are honored (default ${GROW_PROJECT_DEFAULTS.min_iterations}, automatically clamped down to max_iterations when max is smaller; an explicitly-supplied min_iterations still must not exceed max_iterations). Use this to force the agent to drain a baseline portion of the backlog before honoring an early ABORT_NO_BACKLOG.`,
                         default: GROW_PROJECT_DEFAULTS.min_iterations,
                         minimum: 1,
                         maximum: MAX_ALLOWED_ITERATIONS,

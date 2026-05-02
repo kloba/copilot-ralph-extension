@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Documentation
+- The `self_improve` and `grow_project` tool descriptions now
+  document the `min_iterations` default-clamp behaviour
+  introduced in the previous fix: the tool-specific defaults
+  (5 / 10) are silently clamped down to `max_iterations` when
+  the user passes a smaller `max` and no explicit `min`.
+  Explicitly-supplied `min_iterations` values are still
+  required to be ≤ `max_iterations`, so a real config mistake
+  (typing `min=5, max=3`) still surfaces loudly. A new
+  drift-guard test pins both halves of the contract — the
+  clamp note AND the user-explicit strictness call-out — in
+  both tools' schema descriptions so a future revert (or a
+  description rewrite that drops one half) is caught at test
+  time.
+
 ### Fixes
 - `self_improve` and `grow_project` no longer surface a confusing
   validation error when the caller picks a small `max_iterations`

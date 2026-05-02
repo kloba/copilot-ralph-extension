@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Documentation
+- README.md and the `ralph_status` tool
+  description in `extension/handler.mjs` now
+  document the five pause-state fields the
+  snapshot has been returning since the iter-30
+  fix (`paused`, `pause_reason`, `paused_at`,
+  `paused_for_ms`, `total_paused_ms`) plus the
+  `(PAUSED — …)` substring appended to the
+  one-line LLM summary. The README's example
+  JSON payload was extended to include them, the
+  prose overview now mentions "pause state", and
+  a new behaviour-notes bullet explains the
+  semantics (current vs cumulative pause windows,
+  ISO timestamp only when paused, etc.).
+  Hardened the existing
+  `ralph_status: README documents the tool` test
+  into a docs-drift guard: it asserts every
+  pause field name appears verbatim in the
+  example payload, that the prose mentions pause
+  state, and that the handler's tool description
+  agrees — so a future README "tidy" pass can't
+  silently drop the documentation again.
+
 ### Refactor
 - `extension/handler.mjs` — consolidated
   `defaultGitExec` and `defaultAdaptiveGitExec`

@@ -1855,7 +1855,7 @@ export function createRalphController(opts = {}) {
         {
             name: "ralph_status",
             description:
-                "Return a structured live snapshot of the active ralph_loop / self_improve / grow_project (iteration count, elapsed time, configured promises, last response excerpt, files changed since arm-time). Read-only — never mutates loop state. When no loop is active, returns { active: false } plus the previous run's summary if available. Cheap (<10ms typically); safe to call repeatedly.",
+                "Return a structured live snapshot of the active ralph_loop / self_improve / grow_project (iteration count, elapsed time, configured promises, pause state, last response excerpt, files changed since arm-time). Read-only — never mutates loop state. When no loop is active, returns { active: false } plus the previous run's summary if available. Cheap (<10ms typically); safe to call repeatedly.",
             parameters: {
                 type: "object",
                 properties: {},

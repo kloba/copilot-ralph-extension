@@ -5567,6 +5567,20 @@ test("ralph_status: last_iteration_at advances each iteration", async () => {
 test("ralph_status: README documents the tool", () => {
     const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf8");
     assert.match(readme, /\bralph_status\b/, "README must mention the ralph_status tool");
+    // Pause fields are part of the documented payload shape — the
+    // example JSON block and the prose blurb must both mention them
+    // so a docs reader sees the same surface a live `ralph_status`
+    // would return.
+    for (const field of ["paused", "pause_reason", "paused_at", "paused_for_ms", "total_paused_ms"]) {
+        assert.ok(
+            readme.includes(`"${field}"`),
+            `README's ralph_status example payload must include the ${field} field`,
+        );
+    }
+    assert.match(readme, /pause state/i, "README prose must mention pause state in the ralph_status overview");
+    // Tool description in handler.mjs must agree.
+    const handler = readFileSync(resolve(REPO_ROOT, "extension/handler.mjs"), "utf8");
+    assert.match(handler, /pause state/i, "ralph_status tool description must mention pause state");
 });
 
 test("ralph_status: surfaces paused state (paused, pause_reason, paused_at, paused_for_ms, total_paused_ms)", async () => {

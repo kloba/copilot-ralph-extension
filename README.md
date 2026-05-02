@@ -252,7 +252,7 @@ Contributor and design docs live under [`docs/`](docs/) so this README can stay 
 - [`SECURITY.md`](SECURITY.md) — how to report a vulnerability and the supported-versions policy.
 ## Inspecting a running loop (`ralph_status` tool)
 
-`ralph_status` returns a structured live snapshot of the active loop — iteration count, elapsed time, configured promises, last response excerpt, and (when running inside a git repo) the files touched since the loop was armed. It's read-only and cheap (typically <10ms), so call it as often as you like.
+`ralph_status` returns a structured live snapshot of the active loop — iteration count, elapsed time, configured promises, pause state, last response excerpt, and (when running inside a git repo) the files touched since the loop was armed. It's read-only and cheap (typically <10ms), so call it as often as you like.
 
 ```bash
 > ralph_status
@@ -277,6 +277,11 @@ Sample structured payload (`status` key on the tool result):
   "stagnation_limit": 3,
   "stagnation_streak": 0,
   "pending_first_iteration": false,
+  "paused": false,
+  "pause_reason": null,
+  "paused_at": null,
+  "paused_for_ms": 0,
+  "total_paused_ms": 0,
   "last_response_excerpt": "Implemented the GET /todos endpoint and added 3 tests…",
   "git": {
     "branch": "main",
@@ -300,6 +305,7 @@ When no loop is active, `ralph_status` returns `{ active: false }` plus a `last`
 Behaviour notes:
 
 - **Read-only.** Never mutates loop state — calling it during a loop never advances iterations, resets stagnation, or moves any timer.
+- **Pause visibility.** When `ralph_pause` has parked the loop, `paused` is `true`, `pause_reason` echoes whatever was passed (truncated to a preview length), `paused_at` is the ISO timestamp the pause took effect, `paused_for_ms` is the *current* pause duration (always 0 when not paused), and `total_paused_ms` is the cumulative time spent paused across prior pause/resume cycles in this run. The one-line `textResultForLlm` summary appends `(PAUSED — <reason>, for <ms>ms)` so a model reading the result without introspecting the JSON still sees the pause.
 - **Files-changed window.** Computed by diffing the current working tree (`git status --porcelain`) plus `git diff --name-status` against the HEAD captured at arm-time. Untracked files surface in `added`. Outside a git repo the entire `git` block is `null` and `files_changed` is omitted.
 - **No external API calls.** Only synchronous local `git` invocations with a 2-second timeout each; if any individual call fails, the corresponding field is `null` and the rest of the snapshot still returns.
 

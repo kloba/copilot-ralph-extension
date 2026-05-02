@@ -156,7 +156,20 @@ if [[ "$DRY_RUN" == "1" ]]; then
   exit 0
 fi
 
-mkdir -p "$TARGET_DIR"
+# Surface a friendly diagnostic when `mkdir -p` cannot create the target
+# directory (read-only parent, parent is a regular file, ENOSPC, etc).
+# Without this guard, `set -e` bails with the raw OS error from mkdir
+# alone — which tells a contributor WHAT failed but not how to recover.
+# Capturing stderr lets us preserve the underlying error AND surface the
+# fix hint (`set COPILOT_HOME` / `--project`) on the same exit code.
+if ! mkdir_err="$(mkdir -p "$TARGET_DIR" 2>&1)"; then
+  echo "Error: failed to create target directory: $TARGET_DIR" >&2
+  if [[ -n "$mkdir_err" ]]; then
+    echo "  underlying error: $mkdir_err" >&2
+  fi
+  echo "  Hint: ensure the parent directory exists and is writable, or pass --project to install into the current git repo instead." >&2
+  exit 1
+fi
 # Atomic per-file install: write to a sibling temp file in the target dir
 # (so it's on the same filesystem as the destination — required for
 # rename(2) atomicity), then mv. A naive `cp src dst` does open+write,

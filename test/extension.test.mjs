@@ -9018,3 +9018,65 @@ test("ralph_status: paused-without-reason summary preserves docs format even aft
     assert.doesNotMatch(r.textResultForLlm, /PAUSED —/,
         `summary must not surface an em-dash for a whitespace-collapsed reason. Got: ${JSON.stringify(r.textResultForLlm)}`);
 });
+
+// Iter 112 — install.sh surfaces a friendly diagnostic when
+// `mkdir -p $TARGET_DIR` fails (parent is a regular file, parent
+// is read-only, ENOSPC, etc). Without the guard, `set -e` bails
+// with mkdir's raw OS error alone, which tells a contributor
+// WHAT failed but not how to recover. The new guard captures
+// stderr, surfaces the underlying error, and prints a fix hint
+// pointing at `--project` as the alternate path. Pin all three
+// pieces so a future "simplify" PR can't quietly drop the
+// recovery hint.
+test("install.sh: friendly diagnostic when mkdir -p fails (parent is a regular file)", async () => {
+    // Force mkdir failure by pointing $HOME at a regular file —
+    // mkdir of `$HOME/.copilot/extensions/ralph` then tries to
+    // create `.copilot` inside a non-directory, which fails with
+    // ENOTDIR on every platform.
+    const fs = await import("node:fs");
+    const sandbox = mkdtempSync(join(tmpdir(), "ralph-install-mkdirfail-"));
+    const blocker = join(sandbox, "fake-home-as-file");
+    fs.writeFileSync(blocker, "this is a regular file, not a directory\n");
+    try {
+        const r = spawnSync("bash", [resolve(REPO_ROOT, "install.sh")], {
+            encoding: "utf8",
+            env: { ...process.env, HOME: blocker },
+        });
+        assert.notEqual(r.status, 0, "install.sh must exit non-zero when mkdir -p fails");
+        assert.match(
+            r.stderr,
+            /Error: failed to create target directory:/,
+            `stderr must include the friendly heading. Got: ${JSON.stringify(r.stderr)}`,
+        );
+        assert.match(
+            r.stderr,
+            /underlying error: mkdir: /,
+            `stderr must surface the underlying mkdir error so the contributor sees the OS-level reason. Got: ${JSON.stringify(r.stderr)}`,
+        );
+        assert.match(
+            r.stderr,
+            /Hint: .*--project/,
+            `stderr must include the recovery hint pointing at --project. Got: ${JSON.stringify(r.stderr)}`,
+        );
+    } finally {
+        rmSync(sandbox, { recursive: true, force: true });
+    }
+});
+
+test("install.sh: source-level drift guard pins the mkdir error guard wrapper", () => {
+    // Companion guard — pins the literal source pattern so a future
+    // "shorten install.sh" PR that collapses the guarded block back
+    // to a bare `mkdir -p "$TARGET_DIR"` (the form that propagates
+    // mkdir's raw OS error alone with no fix hint) trips this test.
+    const sh = readFileSync(resolve(REPO_ROOT, "install.sh"), "utf8");
+    assert.match(
+        sh,
+        /if ! mkdir_err="\$\(mkdir -p "\$TARGET_DIR" 2>&1\)"; then/,
+        "install.sh must guard mkdir -p with a captured-stderr conditional so the friendly diagnostic stays wired up",
+    );
+    assert.match(
+        sh,
+        /Hint: .*--project/,
+        "install.sh's mkdir failure path must keep the --project recovery hint",
+    );
+});

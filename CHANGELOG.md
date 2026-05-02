@@ -36,6 +36,18 @@
   either value is caught at test time.
 
 ### Fixes
+- `install.sh` now surfaces a friendly diagnostic when
+  `mkdir -p "$TARGET_DIR"` fails (parent is a regular file,
+  parent is read-only, ENOSPC, etc) — the previous bare
+  `mkdir -p "$TARGET_DIR"` let `set -e` bail with mkdir's
+  raw OS error alone, which tells a contributor WHAT failed
+  but not how to recover. The new guard captures stderr,
+  surfaces the underlying error, and prints a recovery hint
+  pointing at `--project` as the alternate path. Two tests
+  pin the behaviour end-to-end (sandbox $HOME=regular-file
+  → exit non-zero with the three-part diagnostic) and the
+  source-level guard wrapper (so a future "shorten
+  install.sh" PR can't quietly drop the recovery hint).
 - `install.sh` now exits 0 on a successful install. Every
   install.sh test before this fix used `--dry-run` (which
   exits before the EXIT trap is armed), so a latent bug in

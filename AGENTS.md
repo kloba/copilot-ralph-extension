@@ -7,9 +7,9 @@ public surface, **Keep a Changelog** for `CHANGELOG.md`, and **Conventional
 Commits** for git history. Together they let us cut a release by tagging
 `vX.Y.Z` and let tooling generate the changelog body from commits alone.
 
-> Scope: applies to all code under `extension/`, `packages/`, `test/`, and the
-> repo's CI/release workflows. Docs-only edits under `docs/` and README still
-> follow the commit convention but are exempt from version bumps.
+> Scope: applies to all code under `packages/` and the repo's CI/release
+> workflows. Docs-only edits under `docs/` and README still follow the
+> commit convention but are exempt from version bumps.
 
 ---
 
@@ -23,8 +23,8 @@ Given a version `MAJOR.MINOR.PATCH`:
 
 | Bump  | Trigger                                                                                  |
 | ----- | ---------------------------------------------------------------------------------------- |
-| MAJOR | Breaking change in a tool's signature, the Copilot CLI SDK contract, or a removed tool. |
-| MINOR | New tool, new capability, or any backwards-compatible feature.                           |
+| MAJOR | Breaking change in the `ralph-tui` CLI surface, the JSONL event contract, or env-var names. |
+| MINOR | New subcommand, new flag, new capability, or any backwards-compatible feature.           |
 | PATCH | Bug fix, prompt tweak, doc-only change to runtime behavior, internal refactor.           |
 
 **Pre-1.0 caveat**: while we're at `0.x`, MINOR may include breaking changes —
@@ -53,22 +53,22 @@ what makes automated changelog generation possible.
 
 | Type       | Use for                                            | Bumps  |
 | ---------- | -------------------------------------------------- | ------ |
-| `feat`     | New tool, new capability, new prompt section.      | MINOR  |
-| `fix`      | Bug fix in runtime / prompt / install path.        | PATCH  |
+| `feat`     | New subcommand, new flag, new prompt section.      | MINOR  |
+| `fix`      | Bug fix in runtime / prompt.                       | PATCH  |
 | `docs`     | README, AGENTS.md, ARCHITECTURE, code comments.    | none   |
 | `test`     | Adding/refactoring tests only.                     | none   |
 | `refactor` | Internal restructuring, no behavior change.        | PATCH  |
 | `perf`     | Performance improvement, no behavior change.       | PATCH  |
 | `chore`    | Build, deps, repo housekeeping.                    | none   |
 | `ci`       | CI workflow changes only.                          | none   |
-| `build`    | `install.sh`, packaging, asset shape.              | PATCH  |
+| `build`    | Packaging, asset shape.                            | PATCH  |
 | `revert`   | Reverts a prior commit (reference its SHA).        | varies |
 
 ### Scopes
 
 Use the package or directory name when it narrows the change:
-`extension`, `tui`, `install`, `release`, `docs`, `prompt`, or a tool name
-(`grow_project`, `ralph_loop`, `ralph_status`, …). Scope is optional but
+`tui`, `tui-run`, `release`, `docs`, `prompt`, or a subcommand name
+(`grow-project`, `self-improve`, `replay`, …). Scope is optional but
 encouraged — it lands in changelog grouping.
 
 ### Breaking changes
@@ -76,9 +76,9 @@ encouraged — it lands in changelog grouping.
 Either append `!` after the type/scope **or** add a `BREAKING CHANGE:` footer:
 
 ```
-feat(grow_project)!: rename `focus` arg to `theme`
+feat(tui-run)!: rename `--focus` flag to `--theme`
 
-BREAKING CHANGE: callers passing `focus` must migrate to `theme`.
+BREAKING CHANGE: callers passing `--focus` must migrate to `--theme`.
 ```
 
 A `!` or `BREAKING CHANGE:` footer forces a MAJOR bump (or, pre-1.0, a MINOR
@@ -96,12 +96,12 @@ bump with a `### Breaking` changelog section).
 ### Examples (good)
 
 ```
-feat(ralph_status): include adaptive extension history in snapshot
-fix(install): atomic per-file copy via temp + rename to avoid torn reads
+feat(tui-run): include adaptive extension history in snapshot
+fix(tui): tail.mjs detects file replacement on inode reuse
 docs(agents): add Conventional Commits guide
 chore(deps): bump node engine floor to 20
-refactor(handler): extract gitExec helper for ralph_status reuse
-feat(grow_project)!: drop pre-flight ideation when backlog non-empty
+refactor(runner): extract gitExec helper for status reuse
+feat(grow-project)!: drop pre-flight ideation when backlog non-empty
 ```
 
 ### Examples (bad — DO NOT)
@@ -157,16 +157,9 @@ has no matching section.
 `Internal` → `Tests` → `CI` → `Documentation`. Skip empty sections.
 
 This is the order actually used by `## Unreleased` in
-`CHANGELOG.md` — pinned by a drift-guard test
-(`test/extension.test.mjs`: "AGENTS.md section-name order matches
-the order used in CHANGELOG.md's `## Unreleased` block"). New
-sections must be added to AGENTS.md AND respected at the
-position shown when next inserted into `## Unreleased`. The
-guard only enforces the relative order of the FIRST occurrence
-of each section in `## Unreleased` so a multi-batch unreleased
-block (e.g. when several iters have stacked entries before the
-next release cut) can keep older sub-batches intact while still
-catching new drift at the top.
+`CHANGELOG.md`. New sections must be added to AGENTS.md AND
+respected at the position shown when next inserted into
+`## Unreleased`.
 
 The placement reasoning:
 
@@ -214,10 +207,9 @@ The placement reasoning:
      accepts `## [vX.Y.Z]` / `## vX.Y.Z` / `## [X.Y.Z]`
      equivalents, but pick the bare form for consistency.
    - Adds a fresh empty `## Unreleased` block at the top.
-   - Bumps `version` in `package.json` **and** the matching
-     `VERSION` constant in `extension/handler.mjs` (kept in sync
-     by the `VERSION matches package.json` test — bumping only one
-     fails CI).
+   - Bumps `version` in `package.json` (the single source of
+     truth — the release workflow refuses to publish a tag whose
+     `package.json#version` doesn't match).
 2. Merge.
 3. `git tag vX.Y.Z && git push origin vX.Y.Z`.
 4. Release workflow validates and publishes (see issue #10).
@@ -268,7 +260,7 @@ is the safety net that lets us automate this without losing data.
       AND `CHANGELOG.md` has a `### Breaking` entry.
 - [ ] `npm test` passes locally.
 - [ ] `npm run check` passes locally (per-file `node --check`
-      across `extension/` + `packages/tui/{src,bin}` — mirrors
+      across `packages/tui/{src,bin}` + `scripts/` — mirrors
       the CI "Syntax check" job; catches a syntax error before
       it hits the matrix runners).
 - [ ] No version bump in `package.json` outside a release PR.

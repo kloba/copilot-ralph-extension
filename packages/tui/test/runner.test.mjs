@@ -53,7 +53,6 @@ function tmp() {
 function makeEnv(extra = {}) {
     return {
         RALPH_TUI_RUNS_DIR: extra.RALPH_TUI_RUNS_DIR ?? tmp(),
-        RALPH_EVENTS_DIR: extra.RALPH_EVENTS_DIR ?? tmp(),
         ...extra,
     };
 }
@@ -908,8 +907,8 @@ test("runRalphTui: --prompt mode emits no stage events (no canonical stage list)
     const stdout = [
         // Even if the user's prompt instructs the agent to emit stage
         // markers, the runner has no canonical list to validate them
-        // against — so no events are emitted. (A future extension could
-        // accept a `--stages a,b,c` flag for prompt mode.)
+        // against — so no events are emitted. (A future enhancement
+        // could accept a `--stages a,b,c` flag for prompt mode.)
         JSON.stringify({ type: "assistant.message", data: { content: "[STAGE: STEP_ONE]\n[STAGE: STEP_TWO]\nCOMPLETE" } }),
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";

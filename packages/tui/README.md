@@ -1,13 +1,13 @@
-# `@copilot-ralph-extension/tui` — Live TUI for ralph_loop
+# `ralph-tui` — autonomous Copilot CLI loop driver + live TUI
 
-> Terminal visualizer for live `ralph_loop` / `self_improve` /
-> `grow_project` runs (issue #22). Tails a JSONL event stream the
-> loop handler writes to `~/.copilot/ralph/runs/<runId>/events.jsonl`
-> and renders a live timeline, detail pane, and controls.
+> Standalone TUI app that drives `ralph_loop` / `self_improve` /
+> `grow_project` loops by spawning each iter as a fresh
+> `copilot -p ...` subprocess, and tails the JSONL event stream the
+> driver writes to `~/.copilot/ralph-tui/runs/<runId>/events.jsonl`
+> to render a live timeline, detail pane, and controls (issue #22).
 
-The TUI is **opt-in** — the core extension keeps working with zero
-new runtime deps. You only need this package when you actually want
-to *watch* a loop run.
+This is the **only** shipping artifact of the project. The previous
+in-session Copilot CLI extension was retired — see CHANGELOG.
 
 ## Subcommands
 
@@ -49,8 +49,8 @@ the next slice; if its module isn't installed, `watch` falls back to
 # 1. From the repo root, no install needed for plain mode:
 node packages/tui/bin/tui.mjs --help
 
-# 2. List recorded runs (writes from extension/events-emit.mjs end up
-#    in $RALPH_EVENTS_DIR or ~/.copilot/ralph/runs).
+# 2. List recorded runs (writes from `ralph-tui run` land in
+#    $RALPH_TUI_RUNS_DIR or ~/.copilot/ralph-tui/runs).
 node packages/tui/bin/tui.mjs list
 
 # 3. Replay a finished run as plain log lines.
@@ -113,7 +113,7 @@ Tips:
 ## Override the runs root
 
 ```sh
-export RALPH_EVENTS_DIR=/tmp/ralph-runs
+export RALPH_TUI_RUNS_DIR=/tmp/ralph-runs
 node packages/tui/bin/tui.mjs list
 ```
 
@@ -123,7 +123,7 @@ Useful for:
 * CI jobs that want to assert on a specific run without depending on
   the user's home directory.
 * Replaying a captured `events.jsonl` from a teammate (drop their
-  file at `$RALPH_EVENTS_DIR/<runId>/events.jsonl`).
+  file at `$RALPH_TUI_RUNS_DIR/<runId>/events.jsonl`).
 
 ## Auto-upgrade for each `run`
 
@@ -168,12 +168,19 @@ reproducibility in CI) is still possible by invoking
 
 ## Architecture notes
 
+* `src/prompts.mjs` — baked SDLC prompts (`PROMPT_SELF_IMPROVE`,
+  `PROMPT_GROW_PROJECT`) and the literal completion / abort tokens
+  the agent emits. Pure-stdlib, zero imports.
+* `src/runner.mjs` — `ralph-tui run` driver. Each iter is a fresh
+  `copilot -p ...` subprocess; pause/resume/stop are out-of-band via
+  state.json mutations.
+* `src/events-emit.mjs` — zero-dep JSONL emitter the runner uses to
+  record events.
 * `src/events.mjs` — pure event contract: `EVENT_TYPES`, `makeRunId`,
-  `serializeEvent`, `parseEventLine`, `foldEvents`. Stdlib-only so
-  the loop handler can import it directly.
-* `src/writer.mjs` — DI'd JSONL writer used by the loop handler.
-  Maintains `<root>/index.jsonl` so `list` enumerates runs without
-  recursing into every per-run dir.
+  `serializeEvent`, `parseEventLine`, `foldEvents`. Stdlib-only.
+* `src/writer.mjs` — DI'd JSONL reader for `list` / `replay` / `stats`
+  / `doctor` / `prune`. Maintains `<root>/index.jsonl` so `list`
+  enumerates runs without recursing into every per-run dir.
 * `src/tail.mjs` — `readEventsFile` (sync, for `replay`) and
   `tailEventsFile` (async iterator, for `watch`). Polls and detects
   file replacement by tracking **both** `ino` and `birthtimeMs`,

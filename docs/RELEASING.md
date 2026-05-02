@@ -1,8 +1,8 @@
 # Releasing
 
-`copilot-ralph-extension` ships as a small set of `.mjs` files copied into `~/.copilot/extensions/ralph` (or `.github/extensions/ralph` for project-scoped installs). There is **no npm publish**; releases are tagged commits on `main` plus an annotated GitHub Release page.
+`copilot-ralph-extension` ships as the `ralph-tui` standalone TUI app. There is **no npm publish** today; releases are tagged commits on `main` plus an annotated GitHub Release page. The auto-attached source zipball / tarball is the canonical download.
 
-A formal tag-driven release-automation workflow now ships at [`.github/workflows/release.yml`](../.github/workflows/release.yml) (see issue [#10](https://github.com/kloba/copilot-ralph-extension/issues/10) for the rationale). Pushing a `vX.Y.Z` tag verifies `package.json` matches the tag, asserts a matching `CHANGELOG.md` section exists, runs `npm test`, and creates the GitHub Release with every `extension/*.mjs` attached as an asset. The manual checklist below is the fallback when the workflow is unavailable or you need to cut a release out-of-band.
+A tag-driven release-automation workflow ships at [`.github/workflows/release.yml`](../.github/workflows/release.yml) (see issue [#10](https://github.com/kloba/copilot-ralph-extension/issues/10) for the rationale). Pushing a `vX.Y.Z` tag verifies `package.json` matches the tag, asserts a matching `CHANGELOG.md` section exists, runs `npm test` + `npm run check`, and creates the GitHub Release with the matching changelog section as the body. The manual checklist below is the fallback when the workflow is unavailable or you need to cut a release out-of-band.
 
 ## Manual release checklist
 
@@ -17,50 +17,39 @@ A formal tag-driven release-automation workflow now ships at [`.github/workflows
    - Re-create an empty `## Unreleased` heading immediately above it for the next cycle.
    - Commit with message `Release vX.Y.Z` and the standard `Co-authored-by` trailer.
 3. **Tag the release**: `git tag -a vX.Y.Z -m "vX.Y.Z"` and `git push --tags`.
-4. **Create a GitHub Release**:
-   - Title: `vX.Y.Z`.
-   - Body: paste the new `## X.Y.Z` section from `CHANGELOG.md` verbatim.
-   - Attach every `.mjs` module under `extension/` as a release asset so users can pin a specific revision without cloning the repo. The full set is the same one `install.sh` copies — currently `extension.mjs`, `handler.mjs`, and `events-emit.mjs`. A drift guard in `test/extension.test.mjs` keeps `release.yml`'s asset list in sync with the directory; mirror that list here when invoking `gh release create` manually:
-     ```bash
-     # Extract the matching CHANGELOG block (heading-line + body up to,
-     # but not including, the next "## " heading). Escapes the dots in
-     # the version pattern so awk doesn't treat them as regex
-     # wildcards. Replace `0.6.0` below with your actual version.
-     gh release create vX.Y.Z \
-       extension/extension.mjs \
-       extension/handler.mjs \
-       extension/events-emit.mjs \
-       --title "vX.Y.Z" --notes-file <(awk '/^## X\.Y\.Z[[:space:]]*$/{p=1;next} p&&/^## /{exit} p' CHANGELOG.md)
-     ```
+4. **Create a GitHub Release** if the workflow is unavailable:
+   ```bash
+   # Extract the matching CHANGELOG block (heading-line + body up to,
+   # but not including, the next "## " heading). Replace `X.Y.Z` below
+   # with your actual version.
+   gh release create vX.Y.Z \
+     --title "vX.Y.Z" \
+     --notes-file <(awk '/^## X\.Y\.Z[[:space:]]*$/{p=1;next} p&&/^## /{exit} p' CHANGELOG.md)
+   ```
+   The auto-attached source zipball is the canonical download; no per-file `.mjs` asset upload is needed.
 
 ## Versioning
 
 We follow **Semantic Versioning**:
 
-- **MAJOR** — breaking change to the tool surface (renamed/removed tool, removed parameter, changed default that flips loop behavior).
-- **MINOR** — new tool, new optional parameter, new opt-in feature flag.
+- **MAJOR** — breaking change to the `ralph-tui` CLI surface (renamed/removed subcommand or flag, removed env var, changed JSONL event shape).
+- **MINOR** — new subcommand, new flag, new opt-in feature.
 - **PATCH** — bug fix, doc-only change, internal refactor with no user-visible behavior change.
 
-The package has zero runtime dependencies, so dependency-driven version bumps don't apply.
+The non-render layer has zero runtime dependencies, so dependency-driven version bumps don't apply there. The Ink renderer's package-lock churn falls under PATCH unless a major Ink/React/Yoga upgrade changes user-visible rendering.
 
 ## Pinning a specific version (for end users)
 
-Once a release exists with assets attached, end users can pin a specific revision. Mirror `install.sh`'s FILES list — every `.mjs` under `extension/` must be downloaded; the extension imports its modules by relative path, so a partial download will crash at module-load time:
+Once a release exists, end users can pin a specific revision by checking out the matching tag:
 
 ```bash
-# Project-scoped pin
-mkdir -p .github/extensions/ralph
-# Order matters: leaf modules first, entry point (extension.mjs) LAST —
-# mirrors install.sh's FILES array and README Option A/B/D. If
-# `/extensions reload` fires mid-download, this guarantees the SDK
-# never sees a new `extension.mjs` importing missing/old siblings.
-for f in events-emit.mjs prompts.mjs handler.mjs extension.mjs; do
-  curl -L -o ".github/extensions/ralph/$f" \
-    "https://github.com/kloba/copilot-ralph-extension/releases/download/vX.Y.Z/$f"
-done
+git clone https://github.com/kloba/copilot-ralph-extension
+cd copilot-ralph-extension
+git checkout vX.Y.Z
+node packages/tui/bin/tui.mjs --help
 ```
 
-For the user-scoped equivalent, swap `.github/extensions/ralph` for `~/.copilot/extensions/ralph`.
+A future release will publish `ralph-tui` to npm so `npm i -g ralph-tui@X.Y.Z` works; until then the source checkout above is the supported install path.
 
 ## Hotfix branches
 

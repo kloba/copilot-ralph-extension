@@ -12,10 +12,9 @@
 //     more events will land), OR
 //   - tailOptions.signal aborts.
 //
-// Zero deps (Node stdlib only) — same constraint as the rest of the TUI's
-// non-render layer so the writer side can shed any thought of pulling
-// Ink/React into the core extension. Only the Ink renderer (slice 5)
-// gets to depend on user-space packages.
+// Zero deps (Node stdlib only) — same constraint as the rest of the
+// TUI's non-render layer. Only the Ink renderer gets to depend on
+// user-space packages.
 
 import fsDefault from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";

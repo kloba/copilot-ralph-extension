@@ -1,12 +1,12 @@
 {
   "name": "copilot-ralph-extension",
   "version": "0.6.0",
-  "description": "Ralph Wiggum-style autonomous iterative loop for GitHub Copilot CLI, implemented as an in-session extension.",
+  "description": "Ralph Wiggum-style autonomous iterative loop for GitHub Copilot CLI, packaged as the ralph-tui standalone TUI app.",
   "type": "module",
   "private": true,
   "author": "Taras Kloba",
   "scripts": {
-    "test": "node --test test/*.test.mjs packages/*/test/*.test.mjs",
+    "test": "node --test packages/*/test/*.test.mjs",
     "check": "node scripts/check.mjs"
   },
   "license": "MIT",
@@ -16,11 +16,11 @@
   "keywords": [
     "github-copilot",
     "copilot-cli",
-    "extension",
     "ralph-wiggum",
     "agent",
     "iterative-loop",
-    "autonomous"
+    "autonomous",
+    "tui"
   ],
   "repository": {
     "type": "git",

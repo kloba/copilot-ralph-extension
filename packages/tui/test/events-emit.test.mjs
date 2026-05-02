@@ -1,9 +1,7 @@
-// Unit tests for extension/events-emit.mjs — the zero-dep JSONL emitter
-// shipped next to handler.mjs. Until now coverage came only via the
-// handler-events integration tests, which leaves the helpers
+// Unit tests for packages/tui/src/events-emit.mjs — the zero-dep JSONL
+// emitter consumed by `ralph-tui run`. Pins the exported contract
 // (resolveRunsRoot / makeRunId / createEventEmitter's truncation +
-// error-swallowing paths) untested in isolation. These tests pin the
-// exported contract so a future refactor can't drift silently.
+// error-swallowing paths) so a future refactor can't drift silently.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -14,25 +12,25 @@ import {
     resolveRunsRoot,
     makeRunId,
     createEventEmitter,
-} from "../extension/events-emit.mjs";
+} from "../src/events-emit.mjs";
 
-test("resolveRunsRoot: defaults to $HOME/.copilot/ralph/runs", () => {
-    assert.equal(resolveRunsRoot({}), join(homedir(), ".copilot", "ralph", "runs"));
+test("resolveRunsRoot: defaults to $HOME/.copilot/ralph-tui/runs", () => {
+    assert.equal(resolveRunsRoot({}), join(homedir(), ".copilot", "ralph-tui", "runs"));
 });
 
-test("resolveRunsRoot: honours RALPH_EVENTS_DIR override", () => {
-    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "/tmp/ralph" }), "/tmp/ralph");
+test("resolveRunsRoot: honours RALPH_TUI_RUNS_DIR override", () => {
+    assert.equal(resolveRunsRoot({ RALPH_TUI_RUNS_DIR: "/tmp/ralph" }), "/tmp/ralph");
 });
 
 test("resolveRunsRoot: ignores empty / whitespace override and falls back to default", () => {
-    const def = join(homedir(), ".copilot", "ralph", "runs");
-    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "" }), def);
-    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "   " }), def);
+    const def = join(homedir(), ".copilot", "ralph-tui", "runs");
+    assert.equal(resolveRunsRoot({ RALPH_TUI_RUNS_DIR: "" }), def);
+    assert.equal(resolveRunsRoot({ RALPH_TUI_RUNS_DIR: "   " }), def);
 });
 
 test("resolveRunsRoot: tolerates missing env arg", () => {
     // Should not throw even when env is undefined; falls back to homedir-based default.
-    assert.match(resolveRunsRoot(undefined), /\.copilot[/\\]ralph[/\\]runs$/);
+    assert.match(resolveRunsRoot(undefined), /\.copilot[/\\]ralph-tui[/\\]runs$/);
 });
 
 test("makeRunId: composes ${label}-${startedAt}", () => {
@@ -79,7 +77,7 @@ test("createEventEmitter: write appends one JSONL line per call", () => {
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1234,
-        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
         fs: fakeFs,
     });
     e.write({ type: "iteration_start", runId: e.runId, ts: 1, iteration: 1 });
@@ -97,7 +95,7 @@ test("createEventEmitter: armed event also writes a line to the run index", () =
     const e = createEventEmitter({
         label: "self_improve",
         startedAt: 99,
-        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
         fs: fakeFs,
     });
     e.write({ type: "armed", runId: e.runId, ts: 0, maxIterations: 100, minIterations: 5 });
@@ -109,7 +107,7 @@ test("createEventEmitter: armed event also writes a line to the run index", () =
     const idx = JSON.parse(indexLine.line.trimEnd());
     // The TUI's readRunIndex filters for `type === "armed"`. If this
     // line ever stops being emitted, `ralph-tui list` and
-    // `ralph-tui stats` silently skip every extension-recorded run.
+    // `ralph-tui stats` silently skip every recorded run.
     assert.equal(idx.type, "armed", "index entry must carry type=armed so the TUI consumer accepts it");
     assert.equal(idx.runId, "self_improve-99");
     assert.equal(idx.label, "self_improve");
@@ -119,28 +117,26 @@ test("createEventEmitter: armed event also writes a line to the run index", () =
 });
 
 test("createEventEmitter: index entry round-trips through TUI's readRunIndex", async () => {
-    // Cross-component reliability: the extension's emitter writes
+    // Pins the cross-module contract: createEventEmitter writes
     // index.jsonl entries that the TUI's `readRunIndex` consumer must
-    // accept. Historically the emitter omitted `type: "armed"` from
-    // the index entry, but readRunIndex filters for that exact field —
-    // so `ralph-tui list` and `ralph-tui stats` silently skipped every
-    // run recorded by the extension. Pin the contract here by writing
-    // a real run dir to a tmp $RALPH_EVENTS_DIR via the emitter, then
-    // round-tripping it through the TUI's reader.
+    // accept. readRunIndex filters for `type: "armed"` exactly — so a
+    // regression that drops the `type` field would silently make
+    // `ralph-tui list` / `stats` skip every recorded run. Round-trip
+    // through a real tmp dir to catch that.
     const fs = await import("node:fs");
     const path = await import("node:path");
     const os = await import("node:os");
-    const { readRunIndex } = await import("../packages/tui/src/writer.mjs");
+    const { readRunIndex } = await import("../src/writer.mjs");
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "ralph-emit-rt-"));
     try {
         const e = createEventEmitter({
             label: "ralph_loop",
             startedAt: 12345,
-            env: { RALPH_EVENTS_DIR: root },
+            env: { RALPH_TUI_RUNS_DIR: root },
         });
         e.write({ type: "armed", runId: e.runId, ts: 0, maxIterations: 7, minIterations: 1 });
-        const entries = readRunIndex({ env: { RALPH_EVENTS_DIR: root } });
-        assert.equal(entries.length, 1, "TUI's readRunIndex must surface the extension-emitted run");
+        const entries = readRunIndex({ env: { RALPH_TUI_RUNS_DIR: root } });
+        assert.equal(entries.length, 1, "TUI's readRunIndex must surface the runner-emitted run");
         assert.equal(entries[0].runId, "ralph_loop-12345");
         assert.equal(entries[0].label, "ralph_loop");
         assert.equal(entries[0].type, "armed");
@@ -158,7 +154,7 @@ test("createEventEmitter: non-armed events do NOT touch the index", () => {
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
         fs: fakeFs,
     });
     e.write({ type: "iteration_end", runId: e.runId, ts: 1, iteration: 1 });
@@ -171,7 +167,7 @@ test("createEventEmitter: ignores non-object / falsy events instead of writing j
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
         fs: { mkdirSync: () => {}, appendFileSync: (p, l) => lines.push({ p, l }) },
     });
     e.write(null);
@@ -186,7 +182,7 @@ test("createEventEmitter: long excerpt is clipped to <= 500 chars + trailing ell
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
         fs: {
             mkdirSync: () => {},
             appendFileSync: (_, line) => captured.push(line),
@@ -204,7 +200,7 @@ test("createEventEmitter: write swallows mkdir + append errors so the loop never
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
         fs: {
             mkdirSync: () => { throw new Error("EROFS"); },
             appendFileSync: () => { throw new Error("ENOSPC"); },
@@ -220,7 +216,7 @@ test("createEventEmitter: mkdir is called once across many writes (memoised)", (
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
         fs: {
             mkdirSync: () => { mkdirCalls += 1; },
             appendFileSync: () => {},
@@ -236,7 +232,7 @@ test("createEventEmitter: close() is a no-op safe to call repeatedly", () => {
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
         fs: { mkdirSync: () => {}, appendFileSync: () => {} },
     });
     assert.doesNotThrow(() => { e.close(); e.close(); });
@@ -247,7 +243,7 @@ test("createEventEmitter: oversize event line is dropped after stripping excerpt
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
         fs: {
             mkdirSync: () => {},
             appendFileSync: (_, line) => captured.push(line),
@@ -263,8 +259,8 @@ test("createEventEmitter: oversize event line is dropped after stripping excerpt
 
 test("createEventEmitter: BigInt / circular ref events are dropped, not thrown", () => {
     // The file-level contract is "swallow every error so the loop keeps
-    // running" (see extension/events-emit.mjs lines 6-8). Before this
-    // guard, a single event containing a BigInt or a circular ref would
+    // running" (see packages/tui/src/events-emit.mjs header). Before
+    // this guard, a single event containing a BigInt or a circular ref would
     // throw out of `JSON.stringify` inside `serialize()`, propagate
     // through `write()`, and crash the entire loop. Now both cases
     // drop the bad event silently and leave the disk untouched.
@@ -272,7 +268,7 @@ test("createEventEmitter: BigInt / circular ref events are dropped, not thrown",
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
         fs: {
             mkdirSync: () => {},
             appendFileSync: (_, line) => captured.push(line),
@@ -293,21 +289,21 @@ test("createEventEmitter: BigInt / circular ref events are dropped, not thrown",
     assert.equal(captured.length, 1);
 });
 
-// Iter 105 — RALPH_EVENTS_DIR routinely picks up stray surrounding
+// Iter 105 — RALPH_TUI_RUNS_DIR routinely picks up stray surrounding
 // whitespace from shell heredocs, Makefile interpolation, copy-paste,
 // etc. Without trimming, the override path was returned verbatim, so
-// `RALPH_EVENTS_DIR=" /tmp/runs "` created `runs` directories whose
+// `RALPH_TUI_RUNS_DIR=" /tmp/runs "` created `runs` directories whose
 // name literally contained leading + trailing spaces and broke the
 // matching `ralph-tui list` glob. Pin that the override is trimmed at
 // resolve time so a future regression cannot reintroduce that
 // papercut.
-test("resolveRunsRoot: trims surrounding whitespace from RALPH_EVENTS_DIR override", () => {
-    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "  /tmp/ralph-runs  " }), "/tmp/ralph-runs");
-    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "/tmp/ralph-runs\n" }), "/tmp/ralph-runs");
-    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "\t/tmp/ralph-runs" }), "/tmp/ralph-runs");
+test("resolveRunsRoot: trims surrounding whitespace from RALPH_TUI_RUNS_DIR override", () => {
+    assert.equal(resolveRunsRoot({ RALPH_TUI_RUNS_DIR: "  /tmp/ralph-runs  " }), "/tmp/ralph-runs");
+    assert.equal(resolveRunsRoot({ RALPH_TUI_RUNS_DIR: "/tmp/ralph-runs\n" }), "/tmp/ralph-runs");
+    assert.equal(resolveRunsRoot({ RALPH_TUI_RUNS_DIR: "\t/tmp/ralph-runs" }), "/tmp/ralph-runs");
     // Internal whitespace (paths with literal spaces, like macOS volumes)
     // is preserved — only the SURROUNDING whitespace is stripped.
-    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "  /Volumes/My Drive/runs  " }), "/Volumes/My Drive/runs");
+    assert.equal(resolveRunsRoot({ RALPH_TUI_RUNS_DIR: "  /Volumes/My Drive/runs  " }), "/Volumes/My Drive/runs");
 });
 
 // Iter 115 — clipExcerpt's slice boundary must not split a UTF-16
@@ -326,7 +322,7 @@ test("createEventEmitter: clipExcerpt does not produce lone high surrogates at t
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
         fs: {
             mkdirSync: () => {},
             appendFileSync: (_, line) => captured.push(line),
@@ -372,25 +368,23 @@ test("createEventEmitter: clipExcerpt does not produce lone high surrogates at t
     assert.ok(parsed.excerpt.endsWith("…"), "clipped excerpt must still end with the ellipsis sentinel");
 });
 
-// Iter 122 — drift guard: events-emit.mjs's MAX_EXCERPT_CHARS (500)
-// MUST equal the literal cap the TUI side passes to its surrogate-
-// safe slicer in `packages/tui/src/events.mjs`'s `serializeEvent`.
-// Both sides describe the same JSONL line consumed by both — a
-// drift would break the contract: emitter writes longer than reader
-// expects -> reader re-clips data the emitter believed was final
-// (and the surrogate-safe behavior on the emitter side is silently
+// Drift guard: events-emit.mjs's MAX_EXCERPT_CHARS (500) MUST equal
+// the literal cap the TUI side passes to its surrogate-safe slicer in
+// `./events.mjs`'s `serializeEvent`. Both sides describe the same
+// JSONL line — a drift would break the contract: emitter writes
+// longer than reader expects -> reader re-clips data the emitter
+// believed was final (and the surrogate-safe behavior is silently
 // undone), or oversize-line guards fire on one side but not the
-// other. The two values are intentionally inlined (zero-dep policy
-// keeps `events-emit.mjs` from importing TUI internals; TUI doesn't
-// import from `extension/`), so the only protection is this test.
+// other. The two values are intentionally inlined to keep the emit
+// side zero-dep, so the only protection is this test.
 test("events-emit MAX_EXCERPT_CHARS lockstep: TUI serializeEvent caps excerpt+note at the same value", async () => {
     const { readFileSync } = await import("node:fs");
     const { fileURLToPath } = await import("node:url");
     const { dirname, resolve, join } = await import("node:path");
     const here = dirname(fileURLToPath(import.meta.url));
-    const repoRoot = resolve(here, "..");
-    const emit = readFileSync(join(repoRoot, "extension/events-emit.mjs"), "utf8");
-    const tui = readFileSync(join(repoRoot, "packages/tui/src/events.mjs"), "utf8");
+    const pkgRoot = resolve(here, "..");
+    const emit = readFileSync(join(pkgRoot, "src/events-emit.mjs"), "utf8");
+    const tui = readFileSync(join(pkgRoot, "src/events.mjs"), "utf8");
 
     // Emitter side: pin the named constant.
     const emitMatch = emit.match(/const MAX_EXCERPT_CHARS = (\d+);/);
@@ -427,7 +421,7 @@ test("events-emit MAX_EXCERPT_CHARS lockstep: TUI serializeEvent caps excerpt+no
 });
 
 test("createEventEmitter: serialize salvages an oversize event by stripping excerpt+note (second-pass under 16KB cap)", () => {
-    // Iter 164 — `serialize()` in extension/events-emit.mjs implements
+    // `serialize()` in packages/tui/src/events-emit.mjs implements
     // a two-pass strategy when the JSON line exceeds the 16KB hard cap:
     //   1. First try with all fields — if under cap, write as-is.
     //   2. If over cap, delete excerpt + note (the only fields the
@@ -454,7 +448,7 @@ test("createEventEmitter: serialize salvages an oversize event by stripping exce
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
         fs: {
             mkdirSync: () => {},
             appendFileSync: (_, line) => captured.push(line),

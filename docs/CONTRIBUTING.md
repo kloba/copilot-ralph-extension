@@ -7,35 +7,34 @@ Thanks for your interest in `copilot-ralph-extension`! This page is the entry po
 ```bash
 git clone https://github.com/kloba/copilot-ralph-extension.git
 cd copilot-ralph-extension
-npm test    # runs the node:test suite under test/ (no install needed — zero runtime deps)
+npm test    # runs the node:test suite under packages/*/test (no install needed for the non-render layer)
 ```
 
-The repository has **zero npm runtime dependencies** and only Node ≥ 20's built-ins (`node:test`, `node:assert`, `node:child_process`). `npm install` is not required to run the test suite.
-
-## Running the extension locally against Copilot CLI
-
-For day-to-day iteration, prefer a **project-scoped** install so your `git checkout` is the live source the CLI loads:
+The repository has **zero npm runtime dependencies** for the non-render layer (`prompts.mjs`, `runner.mjs`, `events*.mjs`, `writer.mjs`, `tail.mjs`, `plain.mjs`, `bin/tui.mjs`). `npm install` is only required when developing the Ink-rendered watch / run UI:
 
 ```bash
-./install.sh --project   # installs into .github/extensions/ralph in this repo
+cd packages/tui && npm install   # pulls Ink + React + Yoga + Commander
 ```
 
-After editing `extension/handler.mjs`, run `extensions_reload` from inside Copilot CLI (or restart the CLI) — new tool definitions are picked up immediately.
+## Running ralph-tui locally
 
-For a user-scoped install (loads the same extension across all your repos):
+For day-to-day iteration:
 
 ```bash
-./install.sh             # default: ~/.copilot/extensions/ralph
-./install.sh --dry-run   # show what would be copied without writing
+# From the repo root, no install needed for plain mode:
+node packages/tui/bin/tui.mjs run --self-improve --fresh --max 5
+
+# Watch the live timeline in another terminal:
+node packages/tui/bin/tui.mjs watch
 ```
 
 ## Style conventions
 
-- **Source files**: `extension/extension.mjs` (SDK glue, ~30 lines) and `extension/handler.mjs` (controller, ~2.5kLOC). Keep the SDK layer thin — all logic that needs unit-testing belongs in `handler.mjs` so it can be exercised against a fake session.
-- **No third-party deps.** New runtime dependencies require a strong justification (security review, zero-fork ecosystem cost, etc.). Prefer Node built-ins.
+- **Source files**: pure ESM under `packages/tui/src/` and `packages/tui/bin/`. Keep the non-render modules dependency-free; only the Ink renderer depends on user-space packages.
+- **No third-party deps in the non-render layer.** New runtime dependencies require a strong justification (security review, zero-fork ecosystem cost, etc.).
 - **Comments**: only where context is non-obvious. The codebase already uses comments to explain *why* (rationale, edge cases, prompt-injection guards) rather than *what*.
 - **Formatting**: 4-space indentation, trailing commas in multi-line literals, double-quoted strings.
-- **Tests**: every behavior change adds or updates a test in `test/extension.test.mjs`. Use the existing `makeFakeSession` / `runTurn` / `arm` helpers — they exercise the controller through the same event surface the SDK uses.
+- **Tests**: every behavior change adds or updates a test in `packages/tui/test/*.test.mjs`. The runner suite uses a Node-script "fake copilot" shim parameterised by a `SCRIPT` env var.
 
 ## Commit trailer rules
 

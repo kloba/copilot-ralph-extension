@@ -1,11 +1,9 @@
-// Zero-dep JSONL event emitter for ralph_loop / self_improve / grow_project
-// (issue #22). Mirrors the contract in packages/tui/src/{events,writer}.mjs
-// but lives here next to handler.mjs so install.sh can copy it next to
-// extension.mjs without dragging in the whole packages/tui workspace.
+// Zero-dep JSONL event emitter consumed by `ralph-tui run` (issue #22).
+// Mirrors the read-side contract in `./events.mjs` and `./writer.mjs`.
 //
 // All errors are swallowed: the loop must keep running even if the disk
-// is full, the path is unwritable, or the user nuked ~/.copilot mid-run.
-// The TUI only consumes whatever lines do land on disk.
+// is full, the path is unwritable, or the user nuked the runs root
+// mid-run. The TUI only consumes whatever lines do land on disk.
 
 import { homedir } from "node:os";
 import { mkdirSync, appendFileSync } from "node:fs";
@@ -27,23 +25,28 @@ const MAX_EVENT_LINE_BYTES = 16 * 1024;
 // and asserts they agree.
 const MAX_EXCERPT_CHARS = 500;
 
-/** Resolve the runs root, honoring $RALPH_EVENTS_DIR.
+/** Resolve the runs root, honoring $RALPH_TUI_RUNS_DIR.
  *
  * The env-var path is `.trim()`-ed before being returned: shells routinely
  * leak trailing whitespace into env vars (heredoc redirects, copy-pasted
- * lines, `RALPH_EVENTS_DIR="$HOME/runs "` from a Makefile), and a path with
- * stray leading/trailing spaces would silently create a runs root with
- * literal spaces in its name — surprising the user and breaking the matching
- * `ralph-tui list` glob. Trimming makes the override robust to that
- * common-shell-papercut without affecting any legitimate use case (paths
- * with intentional surrounding whitespace are essentially never real).
+ * lines, `RALPH_TUI_RUNS_DIR="$HOME/runs "` from a Makefile), and a path
+ * with stray leading/trailing spaces would silently create a runs root
+ * with literal spaces in its name — surprising the user and breaking the
+ * matching `ralph-tui list` glob. Trimming makes the override robust to
+ * that common-shell-papercut without affecting any legitimate use case
+ * (paths with intentional surrounding whitespace are essentially never
+ * real).
+ *
+ * Mirrors `resolveStateRoot` in `./runner.mjs` so events.jsonl,
+ * index.jsonl and state.json for a single run land in the same per-run
+ * directory.
  */
 export function resolveRunsRoot(env = process.env) {
-    const override = env?.RALPH_EVENTS_DIR;
+    const override = env?.RALPH_TUI_RUNS_DIR;
     if (override && typeof override === "string" && override.trim()) {
         return override.trim();
     }
-    return join(homedir(), ".copilot", "ralph", "runs");
+    return join(homedir(), ".copilot", "ralph-tui", "runs");
 }
 
 /** `${label}-${startedAt}` — stable, sortable, file-system safe.
@@ -71,11 +74,9 @@ function clipExcerpt(s) {
     // but renders as a replacement character in most terminals and
     // breaks any consumer doing strict UTF-8 validation downstream
     // (e.g. a Python tail of events.jsonl with `errors='strict'`).
-    // Mirror the `safeSliceEnd` helper in `handler.mjs`: if the last
-    // kept code unit is a high surrogate, back off by one so the pair
-    // stays intact (we drop a single astral char rather than emit a
-    // lone surrogate). Keeping events-emit.mjs zero-dep means we
-    // inline the four-line check rather than import from handler.mjs.
+    // If the last kept code unit is a high surrogate, back off by one
+    // so the pair stays intact (drop a single astral char rather than
+    // emit a lone surrogate).
     let cut = MAX_EXCERPT_CHARS - 1;
     const code = s.charCodeAt(cut - 1);
     if (code >= 0xD800 && code <= 0xDBFF) cut -= 1;

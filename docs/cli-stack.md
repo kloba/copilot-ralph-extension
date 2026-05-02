@@ -21,8 +21,11 @@
 | Spinners / glyphs | `ink-spinner` | `^5.0.0`           | Status indicators in `<Header>` and `<Controls>`.        |
 
 These pins live in [`packages/tui/package.json`](../packages/tui/package.json)
-and never appear in the core extension's `package.json` — issue #22's
-hard constraint that the extension stays zero-dep at runtime.
+and are only required for the interactive Ink-rendered `watch` / `run`
+UI. The non-render layer (`prompts.mjs`, `runner.mjs`, `events*.mjs`,
+`writer.mjs`, `tail.mjs`, `plain.mjs`, `bin/tui.mjs`) is zero-dep so
+plain-mode `ralph-tui list` / `replay` / `watch --plain` runs straight
+from a fresh source checkout with no `npm install`.
 
 ## Why Ink?
 
@@ -120,9 +123,9 @@ at Yoga as the layout backend.
 
 The TUI's full dependency closure resolves to ~3 MB of `node_modules/`
 when installed (Ink + React + Yoga's WASM + Commander). That cost is
-paid only by users who run `ralph-tui watch` interactively. The
-*event emitter* in the core extension stays stdlib-only, so an
-extension install via `install.sh` adds zero new packages.
+paid only by users who run the interactive Ink-rendered UI. Plain-mode
+subcommands (`list`, `replay`, `watch --plain`, `run --headless`) work
+straight from a fresh source checkout with no `npm install`.
 
 ## See also
 

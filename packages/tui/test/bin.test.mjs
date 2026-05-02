@@ -50,7 +50,7 @@ test("bin --help: prints USAGE and exits 0", () => {
 
 test("bin list: empty runs root prints helpful message", () => {
     const dir = tmp();
-    const r = runBin(["list"], { RALPH_EVENTS_DIR: dir });
+    const r = runBin(["list"], { RALPH_TUI_RUNS_DIR: dir });
     assert.equal(r.status, 0);
     assert.match(r.stdout, /No runs found/);
     rmSync(dir, { recursive: true, force: true });
@@ -63,7 +63,7 @@ test("bin list: enumerates seeded runs newest-first", () => {
         JSON.stringify({ type: "armed", ts: 1000, runId: "ralph_loop-1000", label: "ralph_loop", maxIterations: 5, minIterations: 1 }) + "\n"
         + JSON.stringify({ type: "armed", ts: 2000, runId: "self_improve-2000", label: "self_improve", maxIterations: 100, minIterations: 5 }) + "\n",
     );
-    const r = runBin(["list"], { RALPH_EVENTS_DIR: dir });
+    const r = runBin(["list"], { RALPH_TUI_RUNS_DIR: dir });
     assert.equal(r.status, 0);
     const lines = r.stdout.trim().split("\n");
     // Header + 2 runs.
@@ -75,7 +75,7 @@ test("bin list: enumerates seeded runs newest-first", () => {
 
 test("bin list --json: empty runs root prints []", () => {
     const dir = tmp();
-    const r = runBin(["list", "--json"], { RALPH_EVENTS_DIR: dir });
+    const r = runBin(["list", "--json"], { RALPH_TUI_RUNS_DIR: dir });
     assert.equal(r.status, 0);
     assert.equal(r.stdout, "[]\n");
     assert.deepEqual(JSON.parse(r.stdout), []);
@@ -89,7 +89,7 @@ test("bin list --json: emits parseable run index newest-first", () => {
         JSON.stringify({ type: "armed", ts: 1000, runId: "ralph_loop-1000", label: "ralph_loop", maxIterations: 5, minIterations: 1 }) + "\n"
         + JSON.stringify({ type: "armed", ts: 2000, runId: "self_improve-2000", label: "self_improve", maxIterations: 100, minIterations: 5 }) + "\n",
     );
-    const r = runBin(["list", "--json"], { RALPH_EVENTS_DIR: dir });
+    const r = runBin(["list", "--json"], { RALPH_TUI_RUNS_DIR: dir });
     assert.equal(r.status, 0);
     const parsed = JSON.parse(r.stdout);
     assert.ok(Array.isArray(parsed));
@@ -113,7 +113,7 @@ test("bin replay: prints all events for a run", () => {
         + JSON.stringify({ type: "iteration_start", ts: 2, runId: "ralph_loop-1", iteration: 1 }) + "\n"
         + JSON.stringify({ type: "complete", ts: 3, runId: "ralph_loop-1", reason: "completion_promise", iteration: 1 }) + "\n",
     );
-    const r = runBin(["replay", "ralph_loop-1"], { RALPH_EVENTS_DIR: dir });
+    const r = runBin(["replay", "ralph_loop-1"], { RALPH_TUI_RUNS_DIR: dir });
     assert.equal(r.status, 0);
     assert.match(r.stdout, /armed\s+ralph_loop-1/);
     assert.match(r.stdout, /iter\+/);
@@ -146,7 +146,7 @@ import { chmodSync } from "node:fs";
 
 test("bin doctor: healthy case exits 0 and prints all sections", () => {
     const dir = tmp();
-    const r = runBin(["doctor"], { RALPH_EVENTS_DIR: dir });
+    const r = runBin(["doctor"], { RALPH_TUI_RUNS_DIR: dir });
     assert.equal(r.status, 0);
     assert.match(r.stdout, /runs root:/);
     assert.match(r.stdout, /run index:/);
@@ -160,7 +160,7 @@ test("bin doctor: unwritable runs root exits non-zero with path", () => {
     const dir = tmp();
     chmodSync(dir, 0o500);
     try {
-        const r = runBin(["doctor"], { RALPH_EVENTS_DIR: dir });
+        const r = runBin(["doctor"], { RALPH_TUI_RUNS_DIR: dir });
         assert.notEqual(r.status, 0, "should exit non-zero on unwritable root");
         assert.match(r.stdout + r.stderr, new RegExp(dir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
         assert.match(r.stdout, /UNWRITABLE/);
@@ -190,12 +190,12 @@ test("bin prune --dry-run: lists would-remove without deleting", () => {
     const old = seedRun(dir, "ralph_loop-old", 1);  // ts=1ms epoch ⇒ very old
     const fresh = seedRun(dir, "ralph_loop-fresh", Date.now());
     writeFileSync(join(dir, "index.jsonl"), old + "\n" + fresh + "\n");
-    const r = runBin(["prune", "--older-than", "365d", "--dry-run"], { RALPH_EVENTS_DIR: dir });
+    const r = runBin(["prune", "--older-than", "365d", "--dry-run"], { RALPH_TUI_RUNS_DIR: dir });
     assert.equal(r.status, 0);
     assert.match(r.stdout, /dry-run.*would remove 1/);
     assert.match(r.stdout, /would remove ralph_loop-old/);
     // file still present
-    const list = runBin(["list", "--json"], { RALPH_EVENTS_DIR: dir });
+    const list = runBin(["list", "--json"], { RALPH_TUI_RUNS_DIR: dir });
     assert.equal(JSON.parse(list.stdout).length, 2);
     rmSync(dir, { recursive: true, force: true });
 });
@@ -205,16 +205,16 @@ test("bin prune --older-than 0m: removes every run", () => {
     const a = seedRun(dir, "ralph_loop-a", Date.now() - 1000);
     const b = seedRun(dir, "ralph_loop-b", Date.now() - 2000);
     writeFileSync(join(dir, "index.jsonl"), a + "\n" + b + "\n");
-    const r = runBin(["prune", "--older-than", "0m"], { RALPH_EVENTS_DIR: dir });
+    const r = runBin(["prune", "--older-than", "0m"], { RALPH_TUI_RUNS_DIR: dir });
     assert.equal(r.status, 0);
     assert.match(r.stdout, /pruned 2 runs/);
-    const list = runBin(["list", "--json"], { RALPH_EVENTS_DIR: dir });
+    const list = runBin(["list", "--json"], { RALPH_TUI_RUNS_DIR: dir });
     assert.deepEqual(JSON.parse(list.stdout), []);
     rmSync(dir, { recursive: true, force: true });
 });
 
 test("bin prune: invalid --older-than exits non-zero", () => {
-    const r = runBin(["prune", "--older-than", "nope"], { RALPH_EVENTS_DIR: tmp() });
+    const r = runBin(["prune", "--older-than", "nope"], { RALPH_TUI_RUNS_DIR: tmp() });
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /invalid --older-than/);
 });
@@ -233,7 +233,7 @@ test("parseDuration: accepts d/h/m, rejects garbage", async () => {
 
 test("bin stats: empty index prints No runs found", () => {
     const dir = tmp();
-    const r = runBin(["stats"], { RALPH_EVENTS_DIR: dir });
+    const r = runBin(["stats"], { RALPH_TUI_RUNS_DIR: dir });
     assert.equal(r.status, 0);
     assert.match(r.stdout, /No runs found/);
     rmSync(dir, { recursive: true, force: true });
@@ -260,7 +260,7 @@ test("bin stats: aggregates by tool, reason and iterations", () => {
         JSON.stringify({ type: "armed", ts: 100, runId: r1, label: "ralph_loop", maxIterations: 5, minIterations: 1 }) + "\n"
         + JSON.stringify({ type: "armed", ts: 200, runId: r2, label: "self_improve", maxIterations: 100, minIterations: 5 }) + "\n",
     );
-    const r = runBin(["stats"], { RALPH_EVENTS_DIR: dir });
+    const r = runBin(["stats"], { RALPH_TUI_RUNS_DIR: dir });
     assert.equal(r.status, 0);
     assert.match(r.stdout, /Totals/);
     assert.match(r.stdout, /By tool/);
@@ -331,7 +331,7 @@ function seedThreeRuns(dir) {
 test("bin list --limit N: prints at most N runs (newest first)", () => {
     const dir = tmp();
     seedThreeRuns(dir);
-    const r = runBin(["list", "--limit", "2", "--json"], { RALPH_EVENTS_DIR: dir });
+    const r = runBin(["list", "--limit", "2", "--json"], { RALPH_TUI_RUNS_DIR: dir });
     assert.equal(r.status, 0);
     const parsed = JSON.parse(r.stdout);
     assert.equal(parsed.length, 2);
@@ -342,7 +342,7 @@ test("bin list --limit N: prints at most N runs (newest first)", () => {
 test("bin list --limit 0: prints zero runs and exits 0", () => {
     const dir = tmp();
     seedThreeRuns(dir);
-    const r = runBin(["list", "--limit", "0", "--json"], { RALPH_EVENTS_DIR: dir });
+    const r = runBin(["list", "--limit", "0", "--json"], { RALPH_TUI_RUNS_DIR: dir });
     assert.equal(r.status, 0);
     assert.deepEqual(JSON.parse(r.stdout), []);
     rmSync(dir, { recursive: true, force: true });
@@ -351,7 +351,7 @@ test("bin list --limit 0: prints zero runs and exits 0", () => {
 test("bin list --limit nope: invalid value exits non-zero", () => {
     const dir = tmp();
     seedThreeRuns(dir);
-    const r = runBin(["list", "--limit", "nope"], { RALPH_EVENTS_DIR: dir });
+    const r = runBin(["list", "--limit", "nope"], { RALPH_TUI_RUNS_DIR: dir });
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /invalid --limit/);
     rmSync(dir, { recursive: true, force: true });
@@ -360,27 +360,27 @@ test("bin list --limit nope: invalid value exits non-zero", () => {
 test("bin list (no --limit): all runs preserved", () => {
     const dir = tmp();
     seedThreeRuns(dir);
-    const r = runBin(["list", "--json"], { RALPH_EVENTS_DIR: dir });
+    const r = runBin(["list", "--json"], { RALPH_TUI_RUNS_DIR: dir });
     assert.equal(JSON.parse(r.stdout).length, 3);
     rmSync(dir, { recursive: true, force: true });
 });
 
 test("bin where: prints default runs root", () => {
-    const r = runBin(["where"], { RALPH_EVENTS_DIR: "" });  // empty -> default
+    const r = runBin(["where"], { RALPH_TUI_RUNS_DIR: "" });  // empty -> default
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /\.copilot\/ralph\/runs\n$/);
+    assert.match(r.stdout, /\.copilot\/ralph-tui\/runs\n$/);
 });
 
-test("bin where: honours RALPH_EVENTS_DIR override", () => {
+test("bin where: honours RALPH_TUI_RUNS_DIR override", () => {
     const dir = tmp();
-    const r = runBin(["where"], { RALPH_EVENTS_DIR: dir });
+    const r = runBin(["where"], { RALPH_TUI_RUNS_DIR: dir });
     assert.equal(r.status, 0);
     assert.equal(r.stdout, dir + "\n");
     rmSync(dir, { recursive: true, force: true });
 });
 
 test("bin where: works even when directory does not exist", () => {
-    const r = runBin(["where"], { RALPH_EVENTS_DIR: "/tmp/ralph-tui-does-not-exist-zz" });
+    const r = runBin(["where"], { RALPH_TUI_RUNS_DIR: "/tmp/ralph-tui-does-not-exist-zz" });
     assert.equal(r.status, 0);
     assert.equal(r.stdout, "/tmp/ralph-tui-does-not-exist-zz\n");
 });

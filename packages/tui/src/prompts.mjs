@@ -1,33 +1,20 @@
-// Baked SDLC prompts for the self_improve and grow_project loops, plus
-// the literal completion / abort tokens they emit. Lives in its own
-// module so it can be imported by:
+// Baked SDLC prompts for the --self-improve and --grow-project loops,
+// plus the literal completion / abort tokens they emit. Imported by
+// `./runner.mjs` (the `ralph-tui run` driver, which runs each iter as
+// a fresh `copilot -p ...` subprocess).
 //
-//   - extension/handler.mjs — the in-session loop runner
-//   - packages/tui/src/runner.mjs — the out-of-session ralph-tui run
-//     driver (each iter is a fresh `copilot -p ...` subprocess)
-//
-// Both runners must ship the IDENTICAL prompt body, otherwise behaviour
-// diverges between `self_improve` / `grow_project` (in-session) and
-// `ralph-tui run --self-improve` / `ralph-tui run --grow-project`
-// (out-of-session). Centralising the prompt source removes that drift
-// surface entirely.
-//
-// Pure-stdlib, zero imports: this module is loaded by both the SDK
-// extension entry point and the TUI binary, neither of which can take
-// non-stdlib deps without changing the install/package contract.
+// Pure-stdlib, zero imports.
 
 // Literal completion token both prompts instruct the agent to emit on
-// its own line so the loop driver advances. handler.mjs's
-// DEFAULTS.completion_promise reuses this constant so the in-session
-// default and the prompt body cannot drift.
+// its own line so the loop driver advances. Re-exported by
+// `./runner.mjs` so the runner's default `completion_promise` and the
+// prompt body cannot drift.
 export const COMPLETION_PROMISE = "COMPLETE";
 
 // Literal abort token baked into PROMPT_SELF_IMPROVE. The completion
-// counterpart is COMPLETION_PROMISE ("COMPLETE") above. Centralising
-// the abort token here keeps the warnPromiseDrift call site (in the
-// self_improve handler) and the prompt body in lockstep — if either
-// drifts, the load-time parity guard at the bottom of this file
-// throws.
+// counterpart is COMPLETION_PROMISE ("COMPLETE") above. The load-time
+// parity guard at the bottom of this file throws if the prompt body
+// stops emitting it.
 export const BAKED_ABORT_TOKEN = "ABORT_NO_IMPROVEMENTS";
 
 // Literal abort token baked into PROMPT_GROW_PROJECT. Distinct from
@@ -242,12 +229,10 @@ HARD RULES:
 - Do not delete or rewrite the project's existing license, README, or CHANGELOG wholesale; surgical edits only.`;
 
 // Load-time parity guards: each baked prompt must contain the
-// completion token AND its corresponding abort token, otherwise the
-// warnPromiseDrift call sites in handler.mjs (which point users at
-// these tokens when they override completion_promise / abort_promise
-// to something the prompt doesn't emit) become stale. Throwing at
-// module load fails fast — the extension fails to register rather
-// than silently shipping a broken prompt.
+// completion token AND its corresponding abort token. Throwing at
+// module load fails fast — the runner refuses to start rather than
+// silently shipping a broken prompt where the agent emits a token the
+// driver doesn't watch for.
 if (!PROMPT_SELF_IMPROVE.includes(COMPLETION_PROMISE) ||
     !PROMPT_SELF_IMPROVE.includes(BAKED_ABORT_TOKEN)) {
     throw new Error(

@@ -1,14 +1,14 @@
 // JSONL event writer for the ralph TUI (issue #22).
 //
-// The loop handler in extension/handler.mjs imports createEventWriter() and
-// calls writer.emit(ev) at iteration boundaries. The writer keeps a single
-// append-mode file descriptor open per run and maintains a sibling
-// `runs/index.jsonl` so `ralph-tui list` can enumerate past runs without
-// scanning every per-run directory.
+// `ralph-tui run` (`./runner.mjs`) imports `createEventEmitter` from
+// `./events-emit.mjs` and emits events at iteration boundaries; the
+// helpers here are the read side that powers `ralph-tui list / replay /
+// stats / doctor / prune`. Both halves share a sibling
+// `runs/index.jsonl` so a list/stats walk can enumerate past runs
+// without scanning every per-run directory.
 //
 // Design constraints:
-//   - Zero runtime deps (Node stdlib only) — the core extension's bundle
-//     stays clean per issue #22's hard constraint.
+//   - Zero runtime deps (Node stdlib only).
 //   - All filesystem and clock dependencies are injected so tests can
 //     pin behaviour against a tmp dir / fake clock without monkey-patching.
 //   - Synchronous writes — we emit at most a handful of events per
@@ -27,14 +27,18 @@ import { MAX_EVENT_LINE_BYTES, makeRunId, serializeEvent } from "./events.mjs";
 /**
  * Resolve the on-disk root for ralph TUI run metadata.
  *
- *   $RALPH_EVENTS_DIR if set (absolute path expected; surfaced verbatim
- *   so users can pin a tmp dir in CI).
- *   else `${HOME}/.copilot/ralph/runs`.
+ *   $RALPH_TUI_RUNS_DIR if set (absolute path expected; surfaced
+ *   verbatim so users can pin a tmp dir in CI).
+ *   else `${HOME}/.copilot/ralph-tui/runs`.
+ *
+ * Shared with `resolveRunsRoot` in `./events-emit.mjs` and
+ * `resolveStateRoot` in `./runner.mjs` so events.jsonl, index.jsonl
+ * and state.json all land under the same per-run directory.
  */
 export function resolveRunsRoot({ env = process.env, os = osDefault, path = pathDefault } = {}) {
-    const override = env.RALPH_EVENTS_DIR;
+    const override = env.RALPH_TUI_RUNS_DIR;
     if (typeof override === "string" && override.length > 0) return override;
-    return path.join(os.homedir(), ".copilot", "ralph", "runs");
+    return path.join(os.homedir(), ".copilot", "ralph-tui", "runs");
 }
 
 /**

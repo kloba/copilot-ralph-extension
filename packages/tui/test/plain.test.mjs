@@ -459,7 +459,7 @@ test("formatEventLine: substage uses `sub` verb and renders verb + args", () => 
     const line = formatEventLine({
         type: "substage", ts: 0, runId: "r-1",
         iteration: 4, stage: 5, sub: 3,
-        verb: "edit", argsSummary: "extension/handler.mjs (-12, +18)",
+        verb: "edit", argsSummary: "packages/tui/src/runner.mjs (-12, +18)",
         outcome: "ok",
     });
     // Verb column is 5 chars wide ("sub  ") — match a leading word boundary
@@ -468,7 +468,7 @@ test("formatEventLine: substage uses `sub` verb and renders verb + args", () => 
     assert.match(line, /\bsub\b/);
     assert.match(line, /sub=3/);
     assert.match(line, /verb=edit/);
-    assert.match(line, /args="extension\/handler\.mjs/);
+    assert.match(line, /args="packages\/tui\/src\/runner\.mjs/);
     assert.match(line, /outcome=ok/);
 });
 

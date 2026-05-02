@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Breaking
+- Issue #50 — Removed the in-session Copilot CLI extension.
+  The project now ships only as the `ralph-tui` standalone TUI
+  app. The `ralph_loop`, `ralph_status`, `ralph_pause`,
+  `ralph_resume`, `ralph_stop`, `self_improve`, and
+  `grow_project` in-session tools are gone — use
+  `ralph-tui run [--prompt … | --self-improve | --grow-project]`
+  and the sibling `--pause` / `--resume` / `--stop` /
+  `--status <runId>` flags instead. The `extension/` directory,
+  `extension/handler.mjs`, and the `joinSession`-coupled SDK
+  contract are removed; existing `~/.copilot/extensions/ralph`
+  installs become inert (`/extensions reload` will no longer
+  see a `ralph` extension). Clean up with
+  `rm -rf ~/.copilot/extensions/ralph`.
+- Issue #50 — Removed `install.sh`. The TUI driver does not
+  install into `~/.copilot/extensions/` — `git clone` the repo
+  and run `node packages/tui/bin/tui.mjs --help` (or
+  `cd packages/tui && npm install` for the Ink-rendered UI).
+- Issue #50 — Removed the `RALPH_EVENTS_DIR` environment
+  variable. The runs root for events.jsonl + index.jsonl +
+  state.json now resolves via `RALPH_TUI_RUNS_DIR` (default
+  `~/.copilot/ralph-tui/runs`), unifying the previously-split
+  events root (`~/.copilot/ralph/runs`) and run-state root
+  into a single per-run directory.
+
 ### Features
 - Issue #59 — TUI Header gains a dim `v<X.Y.Z>` version pip
   pinned to the right edge of the heading row so an

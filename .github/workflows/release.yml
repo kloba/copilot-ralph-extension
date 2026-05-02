@@ -3,15 +3,13 @@ name: Release
 # Tag-driven release workflow. Push a tag matching v*.*.* and this:
 #   1. Verifies package.json#version === tag (sans the "v" prefix).
 #   2. Verifies CHANGELOG.md has a section for that version.
-#   3. Runs `npm test` on the tagged commit.
-#   4. Creates a GitHub Release with the CHANGELOG section as body and
-#      every extension/*.mjs file attached as standalone downloadable
-#      assets. The asset upload uses a shell glob so the release tracks
-#      the directory automatically — a new module added under
-#      extension/ ships in the next release without touching this file.
+#   3. Runs `npm test` and `npm run check` on the tagged commit.
+#   4. Creates a GitHub Release with the CHANGELOG section as body. The
+#      auto-attached source zipball is the canonical download — no
+#      per-file asset upload.
 #
-# All three pre-flight checks fail fast so a malformed tag never produces
-# a half-baked release. See docs/RELEASING.md for the manual checklist.
+# All pre-flight checks fail fast so a malformed tag never produces a
+# half-baked release. See docs/RELEASING.md for the manual checklist.
 
 on:
   push:
@@ -77,15 +75,15 @@ jobs:
         run: npm test
 
       - name: Portable syntax check shipped .mjs (scripts/check.mjs)
-        # Belt-and-suspenders alongside `npm test`: the test suite imports
-        # most of `extension/`, but TUI source under `packages/tui/src`
-        # only loads when ink/react are installed, so a syntax error
-        # there would not fail `npm test` in this release job (we don't
-        # `cd packages/tui && npm install` here). The portable
-        # `scripts/check.mjs` parse-checks every shipped .mjs across all
-        # roots and is dependency-free, so a release tag cannot ship a
-        # syntactically broken TUI file. The check is cheap (~5 s) and
-        # runs AFTER tests so a real test failure surfaces first.
+        # Belt-and-suspenders alongside `npm test`: TUI source under
+        # `packages/tui/src` only loads when ink/react are installed,
+        # so a syntax error in a code path that this release job
+        # doesn't exercise (we don't `cd packages/tui && npm install`
+        # here) could otherwise slip through. The portable
+        # `scripts/check.mjs` parse-checks every shipped .mjs across
+        # all roots and is dependency-free, so a release tag cannot
+        # ship a syntactically broken TUI file. Cheap (~5 s) and runs
+        # AFTER tests so a real test failure surfaces first.
         run: npm run check
 
       - name: Extract CHANGELOG section for this version
@@ -126,27 +124,15 @@ jobs:
           cat "${NOTES_FILE}"
           echo "───────────────────────────────────────────"
 
-      - name: Create GitHub Release with extension assets
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.meta.outputs.tag }}
           NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
         run: |
           set -euo pipefail
-          # Glob every shipped .mjs in extension/ rather than hardcoding
-          # filenames — bash expands the glob at run time, so a new
-          # module added under extension/ (and into install.sh's FILES
-          # array, pinned by the drift guard in test/extension.test.mjs)
-          # automatically ships in the next release. shopt -s nullglob
-          # turns "no matches" into a missing-asset error from gh
-          # release create rather than a literal `extension/*.mjs` arg.
-          shopt -s nullglob
-          ASSETS=(extension/*.mjs)
-          if [[ ${#ASSETS[@]} -eq 0 ]]; then
-            echo "::error::no extension/*.mjs files to upload as release assets" >&2
-            exit 1
-          fi
+          # GitHub auto-attaches a source zipball / tarball to every
+          # release — that is the canonical download for the TUI app.
           gh release create "${TAG}" \
-            "${ASSETS[@]}" \
             --title "${TAG}" \
             --notes-file "${NOTES_FILE}"

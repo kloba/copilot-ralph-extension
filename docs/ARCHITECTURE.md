@@ -2,109 +2,116 @@
 
 This document is for contributors and future-self maintenance. End-user docs live in the [README](../README.md). For local-dev setup see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Why `session.idle` instead of a subprocess wrapper?
+## What ships
 
-Existing Ralph implementations for Copilot CLI (e.g. `copilot-ralph-mode`) are **shell wrappers**: they `spawn copilot -p "<prompt>"` once per iteration. Each iteration starts with a fresh session and loses the conversation context built up by previous iterations.
+The project ships a single artifact: the `ralph-tui` CLI. It drives autonomous Copilot CLI loops by spawning each iteration as a fresh `copilot -p ...` subprocess, parses the JSONL stdout for terminal markers, and tails a per-run `events.jsonl` event stream so a separate terminal can `ralph-tui watch` the live timeline.
 
-This extension instead runs **inside the active session**, driven by the Copilot CLI extension SDK's `session.idle` event — the same architectural pattern as Anthropic's Claude Code [`ralph-wiggum`](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum) plugin (their `Stop` hook). When the root agent finishes its turn:
-
-1. The SDK emits `session.idle` to all attached extensions.
-2. The Ralph controller's `onIdle` handler runs the completion / abort / stagnation / max-iterations checks.
-3. If the loop should continue, the controller calls `session.send({ prompt })` to inject the prompt as a new user turn.
-4. Copilot CLI processes that turn exactly as if the human had typed it — including all UI rendering, model calls, tool execution, and ancillary handlers.
-
-The trade-off is documented in the README's comparison table; see [What's different here?](../README.md#whats-different-here).
+The previous in-session Copilot CLI extension (`ralph_loop` / `self_improve` / `grow_project` / `ralph_status` / `ralph_pause` / `ralph_resume` / `ralph_stop` tools) was retired — see [`CHANGELOG.md`](../CHANGELOG.md). All forward work lives in `packages/tui/`.
 
 ## Source layout
 
 ```
-extension/
-├── extension.mjs   # SDK glue — joinSession + createRalphController() + register tools/hooks
-├── handler.mjs     # The entire controller: state machine, validation, tool defs, baked prompts
-└── events-emit.mjs # Zero-dep JSONL event emitter (writes ~/.copilot/ralph/runs/<runId>/events.jsonl)
-test/
-├── extension.test.mjs       # node:test suite — controller against a fake session
-├── events-emit.test.mjs     # Unit tests for the JSONL emitter helpers
-└── handler-events.test.mjs  # Integration tests covering controller↔emitter wiring
-packages/tui/       # Stand-alone TUI consumer (`ralph-tui`) — see packages/tui/README.md
-install.sh          # User- or project-scoped install into ~/.copilot/extensions or .github/extensions
+packages/tui/
+├── bin/tui.mjs        # CLI entry — argv parser + dispatcher
+├── src/
+│   ├── prompts.mjs    # Baked SDLC prompts (PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT)
+│   ├── runner.mjs     # `ralph-tui run` driver — spawns each iter, tracks state.json
+│   ├── events.mjs     # Pure event contract (read side)
+│   ├── events-emit.mjs # Zero-dep JSONL emitter (write side)
+│   ├── writer.mjs     # JSONL reader + index aggregator (`list`/`stats`/`prune`)
+│   ├── tail.mjs       # Live tail iterator for `watch`
+│   ├── plain.mjs      # Plain-mode log line formatter
+│   ├── watch.mjs      # Watch dispatcher (TTY → Ink, non-TTY → plain)
+│   ├── run-ui.mjs     # Ink renderer for `run`'s live UI
+│   └── components/    # Ink layout components (Header, Timeline, DetailPane, …)
+├── test/              # node:test suite
+└── package.json       # Ink/React/Yoga deps for the renderer
+scripts/
+├── check.mjs          # Portable equivalent of CI's syntax-check job
+└── ralph-tui-fresh.sh # Optional `git pull --ff-only` wrapper for long runs
 ```
 
-### `extension.mjs` vs `handler.mjs` split
+## `ralph-tui run` — the driver
 
-- **`extension.mjs`** is the only file that talks to the SDK. It's intentionally tiny (~30 LOC). Anything beyond `joinSession`, `controller.attach(session)`, and `for (const t of controller.tools) session.registerTool(t)` does not belong here.
-- **`handler.mjs`** is everything else: state machine, prompt validation, tool definitions, completion / abort / stagnation logic, baked-prompt templates, adaptive-budget signal evaluation, caffeinate spawning, etc. Because it's pure JS over a tiny event-bus interface (`on`/`emit`/`send`/`log`), it can be unit-tested with `makeFakeSession()` from `test/extension.test.mjs` — no SDK mock required.
+[`runner.mjs`](../packages/tui/src/runner.mjs) is the heart of the project. Each iteration is a fresh subprocess:
 
-The `createRalphController(opts?)` factory returns `{ tools, hooks, attach, state }`. Each call returns an **independent** controller with closure-private state — important because tests routinely create two controllers and assert non-leakage.
+```
+copilot -p "<baked or user prompt>" --allow-all-tools --output-format json [--resume <sessionId>]
+```
 
-## State machine: `state.active` (the `ActiveLoopState`)
+The driver parses JSONL stdout for two markers:
 
-While a loop is running, `state.active` holds the canonical loop state. Field-by-field documentation lives in the JSDoc above `createRalphController` in `handler.mjs`. Notable fields:
+- Root `assistant.message.data.content` (no `agentId`) — the iter's user-visible response. Scanned for the configured `completion_promise` / `abort_promise` substring.
+- Terminal `result` event with `result.sessionId` — captured at iter 1 and reused via `--resume=<sessionId>` on iter 2+ when the driver is in `--continue` mode.
 
-- `i` / `max` / `min` — current iteration index, effective max, lower bound for honoring the completion / abort promises.
-- `prompt` / `completionPromise` / `abortPromise` — the strings re-fed each iter and the substrings that terminate the loop.
-- `prev` / `streak` / `stagnationLimit` — byte-identical-response detector that aborts a stuck loop.
-- `pendingFire` / `fireInFlight` / `observedMessageThisFire` — per-iteration dispatch guards. The first idle (the one that *armed* the loop) consumes `pendingFire` to fire iter 1; the in-flight markers prevent stale-idle bloat from cancelled tool calls or sub-agents.
-- `paused` / `pauseReason` / `pausedAt` / `totalPausedMs` — pause-state fields (issue [#3](https://github.com/kloba/copilot-ralph-extension/issues/3)). When `paused === true`, `onIdle` short-circuits before firing the next iteration so the user can chat freely without consuming iterations. `ralph_resume` re-arms by zeroing the streak detector (manual intervention almost always changes context) and folding `pausedFor` into `totalPausedMs` for accurate elapsed-time reporting in `ralph_status`.
-- Adaptive-budget fields (issue [#4](https://github.com/kloba/copilot-ralph-extension/issues/4)): `adaptiveBudget`, `adaptiveExtension`, `adaptiveMaxTotal`, `originalMax`, `adaptiveContentHashes`, `adaptiveExtensionHistory`.
+### Context modes
 
-When the loop finishes, `state.active` becomes `null` and the immutable `state.lastResult` (a deep-frozen `RalphResult`) holds the post-mortem.
+- **`--continue`** — resume the same Copilot session every iter. The Copilot CLI itself manages the conversation history; the driver only forwards `--resume=<sessionId>`. Closer to the in-session shape that the retired extension provided.
+- **`--fresh`** — brand-new Copilot session every iter. Each iteration sees only the prompt + tool results, with no history from prior iters. Better for long backlog-drain loops where context rot would otherwise dominate late iterations.
 
-## Sub-agent event filtering
+### State machine — `state.json`
 
-Copilot CLI's `task` / `explore` / `code-review` / `rubber-duck` agents share the same event bus as the root agent. Without filtering, a sub-agent's `session.idle` would queue an extra prompt fire, and a sub-agent's abort would tear down the root loop. `isSubAgentEvent(ev)` (in `handler.mjs`) returns `true` whenever `ev.agentId` is a non-empty string — root events have no `agentId`. **All loop-driving handlers must early-return on `isSubAgentEvent(ev)`.**
+Each run owns a directory at `<runs-root>/<runId>/` containing `events.jsonl`, optional `index.jsonl` (for the runs-root index), and `state.json`. The state file holds:
+
+- `runId`, `label`, `mode`, `contextMode`, `startedAt`.
+- `iter` — current iteration number.
+- `pauseRequested`, `stopRequested` — out-of-band flags flipped by sibling `--pause` / `--stop` invocations.
+- `sessionId` — captured on iter 1 in `--continue` mode.
+
+State writes are CAS-protected via a per-state-file lockfile (`acquireLock` / `releaseLock` in `runner.mjs`) so concurrent `--pause` + `--stop` from two terminals do not lose updates.
+
+## JSONL event contract
+
+The runner emits one JSON object per line via [`events-emit.mjs`](../packages/tui/src/events-emit.mjs):
+
+| Type | Emitted when |
+| ---- | ------------ |
+| `armed` | Once per run, on driver start. Also written to `<runs-root>/index.jsonl` so `ralph-tui list` / `stats` can enumerate without scanning every per-run dir. |
+| `iteration_start` | Before spawning the next `copilot -p` subprocess. |
+| `iteration_end` | After the subprocess exits; carries the iter's response excerpt and tokens (when usage events were observed). |
+| `pause` / `resume` | Honored at the next iter boundary after the corresponding flag flip. |
+| `stagnation` | Emitted when the byte-identical-response detector fires. |
+| `complete` | Terminal — completion-promise observed. |
+| `abort` | Terminal — abort-promise / max iterations / stagnation / send error / user stop. |
+
+Reader-side helpers live in [`events.mjs`](../packages/tui/src/events.mjs) (`parseEventLine`, `serializeEvent`, `safeSliceChars`, `foldEvents`) and [`writer.mjs`](../packages/tui/src/writer.mjs) (`readRunIndex`, `aggregateRuns`, `pruneRuns`, the `resolveRunsRoot` helper).
+
+The emitter swallows every error so a disk hiccup never crashes the loop. The reader is tolerant of malformed lines for the same reason — a torn write must not break `replay`.
 
 ## The "baked prompt" pattern
 
-`self_improve` and `grow_project` are convenience tools that wrap `armLoop()` with a **prompt baked in**: the user only supplies optional `focus` / `max_iterations` / `min_iterations`, and the tool builds a multi-paragraph SDLC or backlog-grooming prompt from a template constant (`PROMPT_SELF_IMPROVE`, `PROMPT_GROW_PROJECT`). The bake is opaque to `validateArgs` — we validate only what the user supplied, then construct the prompt and call `armLoop({ prompt: baked, ... })`.
+`--self-improve` and `--grow-project` are convenience wrappers that drive `runner.mjs`'s loop with a prompt baked in: the user only supplies optional `--focus` / `--max`, and the runner builds a multi-paragraph SDLC or backlog-grooming prompt from a template constant (`PROMPT_SELF_IMPROVE`, `PROMPT_GROW_PROJECT` in [`prompts.mjs`](../packages/tui/src/prompts.mjs)).
 
-The baked prompts include hard-coded `COMPLETE` / `ABORT_…` tokens and `min_iterations` defaults that defer honoring those tokens (otherwise the agent would emit `COMPLETE` on iter 1 by virtue of merely *describing* the protocol). When changing a baked prompt, run the existing prompt-shape tests (`PROMPT_SELF_IMPROVE: contains the protocol literal`, etc.) — they pin the user-visible contract.
-
-## Tool surface
-
-| Tool | Purpose | Key contract |
-|---|---|---|
-| `ralph_loop` | Generic re-fed-prompt loop | One loop at a time. Returns immediately after arming. Driven by `session.idle`. |
-| `ralph_stop` | Cancel the active loop | Returns failure if no loop is active. Optional `reason` string is recorded as `note` on the result. |
-| `ralph_status` | Live structured snapshot of the active loop | Issue [#5](https://github.com/kloba/copilot-ralph-extension/issues/5) — read-only; safe to call mid-loop. |
-| `ralph_pause` | Pause the active loop without losing state | Issue [#3](https://github.com/kloba/copilot-ralph-extension/issues/3). Idempotent; `onIdle` short-circuits while `paused === true`. Returns failure if no loop is active. |
-| `ralph_resume` | Resume a paused loop | Returns failure if no loop is active or the loop is not paused. Stagnation streak is reset on resume. |
-| `self_improve` | Baked SDLC self-improvement prompt | Wraps `armLoop` with `PROMPT_SELF_IMPROVE`. Honors `focus` for narrowing scope. |
-| `grow_project` | Baked backlog-grooming + execution loop | Wraps `armLoop` with `PROMPT_GROW_PROJECT`. Drives `gh` CLI calls. |
-
-All tools share the `success(message, extra)` / `failure(message, extra)` envelope: `{ ...extra, textResultForLlm, resultType }` (extras cannot override `textResultForLlm` or `resultType`). The shape is pinned by tests so refactors can't accidentally leak internal scratch into the LLM-facing return.
+The baked prompts include hard-coded `COMPLETE` / `ABORT_…` tokens. A load-time parity guard at the bottom of `prompts.mjs` throws if the prompt body stops emitting either token; the runner refuses to start rather than silently ship a broken prompt.
 
 ## Completion-promise & abort-promise contracts
 
-- **`completion_promise`** (default `"COMPLETE"`) — substring match against the latest assistant content. When seen on iter ≥ `min_iterations`, finishes the loop with `reason: "completion_promise"`.
-- **`abort_promise`** (optional, no default) — same mechanism, but finishes with `reason: "abort_promise"`. Used by `grow_project` (`ABORT_NO_BACKLOG`) to bail when there's nothing to do.
-- Both promises are **only honored once `i >= min_iterations`** to avoid premature termination from the agent merely describing the protocol on iter 1. Stagnation, max-iterations, and adaptive-budget terminators have their own thresholds and do not respect `min_iterations`.
+- **`--completion-promise`** (default `"COMPLETE"`) — substring match against the iter's response. Triggers a terminal `complete` event with `reason: "completion_promise"`.
+- **`--abort-promise`** (optional; defaults to the baked prompt's abort token in `--self-improve` / `--grow-project` modes; no default in `--prompt` mode) — same mechanism, but emits an `abort` event with `reason: "abort_promise"`.
+- Both are **only honored after `min_iterations`** (currently a per-mode default; `--prompt` mode honors immediately) to avoid premature termination from the agent merely describing the protocol on iter 1.
 
-## Adaptive iteration budget (issue [#4](https://github.com/kloba/copilot-ralph-extension/issues/4))
+## Pause / resume / stop / status
 
-Opt-in. When the loop reaches `max_iterations`, `evaluateAdaptiveSignals(a, gitExec)` returns a non-null reason iff *either* `git diff --shortstat HEAD` or `git status --porcelain` reports working-tree changes, *or* the rolling 3-iteration content-hash window contains ≥ 2 distinct hashes. A positive signal grants `adaptive_extension` more iterations, capped at `adaptive_max_total`. Stagnation / completion / abort still win unconditionally because they're checked earlier in `onIdle`.
+Out-of-band flags written to the run's `state.json`:
 
-## Token tracking (issue [#7](https://github.com/kloba/copilot-ralph-extension/issues/7))
+```bash
+ralph-tui run --pause   <runId>     # set pauseRequested=true
+ralph-tui run --resume  <runId>     # clear pauseRequested
+ralph-tui run --stop    <runId>     # set stopRequested=true
+ralph-tui run --status  <runId>     # read state.json + render
+```
 
-`assistant.message` events from the root agent are routed through two helpers in `handler.mjs`: `extractUsage(ev)` reads `data.usage.{input_tokens, output_tokens, model}` (or the flat `data.usage_input_tokens`/`usage_output_tokens`/`usage_model` form used by the SDK's events table); `creditUsage(a, usage)` accumulates the result onto `a.tokens.input` / `a.tokens.output`, appends a per-iteration breakdown to `byIteration` (`{iter, input, output, model}`), and folds per-model totals into `byModel`. Sub-agent events are filtered upstream by `isSubAgentEvent`, so token credit covers root-agent usage only.
-
-Two safety contracts the helpers enforce:
-
-- **Creditable-pair rejection.** `extractUsage` returns `null` (and `creditUsage` is therefore not called) unless **both** peers pass the four-clause `isCreditableTokenPair` gate: `Number.isFinite(input) && Number.isFinite(output)` (NaN / Infinity / non-numeric all rejected, including the `Number(undefined) === NaN` path that defends against missing fields), `input >= 0 && output >= 0` (a negative peer would silently masquerade a `max_tokens` cap by *decreasing* the cumulative budget), AND `(input > 0 || output > 0)` (a zero/zero event carries no information and would pollute the per-iteration breakdown with empty rows). The same gate is shared by both the nested-`usage` and flat-`usage_*` parser branches so a future SDK shape inherits the full contract automatically. See [Concepts → Two safety contracts](./concepts.md#two-safety-contracts) for the user-facing version.
-- **Pause-time isolation.** While `state.active.paused` is true, `onAssistantMessage` short-circuits before `creditUsage` runs, so pause-time chat does not credit tokens to the loop's budget. See [Concepts → Pause / resume semantics](./concepts.md#pause--resume-semantics) for the full contract.
-
-Two thresholds are derived from the running `tokens.input` total against `MODEL_CONTEXT_WINDOWS[model]`: the user-tunable `warn_at_pct` (default 80%) fires a single ⚠ "approaching" log line per loop, and a hard-coded 95% threshold fires a ⚠ "critical" line. Both dedupe via `tokens.warnedThresholds` so each threshold logs at most once. If `warn_at_pct >= 95`, the 80%-keyed branch is skipped to avoid duplicate warnings on the same usage spike. Unknown models log a one-time "no known context-window size; skipping window warnings" notice (`tokens.unknownModelLogged`) so the user knows the threshold checks are inert for that model.
-
-The `max_tokens` cap (set at arm time) is checked at the end of each iteration in `onIdle`; the running total — input + output — is compared against the cap, and the loop finishes with `reason: "max_tokens"` once it crosses. Because pause-time and rejected events do not credit, this cap is never tripped by chat-time activity or malformed events.
-
-## Caffeinate integration (issue [#8](https://github.com/kloba/copilot-ralph-extension/issues/8))
-
-Opt-in via `RALPH_CAFFEINATE=1`. On macOS, `armLoop` spawns `caffeinate -i [-d] -w <pid>` to inhibit display/system sleep for the duration of the loop. `finish()` (and every error path) kills the caffeinate process. Tests inject a `spawnFn` stub via `createRalphController({ caffeinate: { spawnFn } })`.
+The driver re-reads `state.json` at every iter boundary; the in-flight Copilot child is **never killed mid-iter** — the driver waits for natural exit before honoring pause/stop. `SIGINT` / `SIGTERM` at the driver process maps onto `--stop` via the same lock-protected CAS path.
 
 ## Test architecture
 
 - `node:test` runner; no third-party test deps.
-- `makeFakeSession()` returns a `{ on, emit, send, log }` object that mimics the SDK's event bus.
-- `runTurn(session, content)` drives one iteration: emits `assistant.message` then `session.idle`.
-- DI on the controller (`createRalphController({ caffeinate, git, adaptive, events })`) lets tests stub external effects (process spawn, git exec, JSONL event emit) without monkey-patching. The `events` slot is the issue [#22](https://github.com/kloba/copilot-ralph-extension/issues/22) JSONL emitter wiring — accepts `true` (default emitter), `{ env, fs }` (default emitter w/ overrides), or `{ factory }` (custom emitter built per-arm); see the inline JSDoc above `armLoop` for the full contract.
-- Several **shape-pin tests** lock down field counts and key sets on `state.active`, the success-envelope, the parsed-args object, and the tool-array order. These exist specifically to catch refactors that silently leak internal scratch into the LLM-facing surface.
+- The runner suite in `packages/tui/test/runner.test.mjs` drives end-to-end loops through a Node-script "fake copilot" shim that emits scripted JSONL on stdout. The shim is parameterised by a `SCRIPT` env var (path to a JSON file describing the iter's output) so a single binary covers every test scenario.
+- Pure helpers (`validateFocus`, `composePrompt`, `reduceCopilotEvents`, `resolveStateRoot`, `readState`, …) get straightforward unit tests.
+- The reader-side tests (`writer.test.mjs`, `events.test.mjs`, `tail.test.mjs`) sandbox into `mkdtempSync`-allocated dirs and pin the JSONL contract.
+
+## Why we removed the in-session extension
+
+The original project began as an in-session Copilot CLI extension that exposed `ralph_loop` / `self_improve` / `grow_project` tools to the active Copilot session via the `@github/copilot-sdk/extension` SDK's `joinSession` + `session.idle` event contract. The TUI driver (`ralph-tui run`) eventually grew to cover every feature of the in-session tools — same baked prompts, same pause/resume/stop/status, same adaptive budget — without imposing the SDK contract on every cross-cutting change.
+
+Maintaining both engines required keeping every prompt change, every event-vocabulary entry, and every adaptive-budget tweak in lockstep across two implementations. Deleting the in-session engine retired that whole drift surface. See issue #50 for the full rationale.

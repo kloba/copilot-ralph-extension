@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Stdlib-only CLI entry for the ralph TUI (issue #22).
+// Stdlib-only CLI entry for ralph-tui — the standalone TUI app that
+// drives autonomous Copilot CLI loops (issue #22).
 //
 // Subcommands (keep in sync with the USAGE constant below — pinned by
 // `tui.mjs header comment lists every USAGE subcommand` in
@@ -22,26 +23,26 @@
 //   where                      — print the resolved runs root path so
 //                                a contributor can `cd` into it.
 //   run                        — drive a ralph_loop / self_improve /
-//                                grow_project loop OUT-OF-SESSION by
-//                                spawning each iter as a fresh
-//                                `copilot -p ...` subprocess. Choose
-//                                exactly one prompt mode
-//                                (`--self-improve` / `--grow-project`
-//                                / `--prompt`) AND one context mode
-//                                (`--continue` / `--fresh`). Sibling
-//                                `--pause <runId>` / `--resume <runId>`
-//                                / `--stop <runId>` / `--status
-//                                <runId>` operate on the run state file
-//                                of an in-flight loop.
+//                                grow_project loop by spawning each
+//                                iter as a fresh `copilot -p ...`
+//                                subprocess. Choose exactly one prompt
+//                                mode (`--self-improve` /
+//                                `--grow-project` / `--prompt`) AND
+//                                one context mode (`--continue` /
+//                                `--fresh`). Sibling `--pause <runId>`
+//                                / `--resume <runId>` / `--stop
+//                                <runId>` / `--status <runId>` operate
+//                                on the run state file of an in-flight
+//                                loop.
 //
 // `--plain` is implied when stdout is not a TTY so CI logs and asciinema
 // recordings produce stable, ANSI-free output.
 //
 // Commander is listed as a dep in this package's package.json for the
-// (forthcoming) Ink-rendered watch UI; this stub deliberately uses a
-// hand-rolled parser so `node bin/tui.mjs` works straight from a fresh
-// checkout with no `npm install`. Once the Ink renderer lands the watch
-// command will dynamically import that module.
+// Ink-rendered watch UI; this stub deliberately uses a hand-rolled
+// parser so `node bin/tui.mjs` works straight from a fresh checkout
+// with no `npm install`. Once the Ink renderer is loaded the watch
+// command dynamically imports that module.
 
 import process from "node:process";
 import fs from "node:fs";
@@ -88,7 +89,7 @@ OPTIONS
   --grow-project  For \`run\`: drive the baked grow_project SDLC prompt.
   --prompt TEXT   For \`run\`: drive a ralph_loop-style custom prompt.
   --continue  For \`run\`: every iter resumes the same Copilot session
-              (in-extension parity; context grows monotonically).
+              (context grows monotonically).
   --fresh     For \`run\`: every iter starts a brand-new Copilot session
               (clean context per iter).
   --max N     For \`run\`: iteration cap (default 100; default 1000 —
@@ -106,9 +107,9 @@ OPTIONS
   --version, -V  Print the ralph-tui package version and exit.
 
 ENV
-  RALPH_EVENTS_DIR  Override the runs root (default ~/.copilot/ralph/runs).
-  RALPH_TUI_RUNS_DIR  Override the run-state root used by
-                    \`ralph-tui run\` (default ~/.copilot/ralph-tui/runs).
+  RALPH_TUI_RUNS_DIR  Override the runs root (default
+                    ~/.copilot/ralph-tui/runs). Holds events.jsonl,
+                    index.jsonl, and per-run state.json.
   RALPH_TUI_COPILOT_BIN  Override the \`copilot\` executable used by
                     \`ralph-tui run\` (default \`copilot\` on $PATH).
 `;
@@ -461,7 +462,7 @@ export function cmdDoctor() {
     if (!healthy) {
         process.stderr.write(
             `ralph-tui doctor: critical problem detected (root=${root}). `
-            + `Check filesystem permissions and RALPH_EVENTS_DIR.\n`,
+            + `Check filesystem permissions and RALPH_TUI_RUNS_DIR.\n`,
         );
         return 1;
     }

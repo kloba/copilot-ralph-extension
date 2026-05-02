@@ -266,14 +266,13 @@ test("foldEvents: rejects non-array input", () => {
     assert.throws(() => foldEvents(null), /must be an array/);
 });
 
-// Iter 117 — serializeEvent's excerpt/note truncation must not split a
-// UTF-16 surrogate pair at the 500-char boundary. Mirrors iter 115's
-// fix on the writer side (extension/events-emit.mjs's clipExcerpt) so
-// every disk writer in the workspace is surrogate-safe — defence in
-// depth: events-emit.mjs already pre-truncates, but a malicious or
-// malformed >500-char `excerpt`/`note` reaching this serializer (e.g.
-// via a future TUI-emitted event or a third-party consumer of
-// serializeEvent) must not produce a lone high surrogate.
+// serializeEvent's excerpt/note truncation must not split a UTF-16
+// surrogate pair at the 500-char boundary. Mirrors the writer-side
+// fix in `events-emit.mjs`'s clipExcerpt so every disk writer in the
+// workspace is surrogate-safe — defence in depth: events-emit.mjs
+// already pre-truncates, but a malicious or malformed >500-char
+// `excerpt`/`note` reaching this serializer must not produce a lone
+// high surrogate.
 test("serializeEvent: excerpt truncation does not split a surrogate pair at the 500-char boundary", () => {
     // Place 💀 (U+1F480, two code units 0xD83D + 0xDC80) at indices
     // 499..500 so a naïve `s.slice(0, 500)` would keep the high
@@ -498,7 +497,7 @@ test("serializeEvent: stage_end round-trips with durationMs + outcome", () => {
 test("serializeEvent: substage round-trips verb + argsSummary + outcome + durationMs", () => {
     const ev = {
         type: "substage", ts: 20, runId: "r-1", iteration: 4, stage: 5, sub: 3,
-        verb: "edit", argsSummary: "extension/handler.mjs (-12, +18)",
+        verb: "edit", argsSummary: "packages/tui/src/runner.mjs (-12, +18)",
         outcome: "ok", durationMs: 412,
     };
     const back = parseEventLine(serializeEvent(ev));
@@ -628,7 +627,7 @@ import {
     SDLC_STAGES_GROW_PROJECT,
     stagesForLabel,
 } from "../src/events.mjs";
-import { PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT } from "../../../extension/prompts.mjs";
+import { PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT } from "../src/prompts.mjs";
 
 test("SDLC_STAGES_SELF_IMPROVE: every stage name appears in PROMPT_SELF_IMPROVE", () => {
     for (const stage of SDLC_STAGES_SELF_IMPROVE) {

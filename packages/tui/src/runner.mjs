@@ -1,23 +1,13 @@
-// `ralph-tui run` driver — out-of-session sibling of the in-extension
-// ralph_loop / self_improve / grow_project tools.
+// `ralph-tui run` driver — runs each iteration as a fresh
+// `copilot -p ...` subprocess. Two session modes:
 //
-// Why a separate driver? Because the in-extension loop runs as part of
-// the user's current Copilot session — so the LLM context grows
-// monotonically across iterations. That is the right tradeoff for an
-// in-session loop (the user sees every iter inline, and pause/resume
-// mid-session lets the user chat with the agent), but it also creates
-// a context-rot failure mode where late iterations are dominated by
-// early-iteration noise. The `ralph-tui run` driver runs each
-// iteration as a fresh `copilot -p ...` subprocess so:
-//
-//   --continue   resume the same Copilot session every iter (parity
-//                with in-extension behavior; context grows)
+//   --continue   resume the same Copilot session every iter; context
+//                grows monotonically across iterations.
 //   --fresh      brand-new Copilot session every iter (clean context;
-//                the iter sees only the prompt + tool results)
+//                the iter sees only the prompt + tool results).
 //
-// Both modes use the SAME baked SDLC prompts (PROMPT_SELF_IMPROVE /
-// PROMPT_GROW_PROJECT) imported from `extension/prompts.mjs` so the
-// in-session and out-of-session loops can never drift in prompt body.
+// Both modes use the same baked SDLC prompts (PROMPT_SELF_IMPROVE /
+// PROMPT_GROW_PROJECT) from `./prompts.mjs`.
 //
 // The driver subprocess runs `copilot -p "..." --allow-all-tools
 // --output-format json` and parses JSONL stdout for:
@@ -33,8 +23,7 @@
 // lockfile so concurrent pause+stop don't lose updates), and the
 // driver re-reads state at each iter boundary. The current child
 // copilot subprocess is never killed mid-iter — the driver waits for
-// it to finish naturally before honoring pause/stop. This matches the
-// in-extension contract ("don't kill in-flight iters").
+// it to finish naturally before honoring pause/stop.
 
 import { spawn as nodeSpawn, spawnSync as nodeSpawnSync } from "node:child_process";
 import { homedir } from "node:os";
@@ -48,9 +37,9 @@ import {
     COMPLETION_PROMISE,
     BAKED_ABORT_TOKEN,
     BAKED_BACKLOG_ABORT_TOKEN,
-} from "../../../extension/prompts.mjs";
+} from "./prompts.mjs";
 
-import { createEventEmitter } from "../../../extension/events-emit.mjs";
+import { createEventEmitter } from "./events-emit.mjs";
 import {
     SDLC_STAGES_SELF_IMPROVE,
     SDLC_STAGES_GROW_PROJECT,
@@ -63,22 +52,20 @@ const WORKITEM_KIND_SET = new Set(WORKITEM_KINDS);
 const TASK_OUTCOME_SET = new Set(TASK_OUTCOMES);
 
 // Public re-export so the CLI can build the prompt text without
-// re-importing extension/prompts.mjs (single import surface for the
+// re-importing ./prompts.mjs (single import surface for the
 // TUI package; downstream tooling that wants the prompt string for
 // audit/dump only depends on this module).
 export { PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, COMPLETION_PROMISE, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN };
 
-// Cap to mirror the in-extension MAX_FOCUS_CHARS so a focus arg that
-// would be rejected by handler.mjs is also rejected here.
+// Cap on the optional --grow-project focus arg.
 export const MAX_FOCUS_CHARS = 2000;
 
 // Cap on the user-supplied --prompt string for ralph_loop-style runs.
-// Mirrors the in-extension MAX_PROMPT_CHARS.
 export const MAX_PROMPT_CHARS = 65536;
 
 // Default iteration cap when --max is omitted.
 export const DEFAULT_MAX_ITERATIONS = 100;
-// Hard ceiling — same as in-extension MAX_ALLOWED_ITERATIONS.
+// Hard ceiling on --max iterations.
 export const MAX_ALLOWED_ITERATIONS = 1000;
 
 // Stop polling state.json this many ms between checks while waiting

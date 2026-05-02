@@ -30,7 +30,7 @@ the single source of truth:
   trailers so loop-driven commits are passively searchable across
   public GitHub.
 - **Tests**: the project is pure-stdlib Node; run them with `npm test`.
-  No build, no lint, no transpiler — `node --test test/*.test.mjs
+  No build, no lint, no transpiler — `node --test
   packages/*/test/*.test.mjs` covers everything.
 - **Style**: only comment when context is non-obvious. Don't introduce
   new top-level dependencies, frameworks, or build systems unless that

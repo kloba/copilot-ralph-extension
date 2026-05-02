@@ -7,9 +7,8 @@ node_modules/
 # credentials (API tokens, database URLs). The `.env*` pattern catches
 # `.env`, `.env.local`, `.env.test`, etc., so a contributor running
 # tooling that auto-loads dotenv cannot accidentally leak secrets via
-# `git add -A`. The extension itself does not use dotenv (see
-# `extension/handler.mjs` — only `process.env` lookups), but contributor
-# tooling (asciinema recipes, ad-hoc scripts) often does.
+# `git add -A`. The runner itself uses only `process.env` lookups, but
+# contributor tooling (asciinema recipes, ad-hoc scripts) often does.
 .env
 .env.*
 
@@ -28,10 +27,3 @@ coverage/
 site/
 
 
-# Output of `./install.sh --project` from inside this repo.
-# The script writes a working copy of the extension under
-# `.github/extensions/ralph/` (so tools that load extensions from
-# `.github/extensions/<name>/` see this repo's own extension while
-# you dogfood), but committing that working copy creates a second
-# source of truth that drifts from `extension/` on every iter.
-.github/extensions/ralph/

@@ -1,12 +1,12 @@
 // Event contract for the ralph TUI (issue #22).
 //
-// The loop handler (extension/handler.mjs) writes one JSON object per line
-// to ~/.copilot/session-state/<id>/events.jsonl. The TUI tails that file,
-// parses each line with parseEventLine(), and renders the resulting state.
+// `ralph-tui run` (`./runner.mjs` + `./events-emit.mjs`) writes one JSON
+// object per line to `<runs-root>/<runId>/events.jsonl`. The TUI tails
+// that file, parses each line with `parseEventLine()`, and renders the
+// resulting state.
 //
-// Keeping this module dependency-free (Node stdlib only) means handler.mjs
-// can import the same serializer without pulling Ink/React into the core
-// extension's runtime — issue #22's hard constraint.
+// Dependency-free (Node stdlib only) so it can be imported by both the
+// emit and read sides without dragging Ink/React along.
 
 /**
  * @typedef {(
@@ -249,8 +249,8 @@ export function makeRunId(label, startedAt) {
  * strict UTF-8 validation downstream. When the last kept code unit
  * is a high surrogate (0xD800..0xDBFF), back off by one so the pair
  * stays intact (we drop a single astral char rather than emit a lone
- * half). Mirrors the inline guard in extension/events-emit.mjs's
- * `clipExcerpt` and the `safeSliceEnd` helper in extension/handler.mjs.
+ * half). Mirrors the inline guard in `./events-emit.mjs`'s
+ * `clipExcerpt`.
  *
  * Exported so other TUI rendering paths (e.g. `plain.mjs`'s 80-char
  * excerpt cap) can share the same surrogate-safe truncation rather
@@ -301,17 +301,12 @@ export function serializeEvent(ev) {
     if (Number.isFinite(ev.maxIterations)) out.maxIterations = ev.maxIterations;
     if (Number.isFinite(ev.minIterations)) out.minIterations = ev.minIterations;
     // Cap `reason` at 500 chars (surrogate-safely) for symmetry with
-    // `note` (line below) and `excerpt` (above). Caller hygiene
-    // already enforces this upstream — `parseUserReason` (handler.mjs)
-    // routes user-supplied reasons through `boundedNoteForLog` which
-    // caps at PREVIEW_CHARS=500, and baked-token reasons
-    // (`completion_promise`, `abort_promise`, `stagnation`,
-    // `max_iterations`, `send_error`, …) are all under 30 chars. The
-    // serializer cap is defensive: makes the event-line shape robust
-    // independent of caller hygiene, so a future code path that
-    // emits a `reason` without going through parseUserReason can't
-    // bloat events.jsonl past the 16 KB per-line ceiling on a single
-    // pathological input. Iter 139 hardening.
+    // `note` and `excerpt`. Baked-token reasons (`completion_promise`,
+    // `abort_promise`, `stagnation`, `max_iterations`, `send_error`, …)
+    // are all under 30 chars; the serializer cap is defensive so a
+    // future code path that emits a `reason` without going through a
+    // hygiene helper can't bloat events.jsonl past the 16 KB per-line
+    // ceiling on a single pathological input.
     if (typeof ev.reason === "string") out.reason = safeSliceChars(ev.reason, 500);
     if (typeof ev.excerpt === "string") out.excerpt = safeSliceChars(ev.excerpt, 500);
     if (Number.isFinite(ev.streak)) out.streak = ev.streak;

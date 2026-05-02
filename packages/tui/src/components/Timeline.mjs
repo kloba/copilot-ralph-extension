@@ -6,6 +6,8 @@
 import React from "react";
 import { Box, Text } from "ink";
 
+import { safeSliceChars } from "../events.mjs";
+
 const h = React.createElement;
 
 const DEFAULT_LIMIT = 12;
@@ -28,9 +30,22 @@ function pad(n, w) {
     return String(n).padStart(w, " ");
 }
 
-function truncate(s, n) {
+// Flatten whitespace and cap a string at `n` UTF-16 code units, then
+// append a single trailing "…" iff truncation actually happened. The
+// reserved byte for the ellipsis is taken from `n` so the rendered
+// output never exceeds the requested width. Iter 140: route the cap
+// through `safeSliceChars` (shared with plain.mjs / serializeEvent)
+// so a 4-byte emoji landing on the boundary doesn't split into a
+// lone high-surrogate code unit — a pre-iter-140 `truncate` would
+// have called `flat.slice(0, n - 1)` directly, emitting an invalid
+// UTF-16 fragment to the terminal.
+//
+// Exported for direct unit-testability so the surrogate-safety
+// contract can be pinned without spinning up the full Ink renderer.
+export function truncate(s, n) {
     const flat = String(s).replace(/\s+/g, " ");
-    return flat.length > n ? flat.slice(0, n - 1) + "…" : flat;
+    if (flat.length <= n) return flat;
+    return safeSliceChars(flat, n - 1) + "…";
 }
 
 export default function Timeline({ snapshot, limit = DEFAULT_LIMIT }) {

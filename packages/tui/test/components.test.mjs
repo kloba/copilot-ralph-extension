@@ -9,14 +9,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-let render, React, App, Header, Timeline, DetailPane, Controls;
+let render, React, App, Header, Timeline, DetailPane, Controls, truncateTimeline;
 let inkAvailable = false;
 try {
     ({ render } = await import("ink-testing-library"));
     React = (await import("react")).default;
     App = (await import("../src/components/App.mjs")).default;
     Header = (await import("../src/components/Header.mjs")).default;
-    Timeline = (await import("../src/components/Timeline.mjs")).default;
+    const TimelineMod = await import("../src/components/Timeline.mjs");
+    Timeline = TimelineMod.default;
+    truncateTimeline = TimelineMod.truncate;
     DetailPane = (await import("../src/components/DetailPane.mjs")).default;
     Controls = (await import("../src/components/Controls.mjs")).default;
     inkAvailable = true;
@@ -128,4 +130,62 @@ test("App snapshot is stable for a fixed event log", { skip }, () => {
     for (const expected of ["DONE", "self_improve", "snap", "iter ", "1", "alpha", "promise"]) {
         assert.match(out, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
+});
+
+test("Timeline.truncate: short string passes through verbatim (no ellipsis)", { skip }, () => {
+    assert.equal(truncateTimeline("hello", 10), "hello");
+});
+
+test("Timeline.truncate: whitespace is collapsed to single spaces", { skip }, () => {
+    // Multi-line / tabs flatten to single spaces so the row stays one line.
+    assert.equal(truncateTimeline("foo\nbar\tbaz   qux", 80), "foo bar baz qux");
+});
+
+test("Timeline.truncate: overflow is capped and gains a trailing ellipsis", { skip }, () => {
+    const out = truncateTimeline("a".repeat(100), 10);
+    assert.equal(out.length, 10);
+    assert.equal(out, "aaaaaaaaa…");
+});
+
+test("Timeline.truncate: surrogate-safe — emoji at the boundary doesn't split", { skip }, () => {
+    // Iter 140 refactor: pre-iter-140 the truncate helper called
+    // `flat.slice(0, n - 1)` directly, so a 4-byte emoji whose
+    // high-surrogate code unit landed on `n - 1` rendered as a lone
+    // half + "…", producing an invalid UTF-16 fragment in the
+    // terminal frame. Pin the surrogate-aware back-off via the
+    // shared safeSliceChars helper.
+    //
+    // Build a string of 8 ASCII chars + 1 emoji (2 code units = 10
+    // total). Truncate to 10 chars: the natural slice point at 9
+    // would land between the high and low surrogate of the emoji,
+    // so safeSliceChars must back off to 8, dropping the emoji
+    // entirely, and the helper appends "…".
+    const tricky = "a".repeat(8) + "\u{1F480}"; // 💀 (U+1F480 = surrogate pair)
+    assert.equal(tricky.length, 10, "sanity: tricky string is 10 UTF-16 code units (8 + 2)");
+    const out = truncateTimeline(tricky, 10);
+    // The output may contain a "…" (overflow detected by .length > n
+    // — wait, 10 <= 10 is short-circuit; let's force overflow):
+    const longerTricky = tricky + "x"; // 11 code units → triggers overflow path
+    const outLong = truncateTimeline(longerTricky, 10);
+    assert.equal(outLong.length, 9, "with surrogate-aware back-off, capped output is 8 ASCII + ellipsis (9 code units, dropping the emoji entirely)");
+    assert.equal(outLong, "aaaaaaaa…");
+    // Negative property: under no circumstances may the rendered
+    // output contain a lone high-surrogate code unit. Iterate the
+    // output and assert every high surrogate (D800-DBFF) is followed
+    // by a low surrogate (DC00-DFFF).
+    for (let i = 0; i < outLong.length; i++) {
+        const code = outLong.charCodeAt(i);
+        if (code >= 0xD800 && code <= 0xDBFF) {
+            const next = outLong.charCodeAt(i + 1);
+            assert.ok(next >= 0xDC00 && next <= 0xDFFF,
+                `lone high surrogate at index ${i} (0x${code.toString(16)}) — surrogate-pair safety regressed`);
+            i++;
+        } else {
+            assert.ok(!(code >= 0xDC00 && code <= 0xDFFF),
+                `lone low surrogate at index ${i} (0x${code.toString(16)})`);
+        }
+    }
+    // Sanity: under-cap path also doesn't add an ellipsis.
+    assert.equal(truncateTimeline(tricky, 10), tricky,
+        "under-cap surrogate-bearing string passes through unchanged (no ellipsis)");
 });

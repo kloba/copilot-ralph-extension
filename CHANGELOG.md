@@ -236,6 +236,28 @@
   approximate. Pluralisation flips correctly between
   `1 character.` and `N characters.`.
 
+### Refactor
+- `packages/tui/src/components/Timeline.mjs`'s private
+  `truncate` helper is now wired through the shared
+  `safeSliceChars` utility (already used by `plain.mjs` and
+  `serializeEvent`) so a 4-byte emoji landing on the
+  truncation boundary backs off cleanly instead of emitting a
+  lone high-surrogate code unit + "…" to the terminal frame.
+  Pre-iter-140 the helper called `flat.slice(0, n - 1)`
+  directly; the same data shown via `ralph-tui watch --plain`
+  was already surrogate-safe (plain.mjs has used
+  `safeSliceChars` since iter 110), so the asymmetry between
+  the two render paths was a real hazard nobody surfaced.
+  `truncate` is now exported as a named member of
+  `Timeline.mjs` so the surrogate-safety contract can be
+  pinned with a direct unit test instead of squinting at
+  Ink-rendered frames. Pinned by four tests in
+  `packages/tui/test/components.test.mjs`: short-string
+  pass-through, whitespace flatten, overflow → ellipsis, and
+  the surrogate-safe back-off path including a "no lone
+  surrogate code units appear in the rendered output"
+  invariant scan.
+
 ### Internal
 - `packages/tui/src/events.mjs`'s `serializeEvent` now caps the
   `reason` field at 500 chars (surrogate-safely via

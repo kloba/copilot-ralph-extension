@@ -7483,3 +7483,39 @@ test("finish log marker: max_iterations + user_stopped + max_tokens still use �
     assert.match(b.session.logs.join("\n"),
         /⏹ stopped ralph_loop.*reason: user_stopped/);
 });
+
+// Iter 73 — README drift guard: the closing-line verb sentence in
+// README must list every reason that maps to ⚠️ ended in
+// VERB_BY_REASON and every reason that falls through to ⏹ stopped.
+// Iter 72 fixed the runtime mapping (abort_promise + stagnation moved
+// to ⚠️) but the README sentence at line ~149 still said they were
+// ⏹ stopped. Pin the sentence so a future PR that flips the mapping
+// again must update the docs in the same change.
+test("README closing-line verb sentence matches VERB_BY_REASON contract", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { fileURLToPath } = await import("node:url");
+    const { dirname, join } = await import("node:path");
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const readme = await readFile(join(__dirname, "..", "README.md"), "utf8");
+    // Each ⚠️-ended reason must appear in the same sentence as `⚠️ *ended*`.
+    const endedSentence = readme.match(/⚠️ \*ended\*[^.]*\./);
+    assert.ok(endedSentence, "README must contain a `⚠️ *ended*` sentence");
+    for (const reason of ["send_error", "aborted", "abort_promise", "stagnation"]) {
+        assert.match(endedSentence[0], new RegExp(`\`${reason}\``),
+            `README ⚠️ *ended* sentence must reference ${reason}`);
+    }
+    // Each neutral-exit reason must appear in the `⏹ *stopped*` sentence.
+    const stoppedSentence = readme.match(/⏹ \*stopped\*[^.]*\./);
+    assert.ok(stoppedSentence, "README must contain a `⏹ *stopped*` sentence");
+    for (const reason of ["max_iterations", "max_tokens", "user_stopped", "detached"]) {
+        assert.match(stoppedSentence[0], new RegExp(`\`${reason}\``),
+            `README ⏹ *stopped* sentence must reference ${reason}`);
+    }
+    // Defense-in-depth: the ⚠️-ended reasons MUST NOT appear in the
+    // ⏹ *stopped* sentence (regression: iter 72 fix would silently
+    // re-drift if a future PR pastes the abort reasons into both).
+    for (const reason of ["abort_promise", "stagnation"]) {
+        assert.doesNotMatch(stoppedSentence[0], new RegExp(`\`${reason}\``),
+            `README ⏹ *stopped* sentence must NOT list ${reason} (it is ⚠️ ended)`);
+    }
+});

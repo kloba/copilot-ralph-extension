@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Documentation
+- README "session.log markers" bullet now matches the iter 72
+  `VERB_BY_REASON` runtime contract: `abort_promise` and
+  `stagnation` are listed under `⚠️ *ended*` (the four reasons
+  that also map to `type=abort` in the terminal event), and the
+  `⏹ *stopped*` parenthetical now lists only the genuinely neutral
+  exits — `max_iterations`, `max_tokens`, `user_stopped`,
+  `detached`. A new drift-guard test reads `README.md` at runtime
+  and pins the membership of both sentences so a future code-only
+  fix can't silently desync the docs again.
+
 ### Fixes
 - Align `VERB_BY_REASON` log marker with `ABORT_REASONS` terminal-
   event mapping. `abort_promise` and `stagnation` are listed in

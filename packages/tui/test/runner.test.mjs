@@ -1683,6 +1683,12 @@ test("runRalphTui: failed git commit substage does NOT trigger commit_observed",
         spawn,
         eventEmitter,
         gitExec,
+        // Issue #66 — disable per-iter worktree mode so this test
+        // remains a focused pin on the commit_observed gitExec
+        // count. Worktree mode adds a few extra git invocations
+        // (createIterWorktree, verifyMerged) that would otherwise
+        // make the count assertion brittle.
+        worktree: false,
     });
     assert.equal(events.filter((e) => e.type === "commit_observed").length, 0);
     // Arm-time replay-on-mount calls gitExec once (rev-parse).
@@ -2209,6 +2215,12 @@ test("runRalphTui smoke: full marker stream surfaces stage_plan + task_list + ta
         spawn,
         eventEmitter,
         gitExec,
+        // Issue #66 — disable per-iter worktree mode so the gitCalls
+        // count below stays focused on the commit_observed path.
+        // Worktree mode adds extra git invocations (worktree add /
+        // remove / merge-base / fetch) that would otherwise inflate
+        // the count.
+        worktree: false,
     });
     assert.equal(result.terminationReason, "complete");
 

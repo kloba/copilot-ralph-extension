@@ -108,6 +108,17 @@ export const EVENT_TYPES = Object.freeze([
     // a Copilot CLI session id is captured for the active iter, so
     // the TUI can mount a tail against the per-session log file.
     "session_attached",
+    // Issue #66 — per-iter git worktree lifecycle events. Strictly
+    // additive (appended at end). `worktree_created` fires before
+    // `iteration_start` for each iter that runs in a fresh worktree;
+    // `worktree_removed` fires after `[STAGE: END]` when the iter's
+    // changes were merged into the base ref; `worktree_kept` fires
+    // when the iter ended without its changes being merged (aborted,
+    // failed, or the agent didn't push), so the user can inspect
+    // the leftover sandbox at the recorded path.
+    "worktree_created",
+    "worktree_removed",
+    "worktree_kept",
 ]);
 
 /** Recognised L1 work-item kinds — the categorisation used in the
@@ -140,6 +151,18 @@ export const PINNED_TAIL_STAGES = Object.freeze(["COMMIT", "PUSH", "END"]);
  *  silently corrupt outcome reporting in the TUI's task pane. */
 export const TASK_OUTCOMES = Object.freeze(["ok", "fail", "skip"]);
 const TASK_OUTCOME_SET = new Set(TASK_OUTCOMES);
+
+/** Issue #66 — set of per-iter worktree-lifecycle event types. Used
+ *  by the serializer / fold / plain renderer to gate path/branch
+ *  field validation. Pinned at module scope so a future event type
+ *  with an unrelated `path` field can't accidentally pick up the
+ *  validation. */
+export const WORKTREE_EVENT_TYPES = Object.freeze([
+    "worktree_created",
+    "worktree_removed",
+    "worktree_kept",
+]);
+const WORKTREE_EVENT_TYPE_SET = new Set(WORKTREE_EVENT_TYPES);
 
 /** Normalize a candidate stage list so the pinned tail (`COMMIT → PUSH
  *  → END`) is always present, in the canonical order, at the end.
@@ -526,6 +549,30 @@ export function serializeEvent(ev) {
         out.sessionId = safeSliceChars(ev.sessionId, 64);
     }
 
+    // Issue #66 — per-iter git worktree lifecycle events. All three
+    // share a `path` (capped at 1024 chars; well above any real
+    // `$RALPH_TUI_RUNS_DIR/<runId>/worktrees/iter-<N>/`) and a
+    // `branch` (capped at 200 chars; canonical `autopilot/<runId>/
+    // iter-<N>` is ~60 chars). `worktree_created` carries `baseRef`
+    // so replay can audit which ref the iter forked from.
+    if (WORKTREE_EVENT_TYPE_SET.has(ev.type)) {
+        if (typeof ev.path !== "string" || !ev.path) {
+            throw new TypeError(
+                `serializeEvent: ${ev.type} requires a non-empty path string`,
+            );
+        }
+        if (typeof ev.branch !== "string" || !ev.branch) {
+            throw new TypeError(
+                `serializeEvent: ${ev.type} requires a non-empty branch string`,
+            );
+        }
+        out.path = safeSliceChars(ev.path, 1024);
+        out.branch = safeSliceChars(ev.branch, 200);
+        if (ev.type === "worktree_created" && typeof ev.baseRef === "string" && ev.baseRef) {
+            out.baseRef = safeSliceChars(ev.baseRef, 200);
+        }
+    }
+
     const line = JSON.stringify(out);
     if (Buffer.byteLength(line, "utf8") > MAX_EVENT_LINE_BYTES) {
         throw new RangeError(
@@ -679,6 +726,15 @@ export function foldEvents(events) {
         taskInFlight: null,
         recentTasks: [],
         lastCommit: null,
+        // Issue #66 — per-iter git worktree state for the LastCommit /
+        // DetailPane row. `activeWorktree` tracks the in-flight iter's
+        // sandbox path / branch / baseRef; nulls out on
+        // `worktree_removed` (merged + cleaned up). `keptWorktrees`
+        // is the run-local log of preserved sandboxes — each
+        // `worktree_kept` event appends an entry so the TUI can show
+        // "kept N: <path>" lines below the active row.
+        activeWorktree: null,
+        keptWorktrees: [],
     };
 
     for (const ev of events) {
@@ -717,6 +773,8 @@ export function foldEvents(events) {
                 snap.taskInFlight = null;
                 snap.recentTasks = [];
                 snap.lastCommit = null;
+                snap.activeWorktree = null;
+                snap.keptWorktrees = [];
                 break;
             case "iteration_start":
                 if (Number.isFinite(ev.iteration)) {
@@ -1065,6 +1123,52 @@ export function foldEvents(events) {
                 if (typeof ev.sessionId !== "string" || !ev.sessionId) break;
                 if (ev.sessionId.length > 64) break;
                 snap.sessionId = ev.sessionId;
+                break;
+            }
+            // Issue #66 — per-iter git worktree lifecycle. Each iter
+            // that runs in worktree mode emits `worktree_created` at
+            // the top of its `iteration_start` block, then either
+            // `worktree_removed` (changes merged into base ref →
+            // sandbox + branch deleted) or `worktree_kept` (changes
+            // not merged → sandbox preserved on disk for inspection).
+            // Defensive shape validation mirrors the serializer.
+            case "worktree_created": {
+                if (typeof ev.path !== "string" || !ev.path) break;
+                if (typeof ev.branch !== "string" || !ev.branch) break;
+                snap.activeWorktree = {
+                    path: ev.path,
+                    branch: ev.branch,
+                    baseRef: typeof ev.baseRef === "string" && ev.baseRef ? ev.baseRef : null,
+                    iteration: Number.isFinite(ev.iteration) ? ev.iteration : null,
+                    startedAt: ev.ts,
+                };
+                break;
+            }
+            case "worktree_removed": {
+                if (typeof ev.path !== "string" || !ev.path) break;
+                if (
+                    snap.activeWorktree
+                    && snap.activeWorktree.path === ev.path
+                ) {
+                    snap.activeWorktree = null;
+                }
+                break;
+            }
+            case "worktree_kept": {
+                if (typeof ev.path !== "string" || !ev.path) break;
+                if (typeof ev.branch !== "string" || !ev.branch) break;
+                snap.keptWorktrees.push({
+                    path: ev.path,
+                    branch: ev.branch,
+                    iteration: Number.isFinite(ev.iteration) ? ev.iteration : null,
+                    ts: ev.ts,
+                });
+                if (
+                    snap.activeWorktree
+                    && snap.activeWorktree.path === ev.path
+                ) {
+                    snap.activeWorktree = null;
+                }
                 break;
             }
             default:

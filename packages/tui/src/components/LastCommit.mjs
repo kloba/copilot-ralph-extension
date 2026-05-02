@@ -44,16 +44,41 @@ export function countCoAuthors(trailers) {
     return n;
 }
 
+// Worktree paths can run long (`/home/user/.copilot/ralph-tui/runs/
+// <runId>/worktrees/iter-<N>`). Ellipsize from the front so the
+// distinguishing iter-N tail stays visible.
+const WORKTREE_PATH_MAX = 60;
+
+function clipPath(p) {
+    if (typeof p !== "string") return "";
+    if (p.length <= WORKTREE_PATH_MAX) return p;
+    return "…" + p.slice(p.length - WORKTREE_PATH_MAX + 1);
+}
+
 export default function LastCommit({ snapshot }) {
     const last = snapshot?.lastCommit ?? null;
+    // Issue #66 — per-iter worktree status row. Surface the active
+    // worktree path for in-flight iters and a "kept N at <path>" tag
+    // when one or more prior iters left their sandboxes preserved.
+    // Single-line, dim — same visual weight as the trailer count
+    // badge so the row stays scannable.
+    const activeWt = snapshot?.activeWorktree ?? null;
+    const keptCount = Array.isArray(snapshot?.keptWorktrees) ? snapshot.keptWorktrees.length : 0;
+    const lastKept = keptCount > 0 ? snapshot.keptWorktrees[keptCount - 1] : null;
     if (!last || typeof last.sha !== "string") {
         return h(Box, {
             borderStyle: "single",
             borderColor: "gray",
             paddingX: 1,
-            flexDirection: "row",
+            flexDirection: "column",
         },
             h(Text, { dimColor: true }, "last commit: (none yet)"),
+            activeWt
+                ? h(Text, { dimColor: true }, "worktree: " + clipPath(activeWt.path))
+                : null,
+            lastKept
+                ? h(Text, { dimColor: true }, "kept " + String(keptCount) + ": " + clipPath(lastKept.path))
+                : null,
         );
     }
     const sha7 = last.sha.length >= 7 ? last.sha.slice(0, 7) : last.sha;
@@ -64,16 +89,24 @@ export default function LastCommit({ snapshot }) {
         borderStyle: "single",
         borderColor: "gray",
         paddingX: 1,
-        flexDirection: "row",
+        flexDirection: "column",
     },
-        h(Text, { color: "yellow", bold: true }, sha7),
-        h(Text, null, "  "),
-        h(Text, null, subject),
-        totalTrailers > 0
-            ? h(Text, { dimColor: true }, "   " + String(totalTrailers) + " trailer" + (totalTrailers === 1 ? "" : "s"))
+        h(Box, { flexDirection: "row" },
+            h(Text, { color: "yellow", bold: true }, sha7),
+            h(Text, null, "  "),
+            h(Text, null, subject),
+            totalTrailers > 0
+                ? h(Text, { dimColor: true }, "   " + String(totalTrailers) + " trailer" + (totalTrailers === 1 ? "" : "s"))
+                : null,
+            coAuthors > 0
+                ? h(Text, { color: "magenta" }, " (" + String(coAuthors) + " co-author" + (coAuthors === 1 ? "" : "s") + ")")
+                : null,
+        ),
+        activeWt
+            ? h(Text, { dimColor: true }, "worktree: " + clipPath(activeWt.path))
             : null,
-        coAuthors > 0
-            ? h(Text, { color: "magenta" }, " (" + String(coAuthors) + " co-author" + (coAuthors === 1 ? "" : "s") + ")")
+        lastKept
+            ? h(Text, { dimColor: true }, "kept " + String(keptCount) + ": " + clipPath(lastKept.path))
             : null,
     );
 }

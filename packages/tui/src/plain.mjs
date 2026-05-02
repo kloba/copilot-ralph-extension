@@ -9,7 +9,9 @@
 // log line. No I/O, no ANSI. Tests pin the exact wording for the
 // snapshot suite.
 
-import { safeSliceChars } from "./events.mjs";
+import { safeSliceChars, WORKTREE_EVENT_TYPES } from "./events.mjs";
+
+const WORKTREE_EVENT_TYPE_SET = new Set(WORKTREE_EVENT_TYPES);
 
 const PAD2 = (n) => String(n).padStart(2, "0");
 const PAD3 = (n) => String(n).padStart(3, "0");
@@ -77,6 +79,13 @@ const VERB = {
     // result (premiumRequests) lands during an iter, carrying
     // cumulative-for-the-run counters.
     usage_update: "usage",
+    // Issue #66 — per-iter git worktree lifecycle. 5-char verbs so the
+    // column layout under awk/grep stays uniform with the existing
+    // vocabulary. `wt+ ` / `wt- ` follow the iter+/- family; `wtkep`
+    // signals the kept-on-disk variant.
+    worktree_created: "wt+  ",
+    worktree_removed: "wt-  ",
+    worktree_kept: "wtkep",
 };
 
 /**
@@ -193,6 +202,23 @@ export function formatEventLine(ev) {
         // exploding when a commit has multiple Co-authored-by lines.
         // The TUI reads trailers from the JSONL event directly.
         parts.push(`trailers=${ev.trailers.length}`);
+    }
+    // Issue #66 — per-iter git worktree fields. `path` and `branch`
+    // are JSON-stringified because absolute paths and branch names
+    // can contain spaces (rare but legal); `baseRef` is unquoted
+    // because refs are token-shaped.
+    if (WORKTREE_EVENT_TYPE_SET.has(ev.type)) {
+        if (typeof ev.path === "string" && ev.path) {
+            const collapsed = safeSliceChars(ev.path.replace(/\s+/g, " "), 200);
+            parts.push(`path=${JSON.stringify(collapsed)}`);
+        }
+        if (typeof ev.branch === "string" && ev.branch) {
+            const collapsed = safeSliceChars(ev.branch.replace(/\s+/g, " "), 200);
+            parts.push(`branch=${JSON.stringify(collapsed)}`);
+        }
+        if (typeof ev.baseRef === "string" && ev.baseRef && ev.type === "worktree_created") {
+            parts.push(`baseRef=${ev.baseRef}`);
+        }
     }
     if (typeof ev.reason === "string" && ev.reason) {
         // JSON.stringify the reason iff it contains whitespace, so a

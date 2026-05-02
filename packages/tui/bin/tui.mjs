@@ -103,6 +103,12 @@ OPTIONS
   --abort-promise TOKEN  For \`run\`: substring whose presence signals
               an early abort. Defaults to the baked abort token of the
               chosen prompt mode (or none for --prompt).
+  --worktree  For \`run --prompt\`: opt in to per-iter git worktree
+              isolation (default-on for --self-improve and
+              --grow-project; merged iters tear down on END,
+              unmerged ones are preserved on disk).
+  --no-worktree  For \`run\`: disable per-iter worktree even for the
+              modes where it is on by default.
   --help, -h  Show this help.
   --version, -V  Print the autopilot package version and exit.
 
@@ -153,6 +159,8 @@ export function parseArgv(argv) {
         if (a === "--version" || a === "-V") { out.flags.version = true; continue; }
         if (a === "--plain") { out.flags.plain = true; continue; }
         if (a === "--no-plain") { out.flags.plain = false; continue; }
+        if (a === "--worktree") { out.flags.worktree = true; continue; }
+        if (a === "--no-worktree") { out.flags.worktree = false; continue; }
         if (a.startsWith("--")) {
             const eq = a.indexOf("=");
             if (eq !== -1) {
@@ -622,6 +630,14 @@ export async function cmdRun(flags) {
     const abortPromise = (typeof flags["abort-promise"] === "string" && flags["abort-promise"].trim())
         ? flags["abort-promise"] : undefined; // undefined → runner picks per-mode default
 
+    // Issue #66 D5 — per-iter git worktree mode. Default-on for
+    // `self-improve` / `grow-project` (both end with the COMMIT →
+    // PUSH → END pinned tail), opt-in for `--prompt`. Explicit
+    // `--worktree` / `--no-worktree` overrides the default.
+    const worktree = typeof flags.worktree === "boolean"
+        ? flags.worktree
+        : (mode === "self-improve" || mode === "grow-project");
+
     let stopOnce = false;
     const installSignal = (sig) => {
         const handler = () => {
@@ -718,6 +734,7 @@ export async function cmdRun(flags) {
             max,
             completionPromise,
             abortPromise: abortPromise ?? undefined,
+            worktree,
             // When the TUI is mounted, Ink owns the terminal — any
             // `runRalphTui` writes to stdout (e.g. the `# iter N/M`
             // banner) interleave with Ink's frames and corrupt the

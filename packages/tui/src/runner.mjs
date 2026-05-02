@@ -27,7 +27,7 @@
 
 import { spawn as nodeSpawn, spawnSync as nodeSpawnSync } from "node:child_process";
 import { homedir } from "node:os";
-import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -538,7 +538,7 @@ export function looksLikeGitCommit(command) {
  *
  *  Tests inject their own `gitExec` to stub repo state without
  *  shelling out — see `runRalphTui({ gitExec, … })`. */
-function defaultGitExec({ args, cwd, env }) {
+function defaultGitExec({ args, cwd, env, timeoutMs }) {
     try {
         const r = nodeSpawnSync("git", args, {
             cwd,
@@ -551,14 +551,233 @@ function defaultGitExec({ args, cwd, env }) {
             // helper) silently delaying the run.start path; the
             // emitCommitObservedFromHead caller already swallows null,
             // so a timeout just means "skip the LastCommit pane on
-            // mount" rather than crash.
-            timeout: 200,
+            // mount" rather than crash. Issue #66 — `worktree add` /
+            // `fetch` need a longer ceiling (network + filesystem
+            // copy), so callers may opt in via `timeoutMs`. Default
+            // stays at 200 ms for read-only probes.
+            timeout: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 200,
         });
         if (r.status !== 0) return null;
         return typeof r.stdout === "string" ? r.stdout : null;
     } catch {
         return null;
     }
+}
+
+// ─── Per-iter git worktree lifecycle (issue #66) ──────────────────
+
+/** Issue #66 — default base ref each iter forks from. `main` HEAD at
+ *  iter start so iter N+1 sees iter N's merged work. The runner
+ *  resolves this against the parent repo (cwd) before each iter so
+ *  the base is the most-recent committed state, not a pinned
+ *  arm-time SHA. */
+export const DEFAULT_WORKTREE_BASE_REF = "main";
+
+/** Issue #66 — per-iter timeout for `git worktree add` / `git fetch`
+ *  / `git merge-base --is-ancestor`. 5s gives slow filesystems and
+ *  one-shot `git fetch` operations enough headroom while still
+ *  capping the worst-case wait. The read-only probes used by
+ *  commit_observed (rev-parse / log) keep the 200 ms default in
+ *  `defaultGitExec`. */
+export const WORKTREE_GIT_TIMEOUT_MS = 5000;
+
+/** Compose the canonical worktree path for an iter under a run's
+ *  state directory. Pure / no I/O — exported for tests. */
+export function worktreePathFor({ runsRoot, runId, iter }) {
+    if (typeof runsRoot !== "string" || !runsRoot) {
+        throw new TypeError("worktreePathFor: runsRoot must be a non-empty string");
+    }
+    if (typeof runId !== "string" || !runId) {
+        throw new TypeError("worktreePathFor: runId must be a non-empty string");
+    }
+    if (!Number.isInteger(iter) || iter < 1) {
+        throw new TypeError("worktreePathFor: iter must be a positive integer");
+    }
+    return join(runsRoot, runId, "worktrees", `iter-${iter}`);
+}
+
+/** Compose the canonical iter branch name. Stable prefix
+ *  (`autopilot/<runId>/iter-<N>`) so a `git branch | grep autopilot/`
+ *  cleanup catches everything from previous worktree-mode runs. */
+export function worktreeBranchFor({ runId, iter }) {
+    if (typeof runId !== "string" || !runId) {
+        throw new TypeError("worktreeBranchFor: runId must be a non-empty string");
+    }
+    if (!Number.isInteger(iter) || iter < 1) {
+        throw new TypeError("worktreeBranchFor: iter must be a positive integer");
+    }
+    return `autopilot/${runId}/iter-${iter}`;
+}
+
+/** Create a fresh per-iter worktree at the canonical path, branched
+ *  from `baseRef` in the parent `cwd` repo. Returns `{ path, branch }`
+ *  on success or `null` on any git error (no repo, lock file held,
+ *  baseRef missing, worktree already exists, etc) — caller falls
+ *  back to running the iter in the parent cwd.
+ *
+ *  Side effects (success path):
+ *  - Creates `<runsRoot>/<runId>/worktrees/` if missing.
+ *  - `git worktree add -b <branch> <path> <baseRef>` from `cwd`.
+ *
+ *  All git invocations go through the injected `gitExec` so unit
+ *  tests can stub the binary out. Pure I/O — exported for tests.
+ *
+ *  @param {object} opts
+ *  @param {string} opts.runId
+ *  @param {number} opts.iter        1-indexed.
+ *  @param {string} opts.baseRef     ref to fork from (default "main").
+ *  @param {string} opts.runsRoot    `$RALPH_TUI_RUNS_DIR` value.
+ *  @param {string} opts.cwd         parent repo path (the user's
+ *                                   working tree).
+ *  @param {object} [opts.env]
+ *  @param {(req: {args: string[], cwd: string, env: object, timeoutMs?: number}) => string|null} opts.gitExec
+ *  @param {(dir: string, opts: object) => void} [opts.mkdir]   tests inject.
+ *  @returns {{path: string, branch: string}|null}
+ */
+export function createIterWorktree({ runId, iter, baseRef, runsRoot, cwd, env, gitExec, mkdir = mkdirSync }) {
+    if (typeof gitExec !== "function") return null;
+    const branch = worktreeBranchFor({ runId, iter });
+    const path = worktreePathFor({ runsRoot, runId, iter });
+    const ref = (typeof baseRef === "string" && baseRef) ? baseRef : DEFAULT_WORKTREE_BASE_REF;
+    // Ensure the parent `worktrees/` dir exists. `git worktree add`
+    // would create the leaf dir itself, but the parent must already
+    // exist or git errors out. Mirrors initState's mkdir-for-runId
+    // pattern.
+    try {
+        mkdir(join(runsRoot, runId, "worktrees"), { recursive: true });
+    } catch {
+        return null;
+    }
+    // `git worktree add -b <branch> <path> <baseRef>` creates the
+    // branch from baseRef AND checks it out into the new worktree
+    // in one step. If the branch already exists (collision after a
+    // previous failed run), git refuses and we return null — the
+    // caller falls back to the parent cwd.
+    const out = gitExec({
+        args: ["worktree", "add", "-b", branch, path, ref],
+        cwd,
+        env,
+        timeoutMs: WORKTREE_GIT_TIMEOUT_MS,
+    });
+    if (out === null) return null;
+    return { path, branch };
+}
+
+/** Tear down an iter worktree + its branch. Best-effort: if either
+ *  step errors, we log nothing and return false so the caller can
+ *  decide whether to surface a `worktree_kept` event. Returns true
+ *  iff both `worktree remove` and `branch -D` succeeded.
+ *
+ *  Uses `--force` on `worktree remove` to handle the common case
+ *  where the iter left modified-but-uncommitted files (a half-
+ *  finished tier b commit, a `.npm` cache, etc); the branch is
+ *  already known to be merged at the call site. */
+export function removeIterWorktree({ path, branch, cwd, env, gitExec }) {
+    if (typeof gitExec !== "function") return false;
+    if (typeof path !== "string" || !path) return false;
+    const removed = gitExec({
+        args: ["worktree", "remove", "--force", path],
+        cwd,
+        env,
+        timeoutMs: WORKTREE_GIT_TIMEOUT_MS,
+    });
+    if (removed === null) return false;
+    if (typeof branch === "string" && branch) {
+        const branchDeleted = gitExec({
+            args: ["branch", "-D", branch],
+            cwd,
+            env,
+            timeoutMs: WORKTREE_GIT_TIMEOUT_MS,
+        });
+        if (branchDeleted === null) return false;
+    }
+    return true;
+}
+
+/** D1 — "merged" means `git merge-base --is-ancestor <branch>
+ *  <baseRef>` after a preceding `git fetch` (so a CI-merged push
+ *  shows up locally). Returns:
+ *    - true  if the branch is reachable from baseRef.
+ *    - false if it isn't, or if either git call errored.
+ *
+ *  Both calls are best-effort — a fetch failure (offline, auth)
+ *  falls back to the local merge-base check, which still catches
+ *  the "agent committed locally and merged" case.
+ *
+ *  We use `gitExec` for `merge-base --is-ancestor` even though it's
+ *  an exit-code-only check (no stdout): `defaultGitExec` returns
+ *  null on non-zero exit (i.e. NOT an ancestor). A successful
+ *  invocation returns "" (empty stdout, status 0) so we treat any
+ *  non-null return as "merged". */
+export function verifyMerged({ branch, baseRef, cwd, env, gitExec }) {
+    if (typeof gitExec !== "function") return false;
+    if (typeof branch !== "string" || !branch) return false;
+    const ref = (typeof baseRef === "string" && baseRef) ? baseRef : DEFAULT_WORKTREE_BASE_REF;
+    // Best-effort fetch; ignore errors (offline / no remote / auth).
+    gitExec({
+        args: ["fetch", "--quiet"],
+        cwd,
+        env,
+        timeoutMs: WORKTREE_GIT_TIMEOUT_MS,
+    });
+    const out = gitExec({
+        args: ["merge-base", "--is-ancestor", branch, ref],
+        cwd,
+        env,
+        timeoutMs: WORKTREE_GIT_TIMEOUT_MS,
+    });
+    return out !== null;
+}
+
+/** D7 startup sweep — scan `<runsRoot>/<runId>/worktrees/` for orphan
+ *  iter-N dirs whose parent run's state.json is `terminated`, and
+ *  `git worktree remove --force` them. Bounded to ~200 ms total via
+ *  per-call short-circuit; if the budget runs out we just stop.
+ *  Returns the count of removed orphans (for tests). Best-effort —
+ *  any error short-circuits silently. */
+export function sweepOrphanWorktrees({ runsRoot, cwd, env, gitExec, now = () => Date.now(), budgetMs = 200, readState: readStateFn = readState }) {
+    if (typeof gitExec !== "function") return 0;
+    if (typeof runsRoot !== "string" || !runsRoot) return 0;
+    if (!existsSync(runsRoot)) return 0;
+    let removed = 0;
+    const start = now();
+    let runIds;
+    try {
+        runIds = readdirSync(runsRoot, { withFileTypes: true })
+            .filter((d) => d.isDirectory())
+            .map((d) => d.name);
+    } catch {
+        return 0;
+    }
+    for (const runId of runIds) {
+        if (now() - start >= budgetMs) break;
+        const wtRoot = join(runsRoot, runId, "worktrees");
+        if (!existsSync(wtRoot)) continue;
+        // Only sweep terminated runs — an in-flight run owns its
+        // worktrees and removing them mid-iter would orphan the
+        // copilot subprocess's cwd.
+        const state = readStateFn(runId, env);
+        if (!state || !state.terminated) continue;
+        let entries;
+        try {
+            entries = readdirSync(wtRoot, { withFileTypes: true })
+                .filter((d) => d.isDirectory());
+        } catch {
+            continue;
+        }
+        for (const entry of entries) {
+            if (now() - start >= budgetMs) break;
+            const wtPath = join(wtRoot, entry.name);
+            const out = gitExec({
+                args: ["worktree", "remove", "--force", wtPath],
+                cwd,
+                env,
+                timeoutMs: WORKTREE_GIT_TIMEOUT_MS,
+            });
+            if (out !== null) removed += 1;
+        }
+    }
+    return removed;
 }
 
 /** Run `git rev-parse --short HEAD` + `git log -1
@@ -1044,6 +1263,20 @@ export async function runRalphTui(opts) {
         // a runtime without git installed (or a non-repo cwd) falls
         // back to no commit narration.
         gitExec = defaultGitExec,
+        // Issue #66 — opt-in per-iter git worktree mode. Default-on
+        // for `self-improve` and `grow-project` (both follow the
+        // COMMIT → PUSH → END pinned tail), opt-in for `--prompt`.
+        // When true, each iter spawns in a fresh worktree at
+        // `<runsRoot>/<runId>/worktrees/iter-<N>/` branched from
+        // `worktreeBaseRef`; the worktree is removed on END iff its
+        // changes are merged into the base ref, otherwise a
+        // `worktree_kept` event records the absolute path.
+        worktree = (mode === "self-improve" || mode === "grow-project"),
+        // Issue #66 D4 — base ref each iter forks from. `main` HEAD
+        // at iter start so iter N+1 sees iter N's merged work. The
+        // value is a ref string (`main`, `develop`, an SHA, …);
+        // resolved against `cwd` (the parent repo) at iter time.
+        worktreeBaseRef = DEFAULT_WORKTREE_BASE_REF,
     } = opts;
 
     if (mode !== "self-improve" && mode !== "grow-project" && mode !== "prompt") {
@@ -1088,6 +1321,26 @@ export async function runRalphTui(opts) {
         sessionId: null,
         totalPausedMs: 0,
     }, env);
+
+    // Issue #66 D7 — startup sweep. Scan
+    // `<runsRoot>/<runId>/worktrees/` for orphan dirs whose parent
+    // run's `state.json` says `terminated`, and `git worktree
+    // remove --force` them. Bounded to ~200 ms total via
+    // `sweepOrphanWorktrees`'s budget so a wedged git on a single
+    // orphan can't delay the new run's arm path. Best-effort: any
+    // failure short-circuits silently. Only meaningful in worktree
+    // mode (the helper is gitExec-gated anyway).
+    if (worktree) {
+        try {
+            sweepOrphanWorktrees({
+                runsRoot: resolveStateRoot(env),
+                cwd,
+                env,
+                gitExec,
+                now,
+            });
+        } catch { /* swallow */ }
+    }
 
     // Emit the canonical `armed` event so `ralph-tui list/stats`
     // pick up this run.
@@ -1176,6 +1429,43 @@ export async function runRalphTui(opts) {
         }
         if (stopRequested) break;
 
+        // Issue #66 — per-iter git worktree. When opted in (and the
+        // runner has a `gitExec`), build a fresh sandbox at
+        // `<runsRoot>/<runId>/worktrees/iter-<N>/` BEFORE
+        // `iteration_start` so a `worktree_created` event can land
+        // first, then point the iter's spawn cwd + commit_observed
+        // probes at it. On any failure (no git, no parent repo, branch
+        // collision, etc), fall back to the parent cwd silently —
+        // the iter still runs, just without isolation.
+        let iterWorktree = null;
+        let iterCwd = cwd;
+        if (worktree) {
+            iterWorktree = createIterWorktree({
+                runId,
+                iter,
+                baseRef: worktreeBaseRef,
+                runsRoot: resolveStateRoot(env),
+                cwd,
+                env,
+                gitExec,
+            });
+            if (iterWorktree) {
+                iterCwd = iterWorktree.path;
+                try {
+                    emitter.write({
+                        type: "worktree_created",
+                        ts: now(),
+                        runId,
+                        label,
+                        iteration: iter,
+                        path: iterWorktree.path,
+                        branch: iterWorktree.branch,
+                        baseRef: worktreeBaseRef,
+                    });
+                } catch { /* serializer rejection — fall back to cwd */ }
+            }
+        }
+
         emitter.write({
             type: "iteration_start",
             ts: now(),
@@ -1227,6 +1517,12 @@ export async function runRalphTui(opts) {
         // explicitly called this out: per-call idempotence beats
         // post-hoc range scans for happy-path simplicity.
         const commitObservedToolCallIds = new Set();
+        // Issue #66 — set when the runner sees `[STAGE: END]` for
+        // this iter so the worktree-cleanup probe at iter close
+        // knows whether the agent reached the canonical end of its
+        // SDLC (vs aborted mid-stage). Drives the merge-or-keep
+        // decision per D1.
+        let sawEndStage = false;
         // Active workitem reference carried across iters so a
         // `[WORKITEM_END: {…}]` without an explicit ref/title can
         // backfill from the in-flight item rather than fail
@@ -1236,8 +1532,12 @@ export async function runRalphTui(opts) {
             // Best-effort: shell out to git for the SHA + subject +
             // trailers of HEAD. If the runner has no gitExec (or
             // the repo isn't there), silently skip — the LastCommit
-            // pane just doesn't update for this iter.
-            const head = readHeadCommit({ gitExec, cwd, env });
+            // pane just doesn't update for this iter. Issue #66 —
+            // probe HEAD against the iter's worktree (if any) so the
+            // SHA we surface is the agent's commit on the iter
+            // branch, not whatever the parent cwd happens to point
+            // at.
+            const head = readHeadCommit({ gitExec, cwd: iterCwd, env });
             if (!head) return;
             try {
                 emitter.write({
@@ -1280,6 +1580,12 @@ export async function runRalphTui(opts) {
                     });
                     liveActiveMarker = item;
                     liveSubstageIdx = 0;
+                    // Issue #66 — pin the END-stage gate for the
+                    // post-iter worktree cleanup. Idempotent: a
+                    // duplicate `[STAGE: END]` marker (rare but
+                    // possible if the agent fumbles) just re-asserts
+                    // the flag.
+                    if (item.name === "END") sawEndStage = true;
                 } else if (item.kind === "tool_complete") {
                     liveSubstageIdx += 1;
                     emitter.write({
@@ -1601,7 +1907,12 @@ export async function runRalphTui(opts) {
                 sessionName: sessionNameForIter,
                 spawn,
                 copilotBin,
-                cwd,
+                // Issue #66 — when worktree mode is on and we
+                // successfully created a sandbox for this iter, run
+                // the copilot subprocess inside it. Otherwise the
+                // parent cwd (the user's working tree) is the cwd
+                // exactly as before.
+                cwd: iterCwd,
                 env,
                 onLine,
             });
@@ -1755,6 +2066,41 @@ export async function runRalphTui(opts) {
         if (onIteration) {
             try { onIteration({ iter, excerpt, sessionId: capturedSessionId, exitCode: result.exitCode }); }
             catch { /* swallow */ }
+        }
+
+        // Issue #66 — END-stage merge probe + cleanup. Decide whether
+        // to remove the worktree (changes merged into base ref) or
+        // preserve it (aborted, failed, or the agent didn't push).
+        // sawEndStage=false → preserve unconditionally so the user
+        // can inspect the partial state. Removal is best-effort: if
+        // the rm itself fails (lock file, permission), fall through
+        // to the kept emit so the user still sees the path on disk.
+        if (iterWorktree) {
+            const merged = sawEndStage && verifyMerged({
+                branch: iterWorktree.branch,
+                baseRef: worktreeBaseRef,
+                cwd,
+                env,
+                gitExec,
+            });
+            const removedOk = merged && removeIterWorktree({
+                path: iterWorktree.path,
+                branch: iterWorktree.branch,
+                cwd,
+                env,
+                gitExec,
+            });
+            try {
+                emitter.write({
+                    type: removedOk ? "worktree_removed" : "worktree_kept",
+                    ts: now(),
+                    runId,
+                    label,
+                    iteration: iter,
+                    path: iterWorktree.path,
+                    branch: iterWorktree.branch,
+                });
+            } catch { /* serializer rejection — skip */ }
         }
 
         if (result.exitCode !== 0) {

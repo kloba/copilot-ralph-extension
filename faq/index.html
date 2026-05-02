@@ -1038,13 +1038,26 @@ README → <a href="https://github.com/kloba/copilot-ralph-extension#inspecting-
 for the snapshot tool that returns a structured live snapshot
 without leaving the chat.</p>
 <h3 id="why-is-pausedforms-zero-on-a-resume-event">Why is <code>pausedForMs</code> zero on a <code>resume</code> event?<a class="headerlink" href="#why-is-pausedforms-zero-on-a-resume-event" title="Permanent link">&para;</a></h3>
-<p>A resume is reported with <code>pausedForMs = now - pausedAt</code>, where
+<p>A resume reports <code>pausedForMs = max(0, now - pausedAt)</code>, where
 <code>pausedAt</code> is the wall-clock millisecond timestamp captured by the
-last <code>ralph_pause</code>. If you fire <code>ralph_resume</code> in the same
-millisecond as the pause (vanishingly rare in practice, but easy
-to hit in fast tests), <code>pausedForMs</code> rounds to <code>0</code>. The
-<code>total_paused_ms</code> accumulated across multiple pause/resume cycles
-is what gets deducted from the final <code>durationMs</code>.</p>
+last <code>ralph_pause</code>. Two cases produce a zero:</p>
+<ul>
+<li><strong>Same-millisecond resume.</strong> If you fire <code>ralph_resume</code> in the
+  same millisecond as the pause (vanishingly rare in practice, but
+  easy to hit in fast tests), <code>now - pausedAt</code> rounds to <code>0</code>.</li>
+<li><strong>Backward clock skew.</strong> If the system clock moves backward
+  during the pause window (NTP correction, manual clock change,
+  daylight savings on a host without monotonic-time backing),
+  <code>now - pausedAt</code> would compute negative — the runtime clamps it
+  to <code>0</code> rather than crediting a negative duration to
+  <code>total_paused_ms</code>. Without the clamp, the run's reported
+  <code>durationMs</code> would be inflated past the true wall-clock elapsed
+  time. The same <code>Math.max(0, …)</code> guard runs in <code>finish()</code> and
+  <code>ralph_status.paused_for_ms</code> for symmetry; all three call sites
+  share a single helper so the contract cannot drift.</li>
+</ul>
+<p>The <code>total_paused_ms</code> accumulated across multiple pause/resume
+cycles is what gets deducted from the final <code>durationMs</code>.</p>
 <h2 id="commit-attribution">Commit attribution<a class="headerlink" href="#commit-attribution" title="Permanent link">&para;</a></h2>
 <h3 id="how-are-loop-driven-commits-attributed">How are loop-driven commits attributed?<a class="headerlink" href="#how-are-loop-driven-commits-attributed" title="Permanent link">&para;</a></h3>
 <p>Every commit produced inside a loop carries two <code>Co-authored-by:</code>

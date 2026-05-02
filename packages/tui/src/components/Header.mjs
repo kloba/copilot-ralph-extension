@@ -29,6 +29,25 @@ const h = React.createElement;
 // the user's perspective.
 const RUNAWAY_GUARD_CEILING = 1000;
 
+const TERMINAL_STATUSES = new Set(["complete", "aborted"]);
+
+/** Format a positive ms duration as `HH:MM:SS`, manually computed so
+ *  hours grow past 24 without wrap (a 30-hour self-improve run should
+ *  read `30:00:00`, not `06:00:00` from a `Date`-based formatter).
+ *  Returns `null` when input is non-finite or negative so the Header
+ *  can collapse the row when there's no credible elapsed window
+ *  (e.g. pre-`armed`, or a replayed event whose ts predates start).
+ *  Pure / exported for unit tests. */
+export function formatElapsed(ms) {
+    if (!Number.isFinite(ms) || ms < 0) return null;
+    const totalSec = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSec / 3600);
+    const mins = Math.floor((totalSec % 3600) / 60);
+    const secs = totalSec % 60;
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(hours)}:${pad(mins)}:${pad(secs)}`;
+}
+
 const STATUS_COLOR = {
     idle: "gray",
     running: "cyan",
@@ -74,7 +93,7 @@ function backlogField(value) {
     return value === null || value === undefined ? "?" : String(value);
 }
 
-export default function Header({ snapshot }) {
+export default function Header({ snapshot, now }) {
     const status = snapshot?.status ?? "idle";
     const label = snapshot?.label ?? "(unknown)";
     const runId = snapshot?.runId ?? "(no run)";
@@ -89,6 +108,29 @@ export default function Header({ snapshot }) {
     const closedByLoop = snapshot?.closedByLoop ?? 0;
 
     const maxLabel = max === RUNAWAY_GUARD_CEILING ? "∞" : String(max);
+
+    // Elapsed wallclock since the loop armed. Frozen at the terminal
+    // event's own ts (`snapshot.terminalAt`, set by foldEvents on
+    // `complete` / `abort`) for terminal statuses; otherwise tracks
+    // the caller-supplied `now` so <App>'s 1 Hz tick keeps the value
+    // live during running/paused. Hidden when `startedAt` is null
+    // (pre-iter-1), when the computed window is non-finite/negative,
+    // or when no `now` is supplied for a non-terminal status (the
+    // static-render path — keeps snapshot tests deterministic by
+    // refusing to fall back to wallclock).
+    const startedAt = snapshot?.startedAt;
+    const terminalAt = snapshot?.terminalAt;
+    let elapsedMs = null;
+    if (Number.isFinite(startedAt)) {
+        let end = null;
+        if (TERMINAL_STATUSES.has(status) && Number.isFinite(terminalAt)) {
+            end = terminalAt;
+        } else if (Number.isFinite(now)) {
+            end = now;
+        }
+        if (end !== null) elapsedMs = end - startedAt;
+    }
+    const elapsedLabel = formatElapsed(elapsedMs);
 
     const left = h(Box, { flexDirection: "row" },
         h(Text, { color: STATUS_COLOR[status] ?? "white", bold: true }, STATUS_LABEL[status] ?? String(status).toUpperCase()),
@@ -115,6 +157,16 @@ export default function Header({ snapshot }) {
                 h(Text, null, "   "),
                 h(Text, { dimColor: true }, "premium "),
                 h(Text, null, String(premiumRequests)),
+              )
+            : null,
+        // Elapsed wallclock counter — only rendered once the loop
+        // has armed (startedAt is finite) so single-shot static
+        // renders without an `armed` event don't display 00:00:00.
+        elapsedLabel
+            ? h(Box, { flexDirection: "row" },
+                h(Text, null, "   "),
+                h(Text, { dimColor: true }, "elapsed "),
+                h(Text, null, elapsedLabel),
               )
             : null,
     );

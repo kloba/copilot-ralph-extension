@@ -570,6 +570,7 @@ export function foldEvents(events) {
      *   lastExcerpt: string|null,
      *   startedAt: number|null,
      *   updatedAt: number|null,
+     *   terminalAt: number|null,
      *   iterations: Array<{iteration:number, startedAt:number, endedAt:number|null, excerpt:string|null}>,
      *   activeStage: {stage:number, name:string, startedAt:number}|null,
      *   recentStages: Array<{stage:number, name:string, startedAt:number, endedAt:number|null, durationMs:number|null, outcome:string|null}>,
@@ -604,6 +605,14 @@ export function foldEvents(events) {
         lastExcerpt: null,
         startedAt: null,
         updatedAt: null,
+        // TUI elapsed-clock display: pin the wallclock ts of the
+        // `complete` / `abort` event so the Header's elapsed
+        // counter freezes at the run's actual end ts rather than
+        // tracking `updatedAt` (which would shift if a late /
+        // replayed event arrived after termination). Stays null
+        // until a terminal event fires; resets on `armed` for
+        // multi-run replays.
+        terminalAt: null,
         iterations: [],
         activeStage: null,
         recentStages: [],
@@ -662,6 +671,7 @@ export function foldEvents(events) {
                 snap.premiumRequests = null;
                 snap.lastExcerpt = null;
                 snap.startedAt = ev.ts;
+                snap.terminalAt = null;
                 snap.iterations = [];
                 snap.activeStage = null;
                 snap.recentStages = [];
@@ -771,10 +781,12 @@ export function foldEvents(events) {
             case "complete":
                 snap.status = "complete";
                 snap.reason = ev.reason ?? snap.reason;
+                if (Number.isFinite(ev.ts)) snap.terminalAt = ev.ts;
                 break;
             case "abort":
                 snap.status = "aborted";
                 snap.reason = ev.reason ?? snap.reason;
+                if (Number.isFinite(ev.ts)) snap.terminalAt = ev.ts;
                 break;
             case "stage_start": {
                 if (!Number.isFinite(ev.stage)) break;

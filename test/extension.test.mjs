@@ -7,7 +7,7 @@ import { dirname, resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
-const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, parseUserReason, coerceNumberField } = __test__;
+const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_ATTRIBUTION_OPT_OUT_LEGACY, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, parseUserReason, coerceNumberField } = __test__;
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -1370,20 +1370,22 @@ test("both baked prompts retain the cwd guardrail and the trigger-phrase footgun
     }
 });
 
-test("PROMPT_SELF_IMPROVE bakes the dual Co-authored-by trailer + RALPH_NO_ATTRIBUTION opt-out (issue #1)", () => {
+test("PROMPT_SELF_IMPROVE bakes the dual Co-authored-by trailer + AUTOPILOT_NO_ATTRIBUTION opt-out (issue #1)", () => {
     // Issue #1: every loop-driven commit ships TWO Co-authored-by
     // trailers — the existing Copilot trailer for agent attribution,
     // plus a copilot-ralph bot-account trailer for passive usage
-    // analytics across public GitHub. RALPH_NO_ATTRIBUTION=1 in env
-    // suppresses ONLY the second trailer; the Copilot trailer always
-    // ships. Pin both literals so a future edit can't silently drop
-    // the bot-account trailer or invert the opt-out polarity.
+    // analytics across public GitHub. AUTOPILOT_NO_ATTRIBUTION=1
+    // (or legacy RALPH_NO_ATTRIBUTION=1) in env suppresses ONLY the
+    // second trailer; the Copilot trailer always ships. Pin both
+    // literals so a future edit can't silently drop the bot-account
+    // trailer or invert the opt-out polarity.
     const p = PROMPT_SELF_IMPROVE;
     assert.match(p, /Co-authored-by: Copilot <223556219\+Copilot@users\.noreply\.github\.com>/, "must keep the canonical Copilot trailer");
     assert.match(p, /Co-authored-by: copilot-ralph <copilot-ralph@users\.noreply\.github\.com>/, "must bake the copilot-ralph bot-account trailer (issue #1)");
-    assert.match(p, /RALPH_NO_ATTRIBUTION=1/, "must document the RALPH_NO_ATTRIBUTION=1 opt-out env var");
+    assert.match(p, /AUTOPILOT_NO_ATTRIBUTION=1/, "must document the AUTOPILOT_NO_ATTRIBUTION=1 primary opt-out env var");
+    assert.match(p, /RALPH_NO_ATTRIBUTION=1/, "must document the legacy RALPH_NO_ATTRIBUTION=1 opt-out env var (still honored)");
     // Opt-out polarity: setting the var SUPPRESSES, not enables.
-    assert.match(p, /RALPH_NO_ATTRIBUTION=1[\s\S]{0,200}\bomit\b/i, "RALPH_NO_ATTRIBUTION=1 must instruct the agent to OMIT the second trailer");
+    assert.match(p, /AUTOPILOT_NO_ATTRIBUTION=1[\s\S]{0,200}\bomit\b/i, "AUTOPILOT_NO_ATTRIBUTION=1 must instruct the agent to OMIT the second trailer");
     // Stricter polarity: must say "omit ONLY" (or equivalent) so a future
     // edit can't degrade to "omit BOTH" trailers — the Copilot trailer
     // must always ship for agent-attribution audit.
@@ -1391,22 +1393,23 @@ test("PROMPT_SELF_IMPROVE bakes the dual Co-authored-by trailer + RALPH_NO_ATTRI
     assert.match(p, /\balways\s+ship/i, "must promise the Copilot trailer always ships");
 });
 
-test("PROMPT_GROW_PROJECT bakes the dual Co-authored-by trailer + RALPH_NO_ATTRIBUTION opt-out (issue #1)", () => {
+test("PROMPT_GROW_PROJECT bakes the dual Co-authored-by trailer + AUTOPILOT_NO_ATTRIBUTION opt-out (issue #1)", () => {
     // Mirror of the PROMPT_SELF_IMPROVE pin. grow_project also commits
     // per iter and must carry the same dual-trailer + opt-out contract
     // so the two loop tools stay symmetric on the attribution surface.
     const p = PROMPT_GROW_PROJECT;
     assert.match(p, /Co-authored-by: Copilot <223556219\+Copilot@users\.noreply\.github\.com>/, "must keep the canonical Copilot trailer");
     assert.match(p, /Co-authored-by: copilot-ralph <copilot-ralph@users\.noreply\.github\.com>/, "must bake the copilot-ralph bot-account trailer (issue #1)");
-    assert.match(p, /RALPH_NO_ATTRIBUTION=1/, "must document the RALPH_NO_ATTRIBUTION=1 opt-out env var");
-    assert.match(p, /RALPH_NO_ATTRIBUTION=1[\s\S]{0,200}\bomit\b/i, "RALPH_NO_ATTRIBUTION=1 must instruct the agent to OMIT the copilot-ralph trailer");
+    assert.match(p, /AUTOPILOT_NO_ATTRIBUTION=1/, "must document the AUTOPILOT_NO_ATTRIBUTION=1 primary opt-out env var");
+    assert.match(p, /RALPH_NO_ATTRIBUTION=1/, "must document the legacy RALPH_NO_ATTRIBUTION=1 opt-out env var (still honored)");
+    assert.match(p, /AUTOPILOT_NO_ATTRIBUTION=1[\s\S]{0,200}\bomit\b/i, "AUTOPILOT_NO_ATTRIBUTION=1 must instruct the agent to OMIT the copilot-ralph trailer");
     // Stricter polarity (mirror of self_improve pin): must say "omit ONLY"
     // so a future edit can't degrade to "omit BOTH" trailers.
     assert.match(p, /\bomit\b[\s\S]{0,80}\bonly\b/i, "must instruct OMIT ONLY the copilot-ralph trailer (Copilot trailer + Closes #N always ship)");
     assert.match(p, /\balways\s+ship/i, "must promise the Copilot trailer (and Closes #N) always ship");
 });
 
-test("BAKED_RALPH_LOOP_RIDER bakes the dual Co-authored-by trailer + RALPH_NO_ATTRIBUTION opt-out (issue #1, ap_loop parity)", () => {
+test("BAKED_RALPH_LOOP_RIDER bakes the dual Co-authored-by trailer + AUTOPILOT_NO_ATTRIBUTION opt-out (issue #1, ap_loop parity)", () => {
     // ap_loop parity with self_improve / grow_project: every
     // loop-driven commit must carry the dual trailer. Because
     // ap_loop's prompt is user-supplied, the rider is appended
@@ -1416,8 +1419,9 @@ test("BAKED_RALPH_LOOP_RIDER bakes the dual Co-authored-by trailer + RALPH_NO_AT
     const r = BAKED_RALPH_LOOP_RIDER;
     assert.match(r, /Co-authored-by: Copilot <223556219\+Copilot@users\.noreply\.github\.com>/, "must keep the canonical Copilot trailer");
     assert.match(r, /Co-authored-by: copilot-ralph <copilot-ralph@users\.noreply\.github\.com>/, "must bake the copilot-ralph bot-account trailer");
-    assert.match(r, /RALPH_NO_ATTRIBUTION=1/, "must document the RALPH_NO_ATTRIBUTION=1 opt-out env var");
-    assert.match(r, /RALPH_NO_ATTRIBUTION=1[\s\S]{0,200}\bomit\b/i, "RALPH_NO_ATTRIBUTION=1 must instruct the agent to OMIT the copilot-ralph trailer");
+    assert.match(r, /AUTOPILOT_NO_ATTRIBUTION=1/, "must document the AUTOPILOT_NO_ATTRIBUTION=1 primary opt-out env var");
+    assert.match(r, /RALPH_NO_ATTRIBUTION=1/, "must document the legacy RALPH_NO_ATTRIBUTION=1 opt-out env var (still honored)");
+    assert.match(r, /AUTOPILOT_NO_ATTRIBUTION=1[\s\S]{0,200}\bomit\b/i, "AUTOPILOT_NO_ATTRIBUTION=1 must instruct the agent to OMIT the copilot-ralph trailer");
     assert.match(r, /\bomit\b[\s\S]{0,80}\bonly\b/i, "must instruct OMIT ONLY the copilot-ralph trailer");
     assert.match(r, /\balways\s+ship/i, "must promise the Copilot trailer always ships");
     // Order pin: Copilot must precede copilot-ralph (GitHub UI
@@ -1538,11 +1542,17 @@ test("BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT pin 
     // CHANGELOG.
     assert.equal(BAKED_COPILOT_TRAILER, "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>");
     assert.equal(BAKED_RALPH_TRAILER, "Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>");
-    assert.equal(BAKED_ATTRIBUTION_OPT_OUT, "RALPH_NO_ATTRIBUTION=1");
+    // Project-rename stage 4: AUTOPILOT_NO_ATTRIBUTION is the
+    // primary opt-out env var; the legacy RALPH_NO_ATTRIBUTION
+    // spelling still works (and remains baked into prompt prose
+    // so existing user scripts don't drift).
+    assert.equal(BAKED_ATTRIBUTION_OPT_OUT, "AUTOPILOT_NO_ATTRIBUTION=1");
+    assert.equal(BAKED_ATTRIBUTION_OPT_OUT_LEGACY, "RALPH_NO_ATTRIBUTION=1");
     // Trailers must be distinct lines; opt-out polarity is "=1"
     // (truthy enables the suppression), not a bare flag.
     assert.notEqual(BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER);
     assert.match(BAKED_ATTRIBUTION_OPT_OUT, /=1$/, "opt-out env var must use the =1 polarity convention");
+    assert.match(BAKED_ATTRIBUTION_OPT_OUT_LEGACY, /=1$/, "legacy opt-out env var must use the =1 polarity convention");
     // Both trailers must use the canonical GitHub noreply domain.
     // A typo like "users.noreply.gihub.com" would silently produce
     // commits whose Co-authored-by line does not link to any GitHub
@@ -1627,7 +1637,8 @@ test("the prompt actually fired through armLoop carries both Co-authored-by trai
     // the agent's actual instructions while leaving the exported
     // PROMPT_* constants untouched. Pin the SENT prompt — the
     // string the executing agent actually sees — to contain both
-    // trailer literals and the RALPH_NO_ATTRIBUTION env var
+    // trailer literals AND both opt-out env var spellings
+    // (AUTOPILOT_NO_ATTRIBUTION primary + legacy RALPH_NO_ATTRIBUTION)
     // verbatim, for both self_improve and grow_project.
     for (const name of ["self_improve", "grow_project"]) {
         const session = makeFakeSession();
@@ -1642,6 +1653,7 @@ test("the prompt actually fired through armLoop carries both Co-authored-by trai
         assert.ok(sent.includes(BAKED_COPILOT_TRAILER), `${name} sent prompt must carry the Copilot trailer`);
         assert.ok(sent.includes(BAKED_RALPH_TRAILER), `${name} sent prompt must carry the copilot-ralph trailer`);
         assert.ok(sent.includes(BAKED_ATTRIBUTION_OPT_OUT), `${name} sent prompt must mention ${BAKED_ATTRIBUTION_OPT_OUT}`);
+        assert.ok(sent.includes(BAKED_ATTRIBUTION_OPT_OUT_LEGACY), `${name} sent prompt must mention legacy ${BAKED_ATTRIBUTION_OPT_OUT_LEGACY}`);
     }
 });
 
@@ -4798,14 +4810,16 @@ test("dual Co-authored-by trailers are baked in canonical order: Copilot first, 
     }
 });
 
-test("README documents both Co-authored-by trailers and RALPH_NO_ATTRIBUTION opt-out (issue #1)", () => {
+test("README documents both Co-authored-by trailers and the opt-out env var (issue #1)", () => {
     // The user-facing README "Commit attribution" section is the
     // canonical disclosure surface for issue #1. Pin its presence
     // so a future README rewrite can't quietly drop:
     //   - the "Commit attribution" section heading
     //   - either of the two canonical Co-authored-by trailer lines
     //     (Copilot agent + copilot-ralph bot account)
-    //   - the RALPH_NO_ATTRIBUTION=1 opt-out env var
+    //   - the opt-out env var (primary AUTOPILOT_NO_ATTRIBUTION=1
+    //     OR legacy RALPH_NO_ATTRIBUTION=1; either disclosure
+    //     satisfies the contract while the rename rolls out)
     //   - the public-only-searchability caveat
     //
     // Also pin that the trailer literals in the README match the
@@ -4816,7 +4830,10 @@ test("README documents both Co-authored-by trailers and RALPH_NO_ATTRIBUTION opt
     assert.match(readme, /^## Commit attribution\b/m, "README must have a '## Commit attribution' section");
     assert.ok(readme.includes(BAKED_COPILOT_TRAILER), "README must spell out the canonical Copilot Co-authored-by trailer");
     assert.ok(readme.includes(BAKED_RALPH_TRAILER), "README must spell out the canonical copilot-ralph Co-authored-by trailer");
-    assert.ok(readme.includes(BAKED_ATTRIBUTION_OPT_OUT), `README must document the ${BAKED_ATTRIBUTION_OPT_OUT} opt-out env var`);
+    assert.ok(
+        readme.includes(BAKED_ATTRIBUTION_OPT_OUT) || readme.includes(BAKED_ATTRIBUTION_OPT_OUT_LEGACY),
+        `README must document either the ${BAKED_ATTRIBUTION_OPT_OUT} or legacy ${BAKED_ATTRIBUTION_OPT_OUT_LEGACY} opt-out env var`,
+    );
     // The public-only caveat is a required disclosure per the issue.
     assert.match(readme, /\bpublic[-\s]?repo[-\s]?(commits|only)\b/i, "README must disclose the public-repo-only searchability caveat");
     // Trailer order matters: GitHub's commit UI surfaces the first
@@ -5674,34 +5691,40 @@ function makeCaffeinateSpy({ failSpawn = false, failError = null } = {}) {
     return { calls, children, spawnFn };
 }
 
-async function armWithCaffeinate({ env = {}, platform = "darwin", spawnSpy } = {}) {
+async function armWithCaffeinate({ env = {}, platform = "darwin", spawnSpy, stderr } = {}) {
     const session = makeFakeSession();
+    // Reset per-process legacy-env notice flags so each arm starts
+    // from a clean slate (otherwise the second test that reads the
+    // legacy env var sees a stale "already warned" sentinel).
+    __test__._resetLegacyEnvNotices();
+    const stderrStub = stderr ?? { write() { /* swallow */ } };
     const controller = createRalphController({
         caffeinate: {
             env,
             platform,
             pid: 12345,
             spawnFn: spawnSpy.spawnFn,
+            stderr: stderrStub,
         },
     });
     controller.attach(session);
     const ralph = controller.tools.find((t) => t.name === "ap_loop");
     const armResult = await ralph.handler({ prompt: "go", max_iterations: 3 });
-    return { session, controller, armResult, ralph };
+    return { session, controller, armResult, ralph, stderr: stderrStub };
 }
 
 test("caffeinate: disabled by default — no spawn, no log line", async () => {
     const spy = makeCaffeinateSpy();
     const { session, armResult } = await armWithCaffeinate({ env: {}, spawnSpy: spy });
     assert.equal(armResult.armed, true);
-    assert.equal(spy.calls.length, 0, "must NOT spawn caffeinate when RALPH_CAFFEINATE is unset");
+    assert.equal(spy.calls.length, 0, "must NOT spawn caffeinate when AUTOPILOT_CAFFEINATE is unset");
     assert.equal(session.logs.some((l) => l.includes("caffeinate")), false, "no caffeinate log line when disabled");
 });
 
-test("caffeinate: enabled via RALPH_CAFFEINATE=1 spawns 'caffeinate -i -w <pid>' on darwin", async () => {
+test("caffeinate: enabled via AUTOPILOT_CAFFEINATE=1 spawns 'caffeinate -i -w <pid>' on darwin", async () => {
     const spy = makeCaffeinateSpy();
     const { session } = await armWithCaffeinate({
-        env: { RALPH_CAFFEINATE: "1" },
+        env: { AUTOPILOT_CAFFEINATE: "1" },
         platform: "darwin",
         spawnSpy: spy,
     });
@@ -5713,10 +5736,75 @@ test("caffeinate: enabled via RALPH_CAFFEINATE=1 spawns 'caffeinate -i -w <pid>'
     assert.ok(session.logs.some((l) => /keeping system awake via caffeinate/.test(l)), "must log activation line");
 });
 
+test("caffeinate: enabled via legacy RALPH_CAFFEINATE=1 still works (with deprecation)", async () => {
+    // Legacy env var: still honored as a fallback so existing user
+    // scripts don't break, but a one-line stderr deprecation fires
+    // the first time per process.
+    const spy = makeCaffeinateSpy();
+    const writes = [];
+    const stderr = { write(s) { writes.push(s); } };
+    const { session } = await armWithCaffeinate({
+        env: { RALPH_CAFFEINATE: "1" },
+        platform: "darwin",
+        spawnSpy: spy,
+        stderr,
+    });
+    assert.equal(spy.calls.length, 1, "legacy RALPH_CAFFEINATE=1 must still enable caffeinate");
+    assert.deepEqual(spy.calls[0].args, ["-i", "-w", "12345"]);
+    assert.ok(session.logs.some((l) => /keeping system awake via caffeinate/.test(l)));
+    assert.equal(writes.length, 1, "exactly one stderr deprecation must fire");
+    assert.match(writes[0], /\$RALPH_CAFFEINATE.*deprecated/i);
+    assert.match(writes[0], /\$AUTOPILOT_CAFFEINATE/);
+});
+
+test("caffeinate: AUTOPILOT_CAFFEINATE wins when BOTH primary and legacy are set; no deprecation fires", async () => {
+    // Decision B precedence: when a user has both spellings set
+    // (mid-migration scripts), the primary takes precedence and
+    // the legacy var is ignored — no deprecation noise either.
+    const spy = makeCaffeinateSpy();
+    const writes = [];
+    const stderr = { write(s) { writes.push(s); } };
+    await armWithCaffeinate({
+        env: { AUTOPILOT_CAFFEINATE: "1", RALPH_CAFFEINATE: "0" },
+        platform: "darwin",
+        spawnSpy: spy,
+        stderr,
+    });
+    assert.equal(spy.calls.length, 1, "primary AUTOPILOT_CAFFEINATE=1 must win over legacy RALPH_CAFFEINATE=0");
+    assert.deepEqual(writes, [], "no deprecation should fire when primary is set");
+});
+
+test("caffeinate: legacy-env deprecation fires at most ONCE per process", async () => {
+    // Read the legacy var multiple times in a row; only the first
+    // call should produce the stderr notice.
+    const { isCaffeinateEnabled, _resetLegacyEnvNotices } = __test__;
+    _resetLegacyEnvNotices();
+    const writes = [];
+    const stderr = { write(s) { writes.push(s); } };
+    for (let i = 0; i < 5; i++) {
+        assert.equal(isCaffeinateEnabled({ RALPH_CAFFEINATE: "1" }, stderr), true);
+    }
+    assert.equal(writes.length, 1, "deprecation must fire exactly once across repeated reads");
+    assert.match(writes[0], /\$RALPH_CAFFEINATE/);
+});
+
+test("caffeinate: legacy-env deprecation fires at most once for SCOPE too", async () => {
+    const { resolveCaffeinateScope, _resetLegacyEnvNotices } = __test__;
+    _resetLegacyEnvNotices();
+    const writes = [];
+    const stderr = { write(s) { writes.push(s); } };
+    for (let i = 0; i < 5; i++) {
+        assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: "idle+display" }, stderr), "idle+display");
+    }
+    assert.equal(writes.length, 1, "deprecation must fire exactly once across repeated reads");
+    assert.match(writes[0], /\$RALPH_CAFFEINATE_SCOPE/);
+    assert.match(writes[0], /\$AUTOPILOT_CAFFEINATE_SCOPE/);
+});
+
 test("caffeinate: scope=idle+display adds -d flag", async () => {
     const spy = makeCaffeinateSpy();
     await armWithCaffeinate({
-        env: { RALPH_CAFFEINATE: "1", RALPH_CAFFEINATE_SCOPE: "idle+display" },
+        env: { AUTOPILOT_CAFFEINATE: "1", AUTOPILOT_CAFFEINATE_SCOPE: "idle+display" },
         platform: "darwin",
         spawnSpy: spy,
     });
@@ -5726,7 +5814,7 @@ test("caffeinate: scope=idle+display adds -d flag", async () => {
 test("caffeinate: invalid scope falls back to idle", async () => {
     const spy = makeCaffeinateSpy();
     await armWithCaffeinate({
-        env: { RALPH_CAFFEINATE: "1", RALPH_CAFFEINATE_SCOPE: "bogus" },
+        env: { AUTOPILOT_CAFFEINATE: "1", AUTOPILOT_CAFFEINATE_SCOPE: "bogus" },
         platform: "darwin",
         spawnSpy: spy,
     });
@@ -5736,7 +5824,7 @@ test("caffeinate: invalid scope falls back to idle", async () => {
 test("caffeinate: child is killed on loop completion", async () => {
     const spy = makeCaffeinateSpy();
     const { session, controller } = await armWithCaffeinate({
-        env: { RALPH_CAFFEINATE: "1" },
+        env: { AUTOPILOT_CAFFEINATE: "1" },
         platform: "darwin",
         spawnSpy: spy,
     });
@@ -5751,7 +5839,7 @@ test("caffeinate: child is killed on loop completion", async () => {
 test("caffeinate: child is killed on ap_stop", async () => {
     const spy = makeCaffeinateSpy();
     const { controller } = await armWithCaffeinate({
-        env: { RALPH_CAFFEINATE: "1" },
+        env: { AUTOPILOT_CAFFEINATE: "1" },
         platform: "darwin",
         spawnSpy: spy,
     });
@@ -5763,7 +5851,7 @@ test("caffeinate: child is killed on ap_stop", async () => {
 test("caffeinate: non-darwin platform is a silent no-op (logged skip, no spawn)", async () => {
     const spy = makeCaffeinateSpy();
     const { session } = await armWithCaffeinate({
-        env: { RALPH_CAFFEINATE: "1" },
+        env: { AUTOPILOT_CAFFEINATE: "1" },
         platform: "linux",
         spawnSpy: spy,
     });
@@ -5774,7 +5862,7 @@ test("caffeinate: non-darwin platform is a silent no-op (logged skip, no spawn)"
 test("caffeinate: spawn throw does not abort the loop", async () => {
     const spy = makeCaffeinateSpy({ failSpawn: true });
     const { session, armResult, controller } = await armWithCaffeinate({
-        env: { RALPH_CAFFEINATE: "1" },
+        env: { AUTOPILOT_CAFFEINATE: "1" },
         platform: "darwin",
         spawnSpy: spy,
     });
@@ -5787,7 +5875,7 @@ test("caffeinate: truthy variants ('true', 'YES', 'on') all enable", async () =>
     for (const val of ["true", "YES", "on", "1"]) {
         const spy = makeCaffeinateSpy();
         await armWithCaffeinate({
-            env: { RALPH_CAFFEINATE: val },
+            env: { AUTOPILOT_CAFFEINATE: val },
             platform: "darwin",
             spawnSpy: spy,
         });
@@ -5799,7 +5887,7 @@ test("caffeinate: falsy values keep it off", async () => {
     for (const val of ["0", "false", "", "no", "off"]) {
         const spy = makeCaffeinateSpy();
         await armWithCaffeinate({
-            env: { RALPH_CAFFEINATE: val },
+            env: { AUTOPILOT_CAFFEINATE: val },
             platform: "darwin",
             spawnSpy: spy,
         });
@@ -10253,73 +10341,88 @@ test("VERB_BY_REASON: max_tokens has explicit entry; neutral exits fall through 
 });
 
 test("isCaffeinateEnabled: case + whitespace tolerant truthy parse (issue #8)", () => {
-    // The helper at extension/handler.mjs:536 lower-cases + trims env
-    // input before checking against the truthy set. Pin the contract
-    // directly so a future refactor swapping in a shared env-parser
-    // can't silently tighten or loosen what counts as "enabled" — the
-    // existing caffeinate end-to-end tests only exercise "1" and would
-    // pass even if the case/whitespace tolerance were dropped.
-    const { isCaffeinateEnabled } = __test__;
+    // The helper lower-cases + trims env input before checking
+    // against the truthy set. Pin the contract directly so a future
+    // refactor swapping in a shared env-parser can't silently
+    // tighten or loosen what counts as "enabled" — the existing
+    // caffeinate end-to-end tests only exercise "1" and would pass
+    // even if the case/whitespace tolerance were dropped.
+    const { isCaffeinateEnabled, _resetLegacyEnvNotices } = __test__;
+    _resetLegacyEnvNotices();
+    // Stub stderr so legacy-env deprecations during this test
+    // don't pollute the tap stream.
+    const stderrStub = { write() { /* swallow */ } };
 
     // Truthy variants — every documented form + capitalisation.
     for (const v of ["1", "true", "yes", "on", "TRUE", "YES", "ON",
         "True", "Yes", "On", "  1  ", "\t1\n", "  true  "]) {
-        assert.equal(isCaffeinateEnabled({ RALPH_CAFFEINATE: v }), true,
-            `RALPH_CAFFEINATE=${JSON.stringify(v)} must enable caffeinate`);
+        assert.equal(isCaffeinateEnabled({ AUTOPILOT_CAFFEINATE: v }, stderrStub), true,
+            `AUTOPILOT_CAFFEINATE=${JSON.stringify(v)} must enable caffeinate`);
+        assert.equal(isCaffeinateEnabled({ RALPH_CAFFEINATE: v }, stderrStub), true,
+            `legacy RALPH_CAFFEINATE=${JSON.stringify(v)} must still enable caffeinate`);
     }
 
     // Falsy / disabled — anything not in the truthy set, including
     // unset, empty string, and bogus tokens.
     for (const v of [undefined, "", "0", "false", "no", "off", "FALSE",
         "enable", "y", "  ", "1\n2"]) {
-        assert.equal(isCaffeinateEnabled({ RALPH_CAFFEINATE: v }), false,
+        assert.equal(isCaffeinateEnabled({ AUTOPILOT_CAFFEINATE: v }, stderrStub), false,
+            `AUTOPILOT_CAFFEINATE=${JSON.stringify(v)} must NOT enable caffeinate`);
+        assert.equal(isCaffeinateEnabled({ RALPH_CAFFEINATE: v }, stderrStub), false,
             `RALPH_CAFFEINATE=${JSON.stringify(v)} must NOT enable caffeinate`);
     }
 
     // Defensive: env arg itself absent / non-object → false (no throw).
-    assert.equal(isCaffeinateEnabled(undefined), false, "undefined env must not throw");
-    assert.equal(isCaffeinateEnabled(null), false, "null env must not throw");
-    assert.equal(isCaffeinateEnabled({}), false, "empty env must default to disabled");
+    assert.equal(isCaffeinateEnabled(undefined, stderrStub), false, "undefined env must not throw");
+    assert.equal(isCaffeinateEnabled(null, stderrStub), false, "null env must not throw");
+    assert.equal(isCaffeinateEnabled({}, stderrStub), false, "empty env must default to disabled");
 
     // Non-string values must NOT enable — protects against e.g.
-    // RALPH_CAFFEINATE=true (boolean) sneaking in via a wrapper.
+    // AUTOPILOT_CAFFEINATE=true (boolean) sneaking in via a wrapper.
     for (const v of [true, 1, {}, []]) {
-        assert.equal(isCaffeinateEnabled({ RALPH_CAFFEINATE: v }), false,
+        assert.equal(isCaffeinateEnabled({ AUTOPILOT_CAFFEINATE: v }, stderrStub), false,
+            `AUTOPILOT_CAFFEINATE=${typeof v} (non-string) must NOT enable caffeinate`);
+        assert.equal(isCaffeinateEnabled({ RALPH_CAFFEINATE: v }, stderrStub), false,
             `RALPH_CAFFEINATE=${typeof v} (non-string) must NOT enable caffeinate`);
     }
 });
 
 test("resolveCaffeinateScope: case + whitespace tolerant; bogus → idle (issue #8)", () => {
-    const { resolveCaffeinateScope } = __test__;
+    const { resolveCaffeinateScope, _resetLegacyEnvNotices } = __test__;
+    _resetLegacyEnvNotices();
+    const stderrStub = { write() { /* swallow */ } };
 
     // Default (env unset / absent) → "idle".
-    assert.equal(resolveCaffeinateScope({}), "idle");
-    assert.equal(resolveCaffeinateScope(undefined), "idle");
-    assert.equal(resolveCaffeinateScope(null), "idle");
-    assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: undefined }), "idle");
+    assert.equal(resolveCaffeinateScope({}, stderrStub), "idle");
+    assert.equal(resolveCaffeinateScope(undefined, stderrStub), "idle");
+    assert.equal(resolveCaffeinateScope(null, stderrStub), "idle");
+    assert.equal(resolveCaffeinateScope({ AUTOPILOT_CAFFEINATE_SCOPE: undefined }, stderrStub), "idle");
+    assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: undefined }, stderrStub), "idle");
 
-    // Explicit "idle" passes through.
-    assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: "idle" }), "idle");
-    assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: "IDLE" }), "idle");
-    assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: "  idle  " }), "idle");
+    // Explicit "idle" passes through (both env-var spellings).
+    for (const k of ["AUTOPILOT_CAFFEINATE_SCOPE", "RALPH_CAFFEINATE_SCOPE"]) {
+        assert.equal(resolveCaffeinateScope({ [k]: "idle" }, stderrStub), "idle");
+        assert.equal(resolveCaffeinateScope({ [k]: "IDLE" }, stderrStub), "idle");
+        assert.equal(resolveCaffeinateScope({ [k]: "  idle  " }, stderrStub), "idle");
 
-    // "idle+display" — the only other documented scope.
-    assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: "idle+display" }), "idle+display");
-    assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: "IDLE+DISPLAY" }), "idle+display");
-    assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: "  Idle+Display  " }), "idle+display");
+        // "idle+display" — the only other documented scope.
+        assert.equal(resolveCaffeinateScope({ [k]: "idle+display" }, stderrStub), "idle+display");
+        assert.equal(resolveCaffeinateScope({ [k]: "IDLE+DISPLAY" }, stderrStub), "idle+display");
+        assert.equal(resolveCaffeinateScope({ [k]: "  Idle+Display  " }, stderrStub), "idle+display");
 
-    // Bogus values fall back to "idle" (safe default — keep the loop
-    // on rather than failing arm-time over a typo).
-    for (const v of ["display", "always", "idle+", "+display", "true",
-        "1", "", "  ", "\n"]) {
-        assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: v }), "idle",
-            `bogus scope ${JSON.stringify(v)} must collapse to "idle"`);
-    }
+        // Bogus values fall back to "idle" (safe default — keep the loop
+        // on rather than failing arm-time over a typo).
+        for (const v of ["display", "always", "idle+", "+display", "true",
+            "1", "", "  ", "\n"]) {
+            assert.equal(resolveCaffeinateScope({ [k]: v }, stderrStub), "idle",
+                `${k}=${JSON.stringify(v)} must collapse to "idle"`);
+        }
 
-    // Non-string → "idle".
-    for (const v of [true, 1, {}, []]) {
-        assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: v }), "idle",
-            `non-string scope ${typeof v} must collapse to "idle"`);
+        // Non-string → "idle".
+        for (const v of [true, 1, {}, []]) {
+            assert.equal(resolveCaffeinateScope({ [k]: v }, stderrStub), "idle",
+                `${k}=${typeof v} (non-string) must collapse to "idle"`);
+        }
     }
 });
 

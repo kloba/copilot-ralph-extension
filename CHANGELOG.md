@@ -8,6 +8,18 @@
 ### Internal
 - Startup sweep removes orphan worktrees from prior `terminated` runs (~200 ms budget). (#66)
 
+### Tests
+- `runRalphTui: emits armed → iteration_start → iteration_end →
+  terminal sequence` opts out of per-iter worktree mode
+  (`worktree: false`) so the iteration-lifecycle skeleton assertion
+  is deterministic regardless of the test runtime's git state. The
+  test was env-dependent: passed locally when the iter branch
+  already existed (worktree create silently failed, no extra events)
+  and failed in fresh CI checkouts (worktree create succeeded,
+  injecting `worktree_created` / `worktree_kept` events the strict
+  `deepEqual` rejected). Worktree lifecycle has its own dedicated
+  tests in `events.test.mjs`. (#66)
+
 ### Breaking
 - Issue #51 — Replaced `ralph-tui run --continue` / `--fresh` with
   `--reset-on={workitem|iter|never}` (default `workitem`). The old

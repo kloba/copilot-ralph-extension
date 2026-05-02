@@ -632,6 +632,17 @@ test("runRalphTui: emits armed → iteration_start → iteration_end → termina
         env: makeEnv(),
         spawn,
         eventEmitter,
+        // Issue #66 — disable per-iter worktree mode so this test
+        // stays focused on the iteration-lifecycle skeleton. Worktree
+        // mode (default-on for self-improve) injects `worktree_created`
+        // before iteration_start and `worktree_kept` / `worktree_removed`
+        // before `complete`, both of which depend on the test's cwd
+        // being a writable git repo (succeeds on fresh CI checkout,
+        // fails locally if the test branch already exists from a
+        // prior run). The worktree lifecycle has its own dedicated
+        // tests in events.test.mjs / runner.test.mjs; here we only
+        // pin the iteration-lifecycle contract.
+        worktree: false,
     });
     // The skeleton sequence is armed → iteration_start →
     // (any number of usage_update for live tokens / excerpt

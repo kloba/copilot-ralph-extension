@@ -1,10 +1,10 @@
-// Tests for `ralph-tui run` driver (packages/tui/src/runner.mjs).
+// Tests for autopilot run driver (packages/tui/src/runner.mjs).
 //
 // Strategy:
 //   - Pure helpers (validateFocus, composePrompt, reduceCopilotEvents)
 //     get straightforward unit tests.
 //   - State-file CAS (initState/updateState/pauseRun/resumeRun/stopRun)
-//     gets isolated tmp-dir tests via $RALPH_TUI_RUNS_DIR.
+//     gets isolated tmp-dir tests via $AUTOPILOT_RUNS_DIR.
 //   - End-to-end loop tests use a Node-script "fake copilot" shim that
 //     emits scripted JSONL on stdout. The shim is parameterised by a
 //     SCRIPT env var (path to a JSON file describing the iter's
@@ -34,6 +34,7 @@ import {
     statusRun,
     runRalphTui,
     runOneIteration,
+    _resetDeprecationFlagsForTest,
     PROMPT_SELF_IMPROVE,
     PROMPT_GROW_PROJECT,
     COMPLETION_PROMISE,
@@ -48,7 +49,7 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "
 const FAKE_COPILOT = resolve(dirname(fileURLToPath(import.meta.url)), "fixtures", "fake-copilot.mjs");
 
 function tmp() {
-    return mkdtempSync(join(tmpdir(), "ralph-tui-runner-"));
+    return mkdtempSync(join(tmpdir(), "autopilot-tui-runner-"));
 }
 
 function makeEnv(extra = {}) {
@@ -59,30 +60,17 @@ function makeEnv(extra = {}) {
     };
 }
 
-// Stage 3 (issue #49): resolveStateRoot / resolveCopilotBin now perform
-// sentinel-gated stderr deprecation notices when legacy
-// $RALPH_TUI_RUNS_DIR / $RALPH_TUI_COPILOT_BIN are used. Tests inject
-// a fake fs (no sentinel, accepts mkdir/append silently) and a fake
-// stderr (captures into messages[]). The sentinelPath points at a fake
-// location so deprecation writes never touch the real ~/.copilot.
-function makeFakeFs({ sentinel = "", existingPaths = new Set() } = {}) {
-    let written = "";
-    const fake = {
-        readFileSync: (p) => {
-            if (p === fake._sentinelPath) return sentinel + written;
-            const e = new Error("ENOENT");
-            e.code = "ENOENT";
-            throw e;
-        },
-        appendFileSync: (p, data) => {
-            if (p === fake._sentinelPath) written += data;
-        },
-        mkdirSync: () => {},
+// Issue #49: resolveStateRoot / resolveCopilotBin now perform
+// per-process-deduped stderr deprecation notices when legacy
+// $RALPH_TUI_RUNS_DIR / $RALPH_TUI_COPILOT_BIN are used, and a
+// sentinel-gated migration notice when the legacy default path
+// `~/.copilot/ralph-tui/runs` is read. Tests inject a fake fs
+// (configurable existingPaths set) and a fake stderr so deprecation
+// writes never touch the real ~/.copilot.
+function makeFakeFs({ existingPaths = new Set() } = {}) {
+    return {
         existsSync: (p) => existingPaths.has(p),
     };
-    fake._sentinelPath = "/fake/sentinel";
-    fake.writtenSentinel = () => written;
-    return fake;
 }
 
 function makeFakeStderr() {
@@ -232,80 +220,93 @@ test("resolveStateRoot: honors $AUTOPILOT_RUNS_DIR (primary)", () => {
 });
 
 test("resolveStateRoot: honors $RALPH_TUI_RUNS_DIR (legacy, with notice)", () => {
+    _resetDeprecationFlagsForTest();
     const fs = makeFakeFs();
     const stderr = makeFakeStderr();
     assert.equal(
-        resolveStateRoot({ env: { RALPH_TUI_RUNS_DIR: "/tmp/x" }, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        resolveStateRoot({ env: { RALPH_TUI_RUNS_DIR: "/tmp/x" }, fs, stderr }),
         "/tmp/x",
     );
     assert.equal(stderr.messages.length, 1);
     assert.match(stderr.messages[0], /RALPH_TUI_RUNS_DIR is deprecated/);
 });
 
-test("resolveStateRoot: defaults under ~/.copilot/autopilot/runs", () => {
+test("resolveStateRoot: defaults under ~/.copilot/autopilot-tui/runs", () => {
+    _resetDeprecationFlagsForTest();
     const fs = makeFakeFs();
     const stderr = makeFakeStderr();
-    const r = resolveStateRoot({ env: {}, fs, stderr, sentinelPath: "/fake/sentinel" });
-    assert.match(r, /\.copilot\/autopilot\/runs$/);
+    const r = resolveStateRoot({ env: {}, fs, stderr });
+    assert.match(r, /\.copilot\/autopilot-tui\/runs$/);
     assert.equal(stderr.messages.length, 0);
 });
 
 test("resolveStateRoot: AUTOPILOT primary wins over RALPH_TUI legacy (no notice)", () => {
+    _resetDeprecationFlagsForTest();
     const fs = makeFakeFs();
     const stderr = makeFakeStderr();
     assert.equal(
         resolveStateRoot({
             env: { AUTOPILOT_RUNS_DIR: "/ap", RALPH_TUI_RUNS_DIR: "/legacy" },
-            fs, stderr, sentinelPath: "/fake/sentinel",
+            fs, stderr,
         }),
         "/ap",
     );
     assert.equal(stderr.messages.length, 0);
 });
 
-test("resolveStateRoot: legacy default path is honoured with deprecation notice", () => {
+test("resolveStateRoot: legacy default path is honoured with migration notice", () => {
+    _resetDeprecationFlagsForTest();
     const legacyDefault = join(homedir(), ".copilot", "ralph-tui", "runs");
     const fs = makeFakeFs({ existingPaths: new Set([legacyDefault]) });
     const stderr = makeFakeStderr();
     assert.equal(
-        resolveStateRoot({ env: {}, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        resolveStateRoot({ env: {}, fs, stderr }),
         legacyDefault,
     );
     assert.equal(stderr.messages.length, 1);
-    assert.match(stderr.messages[0], /reading from legacy/);
+    assert.match(stderr.messages[0], /reading from legacy ~\/\.copilot\/ralph-tui\/runs/);
+    assert.match(stderr.messages[0], /default is now ~\/\.copilot\/autopilot-tui\/runs/);
+});
+
+test("resolveStateRoot: sentinel `.migrated-from-ralph-tui` suppresses the migration notice", () => {
+    _resetDeprecationFlagsForTest();
+    const newDefault = join(homedir(), ".copilot", "autopilot-tui", "runs");
+    const legacyDefault = join(homedir(), ".copilot", "ralph-tui", "runs");
+    const sentinelPath = join(newDefault, ".migrated-from-ralph-tui");
+    // Sentinel exists (under the new root), legacy path also exists,
+    // new root itself does NOT exist yet — the migration branch fires
+    // but the sentinel must suppress the notice.
+    const fs = makeFakeFs({ existingPaths: new Set([legacyDefault, sentinelPath]) });
+    const stderr = makeFakeStderr();
+    assert.equal(
+        resolveStateRoot({ env: {}, fs, stderr }),
+        legacyDefault,
+        "still returns legacy path so existing runIds keep working",
+    );
+    assert.equal(stderr.messages.length, 0, "sentinel suppresses the notice");
 });
 
 test("resolveStateRoot: when both default paths exist, primary wins (no notice)", () => {
-    const newDefault = join(homedir(), ".copilot", "autopilot", "runs");
+    _resetDeprecationFlagsForTest();
+    const newDefault = join(homedir(), ".copilot", "autopilot-tui", "runs");
     const oldDefault = join(homedir(), ".copilot", "ralph-tui", "runs");
     const fs = makeFakeFs({ existingPaths: new Set([newDefault, oldDefault]) });
     const stderr = makeFakeStderr();
     assert.equal(
-        resolveStateRoot({ env: {}, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        resolveStateRoot({ env: {}, fs, stderr }),
         newDefault,
     );
     assert.equal(stderr.messages.length, 0);
 });
 
-test("resolveStateRoot: deprecation notice is one-shot per process (sentinel-gated)", () => {
+test("resolveStateRoot: deprecation notice is one-shot per process (module-level dedupe)", () => {
+    _resetDeprecationFlagsForTest();
     const fs = makeFakeFs();
     const stderr = makeFakeStderr();
-    const sentinelPath = "/fake/sentinel";
-    resolveStateRoot({ env: { RALPH_TUI_RUNS_DIR: "/x" }, fs, stderr, sentinelPath });
-    resolveStateRoot({ env: { RALPH_TUI_RUNS_DIR: "/x" }, fs, stderr, sentinelPath });
-    resolveStateRoot({ env: { RALPH_TUI_RUNS_DIR: "/x" }, fs, stderr, sentinelPath });
+    resolveStateRoot({ env: { RALPH_TUI_RUNS_DIR: "/x" }, fs, stderr });
+    resolveStateRoot({ env: { RALPH_TUI_RUNS_DIR: "/x" }, fs, stderr });
+    resolveStateRoot({ env: { RALPH_TUI_RUNS_DIR: "/x" }, fs, stderr });
     assert.equal(stderr.messages.length, 1);
-    assert.match(fs.writtenSentinel(), /RALPH_TUI_RUNS_DIR/);
-});
-
-test("resolveStateRoot: pre-existing sentinel suppresses the notice", () => {
-    const fs = makeFakeFs({ sentinel: "env:RALPH_TUI_RUNS_DIR\n" });
-    const stderr = makeFakeStderr();
-    assert.equal(
-        resolveStateRoot({ env: { RALPH_TUI_RUNS_DIR: "/tmp/x" }, fs, stderr, sentinelPath: "/fake/sentinel" }),
-        "/tmp/x",
-    );
-    assert.equal(stderr.messages.length, 0);
 });
 
 // resolveCopilotBin (issue #49) — same DI shape as resolveStateRoot
@@ -314,24 +315,45 @@ test("resolveCopilotBin: defaults to 'copilot'", () => {
 });
 
 test("resolveCopilotBin: honours $AUTOPILOT_COPILOT_BIN (primary, no notice)", () => {
-    const fs = makeFakeFs();
+    _resetDeprecationFlagsForTest();
     const stderr = makeFakeStderr();
     assert.equal(
-        resolveCopilotBin({ env: { AUTOPILOT_COPILOT_BIN: "/usr/local/bin/copilot" }, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        resolveCopilotBin({ env: { AUTOPILOT_COPILOT_BIN: "/usr/local/bin/copilot" }, stderr }),
         "/usr/local/bin/copilot",
     );
     assert.equal(stderr.messages.length, 0);
 });
 
 test("resolveCopilotBin: honours $RALPH_TUI_COPILOT_BIN (legacy, with notice)", () => {
-    const fs = makeFakeFs();
+    _resetDeprecationFlagsForTest();
     const stderr = makeFakeStderr();
     assert.equal(
-        resolveCopilotBin({ env: { RALPH_TUI_COPILOT_BIN: "/usr/local/bin/copilot-old" }, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        resolveCopilotBin({ env: { RALPH_TUI_COPILOT_BIN: "/usr/local/bin/copilot-old" }, stderr }),
         "/usr/local/bin/copilot-old",
     );
     assert.equal(stderr.messages.length, 1);
     assert.match(stderr.messages[0], /RALPH_TUI_COPILOT_BIN is deprecated/);
+});
+
+test("resolveCopilotBin: AUTOPILOT primary wins over RALPH_TUI legacy (no notice)", () => {
+    _resetDeprecationFlagsForTest();
+    const stderr = makeFakeStderr();
+    assert.equal(
+        resolveCopilotBin({
+            env: { AUTOPILOT_COPILOT_BIN: "/ap-bin", RALPH_TUI_COPILOT_BIN: "/legacy-bin" },
+            stderr,
+        }),
+        "/ap-bin",
+    );
+    assert.equal(stderr.messages.length, 0);
+});
+
+test("resolveCopilotBin: deprecation notice is one-shot per process (module-level dedupe)", () => {
+    _resetDeprecationFlagsForTest();
+    const stderr = makeFakeStderr();
+    resolveCopilotBin({ env: { RALPH_TUI_COPILOT_BIN: "/x" }, stderr });
+    resolveCopilotBin({ env: { RALPH_TUI_COPILOT_BIN: "/x" }, stderr });
+    assert.equal(stderr.messages.length, 1);
 });
 
 test("resolveStatePath: joins root + runId + state.json", () => {
@@ -697,6 +719,219 @@ test("runRalphTui: subprocess exit code != 0 ends loop with subprocess_failed", 
         spawn,
     });
     assert.equal(result.terminationReason, "subprocess_failed");
+});
+
+// Issue #49: stderr error prefix flipped from `ralph-tui run:` to
+// `autopilot run:` to match the new binary name. Two emit sites: the
+// subprocess-error path and the non-zero exit path.
+test("runRalphTui: subprocess exit code != 0 prints `autopilot run:` stderr prefix", async () => {
+    const stderr = makeFakeStderr();
+    const spawn = makeMockSpawn([
+        { stdout: "", stderr: "auth error\n", exitCode: 7 },
+    ]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        stderr,
+    });
+    assert.ok(
+        stderr.messages.some((m) => m.startsWith("autopilot run:")),
+        `expected an "autopilot run:" stderr line, got ${JSON.stringify(stderr.messages)}`,
+    );
+    // Negative — we must NOT still emit the legacy prefix.
+    assert.ok(
+        !stderr.messages.some((m) => m.startsWith("ralph-tui run:")),
+        "legacy `ralph-tui run:` prefix must be gone",
+    );
+});
+
+test("runRalphTui: subprocess error path prints `autopilot run:` stderr prefix", async () => {
+    const stderr = makeFakeStderr();
+    const spawn = function () {
+        // Throw synchronously from spawn — simulates a missing
+        // copilot binary, which trips the catch path.
+        throw new Error("ENOENT: copilot not found");
+    };
+    const result = await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        stderr,
+    });
+    assert.equal(result.terminationReason, "error");
+    assert.ok(
+        stderr.messages.some((m) => m.startsWith("autopilot run: subprocess error:")),
+        `expected "autopilot run: subprocess error:" prefix, got ${JSON.stringify(stderr.messages)}`,
+    );
+});
+
+// Issue #49 decision E (BREAKING): runId mode prefixes flipped from
+// `ralph-tui-*` to `autopilot-*` with no shim. Pin all three modes so a
+// future regression that re-introduces the legacy prefix fails loudly.
+test("runRalphTui: --self-improve emits runId / label with `autopilot-self-improve` prefix", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "stub-ignored",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const spawn = makeMockSpawn([
+        {
+            stdout: [
+                JSON.stringify({ type: "assistant.message", data: { content: "COMPLETE" } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+            ].join("\n") + "\n",
+            exitCode: 0,
+        },
+    ]);
+    let realRunId = null;
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+        onRunId: (id) => { realRunId = id; },
+    });
+    // The injected eventEmitter has its own stub runId so the loop
+    // uses that for state-file paths; the label flowed through every
+    // event is still derived from `mode` via labelForMode.
+    const armed = events.find((e) => e.type === "armed");
+    assert.equal(armed.label, "autopilot-self-improve");
+    assert.ok(!armed.label.startsWith("ralph-tui-"), "must NOT carry the legacy `ralph-tui-` prefix");
+});
+
+test("runRalphTui: --grow-project emits label with `autopilot-grow-project` prefix", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "stub", eventsPath: "/dev/null",
+        write: (ev) => events.push(ev), close: () => {},
+    };
+    const spawn = makeMockSpawn([
+        {
+            stdout: [
+                JSON.stringify({ type: "assistant.message", data: { content: BAKED_BACKLOG_ABORT_TOKEN } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+            ].join("\n") + "\n",
+            exitCode: 0,
+        },
+    ]);
+    await runRalphTui({
+        mode: "grow-project",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    assert.equal(events.find((e) => e.type === "armed").label, "autopilot-grow-project");
+});
+
+test("runRalphTui: --prompt emits label with `autopilot-prompt` prefix", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "stub", eventsPath: "/dev/null",
+        write: (ev) => events.push(ev), close: () => {},
+    };
+    const spawn = makeMockSpawn([
+        {
+            stdout: [
+                JSON.stringify({ type: "assistant.message", data: { content: "done COMPLETE" } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+            ].join("\n") + "\n",
+            exitCode: 0,
+        },
+    ]);
+    await runRalphTui({
+        mode: "prompt",
+        contextMode: "fresh",
+        prompt: "do a thing",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    assert.equal(events.find((e) => e.type === "armed").label, "autopilot-prompt");
+});
+
+// Issue #49: runOneIteration must honour $AUTOPILOT_COPILOT_BIN as the
+// primary copilot-binary override (with $RALPH_TUI_COPILOT_BIN as a
+// legacy fallback). Pin the default-resolution path against runRalphTui
+// — the args passed to spawn carry the runner's choice as `bin`.
+test("runRalphTui: spawns with $AUTOPILOT_COPILOT_BIN when set", async () => {
+    const sawBin = [];
+    const spawn = function (bin, _args, _opts) {
+        sawBin.push(bin);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            for (const fn of handlers.stdout) fn(Buffer.from(JSON.stringify({
+                type: "assistant.message", data: { content: "COMPLETE" },
+            }) + "\n" + JSON.stringify({
+                type: "result", success: true, result: { sessionId: "s" },
+            }) + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: { ...makeEnv(), AUTOPILOT_COPILOT_BIN: "/usr/local/bin/cop-v2" },
+        spawn,
+    });
+    assert.equal(sawBin[0], "/usr/local/bin/cop-v2");
+});
+
+test("runRalphTui: falls back to $RALPH_TUI_COPILOT_BIN when AUTOPILOT_COPILOT_BIN is unset", async () => {
+    _resetDeprecationFlagsForTest();
+    const stderr = makeFakeStderr();
+    const sawBin = [];
+    const spawn = function (bin) {
+        sawBin.push(bin);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            for (const fn of handlers.stdout) fn(Buffer.from(JSON.stringify({
+                type: "assistant.message", data: { content: "COMPLETE" },
+            }) + "\n" + JSON.stringify({
+                type: "result", success: true, result: { sessionId: "s" },
+            }) + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: { ...makeEnv(), RALPH_TUI_COPILOT_BIN: "/legacy/copilot" },
+        spawn,
+        stderr,
+    });
+    assert.equal(sawBin[0], "/legacy/copilot");
+    assert.ok(
+        stderr.messages.some((m) => m.includes("RALPH_TUI_COPILOT_BIN is deprecated")),
+        "deprecation notice must fire when the legacy env var is the only override",
+    );
 });
 
 test("runRalphTui: stopRun mid-loop ends with terminationReason=stopped", async () => {

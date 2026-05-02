@@ -1,5 +1,5 @@
-// `ralph-tui run` driver — out-of-session sibling of the in-extension
-// ralph_loop / self_improve / grow_project tools.
+// autopilot run driver — out-of-session sibling of the in-extension
+// ap_loop / self_improve / grow_project tools.
 //
 // Why a separate driver? Because the in-extension loop runs as part of
 // the user's current Copilot session — so the LLM context grows
@@ -7,7 +7,7 @@
 // in-session loop (the user sees every iter inline, and pause/resume
 // mid-session lets the user chat with the agent), but it also creates
 // a context-rot failure mode where late iterations are dominated by
-// early-iteration noise. The `ralph-tui run` driver runs each
+// early-iteration noise. The autopilot run driver runs each
 // iteration as a fresh `copilot -p ...` subprocess so:
 //
 //   --continue   resume the same Copilot session every iter (parity
@@ -28,7 +28,7 @@
 //     iter 1 and reused via `--resume=<sessionId>` for iter 2+ when
 //     the driver is in --continue mode.
 //
-// Pause/resume/stop are out-of-band: a sibling `ralph-tui run --pause
+// Pause/resume/stop are out-of-band: a sibling `autopilot run --pause
 // <runId>` flips a flag in the run's state.json (CAS-protected via
 // lockfile so concurrent pause+stop don't lose updates), and the
 // driver re-reads state at each iter boundary. The current child
@@ -38,8 +38,8 @@
 
 import { spawn as nodeSpawn, spawnSync as nodeSpawnSync } from "node:child_process";
 import { homedir } from "node:os";
-import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, rmSync, appendFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import {
@@ -72,7 +72,7 @@ export { PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, COMPLETION_PROMISE, BAKED_ABO
 // would be rejected by handler.mjs is also rejected here.
 export const MAX_FOCUS_CHARS = 2000;
 
-// Cap on the user-supplied --prompt string for ralph_loop-style runs.
+// Cap on the user-supplied --prompt string for ap_loop-style runs.
 // Mirrors the in-extension MAX_PROMPT_CHARS.
 export const MAX_PROMPT_CHARS = 65536;
 
@@ -94,34 +94,58 @@ const MAX_LOCK_RETRIES = 200; // 5s worst-case
 
 // ─── State-file CAS ────────────────────────────────────────────────
 
-// Print a one-line stderr deprecation notice the FIRST time a given
-// migration trigger fires, then drop a sentinel line under
-// ~/.copilot/autopilot/. Mirror of the helpers in
-// extension/events-emit.mjs and packages/tui/src/writer.mjs — the
-// three surfaces share a sentinel so a user only sees each notice
-// once across all three call sites.
-function emitDeprecationOnce({ key, message, sentinelPath, fs, stderr }) {
+// Per-process dedupe flags for the env-var deprecation notices. The
+// runner is a long-lived process (the loop runs many iters), so we
+// only want each `RALPH_TUI_*` deprecation message printed once per
+// invocation. Cross-process suppression isn't needed for the env-var
+// path: a user who keeps using the legacy env var will re-set it on
+// every shell session and the one-line warning is cheap. Stored as a
+// Set so the test suite can clear it via `_resetDeprecationFlagsForTest`.
+const _envNoticesShown = new Set();
+
+function noteEnvDeprecation(varName, stderr) {
+    if (_envNoticesShown.has(varName)) return;
+    _envNoticesShown.add(varName);
     try {
-        const content = fs.readFileSync(sentinelPath, "utf8");
-        if (content.split("\n").some((l) => l === key)) return;
-    } catch { /* sentinel missing or unreadable */ }
-    try {
-        stderr.write(message);
-        fs.mkdirSync(dirname(sentinelPath), { recursive: true });
-        fs.appendFileSync(sentinelPath, key + "\n");
+        stderr.write(
+            `[autopilot] note: env $${varName} is deprecated, please use $${varName.replace(/^RALPH_TUI_/, "AUTOPILOT_")} (still honored)\n`,
+        );
     } catch { /* best-effort */ }
 }
 
-/** Resolve the state-files root, preferring $AUTOPILOT_RUNS_DIR, falling back
- *  to $RALPH_TUI_RUNS_DIR (deprecated), then to ~/.copilot/autopilot/runs. */
+/** Test-only: reset the per-process env-var deprecation flags.
+ *  Used by the test suite to assert one-shot semantics across
+ *  multiple `resolveStateRoot` / `resolveCopilotBin` invocations
+ *  within a single test process. Not part of the public API. */
+export function _resetDeprecationFlagsForTest() {
+    _envNoticesShown.clear();
+}
+
+/** Resolve the state-files root for autopilot run-driver state files
+ *  (state.json, lockfiles, etc.). This is intentionally SEPARATE from
+ *  the events root resolved by writer.mjs / events-emit.mjs:
+ *  events go to `~/.copilot/autopilot/runs`, runner state goes to
+ *  `~/.copilot/autopilot-tui/runs`. The two roots are decoupled so an
+ *  operator can wipe TUI runner state without nuking the canonical
+ *  events.jsonl history.
+ *
+ *  Resolution order:
+ *    1. `$AUTOPILOT_RUNS_DIR` (primary, no notice).
+ *    2. `$RALPH_TUI_RUNS_DIR` (legacy, one-line stderr notice — the
+ *       per-process dedupe means a long-running loop only logs once).
+ *    3. Default `~/.copilot/autopilot-tui/runs`. If that path doesn't
+ *       exist yet but `~/.copilot/ralph-tui/runs` does, return the
+ *       legacy default and emit a one-line stderr migration notice
+ *       gated by the sentinel `<NEW_ROOT>/.migrated-from-ralph-tui`.
+ *       The sentinel itself is written by `initState` after the first
+ *       successful mkdir of the new root, so the next process flips
+ *       silent automatically. */
 export function resolveStateRoot({
     env = process.env,
-    fs: fsArg = { readFileSync, existsSync, mkdirSync, appendFileSync },
+    fs: fsArg = { existsSync },
     stderr: stderrArg = process.stderr,
     sentinelPath: sentinelPathArg,
 } = {}) {
-    const sentinelPath = sentinelPathArg ?? join(homedir(), ".copilot", "autopilot", ".migration-notice-shown");
-
     // Primary: $AUTOPILOT_RUNS_DIR
     const newOverride = env?.AUTOPILOT_RUNS_DIR;
     if (typeof newOverride === "string" && newOverride.trim()) return newOverride.trim();
@@ -129,19 +153,14 @@ export function resolveStateRoot({
     // Legacy fallback: $RALPH_TUI_RUNS_DIR (deprecated)
     const legacyOverride = env?.RALPH_TUI_RUNS_DIR;
     if (typeof legacyOverride === "string" && legacyOverride.trim()) {
-        emitDeprecationOnce({
-            key: "env:RALPH_TUI_RUNS_DIR",
-            message: "[autopilot] note: env $RALPH_TUI_RUNS_DIR is deprecated, please use $AUTOPILOT_RUNS_DIR (still honored)\n",
-            sentinelPath,
-            fs: fsArg,
-            stderr: stderrArg,
-        });
+        noteEnvDeprecation("RALPH_TUI_RUNS_DIR", stderrArg);
         return legacyOverride.trim();
     }
 
-    // Default paths
-    const newDefault = join(homedir(), ".copilot", "autopilot", "runs");
+    // Default paths.
+    const newDefault = join(homedir(), ".copilot", "autopilot-tui", "runs");
     const oldDefault = join(homedir(), ".copilot", "ralph-tui", "runs");
+    const sentinelPath = sentinelPathArg ?? join(newDefault, ".migrated-from-ralph-tui");
 
     let newExists = false;
     let oldExists = false;
@@ -149,41 +168,38 @@ export function resolveStateRoot({
     try { oldExists = fsArg.existsSync(oldDefault); } catch { /* swallow */ }
 
     if (!newExists && oldExists) {
-        emitDeprecationOnce({
-            key: `path:${oldDefault}`,
-            message: `[autopilot] note: reading from legacy ~/.copilot/ralph-tui/runs (default is now ~/.copilot/autopilot/runs)\n`,
-            sentinelPath,
-            fs: fsArg,
-            stderr: stderrArg,
-        });
+        // Sentinel-gated one-shot migration notice. The sentinel is
+        // dropped by `initState` after the first successful mkdir of
+        // the new root; once present, this branch suppresses the
+        // notice.
+        let sentinelExists = false;
+        try { sentinelExists = fsArg.existsSync(sentinelPath); } catch { /* swallow */ }
+        if (!sentinelExists) {
+            try {
+                stderrArg.write(
+                    "[autopilot] note: reading from legacy ~/.copilot/ralph-tui/runs (default is now ~/.copilot/autopilot-tui/runs)\n",
+                );
+            } catch { /* best-effort */ }
+        }
         return oldDefault;
     }
 
     return newDefault;
 }
 
-/** Resolve the copilot binary path, preferring $AUTOPILOT_COPILOT_BIN, falling
- *  back to $RALPH_TUI_COPILOT_BIN (deprecated), then "copilot". */
+/** Resolve the copilot binary path, preferring $AUTOPILOT_COPILOT_BIN,
+ *  falling back to $RALPH_TUI_COPILOT_BIN (deprecated, one-line stderr
+ *  notice with per-process dedupe), then to "copilot" on PATH. */
 export function resolveCopilotBin({
     env = process.env,
-    fs: fsArg = { readFileSync, existsSync, mkdirSync, appendFileSync },
     stderr: stderrArg = process.stderr,
-    sentinelPath: sentinelPathArg,
 } = {}) {
-    const sentinelPath = sentinelPathArg ?? join(homedir(), ".copilot", "autopilot", ".migration-notice-shown");
-
     const newOverride = env?.AUTOPILOT_COPILOT_BIN;
     if (typeof newOverride === "string" && newOverride.trim()) return newOverride.trim();
 
     const legacyOverride = env?.RALPH_TUI_COPILOT_BIN;
     if (typeof legacyOverride === "string" && legacyOverride.trim()) {
-        emitDeprecationOnce({
-            key: "env:RALPH_TUI_COPILOT_BIN",
-            message: "[autopilot] note: env $RALPH_TUI_COPILOT_BIN is deprecated, please use $AUTOPILOT_COPILOT_BIN (still honored)\n",
-            sentinelPath,
-            fs: fsArg,
-            stderr: stderrArg,
-        });
+        noteEnvDeprecation("RALPH_TUI_COPILOT_BIN", stderrArg);
         return legacyOverride.trim();
     }
 
@@ -258,11 +274,43 @@ export function updateState(runId, mutator, env = process.env) {
     }
 }
 
-/** Initial state-file write; creates the run directory.  */
+/** Initial state-file write; creates the run directory.
+ *
+ *  Side effect: when `resolveStateRoot` returned the legacy
+ *  `~/.copilot/ralph-tui/runs` path due to first-run migration, this
+ *  function also creates the new default root
+ *  (`~/.copilot/autopilot-tui/runs`) and drops a
+ *  `.migrated-from-ralph-tui` sentinel into it. The sentinel
+ *  suppresses the migration notice on subsequent invocations, even if
+ *  the runner keeps writing state to the legacy path (compatibility
+ *  with existing runIds is preserved — we simply stop nagging the
+ *  user once they've seen the message once). */
 function initState(runId, initial, env = process.env) {
-    const statePath = resolveStatePath(runId, env);
-    const dir = join(resolveStateRoot({ env }), runId);
+    const root = resolveStateRoot({ env });
+    const statePath = join(root, runId, "state.json");
+    const dir = join(root, runId);
     mkdirSync(dir, { recursive: true });
+
+    // First-run migration: when we returned the legacy path AND the
+    // env-var overrides aren't in play, drop the sentinel into the new
+    // default so future calls flip silent. We re-derive the paths
+    // here rather than threading them out of `resolveStateRoot` so
+    // the resolver stays a pure read; this initState is the only
+    // mkdir-side-effect site so the write naturally fits here.
+    if (
+        !env?.AUTOPILOT_RUNS_DIR
+        && !env?.RALPH_TUI_RUNS_DIR
+        && root === join(homedir(), ".copilot", "ralph-tui", "runs")
+    ) {
+        const newDefault = join(homedir(), ".copilot", "autopilot-tui", "runs");
+        const sentinelPath = join(newDefault, ".migrated-from-ralph-tui");
+        try {
+            mkdirSync(newDefault, { recursive: true });
+            writeFileSync(sentinelPath, "");
+        } catch { /* best-effort — a missing sentinel just means the next
+                     process re-emits the one-line notice */ }
+    }
+
     const lockPath = acquireLock(statePath);
     try {
         const seed = { version: 1, ...initial };
@@ -350,9 +398,9 @@ export function composePrompt({ mode, prompt, focus }) {
 
 /** Mode → label used by the event emitter and the run directory name. */
 function labelForMode(mode) {
-    if (mode === "self-improve") return "ralph-tui-self-improve";
-    if (mode === "grow-project") return "ralph-tui-grow-project";
-    if (mode === "prompt") return "ralph-tui-prompt";
+    if (mode === "self-improve") return "autopilot-self-improve";
+    if (mode === "grow-project") return "autopilot-grow-project";
+    if (mode === "prompt") return "autopilot-prompt";
     throw new TypeError(`labelForMode: unknown mode "${mode}"`);
 }
 
@@ -1012,8 +1060,10 @@ export function runOneIteration({
     env = process.env,
     extraArgs = [],
     onLine, // optional callback per parsed event (for live feedback)
+    stderr = process.stderr, // injected for tests that capture
+                              // resolveCopilotBin's deprecation notice
 }) {
-    const bin = copilotBin ?? resolveCopilotBin({ env });
+    const bin = copilotBin ?? resolveCopilotBin({ env, stderr });
     const args = ["-p", prompt, "--allow-all-tools", "--output-format", "json"];
     if (resumeSessionId) args.push(`--resume=${resumeSessionId}`);
     else if (sessionName) args.push("-n", sessionName);
@@ -1106,7 +1156,7 @@ export function runOneIteration({
  *   spawn               Inject for tests.
  *   copilotBin          Inject for tests. Falls back to
  *                       $AUTOPILOT_COPILOT_BIN, then $RALPH_TUI_COPILOT_BIN
- *                       (legacy), then "copilot".
+ *                       (deprecated), then "copilot".
  *   env, fs, now        Inject for tests.
  *   eventEmitter        Inject for tests; otherwise createEventEmitter
  *                       is invoked.
@@ -1190,7 +1240,7 @@ export async function runRalphTui(opts) {
         totalPausedMs: 0,
     }, env);
 
-    // Emit the canonical `armed` event so `ralph-tui list/stats`
+    // Emit the canonical `armed` event so `autopilot list/stats`
     // pick up this run.
     emitter.write({
         type: "armed",
@@ -1699,11 +1749,12 @@ export async function runRalphTui(opts) {
                 cwd,
                 env,
                 onLine,
+                stderr,
             });
         } catch (err) {
             terminationReason = "error";
             terminationNote = err?.message ?? String(err);
-            stderr.write?.(`ralph-tui run: subprocess error: ${terminationNote}\n`);
+            stderr.write?.(`autopilot run: subprocess error: ${terminationNote}\n`);
             // Even on subprocess error, fold in any iter-live usage
             // counters (the child may have emitted some
             // assistant.message events before crashing) so the final
@@ -1833,7 +1884,7 @@ export async function runRalphTui(opts) {
         if (result.exitCode !== 0) {
             terminationReason = "subprocess_failed";
             terminationNote = `copilot exited with code ${result.exitCode}: ${result.stderr.slice(0, 500)}`;
-            stderr.write?.(`ralph-tui run: ${terminationNote}\n`);
+            stderr.write?.(`autopilot run: ${terminationNote}\n`);
             break;
         }
 

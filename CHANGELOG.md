@@ -58,6 +58,14 @@
   time instead of as a misleading green check on `main`.
 
 ### Documentation
+- AGENTS.md §5 "Quick checklist before pushing" now includes
+  `npm run check` alongside `npm test`. The two scripts cover
+  different surfaces (functional tests vs. per-file
+  `node --check` syntax sweep across `extension/` +
+  `packages/tui/{src,bin}`); CI runs both, so a contributor
+  who only ran `npm test` locally could push a syntax error
+  that broke every matrix runner. Drift-guarded so a future
+  edit cannot drop either entry.
 - README parameter tables for `self_improve` and `grow_project`
   now spell out the iter 90 default-clamp contract on
   `min_iterations`: the tool-specific default (5 / 10) is

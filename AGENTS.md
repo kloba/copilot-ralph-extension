@@ -215,6 +215,10 @@ is the safety net that lets us automate this without losing data.
 - [ ] If the change is breaking, the commit has `!` or `BREAKING CHANGE:`
       AND `CHANGELOG.md` has a `### Breaking` entry.
 - [ ] `npm test` passes locally.
+- [ ] `npm run check` passes locally (per-file `node --check`
+      across `extension/` + `packages/tui/{src,bin}` — mirrors
+      the CI "Syntax check" job; catches a syntax error before
+      it hits the matrix runners).
 - [ ] No version bump in `package.json` outside a release PR.
 - [ ] AI-authored commits include the required `Co-authored-by:` trailers.
 

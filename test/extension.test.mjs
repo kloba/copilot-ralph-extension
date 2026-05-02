@@ -8529,3 +8529,18 @@ test("createEventEmitter.write: malformed (null/undefined/string/number) event t
         assert.doesNotThrow(() => writer.write(bad), `write(${typeof bad}) must not throw`);
     }
 });
+
+// Iter 99 — AGENTS.md §5 "Quick checklist before pushing" lists `npm
+// test` but historically omitted `npm run check`. Both scripts ship in
+// package.json and CI runs both — a contributor who only runs `npm
+// test` locally can push a syntax error that breaks every matrix
+// runner. Pin the checklist to mention BOTH so the omission cannot
+// silently regress.
+test("AGENTS.md §5 checklist: lists both `npm test` AND `npm run check`", () => {
+    const md = readFileSync(new URL("../AGENTS.md", import.meta.url), "utf8");
+    const checklistMatch = md.match(/## 5\. Quick checklist before pushing\n([\s\S]*?)(?:\n## |\nWhen in doubt|$)/);
+    assert.ok(checklistMatch, "AGENTS.md must still have a §5 'Quick checklist before pushing'");
+    const block = checklistMatch[1];
+    assert.match(block, /`npm test`/, "checklist must mention `npm test`");
+    assert.match(block, /`npm run check`/, "checklist must mention `npm run check` (see scripts/check.mjs)");
+});

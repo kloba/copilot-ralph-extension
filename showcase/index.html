@@ -459,6 +459,17 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Showcase
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         
   
@@ -468,6 +479,52 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-lands-here" class="md-nav__link">
+    <span class="md-ellipsis">
+      What lands here
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sample-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      Sample run
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#want-to-share-your-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      Want to share your run?
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -513,6 +570,41 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-lands-here" class="md-nav__link">
+    <span class="md-ellipsis">
+      What lands here
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sample-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      Sample run
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#want-to-share-your-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      Want to share your run?
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -530,16 +622,56 @@
 
 
 <h1 id="showcase">Showcase<a class="headerlink" href="#showcase" title="Permanent link">&para;</a></h1>
-<div class="admonition note">
-<p class="admonition-title">Stub page (issue #2)</p>
-<p>Scaffold only — to be expanded in follow-ups.</p>
-</div>
-<p>This page will eventually feature:</p>
+<p>A landing pad for autopilot in the wild — recorded loops, live screenshots of <code>autopilot watch</code>, and projects that have been built or maintained end-to-end by a <code>--self-improve</code> / <code>--grow-project</code> run. The page is deliberately seeded short while the corpus grows; community submissions are very welcome.</p>
+<h2 id="what-lands-here">What lands here<a class="headerlink" href="#what-lands-here" title="Permanent link">&para;</a></h2>
+<p>We curate three formats, each with a short preface naming the repo, the run length, and the outcome:</p>
 <ul>
-<li>Recorded demos of long Ralph runs</li>
-<li>Live dashboard screenshots (see <a href="https://github.com/kloba/autopilot/issues/6">issue #6</a>)</li>
-<li>Real-world projects built or maintained by Ralph</li>
+<li><strong>Asciinema casts</strong> of long autonomous runs, recorded with <code>asciinema rec --command 'autopilot run --self-improve --fresh'</code>. <code>--plain</code> auto-engages off-TTY so the cast stays grep-friendly.</li>
+<li><strong>Screenshots</strong> of <code>autopilot watch</code> mid-iteration — the <strong>Header</strong> (runId, iter / max, elapsed, finish-reason banner), <strong>Timeline</strong> (per-iter status dots + finish reasons), and the <strong>DetailPane</strong> (selected iter's stages, sub-stages, tail-of-tail Copilot stream, last commit hash).</li>
+<li><strong>Real-world projects</strong> that autopilot built or maintained, with a one-line outcome — e.g. <em>"32-iter <code>--grow-project</code> run shipped the v0 issue tracker; 11 PRs merged, 0 reverts"</em>.</li>
 </ul>
+<h2 id="sample-run">Sample run<a class="headerlink" href="#sample-run" title="Permanent link">&para;</a></h2>
+<p><em>Illustrative excerpt — see <code>autopilot replay &lt;runId&gt;</code> for live transcripts.</em></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>$ autopilot run --self-improve --fresh --max 50
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>[armed] runId=self-improve-2026-04-30T12-04-11Z mode=self-improve max=50
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>[iter 1/50] ORIENT
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>  read recent commits (12), AGENTS.md, README.md
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>  detected test command: npm test
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>[iter 1/50] IDEATE
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  candidates: red CI on packages/tui (1) · stale PR #87 · 4 open issues
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>  picked: fix flaky watch.test.mjs (issue #91)
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>[iter 1/50] CRITIQUE → BASELINE → IMPLEMENT … (no commit yet)
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>[iter 2/50] IMPLEMENT → TEST
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>  npm test … 412 pass, 0 fail (7.4s)
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>[iter 3/50] COMMIT
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>  abc1234 fix(watch): drop racy stdout assertion in tail-resume test
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    Co-authored-by: Copilot &lt;223556219+Copilot@users.noreply.github.com&gt;
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    Co-authored-by: copilot-ralph &lt;copilot-ralph@users.noreply.github.com&gt;
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>[iter 3/50] PUSH ok (origin/main)
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>[iter 4/50] ORIENT
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>  no red CI · no stale PR · 3 open issues
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>  picked: rotate SDLC hardening — docs/showcase.md is a stub
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>[iter 5/50] END
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>  emitted: COMPLETE
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>  reason: completion_promise
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>  iters=5 elapsed=4m11s commits=1 pushes=1
+</code></pre></div>
+<p>The runner records every line above (and far more — sub-agent fan-out, token totals, premium-request counts) into <code>~/.copilot/ralph-tui/runs/&lt;runId&gt;/events.jsonl</code>. Re-render any past run with <code>autopilot replay &lt;runId&gt;</code> or tail a live one with <code>autopilot watch</code>.</p>
+<h2 id="want-to-share-your-run">Want to share your run?<a class="headerlink" href="#want-to-share-your-run" title="Permanent link">&para;</a></h2>
+<p>Got a long <code>autopilot</code> loop that did something interesting? <a href="https://github.com/kloba/autopilot/issues/new">File an issue</a> with:</p>
+<ul>
+<li>The <code>runId</code> (visible in <code>autopilot list</code>).</li>
+<li>Repo + branch the loop drove (link if public).</li>
+<li>Iter count, elapsed time, finish reason (<code>completion_promise</code> / <code>abort_promise</code> / <code>user_stopped</code> / <code>stagnation</code> / adaptive-extension landed).</li>
+<li>One-line outcome — what the loop actually shipped.</li>
+<li>Optional asciinema link or watch-screenshot for the cast / image gallery.</li>
+</ul>
+<p>Anything from a 3-iter typo fix to a multi-hour <code>--grow-project</code> backlog drain is fair game — the goal is a corpus of real loops people can point at when explaining what "Ralph Wiggum-style autonomy" looks like in practice.</p>
 
 
 

@@ -1,8 +1,8 @@
 # Releasing
 
-`copilot-ralph-extension` ships as a small set of `.mjs` files copied into `~/.copilot/extensions/ralph` (or `.github/extensions/ralph` for project-scoped installs). There is **no npm publish**; releases are tagged commits on `main` plus an annotated GitHub Release page.
+`autopilot` ships as a small set of `.mjs` files copied into `~/.copilot/extensions/autopilot` (or `.github/extensions/autopilot` for project-scoped installs). There is **no npm publish**; releases are tagged commits on `main` plus an annotated GitHub Release page.
 
-A formal tag-driven release-automation workflow now ships at [`.github/workflows/release.yml`](../.github/workflows/release.yml) (see issue [#10](https://github.com/kloba/copilot-ralph-extension/issues/10) for the rationale). Pushing a `vX.Y.Z` tag verifies `package.json` matches the tag, asserts a matching `CHANGELOG.md` section exists, runs `npm test`, and creates the GitHub Release with every `extension/*.mjs` attached as an asset. The manual checklist below is the fallback when the workflow is unavailable or you need to cut a release out-of-band.
+A formal tag-driven release-automation workflow now ships at [`.github/workflows/release.yml`](../.github/workflows/release.yml) (see issue [#10](https://github.com/kloba/autopilot/issues/10) for the rationale). Pushing a `vX.Y.Z` tag verifies `package.json` matches the tag, asserts a matching `CHANGELOG.md` section exists, runs `npm test`, and creates the GitHub Release with every `extension/*.mjs` attached as an asset. The manual checklist below is the fallback when the workflow is unavailable or you need to cut a release out-of-band.
 
 ## Manual release checklist
 
@@ -49,18 +49,18 @@ Once a release exists with assets attached, end users can pin a specific revisio
 
 ```bash
 # Project-scoped pin
-mkdir -p .github/extensions/ralph
+mkdir -p .github/extensions/autopilot
 # Order matters: leaf modules first, entry point (extension.mjs) LAST —
 # mirrors install.sh's FILES array and README Option A/B/D. If
 # `/extensions reload` fires mid-download, this guarantees the SDK
 # never sees a new `extension.mjs` importing missing/old siblings.
 for f in events-emit.mjs prompts.mjs handler.mjs extension.mjs; do
-  curl -L -o ".github/extensions/ralph/$f" \
-    "https://github.com/kloba/copilot-ralph-extension/releases/download/vX.Y.Z/$f"
+  curl -L -o ".github/extensions/autopilot/$f" \
+    "https://github.com/kloba/autopilot/releases/download/vX.Y.Z/$f"
 done
 ```
 
-For the user-scoped equivalent, swap `.github/extensions/ralph` for `~/.copilot/extensions/ralph`.
+For the user-scoped equivalent, swap `.github/extensions/autopilot` for `~/.copilot/extensions/autopilot`.
 
 ## Hotfix branches
 

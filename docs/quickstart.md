@@ -6,8 +6,8 @@
 ## Install
 
 ```bash
-git clone https://github.com/kloba/copilot-ralph-extension
-cd copilot-ralph-extension
+git clone https://github.com/kloba/autopilot
+cd autopilot
 ./install.sh
 ```
 
@@ -23,4 +23,4 @@ Stop early:
 ap_stop({ reason: "changed plan" })
 ```
 
-See the project [README](https://github.com/kloba/copilot-ralph-extension#readme) for the full reference until these pages are filled in.
+See the project [README](https://github.com/kloba/autopilot#readme) for the full reference until these pages are filled in.

@@ -1,7 +1,7 @@
 # Concepts
 
 !!! note "Stub page (issue #2)"
-    Scaffold only — to be expanded in follow-ups. See the [README](https://github.com/kloba/copilot-ralph-extension#readme) until this page is filled in.
+    Scaffold only — to be expanded in follow-ups. See the [README](https://github.com/kloba/autopilot#readme) until this page is filled in.
 
 Topics planned:
 
@@ -116,7 +116,7 @@ window pressure climb in real time.
 ### What you observe
 
 - **Live cumulative totals** — `ap_status.tokens` (added in
-  issue [#7](https://github.com/kloba/copilot-ralph-extension/issues/7))
+  issue [#7](https://github.com/kloba/autopilot/issues/7))
   exposes `{ input, output, total, max_tokens }` on the active
   snapshot. Counts start at zero and grow with every credited
   iteration. `max_tokens` echoes the configured cap, or is `null`
@@ -197,7 +197,7 @@ Slot-by-slot:
   `paused_for_ms` from the structured snapshot if you need
   active-only time.
 - `, tokens {X}/{Y}` — appears **only when** `max_tokens` was armed
-  (issue [#7](https://github.com/kloba/copilot-ralph-extension/issues/7)).
+  (issue [#7](https://github.com/kloba/autopilot/issues/7)).
   `X` is the cumulative input+output total credited so far; `Y` is
   the configured cap. Loops without a cap omit this segment so
   consumers do not see a misleading `tokens X/null`.

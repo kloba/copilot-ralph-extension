@@ -12,11 +12,28 @@ to *watch* a loop run.
 ## Subcommands
 
 ```text
-ralph-tui list                       Show recorded runs (newest first).
+ralph-tui list [--json] [--limit N]  Show recorded runs (newest first).
+                                     `--json` emits the index as a JSON
+                                     array for scripting/dashboards;
+                                     `--limit N` caps the table.
 ralph-tui replay <runId>             Print every event in a past run.
 ralph-tui watch [runId] [--plain]    Tail the given run (or the most
                                      recent one if omitted) in real time.
-ralph-tui --help | -h                Show usage.
+ralph-tui doctor                     Diagnose the runs directory + writer
+                                     wiring (permissions, malformed
+                                     JSONL, stale lockfiles, broken
+                                     symlinks).
+ralph-tui prune [--older-than D]     Remove runs older than DURATION
+        [--dry-run]                  (e.g. 30d / 12h / 5m; default 30d).
+                                     `--dry-run` lists what would go
+                                     without touching the filesystem.
+ralph-tui stats                      Aggregate stats across the run
+                                     index (run count, total iterations,
+                                     p50/p95 durations, top SDLC tools).
+ralph-tui where                      Print the resolved runs root path
+                                     so a contributor can `cd` into it.
+ralph-tui --help     | -h            Show usage.
+ralph-tui --version  | -V            Print the ralph-tui package version.
 ```
 
 `--plain` is **auto-enabled when stdout is not a TTY** so CI logs and

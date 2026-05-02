@@ -801,6 +801,30 @@
   fails loudly.
 
 ### Documentation
+- `packages/tui/README.md`'s `## Subcommands` block drifted
+  significantly from the actual CLI surface in
+  `packages/tui/bin/tui.mjs`. Pre-iter-161 it listed only
+  `list` / `replay` / `watch` / `--help`, but the bin ships
+  `doctor`, `prune` (with `--older-than` / `--dry-run`),
+  `stats`, `where`, the `--version` / `-V` flag, plus the
+  `--json` and `--limit N` flags on `list`. A contributor
+  reading the TUI README without cross-referencing
+  bin/tui.mjs's USAGE constant would not know these
+  subcommands existed; CI scripts probing the canonical CLI
+  surface would silently miss them. Updated the block to
+  list every shipped subcommand + key flag, and pinned the
+  contract with a drift-guard test in
+  `packages/tui/test/bin.test.mjs` that re-reads the README,
+  slices the Subcommands section, and asserts every required
+  keyword (`ralph-tui doctor`, `ralph-tui prune`,
+  `ralph-tui stats`, `ralph-tui where`, `--version`,
+  `--json`, `--limit`, `--older-than`, `--dry-run`,
+  `--plain`) is present. Bin/tui.mjs's own USAGE constant is
+  already pinned by the `tui.mjs header comment lists every
+  USAGE subcommand` test, so the source-of-truth side is
+  covered — this test pins the README mirror so adding a new
+  subcommand to bin/tui.mjs forces the corresponding README
+  update or CI fails.
 - `docs/faq.md`'s "Why is `pausedForMs` zero on a `resume`
   event?" section drifted from the post-iter-154 / iter-155
   runtime contract: it described the formula as

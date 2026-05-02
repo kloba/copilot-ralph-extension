@@ -449,3 +449,51 @@ test("cmdReplay: stubbed process.exit + missing runId returns 2 cleanly (no Type
         process.stderr.write = realStderrWrite;
     }
 });
+
+test("packages/tui/README.md Subcommands block lists every shipped subcommand + key flag", () => {
+    // Iter 161 — packages/tui/README.md drifted: pre-iter-161 the
+    // `## Subcommands` block listed only `list` / `replay` / `watch` /
+    // `--help`, but bin/tui.mjs ships `doctor`, `prune`, `stats`,
+    // `where`, the `--version` / `-V` flag, plus the `--json` and
+    // `--limit N` flags on `list`. A contributor reading the TUI
+    // README without cross-referencing bin/tui.mjs's USAGE constant
+    // would not know these subcommands exist; CI scripts looking
+    // for the canonical CLI surface would silently miss them.
+    //
+    // Bin/tui.mjs's own USAGE constant is already pinned by the
+    // `tui.mjs header comment lists every USAGE subcommand` test
+    // earlier in this file, so the source-of-truth side is covered.
+    // This test pins the README mirror so adding a new subcommand
+    // to bin/tui.mjs forces a corresponding README update or the
+    // PR fails CI. Keep the keyword set intentionally minimal —
+    // verifying every flag would brittle on prose tweaks; the
+    // surfaces below are the user-visible CLI promise.
+    const readme = readFileSync2(resolve(REPO_ROOT, "README.md"), "utf8");
+    const i = readme.indexOf("## Subcommands");
+    assert.ok(i >= 0, "TUI README must keep the '## Subcommands' header");
+    // Slice generously so the section's adjacent prose can grow without
+    // forcing the test to track exact byte offsets.
+    const slice = readme.slice(i, i + 4000);
+    const required = [
+        "ralph-tui list",
+        "ralph-tui replay",
+        "ralph-tui watch",
+        "ralph-tui doctor",
+        "ralph-tui prune",
+        "ralph-tui stats",
+        "ralph-tui where",
+        "--help",
+        "--version",
+        "--json",
+        "--limit",
+        "--older-than",
+        "--dry-run",
+        "--plain",
+    ];
+    for (const kw of required) {
+        assert.ok(
+            slice.includes(kw),
+            `TUI README ## Subcommands block must list '${kw}' (currently shipped by bin/tui.mjs)`,
+        );
+    }
+});

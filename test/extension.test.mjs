@@ -8314,3 +8314,32 @@ test("ci.yml node matrix lowest entry matches package.json#engines.node floor", 
         `ci.yml node matrix lowest entry (${minMatrix}) must equal engines.node floor (${engineMajor}) — bump both together`,
     );
 });
+
+test("README documents min_iterations default-clamp behaviour for self_improve + grow_project", () => {
+    // Iter 90 silently clamps the tool-specific default min_iterations
+    // down to max_iterations when the caller passes a small max
+    // without an explicit min (so `self_improve({max_iterations:3})`
+    // runs 3 iters instead of failing with a confusing
+    // "min_iterations=5 > max=3" error). Iter 91 documented this in
+    // the JSON-schema description; this test pins the README's
+    // user-facing parameter table to also surface the behaviour, so
+    // a reader who doesn't pop open the schema isn't surprised.
+    const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf8");
+    // Both tables must mention "clamped" in the min_iterations row;
+    // we don't pin the exact wording (let prose evolve) but require
+    // both halves of the contract — auto-clamp on default,
+    // explicit-min still strict — to be present.
+    const minRows = readme.match(/^\|\s*`min_iterations`\s*\|.*$/gm) ?? [];
+    assert.ok(minRows.length >= 2,
+        `README must contain min_iterations rows for both self_improve and grow_project (got ${minRows.length})`);
+    const selfImprove = minRows.find((r) => r.includes("`5`"));
+    const growProject = minRows.find((r) => r.includes("`10`"));
+    assert.ok(selfImprove, "self_improve min_iterations row (default 5) must exist in README");
+    assert.ok(growProject, "grow_project min_iterations row (default 10) must exist in README");
+    for (const [label, row] of [["self_improve", selfImprove], ["grow_project", growProject]]) {
+        assert.match(row, /clamped/i,
+            `${label} min_iterations README row must mention "clamped" so readers learn the auto-clamp default behaviour`);
+        assert.match(row, /explicitly-supplied|explicit/i,
+            `${label} min_iterations README row must call out that an explicit min > max is still rejected`);
+    }
+});

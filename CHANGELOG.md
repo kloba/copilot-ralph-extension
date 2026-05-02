@@ -22,6 +22,17 @@
   running CI against an unsupported runtime) is caught at test
   time instead of as a misleading green check on `main`.
 
+### Documentation
+- README parameter tables for `self_improve` and `grow_project`
+  now spell out the iter 90 default-clamp contract on
+  `min_iterations`: the tool-specific default (5 / 10) is
+  silently clamped down to `max_iterations` when `max` is
+  smaller (so a small `max_iterations` Just Works), but an
+  explicitly-supplied `min_iterations > max_iterations` is
+  still rejected. Drift-guarded — the README rows must mention
+  both halves of the contract so a future doc edit can't
+  partially erase it.
+
 ### Internal
 - `.github/workflows/ci.yml` now declares a `concurrency` block
   so a fast-typing contributor pushing several commits to the

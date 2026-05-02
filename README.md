@@ -201,7 +201,7 @@ Each iteration walks the agent through nine stages: **ORIENT** (read recent comm
 | Param | Default | Purpose |
 |---|---|---|
 | `max_iterations` | `100` | Hard iteration cap (1–1000) |
-| `min_iterations` | `5` | Honors completion / abort phrases only after N iterations |
+| `min_iterations` | `5` | Honors completion / abort phrases only after N iterations. The default is automatically clamped down to `max_iterations` when `max_iterations < 5` (so `self_improve({max_iterations: 3})` runs 3 iters, not a confusing rejection); an explicitly-supplied `min_iterations > max_iterations` is still rejected loudly. |
 | `focus` | _(none)_ | Optional ≤2000-char string. Appended verbatim as `Focus this run on: <focus>` after the SDLC scaffolding — narrows the run to one area without altering the SDLC stages. |
 | `completion_promise` | `"COMPLETE"` | Substring → stop. Trimmed; max 200 chars. |
 | `abort_promise` | _(none)_ | Substring → early abort. Same disjoint-substring rule as `ralph_loop`. |
@@ -222,7 +222,7 @@ Each iteration walks the agent through thirteen stages: **ORIENT** (`gh issue li
 | Param | Default | Purpose |
 |---|---|---|
 | `max_iterations` | `200` | Hard iteration cap (1–1000). Larger than `self_improve` because feature work takes more turns than polish. |
-| `min_iterations` | `10` | Honors completion / abort phrases only after N iterations. Drains a baseline portion of the backlog before honoring early `ABORT_NO_BACKLOG`. |
+| `min_iterations` | `10` | Honors completion / abort phrases only after N iterations. Drains a baseline portion of the backlog before honoring early `ABORT_NO_BACKLOG`. The default is automatically clamped down to `max_iterations` when `max_iterations < 10`; an explicitly-supplied `min_iterations > max_iterations` is still rejected loudly. |
 | `focus` | _(none)_ | Optional ≤2000-char string. Appended verbatim as `Focus this run on: <focus>` after the SDLC scaffolding — narrows the backlog ideation/selection to one area without altering the SDLC stages. |
 | `completion_promise` | `"COMPLETE"` | Substring → stop. Trimmed; max 200 chars. |
 | `abort_promise` | `"ABORT_NO_BACKLOG"` | Substring → early abort (signaled by the agent when no proposed issue is ready). Same disjoint-substring rule as `ralph_loop`. |

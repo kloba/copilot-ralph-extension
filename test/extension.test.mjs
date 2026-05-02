@@ -5983,6 +5983,35 @@ test("ralph_pause is idempotent — pausing an already-paused loop is a no-op su
     assert.equal(controller.state.active.pauseReason, "first", "first reason wins; second pause is a no-op");
 });
 
+test("ralph_pause idempotent path returns the FIRST reason, not the second caller's reason", async () => {
+    // Iter 171 — the test above pins that `state.active.pauseReason`
+    // stays "first" after a redundant pause. But the no-op success
+    // ALSO returns `reason` to the caller (handler.mjs ~line 2195:
+    // `reason: a.pauseReason ?? null`). Without this guard, a refactor
+    // that swapped the idempotent-branch return to `args?.reason ?? null`
+    // (or, worse, dropped the `?? null` and let `undefined` ride out)
+    // would silently leak the second caller's reason into the success
+    // payload — an automation polling `ralph_pause({reason})` to
+    // confirm pause state would see its own input echoed back rather
+    // than the original reason that the user typed in the first
+    // (effective) pause. Pin both the returned `reason` field AND the
+    // single-line `textResultForLlm` rendering so a regression in
+    // either surface fires this test.
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    runTurn(session, "boot");
+    await pause.handler({ reason: "first" });
+    const r = await pause.handler({ reason: "second" });
+    assert.equal(r.reason, "first",
+        "idempotent return must surface the FIRST (committed) reason, not the second caller's input");
+    assert.match(r.textResultForLlm, /already paused/i,
+        "idempotent branch must clearly say `already paused`");
+    assert.match(r.textResultForLlm, /\(first\)/,
+        "the rendered message must echo the FIRST reason in parens, not `second`");
+    assert.doesNotMatch(r.textResultForLlm, /second/,
+        "the second caller's reason must NOT leak into the success message");
+});
+
 test("ralph_pause: multi-line / whitespace-noisy reason is flattened at entry", async () => {
     // Pause reasons land in three user-visible places: the timeline log
     // line ("⏸ <label> paused at i/max (reason)"), the `pause` event's

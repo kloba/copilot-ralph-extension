@@ -659,6 +659,27 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Pinned that `ralph_pause`'s idempotent branch returns the
+  FIRST (committed) `reason` to the caller, not the second
+  caller's `reason`. The pre-existing iter-116 test pinned
+  that `state.active.pauseReason` stays "first" after a
+  redundant pause, but the no-op success ALSO returns
+  `reason` to the caller. Without this guard, a refactor
+  that swapped the idempotent-branch return to
+  `args?.reason ?? null` (or, worse, dropped the `?? null`
+  and let `undefined` ride out) would silently leak the
+  second caller's reason into the success payload — an
+  automation polling `ralph_pause({reason})` to confirm
+  pause state would see its own input echoed back rather
+  than the original reason that the user typed in the
+  first (effective) pause. Pin both the returned `reason`
+  field AND the single-line `textResultForLlm` rendering
+  (`already paused at i/max (first)`) so a regression in
+  either surface fires this test. Mutation-verified by
+  flipping `a.pauseReason` to `args?.reason ?? null` in
+  the idempotent return — the new test fails, existing
+  tests stay green (the gap was real).
+
 - Pinned the cmdWatch half of the iter-167 traversal-runId
   catch via the supported `main(["watch", "../etc/passwd",
   "--plain"])` entry point. Pre-iter-168 only `cmdReplay`'s

@@ -5,6 +5,9 @@
 ### Features
 - Runner now executes each iter in a per-iter git worktree under `$RALPH_TUI_RUNS_DIR/<runId>/worktrees/iter-<N>/` for `--self-improve` and `--grow-project` (`--worktree` opts in for `--prompt`); merged iters tear down on END, unmerged ones are preserved on disk and emit a `worktree_kept` event with the absolute path. (#66)
 
+### Fixes
+- `autopilot run` now probes the Copilot CLI's `--version` output before starting the loop and prints a clear upgrade hint (`copilot CLI: 0.0.354 is older than 1.0.0 — upgrade with \`npm i -g @github/copilot\``) when the resolved binary is older than 1.0.0, missing, or non-executable. The same probe also surfaces in `autopilot doctor` as a `copilot CLI: …` status line so users can confirm the planned run will accept `--output-format json` before kicking off an iter. The check is warn-only (the loop still starts) and can be skipped with `AUTOPILOT_SKIP_CLI_VERSION_CHECK=1`. (#105)
+
 ### Internal
 - Startup sweep removes orphan worktrees from prior `terminated` runs (~200 ms budget). (#66)
 

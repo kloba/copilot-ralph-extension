@@ -19,6 +19,7 @@
 // Stdlib-only. Pure ESM, `node:` prefix on stdlib imports.
 
 import process from "node:process";
+import { spawnSync as nodeSpawnSync } from "node:child_process";
 
 import { parseNdjsonLines } from "./_shared.mjs";
 
@@ -134,4 +135,152 @@ export function extractUsage(events) {
         }
     }
     return { input: null, output, premiumRequests };
+}
+
+// ─── CLI version compatibility (issue #105) ────────────────────────
+//
+// The Copilot CLI removed `--output-format json` somewhere in its
+// `0.0.x` line and re-added it in `1.0.0`. A user with an older build
+// running `autopilot copilot` sees an opaque
+//   error: unknown option '--output-format'
+// from the failed iter-1 spawn. The helpers below let `cmdRun` and
+// `cmdDoctor` probe `copilot --version` once at startup, compare
+// against `MIN_KNOWN_GOOD_CLI_VERSION`, and surface a friendlier
+// "please upgrade your Copilot CLI" message before the user has to
+// reverse-engineer the failure mode.
+//
+// The minimum version is phrased as "known supported" rather than a
+// hard semver floor — older 0.0.x builds may also work, but we have
+// not verified them, so the `too-old` warning is informational
+// rather than blocking. The runtime path warns and proceeds; doctor
+// reports the status without affecting its exit code (so a user
+// running doctor before installing Copilot CLI doesn't get a
+// scripting-unfriendly non-zero exit).
+
+/** First Copilot CLI release verified to support
+ *  `--output-format json`. Older 0.0.x builds may also work; this is
+ *  the floor we surface in user-facing warnings. */
+export const MIN_KNOWN_GOOD_CLI_VERSION = "1.0.0";
+
+/** Parse a Copilot CLI `--version` line such as
+ *    "GitHub Copilot CLI 1.0.40."
+ *  or a bare
+ *    "1.0.40"
+ *  into a `[major, minor, patch]` numeric tuple, or `null` if no
+ *  triple can be located. Pure / no I/O — exported for tests. */
+export function parseCliVersion(raw) {
+    if (typeof raw !== "string") return null;
+    const m = raw.match(/(\d+)\.(\d+)\.(\d+)/);
+    if (!m) return null;
+    const triple = [Number(m[1]), Number(m[2]), Number(m[3])];
+    if (triple.some((n) => !Number.isFinite(n) || n < 0)) return null;
+    return triple;
+}
+
+/** Compare two `[major, minor, patch]` triples. Returns -1 / 0 / 1.
+ *  Throws on non-array inputs so a caller can't pass a parse-failure
+ *  through unnoticed. Pure / no I/O — exported for tests. */
+export function compareCliVersion(a, b) {
+    if (!Array.isArray(a) || a.length !== 3 || !Array.isArray(b) || b.length !== 3) {
+        throw new TypeError("compareCliVersion: both args must be [major, minor, patch] triples");
+    }
+    for (let i = 0; i < 3; i++) {
+        if (a[i] < b[i]) return -1;
+        if (a[i] > b[i]) return 1;
+    }
+    return 0;
+}
+
+/** Default exec-fn for `checkCliVersion`. Wraps `spawnSync(bin,
+ *  ['--version'])` with a 2 s timeout and ENOENT/permission/timeout
+ *  detection so the caller can render a precise reason without
+ *  parsing error messages. Tests inject a stub directly. */
+function defaultVersionExec(bin) {
+    let r;
+    try {
+        r = nodeSpawnSync(bin, ["--version"], {
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"],
+            timeout: 2000,
+        });
+    } catch (err) {
+        return { ok: false, reason: "exec-failed", error: err };
+    }
+    if (r.error) {
+        const code = r.error.code;
+        if (code === "ENOENT") return { ok: false, reason: "missing", error: r.error };
+        return { ok: false, reason: "exec-failed", error: r.error };
+    }
+    if (r.status !== 0) {
+        return { ok: false, reason: "exec-failed", stderr: typeof r.stderr === "string" ? r.stderr : "", status: r.status };
+    }
+    return { ok: true, stdout: typeof r.stdout === "string" ? r.stdout : "" };
+}
+
+/** Probe the Copilot CLI's `--version` output and compare against
+ *  `MIN_KNOWN_GOOD_CLI_VERSION`. Returns one of (all values, never
+ *  thrown — caller decides how loudly to react):
+ *
+ *    `{ ok: true,  version: [M,m,p], raw, bin }`
+ *      Version >= min.
+ *
+ *    `{ ok: false, reason: "missing",      bin, error }`
+ *      Binary not found on $PATH (ENOENT).
+ *
+ *    `{ ok: false, reason: "exec-failed",  bin, error?, stderr?, status? }`
+ *      Spawn raised, timed out, or returned non-zero. The user might
+ *      have a working binary that just refuses `--version` for some
+ *      reason — render this differently from "missing" so the user
+ *      knows to look at their PATH vs their binary.
+ *
+ *    `{ ok: false, reason: "unparseable",  bin, raw }`
+ *      Got output but no `M.m.p` triple — could be a fork or pre-1.0
+ *      build with a non-standard version string. Treat as
+ *      informational; we can't tell if it supports `--output-format`.
+ *
+ *    `{ ok: false, reason: "too-old",      bin, version, raw, min }`
+ *      Parsed a version triple < `MIN_KNOWN_GOOD_CLI_VERSION`. The
+ *      caller should warn the user to upgrade.
+ *
+ *  Resolves `bin` via `resolveBin({ env })` when not passed
+ *  explicitly so the legacy-env fallback path is honoured.
+ */
+export function checkCliVersion({ bin, exec = defaultVersionExec, env = process.env, stderr = process.stderr } = {}) {
+    const resolvedBin = bin || resolveBin({ env, stderr });
+    const r = exec(resolvedBin);
+    if (!r || r.ok === false) {
+        return { ok: false, reason: r?.reason ?? "exec-failed", bin: resolvedBin, error: r?.error ?? null, stderr: r?.stderr ?? "", status: r?.status };
+    }
+    const raw = (r.stdout || "").trim();
+    const parsed = parseCliVersion(raw);
+    if (!parsed) return { ok: false, reason: "unparseable", bin: resolvedBin, raw };
+    const min = parseCliVersion(MIN_KNOWN_GOOD_CLI_VERSION);
+    if (compareCliVersion(parsed, min) < 0) {
+        return { ok: false, reason: "too-old", bin: resolvedBin, version: parsed, raw, min };
+    }
+    return { ok: true, version: parsed, bin: resolvedBin, raw };
+}
+
+/** Compose a one-line, user-facing summary of a `checkCliVersion`
+ *  result. Pure / no I/O — `cmdRun` writes the result to stderr,
+ *  `cmdDoctor` writes it to stdout next to the other status lines. */
+export function describeCliVersionResult(result) {
+    if (!result || typeof result !== "object") return "copilot CLI: unknown";
+    if (result.ok) {
+        return `copilot CLI: ${result.version.join(".")} (>= ${MIN_KNOWN_GOOD_CLI_VERSION}, ok)`;
+    }
+    if (result.reason === "missing") {
+        return `copilot CLI: not found at ${result.bin} — install with \`npm i -g @github/copilot\` (>= ${MIN_KNOWN_GOOD_CLI_VERSION})`;
+    }
+    if (result.reason === "exec-failed") {
+        const detail = result.error?.message || result.stderr?.trim() || `exit ${result.status}`;
+        return `copilot CLI: \`${result.bin} --version\` failed (${detail})`;
+    }
+    if (result.reason === "unparseable") {
+        return `copilot CLI: at ${result.bin} but \`--version\` output is unrecognised (got: ${JSON.stringify(result.raw).slice(0, 80)})`;
+    }
+    if (result.reason === "too-old") {
+        return `copilot CLI: ${result.version.join(".")} is older than ${MIN_KNOWN_GOOD_CLI_VERSION} — upgrade with \`npm i -g @github/copilot\` to avoid \`unknown option '--output-format'\` (issue #105)`;
+    }
+    return `copilot CLI: unknown status (${result.reason ?? "?"})`;
 }

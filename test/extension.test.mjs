@@ -922,8 +922,8 @@ test("PROMPT_SELF_IMPROVE does not leak internal tool names (ap_loop/ap_stop/sel
     // their absence so a future "let's reference the tool by name"
     // edit fails loudly.
     const p = PROMPT_SELF_IMPROVE;
-    assert.equal(/\bralph_loop\b/.test(p), false, "PROMPT_SELF_IMPROVE must not mention ap_loop");
-    assert.equal(/\bralph_stop\b/.test(p), false, "PROMPT_SELF_IMPROVE must not mention ap_stop");
+    assert.equal(/\bap_loop\b/.test(p), false, "PROMPT_SELF_IMPROVE must not mention ap_loop");
+    assert.equal(/\bap_stop\b/.test(p), false, "PROMPT_SELF_IMPROVE must not mention ap_stop");
     assert.equal(/\bself_improve\b/.test(p), false, "PROMPT_SELF_IMPROVE must not mention self_improve (it IS self_improve)");
 });
 
@@ -1129,8 +1129,8 @@ test("PROMPT_GROW_PROJECT does not leak internal tool names (ap_loop/ap_stop/sel
     // and couples the prompt body to extension internals. Mirror the
     // PROMPT_SELF_IMPROVE leak guard.
     const p = PROMPT_GROW_PROJECT;
-    assert.equal(/\bralph_loop\b/.test(p), false, "PROMPT_GROW_PROJECT must not mention ap_loop");
-    assert.equal(/\bralph_stop\b/.test(p), false, "PROMPT_GROW_PROJECT must not mention ap_stop");
+    assert.equal(/\bap_loop\b/.test(p), false, "PROMPT_GROW_PROJECT must not mention ap_loop");
+    assert.equal(/\bap_stop\b/.test(p), false, "PROMPT_GROW_PROJECT must not mention ap_stop");
     assert.equal(/\bself_improve\b/.test(p), false, "PROMPT_GROW_PROJECT must not mention self_improve");
     assert.equal(/\bgrow_project\b/.test(p), false, "PROMPT_GROW_PROJECT must not mention grow_project (it IS grow_project)");
 });

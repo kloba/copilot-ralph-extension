@@ -77,6 +77,24 @@
   either value is caught at test time.
 
 ### Fixes
+- `packages/tui/bin/tui.mjs`'s `cmdReplay` and `cmdWatch`
+  now follow each `fail(...)` call with an explicit
+  `return 2`, matching the symmetry contract every other
+  call site in the file already obeyed (`cmdList`, `cmdPrune`).
+  Pre-iter-142 the empty-input branches did `if (!runId)
+  fail(...)` without a trailing return; in production this
+  was harmless because `fail` calls `process.exit(2)` which
+  ends the process, but under a stubbed `process.exit`
+  (test harness, future programmatic caller, REPL) control
+  fell through into `resolveRunEventsPath(undefined)` which
+  throws TypeError, so the caller saw a confusing stack
+  trace instead of the clean "<runId> is required"
+  diagnostic. `cmdReplay` is now exported from the bin so
+  the symmetry contract can be pinned via a direct unit
+  test that stubs `process.exit` + `process.stderr.write`
+  and asserts a 2 return value with no TypeError
+  fallthrough. Regression catch verified by reverting the
+  fix — only the targeted test fires.
 - `packages/tui/src/plain.mjs`'s `formatEventLine` now
   JSON-stringifies the `reason=` field iff the reason
   contains whitespace, so a user-supplied multi-word

@@ -145,8 +145,11 @@ function cmdList(opts = {}) {
     return 0;
 }
 
-function cmdReplay(runId) {
-    if (!runId) fail("replay: <runId> is required (try `ralph-tui list` first)");
+export function cmdReplay(runId) {
+    if (!runId) {
+        fail("replay: <runId> is required (try `ralph-tui list` first)");
+        return 2;
+    }
     const path = resolveRunEventsPath(runId);
     const events = readEventsFile(path);
     if (!events.length) {
@@ -163,7 +166,10 @@ async function cmdWatch(runId, opts) {
     let target = runId;
     if (!target) {
         const entries = readRunIndex();
-        if (!entries.length) fail("watch: no runs to watch — arm a loop first.");
+        if (!entries.length) {
+            fail("watch: no runs to watch — arm a loop first.");
+            return 2;
+        }
         target = entries[0].runId;
     }
     const path = resolveRunEventsPath(target);

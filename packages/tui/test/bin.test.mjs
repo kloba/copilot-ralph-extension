@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
-import { parseArgv } from "../bin/tui.mjs";
+import { parseArgv, cmdReplay } from "../bin/tui.mjs";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = resolve(REPO_ROOT, "bin", "tui.mjs");
@@ -413,5 +413,39 @@ test("tui.mjs header comment lists every USAGE subcommand (drift guard)", async 
     for (const cmd of ["list", "replay", "watch", "doctor", "prune", "stats", "where"]) {
         assert.ok(headerCmds.has(cmd),
             `tui.mjs header // Subcommands block is missing "${cmd}"; the iter 138 drift-guard floor is all 7 currently-shipped subcommands`);
+    }
+});
+
+// Iter 142 — pin the symmetry contract that every `fail(...)` call site
+// in bin/tui.mjs is followed by an explicit `return` so a stubbed
+// process.exit (test harness, future programmatic caller, REPL) cannot
+// fall through into the rest of the function. Pre-iter-142 cmdReplay
+// and cmdWatch's empty-input branches did `fail("...")` without a
+// trailing return; under a stubbed exit, control fell through into
+// `resolveRunEventsPath(undefined)` which throws TypeError, so the
+// caller saw a confusing stack trace instead of the clean "<runId> is
+// required" diagnostic. Production was unaffected (process.exit ends
+// the program), but the asymmetry was real code rot.
+test("cmdReplay: stubbed process.exit + missing runId returns 2 cleanly (no TypeError fallthrough)", () => {
+    const realExit = process.exit;
+    const realStderrWrite = process.stderr.write.bind(process.stderr);
+    let exitCode = null;
+    let captured = "";
+    process.exit = (code) => { exitCode = code; };
+    process.stderr.write = (chunk) => { captured += String(chunk); return true; };
+    try {
+        // With the iter 142 fix, cmdReplay returns 2 cleanly. Without
+        // the fix, control fell through into resolveRunEventsPath(undefined)
+        // which throws TypeError — that throw would surface here as an
+        // assertion failure (assert.doesNotThrow).
+        let result;
+        assert.doesNotThrow(() => { result = cmdReplay(undefined); },
+            "cmdReplay must return cleanly when fail()'s exit is stubbed (no TypeError fallthrough into resolveRunEventsPath)");
+        assert.equal(result, 2, "cmdReplay must return exit code 2 for missing runId");
+        assert.equal(exitCode, 2, "fail() must request exit code 2");
+        assert.match(captured, /<runId> is required/, "stderr must contain the validation message");
+    } finally {
+        process.exit = realExit;
+        process.stderr.write = realStderrWrite;
     }
 });

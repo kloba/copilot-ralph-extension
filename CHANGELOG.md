@@ -644,6 +644,23 @@
   running CI against an unsupported runtime) is caught at test
   time instead of as a misleading green check on `main`.
 
+### CI
+- Added a `Tests must leave the working tree clean` step to
+  `.github/workflows/ci.yml` immediately after `npm test`.
+  Defence in depth against the iter 149 regression where
+  install-dogfood artifacts under `.github/extensions/ralph/`
+  slipped into a commit via `git add -A`, inflating the diff
+  from ~50 lines to 2804 insertions. The new step runs both
+  `git diff --exit-code` (catches tracked-file modifications)
+  AND `git status --porcelain` (catches untracked files —
+  exactly the failure mode iter 149 hit; `git diff` alone
+  misses these). A PR whose tests dirty the working tree now
+  fails CI before it can land on `main`. Pinned with a
+  drift-guard test in `test/extension.test.mjs` that asserts
+  both checks remain wired up — a regression that drops the
+  `--porcelain` half (the half that catches untracked files)
+  fails loudly.
+
 ### Documentation
 - `.github/copilot-instructions.md`'s CHANGELOG section-order
   summary drifted away from `AGENTS.md`'s canonical chain on

@@ -102,6 +102,38 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Tests must leave the working tree clean
+        # Iter 150 — defence in depth against the iter 149 regression
+        # where install/dogfood artifacts under
+        # `.github/extensions/ralph/` slipped into a commit via
+        # `git add -A`. Every test in the suite is supposed to write
+        # only inside `mkdtempSync`-allocated sandboxes (or
+        # `$TMPDIR`); a test that accidentally writes into the
+        # checkout — or runs `install.sh --project` without
+        # `--dry-run` from inside the repo — would dirty the working
+        # tree. CI is the right place to catch that: a PR with a
+        # newly-introduced dirty-state test fails here BEFORE it
+        # lands on `main`, instead of silently producing inflated
+        # diffs in subsequent commits.
+        #
+        # `git diff --exit-code` covers tracked-file modifications;
+        # the `--porcelain` check covers untracked files (which
+        # `git diff` ignores). Both must be empty.
+        run: |
+          set -e
+          if ! git diff --exit-code; then
+            echo "::error::Tests modified tracked files. Tests must use mkdtempSync sandboxes (or $TMPDIR) instead of writing into the checkout." >&2
+            exit 1
+          fi
+          untracked="$(git status --porcelain)"
+          if [ -n "$untracked" ]; then
+            echo "::error::Tests left untracked files in the working tree:" >&2
+            echo "$untracked" >&2
+            echo "::error::Add the path to .gitignore if it is a legitimate dogfood artifact, or fix the test to write inside a sandbox." >&2
+            exit 1
+          fi
+          echo "Working tree is clean after npm test."
+
   shellcheck:
     name: shellcheck
     runs-on: ubuntu-latest

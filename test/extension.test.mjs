@@ -10037,3 +10037,24 @@ test(".github/copilot-instructions.md section order agrees with AGENTS.md (drift
     assert.ok(cIdx("Tests") !== -1,
         `copilot-instructions.md must mention "Tests" so contributors don't file test-related entries under Internal (got ${copilotOrder.join(" → ")})`);
 });
+
+test("ci.yml: post-test step pins working-tree cleanliness so the iter 149 artifact regression cannot recur", () => {
+    // Iter 150 — drift guard for the new "Tests must leave the
+    // working tree clean" step in `.github/workflows/ci.yml`. Iter
+    // 149's first commit (1f4f509) accidentally swept three
+    // install-dogfood artifacts under `.github/extensions/ralph/`
+    // into the repo via `git add -A`, inflating the diff from ~50
+    // lines to 2804 insertions. The CI step catches this class of
+    // regression on PR before it lands on main; this test pins the
+    // step is wired up and uses BOTH `git diff --exit-code` (tracked
+    // file modifications) AND `git status --porcelain` (untracked
+    // files), since `git diff` alone misses the latter — exactly the
+    // failure mode iter 149 hit.
+    const ci = readFileSync(resolve(REPO_ROOT, ".github/workflows/ci.yml"), "utf8");
+    assert.match(ci, /Tests must leave the working tree clean/,
+        "ci.yml must include a post-test step named 'Tests must leave the working tree clean'");
+    assert.match(ci, /git diff --exit-code/,
+        "ci.yml's working-tree-clean step must run `git diff --exit-code` (tracked-file modification check)");
+    assert.match(ci, /git status --porcelain/,
+        "ci.yml's working-tree-clean step must also run `git status --porcelain` (untracked-file check) — `git diff` alone would have missed iter 149's untracked .github/extensions/ralph/ artifacts");
+});

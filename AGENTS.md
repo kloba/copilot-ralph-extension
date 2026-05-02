@@ -160,7 +160,13 @@ has no matching section.
 ### Release flow
 
 1. Open a release PR that:
-   - Renames `## Unreleased` → `## X.Y.Z — YYYY-MM-DD`.
+   - Renames `## Unreleased` → `## X.Y.Z` (no `v` prefix, no
+     date — matches the format used by every existing
+     release section in `CHANGELOG.md`; pinned by a drift
+     guard so the release workflow's CHANGELOG-extraction
+     awk continues to work). The release workflow also
+     accepts `## [vX.Y.Z]` / `## vX.Y.Z` / `## [X.Y.Z]`
+     equivalents, but pick the bare form for consistency.
    - Adds a fresh empty `## Unreleased` block at the top.
    - Bumps `version` in `package.json` **and** the matching
      `VERSION` constant in `extension/handler.mjs` (kept in sync

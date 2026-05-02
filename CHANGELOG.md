@@ -152,6 +152,21 @@
   time instead of as a misleading green check on `main`.
 
 ### Documentation
+- AGENTS.md and docs/RELEASING.md now describe the same
+  canonical `## X.Y.Z` CHANGELOG release-heading shape that
+  the existing CHANGELOG actually uses. Previously AGENTS.md
+  said `## X.Y.Z — YYYY-MM-DD` (with a date suffix that has
+  never appeared in any release section) and RELEASING.md
+  said `## [vX.Y.Z] - YYYY-MM-DD` (a bracket-and-date form
+  that the manual `awk` extraction snippet on the same page
+  would have failed to match). Both files now reflect the
+  bare `## X.Y.Z` form, the manual `awk` extraction is fixed
+  to actually work against the existing CHANGELOG, and a
+  drift-guard test pins both the canonical shape across all
+  existing release headings and the doc-file references so a
+  future hand-edited drift (typo, accidental `v` prefix,
+  reintroduced date suffix) surfaces at test time rather
+  than after a failed release.
 - `docs/CONTRIBUTING.md` previously cited `extension/handler.mjs`
   as `~1.3kLOC`; the file has since grown to ~2.5kLOC (more
   than 2× the documented figure), giving new contributors a

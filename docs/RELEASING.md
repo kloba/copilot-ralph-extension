@@ -8,20 +8,29 @@ A formal tag-driven release-automation workflow now ships at [`.github/workflows
 
 1. **Verify `main` is green**: `npm test` and the GitHub Actions CI workflow on the latest commit.
 2. **Update `CHANGELOG.md`**:
-   - Move entries from `## Unreleased` to a new `## [vX.Y.Z] - YYYY-MM-DD` heading.
+   - Move entries from `## Unreleased` to a new `## X.Y.Z` heading
+     (no `v` prefix, no date — matches the format used by every
+     existing release section; the release workflow's
+     CHANGELOG-extraction awk also accepts the equivalents
+     `## [vX.Y.Z]` / `## vX.Y.Z` / `## [X.Y.Z]`, but pick the
+     bare form for consistency).
    - Re-create an empty `## Unreleased` heading immediately above it for the next cycle.
    - Commit with message `Release vX.Y.Z` and the standard `Co-authored-by` trailer.
 3. **Tag the release**: `git tag -a vX.Y.Z -m "vX.Y.Z"` and `git push --tags`.
 4. **Create a GitHub Release**:
    - Title: `vX.Y.Z`.
-   - Body: paste the new `## [vX.Y.Z]` section from `CHANGELOG.md` verbatim.
+   - Body: paste the new `## X.Y.Z` section from `CHANGELOG.md` verbatim.
    - Attach every `.mjs` module under `extension/` as a release asset so users can pin a specific revision without cloning the repo. The full set is the same one `install.sh` copies — currently `extension.mjs`, `handler.mjs`, and `events-emit.mjs`. A drift guard in `test/extension.test.mjs` keeps `release.yml`'s asset list in sync with the directory; mirror that list here when invoking `gh release create` manually:
      ```bash
+     # Extract the matching CHANGELOG block (heading-line + body up to,
+     # but not including, the next "## " heading). Escapes the dots in
+     # the version pattern so awk doesn't treat them as regex
+     # wildcards. Replace `0.6.0` below with your actual version.
      gh release create vX.Y.Z \
        extension/extension.mjs \
        extension/handler.mjs \
        extension/events-emit.mjs \
-       --title "vX.Y.Z" --notes-file <(awk '/^## \[vX.Y.Z\]/,/^## \[/' CHANGELOG.md | sed '$d')
+       --title "vX.Y.Z" --notes-file <(awk '/^## X\.Y\.Z[[:space:]]*$/{p=1;next} p&&/^## /{exit} p' CHANGELOG.md)
      ```
 
 ## Versioning

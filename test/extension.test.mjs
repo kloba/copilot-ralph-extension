@@ -8930,3 +8930,46 @@ test("install.sh: VERSION extraction fails loudly if handler.mjs declaration sha
         rmSync(sandboxRoot, { recursive: true, force: true });
     }
 });
+
+// Iter 110 — drift guard pinning the canonical CHANGELOG release-
+// heading shape. Both AGENTS.md and docs/RELEASING.md describe the
+// release-PR step as "rename `## Unreleased` to `## X.Y.Z`" — bare
+// version, no `v` prefix, no brackets, no trailing date. The
+// release workflow's CHANGELOG-extraction awk is permissive
+// (accepts `## [vX.Y.Z]` / `## vX.Y.Z` / `## [X.Y.Z]` equivalents
+// too), but picking ONE form keeps the docs and the existing
+// CHANGELOG aligned and lets the manual `awk '/^## X\.Y\.Z…'`
+// extraction in RELEASING.md actually find the section. Pin the
+// existing release headings against the canonical regex so a
+// future hand-edited heading drift (typo, accidental `v` prefix,
+// bracket form) is caught at test time rather than after a
+// failed release.
+test("CHANGELOG.md release headings use the canonical `## X.Y.Z` shape (no v prefix, no brackets, no date)", () => {
+    const changelog = readFileSync(resolve(REPO_ROOT, "CHANGELOG.md"), "utf8");
+    const headings = changelog.split("\n").filter((line) => line.startsWith("## "));
+    assert.ok(headings.length >= 2, "CHANGELOG.md must have at least `## Unreleased` plus one release heading");
+    const canonical = /^## (?:Unreleased|\d+\.\d+\.\d+)$/;
+    const drift = headings.filter((h) => !canonical.test(h));
+    assert.deepEqual(drift, [],
+        `Every CHANGELOG.md heading must be either '## Unreleased' or '## X.Y.Z' (bare semver, no v prefix, no brackets, no date). Drift: ${JSON.stringify(drift)}. AGENTS.md and docs/RELEASING.md document this convention; deviating breaks the manual extraction awk in RELEASING.md. The release workflow itself accepts more shapes, but consistency keeps the docs honest.`);
+});
+
+test("docs/RELEASING.md and AGENTS.md describe the same canonical CHANGELOG heading shape", () => {
+    // Drift guard pairing the two doc files. Both describe the
+    // release-PR step that renames `## Unreleased`. If a future
+    // edit to either file changes the canonical form (e.g. adds a
+    // date suffix back), CHANGELOG.md and the manual extraction
+    // command would silently drift. Pin that both files mention
+    // the bare `## X.Y.Z` form.
+    const releasing = readFileSync(resolve(REPO_ROOT, "docs/RELEASING.md"), "utf8");
+    const agents = readFileSync(resolve(REPO_ROOT, "AGENTS.md"), "utf8");
+    assert.match(releasing, /## X\.Y\.Z/,
+        "docs/RELEASING.md must reference the bare `## X.Y.Z` heading form (matches existing CHANGELOG)");
+    assert.match(agents, /## X\.Y\.Z/,
+        "AGENTS.md must reference the bare `## X.Y.Z` heading form (matches existing CHANGELOG)");
+    // Negative pin: AGENTS.md previously documented `## X.Y.Z —
+    // YYYY-MM-DD` which has never been used in the actual
+    // CHANGELOG. Ensure that misleading form isn't reintroduced.
+    assert.doesNotMatch(agents, /## X\.Y\.Z\s+—\s+YYYY-MM-DD/,
+        "AGENTS.md must not document a date suffix on release headings — no existing CHANGELOG section uses one, and adding one would break the manual extraction awk in RELEASING.md");
+});

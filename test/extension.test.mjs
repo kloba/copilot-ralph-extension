@@ -8117,3 +8117,65 @@ test("ralph_pause re-pause: pausedAt + textResultForLlm preserve the FIRST pause
     assert.match(r.textResultForLlm, /\(first\)/, "re-pause message must echo the FIRST reason, not the second");
     assert.doesNotMatch(r.textResultForLlm, /should be ignored/, "re-pause message must NOT leak the discarded second reason");
 });
+
+test("self_improve clamps unsupplied min_iterations to max_iterations (small max no longer crashes on default min=5)", async () => {
+    // Iter 90 fix: SELF_IMPROVE_DEFAULTS.min_iterations is 5 to
+    // force a verification baseline. Naively defaulting `min` to
+    // 5 when the caller passes `max_iterations: 3` surfaces a
+    // confusing error blaming a value the user never typed:
+    // "self_improve: min_iterations must be in [1, max=3] (got 5)".
+    // The clamp lets the small-max-no-explicit-min path succeed
+    // silently; an explicit min=5 alongside max=3 still surfaces
+    // the strict error so a real mistake is loud.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const si = c.tools.find((t) => t.name === "self_improve");
+    // Small max, no explicit min — the clamp must engage.
+    const r = await si.handler({ max_iterations: 3 });
+    assert.equal(r.resultType, "success", `expected arm success, got ${r.resultType}: ${r.textResultForLlm}`);
+    assert.equal(r.max, 3, "max stays at user-supplied 3");
+    assert.equal(r.min, 3, "unsupplied min defaults to min(SELF_IMPROVE_DEFAULTS.min_iterations=5, max=3) = 3");
+});
+
+test("self_improve still enforces min<=max when user passes BOTH explicitly (clamp does not silence real mistakes)", async () => {
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const si = c.tools.find((t) => t.name === "self_improve");
+    const r = await si.handler({ max_iterations: 3, min_iterations: 5 });
+    assert.equal(r.resultType, "failure", "explicit min=5 with max=3 must still fail");
+    assert.match(r.textResultForLlm, /^self_improve:/, "error must be re-prefixed with self_improve");
+    assert.match(r.textResultForLlm, /min_iterations.*max_iterations=3.*got 5/);
+});
+
+test("self_improve preserves SELF_IMPROVE_DEFAULTS.min_iterations when there's room (max >= 5)", async () => {
+    // The clamp must not lower the default when max is already
+    // ≥ the documented baseline. A regression that did
+    // `Math.min(default, max)` unconditionally would still pass
+    // here (5 ≤ 100) — but a regression that always defaulted
+    // min to max would lower the verification floor.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const si = c.tools.find((t) => t.name === "self_improve");
+    const r = await si.handler({});
+    assert.equal(r.resultType, "success");
+    assert.equal(r.max, SELF_IMPROVE_DEFAULTS.max_iterations);
+    assert.equal(r.min, SELF_IMPROVE_DEFAULTS.min_iterations, "default min must equal SELF_IMPROVE_DEFAULTS.min_iterations when max allows it");
+});
+
+test("grow_project mirrors the self_improve min_iterations clamp (default min=10 clamps to small max)", async () => {
+    // GROW_PROJECT_DEFAULTS.min_iterations is 10 (forces a
+    // baseline backlog drain). Same UX bug as self_improve when
+    // the caller picks a small max — the clamp must apply here
+    // too so the two tools behave consistently.
+    const session = makeFakeSession();
+    const c = createRalphController();
+    c.attach(session);
+    const gp = c.tools.find((t) => t.name === "grow_project");
+    const r = await gp.handler({ max_iterations: 5 });
+    assert.equal(r.resultType, "success", `expected arm success, got ${r.resultType}: ${r.textResultForLlm}`);
+    assert.equal(r.max, 5);
+    assert.equal(r.min, 5, "unsupplied min clamps to min(GROW_PROJECT_DEFAULTS.min_iterations=10, max=5) = 5");
+});

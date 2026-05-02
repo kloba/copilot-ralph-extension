@@ -2322,10 +2322,23 @@ export function createRalphController(opts = {}) {
                 // shared with grow_project; see warnPromiseDrift definition.
                 warnPromiseDrift("self_improve", "completion_promise", a.completion_promise, DEFAULTS.completion_promise, "loop may run to max_iterations");
                 warnPromiseDrift("self_improve", "abort_promise", a.abort_promise, BAKED_ABORT_TOKEN, "abort signal may never fire");
+                // When the user supplies a small `max_iterations` but no
+                // `min_iterations`, naively defaulting min to the
+                // tool-specific 5 would surface a confusing error blaming
+                // a value the user never typed (e.g.
+                // "min_iterations must be in [1, max=3] (got 5)" when the
+                // user only set max=3). Clamp the unsupplied default to
+                // `max` so the SELF_IMPROVE_DEFAULTS.min_iterations floor
+                // applies only when there's room for it; an explicit
+                // user-supplied min_iterations still gets the strict
+                // [1, max] check (so an actual mistake — passing min=5
+                // alongside max=3 — still surfaces loudly).
+                const effMax = a.max_iterations ?? SELF_IMPROVE_DEFAULTS.max_iterations;
+                const effMin = a.min_iterations ?? Math.min(SELF_IMPROVE_DEFAULTS.min_iterations, effMax);
                 const parsed = validateArgs({
                     prompt,
-                    max_iterations: a.max_iterations ?? SELF_IMPROVE_DEFAULTS.max_iterations,
-                    min_iterations: a.min_iterations ?? SELF_IMPROVE_DEFAULTS.min_iterations,
+                    max_iterations: effMax,
+                    min_iterations: effMin,
                     completion_promise: a.completion_promise,
                     abort_promise: a.abort_promise,
                     stagnation_limit: a.stagnation_limit,
@@ -2416,10 +2429,17 @@ export function createRalphController(opts = {}) {
                 // is shared with self_improve; see warnPromiseDrift defn.
                 warnPromiseDrift("grow_project", "completion_promise", a.completion_promise, DEFAULTS.completion_promise, "loop may run to max_iterations");
                 warnPromiseDrift("grow_project", "abort_promise", a.abort_promise, BAKED_BACKLOG_ABORT_TOKEN, "abort signal may never fire");
+                // Mirror self_improve's clamp: GROW_PROJECT_DEFAULTS.min_iterations
+                // is 10, so a user passing `max_iterations: 5` with no min
+                // would otherwise hit a confusing "got 10" error. Floor
+                // applies only when there's room for it; explicit
+                // user-supplied min still gets the strict [1, max] check.
+                const effMax = a.max_iterations ?? GROW_PROJECT_DEFAULTS.max_iterations;
+                const effMin = a.min_iterations ?? Math.min(GROW_PROJECT_DEFAULTS.min_iterations, effMax);
                 const parsed = validateArgs({
                     prompt,
-                    max_iterations: a.max_iterations ?? GROW_PROJECT_DEFAULTS.max_iterations,
-                    min_iterations: a.min_iterations ?? GROW_PROJECT_DEFAULTS.min_iterations,
+                    max_iterations: effMax,
+                    min_iterations: effMin,
                     completion_promise: a.completion_promise,
                     abort_promise: a.abort_promise ?? BAKED_BACKLOG_ABORT_TOKEN,
                     stagnation_limit: a.stagnation_limit,

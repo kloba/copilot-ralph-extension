@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Fixes
+- `self_improve` and `grow_project` no longer surface a confusing
+  validation error when the caller picks a small `max_iterations`
+  without an explicit `min_iterations`. Previously, the
+  tool-specific defaults (`self_improve.min_iterations = 5`,
+  `grow_project.min_iterations = 10`) were applied verbatim, so
+  e.g. `self_improve({max_iterations: 3})` rejected with
+  `min_iterations must be in [1, max=3] (got 5)` — blaming a
+  value the user never typed. Both handlers now clamp the
+  unsupplied default to `max_iterations` (the floor still
+  applies whenever there's room for it). An *explicit*
+  user-supplied `min` larger than `max` still surfaces the
+  strict error, so a real configuration mistake stays loud.
+
 ### Tests
 - New behavioural drift guard for `ralph_pause` re-pause
   idempotency. The existing test only pinned "first reason wins";

@@ -23,7 +23,7 @@ Given a version `MAJOR.MINOR.PATCH`:
 
 | Bump  | Trigger                                                                                  |
 | ----- | ---------------------------------------------------------------------------------------- |
-| MAJOR | Breaking change in the `ralph-tui` CLI surface, the JSONL event contract, or env-var names. |
+| MAJOR | Breaking change in the `autopilot` CLI surface, the JSONL event contract, or env-var names. |
 | MINOR | New subcommand, new flag, new capability, or any backwards-compatible feature.           |
 | PATCH | Bug fix, prompt tweak, doc-only change to runtime behavior, internal refactor.           |
 

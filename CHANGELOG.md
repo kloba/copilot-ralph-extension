@@ -406,6 +406,38 @@
   either value is caught at test time.
 
 ### Fixes
+- `ralph-tui run`: stage / substage / activity panes no longer
+  show "(no active stage)" / "(no activity yet)" for the entire
+  duration of an iter — the UI now updates LIVE as the agent
+  works. Previously the runner buffered every child JSONL event
+  in memory and emitted the synthetic `stage_start` /
+  `stage_end` / `substage` events to `events.jsonl` in a single
+  batch AFTER the child exited, which meant the TUI (which
+  tails events.jsonl) saw nothing land between
+  `iteration_start` and `iteration_end` for an iter that took
+  many minutes — every pane rendered empty for the whole iter
+  and the user had no signal that the agent was making
+  progress (field report on `--self-improve --fresh`). The
+  multi-iter loop now wires `runOneIteration`'s `onLine` hook
+  and re-runs `extractAgentTimeline` incrementally on each new
+  child event, emitting only the new tail items. The extractor
+  is monotonic w.r.t. its input — adding more events never
+  reorders earlier output — so the streaming path lands the
+  same final event sequence as the previous post-close batch
+  (existing tests covering ordering / sub-counter / attribution
+  / mode-aware filtering all still pass byte-equivalent). A
+  suffix-replay safety net runs after the await against
+  `result.events` so any drift between the live feed and the
+  post-close events array (e.g. a swallowed throw inside the
+  live emitter) is silently filled in. The companion fix to
+  `runOneIteration`'s close-handler trailing-buffer drain now
+  ALSO calls `onLine` on the recovered final un-newline-
+  terminated row, so a child that exits mid-line still streams
+  its last event live instead of waiting for the suffix replay.
+  Two new regression tests pin the contract: (a) `stage_start`
+  must appear in the events sink BEFORE the spawn close
+  callback fires, and (b) a final un-newline-terminated JSONL
+  row's stage events must still surface in the final ordering.
 - `ralph-tui run`: pressing `q` (or Ctrl-C) inside the Ink TUI
   reliably stops the loop again — field reports surfaced an
   environment where Ink's `useInput` silently failed to enter

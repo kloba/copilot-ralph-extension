@@ -616,10 +616,22 @@ export function runOneIteration({
 
         child.on("error", (err) => { reject(err); });
         child.on("close", (code) => {
-            // Drain trailing partial line.
+            // Drain trailing partial line. We also fire `onLine` here
+            // so every event that lands in `events` has been
+            // observable through the live stream — issue #48 streaming
+            // emission relies on the invariant that the post-iter
+            // `events` array equals everything `onLine` saw, plus
+            // nothing. Without this `onLine` call, a non-newline-
+            // terminated final JSONL row (which the close-handler
+            // recovers) would be silently absent from the live feed
+            // and would force callers into a final replay pass to
+            // fill the gap.
             if (stdoutBuf.trim()) {
                 const ev = parseJsonLine(stdoutBuf);
-                if (ev) events.push(ev);
+                if (ev) {
+                    events.push(ev);
+                    if (onLine) { try { onLine(ev); } catch { /* swallow */ } }
+                }
             }
             resolve({ events, stderr: stderrBuf, exitCode: code, killed });
         });
@@ -785,6 +797,91 @@ export async function runRalphTui(opts) {
         const sessionNameForIter = (contextMode === "continue" && iter === 1) ? sessionName : null;
 
         let result;
+        // Issue #48 / streaming emission: extract `stage_start` /
+        // `stage_end` / `substage` events LIVE as the agent's JSONL
+        // events arrive, instead of in a single batch after the child
+        // exits. Without this, `events.jsonl` shows nothing between
+        // `iteration_start` and `iteration_end` for the entire
+        // duration of an iter — and the TUI tails events.jsonl, so
+        // it renders empty panes ("(no active stage)" / "(no
+        // activity yet)") for the whole iter. With this, stages and
+        // tool completions surface in the TUI as they happen.
+        //
+        // `extractAgentTimeline` is monotonic: feeding it a longer
+        // prefix of events only EXTENDS its output array — earlier
+        // items stay at their positions. So we re-run it on each new
+        // event and emit only the new tail (indices >=
+        // `emittedItemsCount`). Tracked closure state — the
+        // `liveActiveMarker` carry-over and `liveSubstageIdx` reset
+        // semantics — must mirror what the post-iter loop did.
+        //
+        // A final suffix-replay pass after `await runOneIteration`
+        // (below the await) defends against any drift between the
+        // streamed events and the post-iter `result.events` array
+        // (e.g. a future onLine bug that silently drops an event).
+        // It's a no-op in the happy path.
+        const allowedStages = stagesForMode(mode);
+        const liveEvents = [];
+        let emittedItemsCount = 0;
+        let liveActiveMarker = null;
+        let liveSubstageIdx = 0;
+        const emitTimelineSuffix = (sourceEvents, fallbackTs) => {
+            const timeline = extractAgentTimeline(sourceEvents, allowedStages);
+            for (let i = emittedItemsCount; i < timeline.length; i++) {
+                const item = timeline[i];
+                const itemTs = Number.isFinite(item.ts) ? item.ts : (fallbackTs ?? now());
+                if (item.kind === "stage_marker") {
+                    if (liveActiveMarker) {
+                        emitter.write({
+                            type: "stage_end",
+                            ts: itemTs,
+                            runId,
+                            label,
+                            iteration: iter,
+                            stage: liveActiveMarker.stage,
+                            stageName: liveActiveMarker.name,
+                        });
+                    }
+                    emitter.write({
+                        type: "stage_start",
+                        ts: itemTs,
+                        runId,
+                        label,
+                        iteration: iter,
+                        stage: item.stage,
+                        stageName: item.name,
+                    });
+                    liveActiveMarker = item;
+                    liveSubstageIdx = 0;
+                } else if (item.kind === "tool_complete") {
+                    liveSubstageIdx += 1;
+                    emitter.write({
+                        type: "substage",
+                        ts: itemTs,
+                        runId,
+                        label,
+                        iteration: iter,
+                        sub: liveSubstageIdx,
+                        verb: item.verb,
+                        argsSummary: item.argsSummary,
+                        outcome: item.outcome,
+                        durationMs: item.durationMs,
+                    });
+                }
+            }
+            emittedItemsCount = timeline.length;
+        };
+        const onLine = (rawEvent) => {
+            // `runOneIteration` already wraps this in try/catch so a
+            // throw here is silently swallowed — but a swallowed
+            // throw would re-introduce the empty-panes symptom. Do
+            // the work defensively; the suffix-replay pass after
+            // `await` is the safety net if this path drops events.
+            liveEvents.push(rawEvent);
+            try { emitTimelineSuffix(liveEvents); }
+            catch { /* swallow — suffix replay below recovers */ }
+        };
+
         try {
             result = await runOneIteration({
                 prompt: composedPrompt,
@@ -794,6 +891,7 @@ export async function runRalphTui(opts) {
                 copilotBin,
                 cwd,
                 env,
+                onLine,
             });
         } catch (err) {
             terminationReason = "error";
@@ -818,75 +916,43 @@ export async function runRalphTui(opts) {
             updateState(runId, (s) => { s.sessionId = capturedSessionId; return s; }, env);
         }
 
-        // Issue #48 slices 4+5: walk the agent's response stream as an
-        // ordered timeline of stage markers + tool completions, and
-        // emit stage_start / stage_end / substage events between
-        // iteration_start and iteration_end. Natural interleaving is
-        // preserved (substage events that fall between two stage
-        // markers attribute to the active stage by virtue of
-        // foldEvents resetting `currentStageSubstages` on each
-        // stage_start). Markers outside the canonical stage list (a
-        // typo or hallucination) are silently dropped by
-        // extractAgentTimeline. `tool.execution_complete` events
-        // produce substage records with a verb (toolName), a one-line
-        // arguments summary, an outcome (`ok` / error code), and a
-        // computed durationMs. All events use the agent's own
-        // `timestamp` when present, falling back to wall clock for
-        // synthetic test fixtures that omit it.
-        const allowedStages = stagesForMode(mode);
-        const timeline = extractAgentTimeline(result.events, allowedStages);
-        let activeMarker = null;
-        let substageIdx = 0;
-        for (const item of timeline) {
-            const itemTs = Number.isFinite(item.ts) ? item.ts : now();
-            if (item.kind === "stage_marker") {
-                if (activeMarker) {
-                    emitter.write({
-                        type: "stage_end",
-                        ts: itemTs,
-                        runId,
-                        label,
-                        iteration: iter,
-                        stage: activeMarker.stage,
-                        stageName: activeMarker.name,
-                    });
-                }
-                emitter.write({
-                    type: "stage_start",
-                    ts: itemTs,
-                    runId,
-                    label,
-                    iteration: iter,
-                    stage: item.stage,
-                    stageName: item.name,
-                });
-                activeMarker = item;
-                substageIdx = 0;
-            } else if (item.kind === "tool_complete") {
-                substageIdx += 1;
-                emitter.write({
-                    type: "substage",
-                    ts: itemTs,
-                    runId,
-                    label,
-                    iteration: iter,
-                    sub: substageIdx,
-                    verb: item.verb,
-                    argsSummary: item.argsSummary,
-                    outcome: item.outcome,
-                    durationMs: item.durationMs,
-                });
-            }
-        }
-        if (activeMarker) {
+        // Issue #48 / streaming emission: the live `onLine` path
+        // (above the await) already emitted stage_start / stage_end /
+        // substage events as the child JSONL streamed in. Two
+        // safety-net steps remain:
+        //
+        // 1. Suffix-replay against `result.events` in case the live
+        //    path missed any items (e.g. a swallowed throw inside
+        //    `emitTimelineSuffix`, or — historically — the close-
+        //    handler's trailing-partial-line drain that bypassed
+        //    `onLine` before runOneIteration was tightened to call
+        //    it). This is a no-op in the happy path because
+        //    `emittedItemsCount` already equals the timeline length;
+        //    it only emits the unlikely tail. Uses the iter's wall
+        //    clock as fallback timestamp for items whose underlying
+        //    agent event has no parseable `timestamp`.
+        // 2. Emit a final `stage_end` for the still-active marker so
+        //    every stage_start has a matching stage_end. Uses
+        //    `now()` since the stage's true end is "child exit".
+        //
+        // Markers outside the canonical stage list (a typo or
+        // hallucination) are silently dropped by extractAgentTimeline.
+        // `tool.execution_complete` events produce substage records
+        // with a verb (toolName), a one-line arguments summary, an
+        // outcome (`ok` / error code), and a computed durationMs.
+        // Per-event timestamps come from the agent's own `timestamp`
+        // when finite; the wall-clock fallback is only for synthetic
+        // test fixtures that omit it.
+        emitTimelineSuffix(result.events, now());
+        if (liveActiveMarker) {
             emitter.write({
                 type: "stage_end",
                 ts: now(),
                 runId,
                 label,
                 iteration: iter,
-                stage: activeMarker.stage,
-                stageName: activeMarker.name,
+                stage: liveActiveMarker.stage,
+                stageName: liveActiveMarker.name,
             });
         }
 

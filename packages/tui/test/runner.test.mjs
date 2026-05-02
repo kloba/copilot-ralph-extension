@@ -792,6 +792,174 @@ test("runRalphTui: --prompt mode emits no stage events (no canonical stage list)
 
 import { extractAgentTimeline, summarizeToolArgs } from "../src/runner.mjs";
 
+// ─── Issue #48: live event streaming (regression for the
+// "(no active stage) / (no activity yet)" empty-pane bug
+// reported on `ralph-tui run --self-improve --fresh`).
+//
+// Pre-fix, the runner buffered every child JSONL event in
+// memory and emitted the synthetic stage_start / substage
+// events to events.jsonl in a single batch AFTER the child
+// exited. For an iter that took minutes, the TUI saw nothing
+// land in events.jsonl between iteration_start and
+// iteration_end and rendered every pane empty. Post-fix, each
+// child JSONL line streams through `runOneIteration`'s
+// `onLine` hook, which incrementally re-runs
+// extractAgentTimeline and emits any new tail items live.
+//
+// This test pins the live-before-close guarantee: a spawn
+// shim that emits stdout, then DELAYS close behind a gate,
+// must see the stage_start event in eventEmitter.write
+// BEFORE the close gate is released. The pre-fix runner
+// would not emit stage_start until close fired, so the
+// assertion `stageStartBeforeClose === true` would fail.
+test("runRalphTui: stage_start emits LIVE during the iter, not in a post-close batch (issue #48)", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "stream-live",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    let closeGate;
+    const closeGatePromise = new Promise((res) => { closeGate = res; });
+    let stageStartBeforeClose = false;
+    let closeFired = false;
+
+    const spawn = function () {
+        const handlers = { stdout: [], close: [], error: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => {
+                if (ev === "close") handlers.close.push(fn);
+                if (ev === "error") handlers.error.push(fn);
+            },
+            kill: () => {},
+        };
+        // Emit the agent's two stage markers + COMPLETE + result on
+        // ONE batch of stdout, then PAUSE. The test takes a sample
+        // of `events` during the pause: it MUST contain stage_start
+        // already, proving the streaming path emits live.
+        const stdout = [
+            JSON.stringify({ type: "assistant.message", data: { content: "[STAGE: ORIENT]\nlooking around\n[STAGE: IDEATE]\nideating\nCOMPLETE" } }),
+            JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+        ].join("\n") + "\n";
+        setImmediate(() => {
+            for (const fn of handlers.stdout) fn(Buffer.from(stdout));
+            // Sample after stdout has been processed by `onStdout` →
+            // `onLine` → live emit. setImmediate gives the streaming
+            // path one tick to drain. Then we await the gate before
+            // firing close, so the pre-close window stays open long
+            // enough for the test to assert.
+            setImmediate(() => {
+                stageStartBeforeClose = events.some((e) => e.type === "stage_start");
+                closeGatePromise.then(() => {
+                    closeFired = true;
+                    for (const fn of handlers.close) fn(0);
+                });
+            });
+        });
+        return child;
+    };
+
+    const runPromise = runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+
+    // Give the stream + sample-after-setImmediate path time to run.
+    // 4 ticks is plenty; we don't actually want to wait long since
+    // the test should be deterministic. The gate ensures the run
+    // can't complete until we say so.
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+
+    assert.equal(closeFired, false,
+        "guard: gate must still be held — otherwise the test cannot prove live-before-close");
+    assert.equal(stageStartBeforeClose, true,
+        "stage_start must be in the events array BEFORE child close fires; "
+        + "pre-fix runner emitted everything in a post-close batch and this would be false");
+
+    closeGate();
+    const result = await runPromise;
+    assert.equal(result.terminationReason, "complete");
+
+    // Final event order must still be canonical: iter_start →
+    // stage events → iter_end. This pins that the streaming path
+    // is byte-equivalent to the post-close batch in final ordering.
+    const stageEvents = events.filter((e) => e.type === "stage_start" || e.type === "stage_end");
+    assert.deepEqual(stageEvents.map((e) => `${e.type}:${e.stageName}`),
+        ["stage_start:ORIENT", "stage_end:ORIENT", "stage_start:IDEATE", "stage_end:IDEATE"]);
+});
+
+// Companion regression: when the agent's final JSONL line is
+// NOT newline-terminated, the close-handler's trailing-buffer
+// drain recovers it. That drain MUST also fire `onLine` so the
+// streaming emitter sees the final event — without that, the
+// post-fix runner would silently drop the last
+// tool.execution_complete (or final `[STAGE: ]` marker) and the
+// TUI's last-iter snapshot would be subtly wrong. The
+// streaming + suffix-replay design in `runRalphTui` defends
+// against this in two ways (onLine-on-drain + suffix replay
+// against result.events), so even if only one path were
+// somehow broken, this assertion still holds.
+test("runRalphTui: final un-newline-terminated JSONL line is captured live (close-drain → onLine)", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "drain-live",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+
+    const spawn = function () {
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        // No trailing newline on the LAST line — emulates a child
+        // that exits mid-line. Without onLine-on-drain (or the
+        // suffix-replay safety net), the second [STAGE: IDEATE]
+        // marker would be invisible until close, then the
+        // suffix-replay would catch it; with onLine-on-drain it
+        // streams live just like every other event. Either path
+        // passes this assertion — the test pins the contract,
+        // not the path.
+        const stdout =
+            JSON.stringify({ type: "assistant.message", data: { content: "[STAGE: ORIENT]\nlooked\n[STAGE: IDEATE]\nplanning\nCOMPLETE" } })
+            + "\n"
+            + JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } });
+        setImmediate(() => {
+            for (const fn of handlers.stdout) fn(Buffer.from(stdout));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+
+    const result = await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    assert.equal(result.terminationReason, "complete");
+    const stageEvents = events.filter((e) => e.type === "stage_start" || e.type === "stage_end");
+    assert.deepEqual(stageEvents.map((e) => `${e.type}:${e.stageName}`),
+        ["stage_start:ORIENT", "stage_end:ORIENT", "stage_start:IDEATE", "stage_end:IDEATE"],
+        "trailing un-newline-terminated JSONL line must produce its stage events");
+});
+
 test("summarizeToolArgs: bash → first line of command, ≤80 chars with ellipsis", () => {
     assert.equal(summarizeToolArgs("bash", { command: "ls /tmp" }), "ls /tmp");
     assert.equal(summarizeToolArgs("bash", { command: "ls /tmp\nrm -rf /" }), "ls /tmp",

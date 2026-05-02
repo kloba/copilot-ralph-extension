@@ -3,6 +3,26 @@
 ## Unreleased
 
 ### Features
+- `ralph-tui watch` Ink components now render the 3-level hierarchy
+  the runner has been emitting since slices 4–6 (issue #48 slice 7).
+  `<Header>` gained a backlog row showing
+  `open issues · open PRs · red CI runs` (with `?` for fields the
+  agent didn't probe in this iter), and renders `iter X/∞` instead
+  of a literal `1000` when the iteration cap matches the
+  runaway-guard ceiling — the new self-improve default. New
+  `<StagesRow>` component renders the canonical SDLC stage list as
+  a horizontal pill row (`[✓ ORIENT] [● IDEATE] [ CRITIQUE]`)
+  with three states (completed / active / pending), driven by
+  `snapshot.recentStages` and `snapshot.activeStage`. New
+  `<SubstagesPane>` renders the per-stage substage activity log
+  (`verb argsSummary  outcome  durationMs`) with a tail-cap so
+  long stages don't push the rest of the UI off-screen, and a
+  placeholder for stages with no activity yet. All three are
+  pure presentational components — `computeStageStates` and
+  `formatDurationMs` are exported for unit testing without
+  rendering. Custom `--prompt` runs (no canonical stage list)
+  collapse `<StagesRow>` to nothing so the header stays compact.
+
 - `ralph-tui run` now emits a `backlog_snapshot` event after each
   iteration when the agent's ORIENT-stage `gh` probes ran (issue
   #48 slice 6). The runner walks the iter's `tool.execution_*`

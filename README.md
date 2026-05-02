@@ -68,6 +68,7 @@ cd copilot-ralph-extension
 ./install.sh                # user-scoped → ~/.copilot/extensions/ralph
 ./install.sh --project      # project-scoped → .github/extensions/ralph (cwd must be inside a git repo)
 ./install.sh --dry-run      # show what would be installed without writing anything
+./install.sh --version      # print the extension version (e.g. "copilot-ralph-extension v0.6.0") and exit
 ./install.sh --help         # print usage and exit
 ```
 

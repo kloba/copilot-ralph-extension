@@ -312,6 +312,16 @@
   time instead of as a misleading green check on `main`.
 
 ### Documentation
+- README's install instructions now list `./install.sh
+  --version` alongside the existing `--project`, `--dry-run`,
+  and `--help` flags. The `--version` / `-V` flag landed in
+  iter 123 but the README never advertised it, so a user
+  skimming the install section would never learn the flag
+  exists. New drift-guard test extracts every long-form
+  `--flag` from `./install.sh --help`'s output and asserts
+  each one appears at least once in `README.md` — the next
+  time a flag is added or renamed in install.sh the test
+  fails until the README is updated to match.
 - `extension/events-emit.mjs`'s `MAX_EXCERPT_CHARS`
   comment no longer references a non-existent
   `MAX_EXCERPT_CHARS` constant in the TUI side. The

@@ -9311,3 +9311,42 @@ test("install.sh: missing extension/handler.mjs surfaces a friendly diagnostic, 
         rmSync(sandbox, { recursive: true, force: true });
     }
 });
+
+test("install.sh: every long-form flag advertised by --help is also documented in README.md", async () => {
+    // Iter 126 — drift guard. install.sh's --help output is the
+    // canonical user-facing flag listing; the README's install
+    // section is the discovery surface for new users skimming
+    // GitHub. The two diverged silently in iter 123 — the new
+    // `--version` / `-V` flag landed in install.sh's --help block
+    // but not in the README, so a user reading the README would
+    // never learn the flag exists. Fix the drift in this iter
+    // and pin: every long-form `--flag` extracted from
+    // `./install.sh --help` MUST appear at least once in README.md.
+    //
+    // Long-form only — short aliases (`-V`, `-h`) are listed in
+    // the help block but aren't useful as bare regex anchors in
+    // free-form prose (e.g. `-V` would match inside any words
+    // containing those bytes). Pinning long-form catches the
+    // drift case (a new flag landing in --help but not the README)
+    // without false positives from short aliases that already
+    // alias an advertised long-form.
+    const r = spawnSync("bash", [resolve(REPO_ROOT, "install.sh"), "--help"], {
+        encoding: "utf8",
+    });
+    assert.equal(r.status, 0, `--help exited ${r.status}`);
+    // Capture every "--xxx" token (excluding "--" alone). Use a
+    // Set to dedupe — `--help` appears in both the Usage line and
+    // its own per-flag description.
+    const flags = new Set(r.stdout.match(/--[a-z][a-z-]*/g) || []);
+    assert.ok(flags.size >= 4, `expected ≥4 long-form flags in --help; got ${[...flags].join(", ")}`);
+    const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf8");
+    for (const flag of flags) {
+        // Anchor on word boundary so `--help` doesn't accidentally
+        // match `--helper` (none currently, but cheap to guard).
+        const re = new RegExp(`${flag}(?![a-z-])`);
+        assert.ok(
+            re.test(readme),
+            `install.sh advertises ${flag} via --help but README.md never mentions it — docs drift; either remove the flag or add it to the install instructions`,
+        );
+    }
+});

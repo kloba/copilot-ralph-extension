@@ -7308,3 +7308,82 @@ test("docs/concepts.md documents the token-tracking model (issues #7 + iters 67/
     assert.doesNotMatch(topicsPlannedBlock, /Token tracking/,
         "Token tracking must be removed from the 'Topics planned' stub list");
 });
+
+// Iter 70 — pin the lenient-input contracts of extension/events-emit.mjs
+// helpers. The module's stated discipline is "swallow every error so the
+// loop keeps running" (issue #22), so makeRunId and resolveRunsRoot
+// substitute fallbacks under degraded input rather than throwing.
+// Integration tests already cover the holistic emit path; these tests
+// pin the helpers themselves so a future "tighten the input contract"
+// PR cannot silently regress the loop's resilience.
+import { makeRunId, resolveRunsRoot } from "../extension/events-emit.mjs";
+
+test("events-emit resolveRunsRoot: respects $RALPH_EVENTS_DIR override", () => {
+    const r = resolveRunsRoot({ RALPH_EVENTS_DIR: "/tmp/ralph-test-runs" });
+    assert.equal(r, "/tmp/ralph-test-runs");
+});
+
+test("events-emit resolveRunsRoot: falls back when env override is empty / whitespace / missing", () => {
+    // Default: ~/.copilot/ralph/runs — assert the segment shape so the
+    // test stays platform-portable across CI runners + dev machines.
+    const fallbackPattern = /\.copilot[\\/]ralph[\\/]runs$/;
+    assert.match(resolveRunsRoot({}), fallbackPattern,
+        "missing override → default fallback");
+    assert.match(resolveRunsRoot({ RALPH_EVENTS_DIR: "" }), fallbackPattern,
+        "empty-string override → default fallback (not literal empty path)");
+    assert.match(resolveRunsRoot({ RALPH_EVENTS_DIR: "   " }), fallbackPattern,
+        "whitespace-only override → default fallback (trim() rejects it)");
+    assert.match(resolveRunsRoot(undefined), fallbackPattern,
+        "undefined env arg → default fallback (env arg defaults to process.env)");
+});
+
+test("events-emit resolveRunsRoot: ignores non-string env override types", () => {
+    // Defensive: a programmer error that injects non-string into
+    // RALPH_EVENTS_DIR should not crash makeRunId / createEventEmitter.
+    const fallbackPattern = /\.copilot[\\/]ralph[\\/]runs$/;
+    assert.match(resolveRunsRoot({ RALPH_EVENTS_DIR: 12345 }), fallbackPattern,
+        "numeric override rejected → default fallback");
+    assert.match(resolveRunsRoot({ RALPH_EVENTS_DIR: null }), fallbackPattern,
+        "null override rejected → default fallback");
+});
+
+test("events-emit makeRunId: well-formed inputs produce `${label}-${ts}`", () => {
+    assert.equal(makeRunId("ralph_loop", 1730000000000), "ralph_loop-1730000000000");
+    assert.equal(makeRunId("self_improve", 0), "self_improve-0");
+    assert.equal(makeRunId("grow_project", 1), "grow_project-1");
+});
+
+test("events-emit makeRunId: substitutes Date.now() for non-finite startedAt", () => {
+    // Reliability contract: a NaN / Infinity / undefined / string startedAt
+    // must NOT collide on a literal "ralph_loop-undefined" directory path
+    // (which would silently overwrite events across runs). The helper
+    // substitutes Date.now() so each call gets a unique, sortable id.
+    for (const bad of [undefined, null, NaN, Infinity, -Infinity, "1730000000000", {}, []]) {
+        const id = makeRunId("ralph_loop", bad);
+        assert.match(id, /^ralph_loop-\d+$/,
+            `non-finite startedAt ${displayValue(bad)} must yield a numeric id (got ${id})`);
+        assert.doesNotMatch(id, /undefined|NaN|Infinity|object|\[/i,
+            `non-finite startedAt ${displayValue(bad)} must NOT leak its repr into id (got ${id})`);
+    }
+    function displayValue(v) {
+        if (typeof v === "object") return Array.isArray(v) ? "[]" : "{}";
+        return String(v);
+    }
+});
+
+test("events-emit makeRunId: sanitizes filesystem-unsafe label characters", () => {
+    // The runId becomes a directory name on disk. Slashes / nulls / spaces /
+    // shell metacharacters in the label must be replaced so a hostile or
+    // typo'd label cannot escape ~/.copilot/ralph/runs. The implementation
+    // uses [^A-Za-z0-9_-] → "_".
+    assert.equal(makeRunId("../etc/passwd", 1), "___etc_passwd-1",
+        "path traversal characters must be replaced with _");
+    assert.equal(makeRunId("ralph loop", 1), "ralph_loop-1",
+        "spaces must be replaced with _");
+    assert.equal(makeRunId("ralph;rm -rf", 1), "ralph_rm_-rf-1",
+        "shell metacharacters must be replaced with _");
+    assert.equal(makeRunId("", 1), "ralph_loop-1",
+        "empty label falls back to the default `ralph_loop`");
+    assert.equal(makeRunId(null, 1), "ralph_loop-1",
+        "null label falls back to the default `ralph_loop`");
+});

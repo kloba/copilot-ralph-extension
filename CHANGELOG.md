@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Tests
+- Pin the lenient-input contracts of `extension/events-emit.mjs`'s
+  `makeRunId` and `resolveRunsRoot` helpers. The module's stated
+  discipline (issue #22) is "swallow every error so the loop keeps
+  running" — `makeRunId` substitutes `Date.now()` for non-finite
+  `startedAt` and replaces filesystem-unsafe label characters with
+  `_`, while `resolveRunsRoot` falls back to
+  `~/.copilot/ralph/runs` when `RALPH_EVENTS_DIR` is empty,
+  whitespace, the wrong type, or unset. Integration tests already
+  cover the holistic emit path; the new tests pin the helpers
+  themselves so a future "tighten the input contract" PR cannot
+  silently regress the loop's resilience or — worse — let a hostile
+  / typo'd label escape the runs root via path traversal. Six tests
+  added covering: env override pass-through, four flavours of
+  empty/wrong-type fallback, well-formed run ids, eight degraded
+  `startedAt` values, and five unsafe label character classes
+  (path traversal, spaces, shell metacharacters, empty, null).
+
 ### Documentation
 - Add `## Token tracking and context-window warnings` section to
   `docs/concepts.md`. The user-facing concepts page listed token

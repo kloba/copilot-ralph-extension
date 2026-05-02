@@ -2,27 +2,6 @@
 
 ## Unreleased
 
-### Fixes
-- `ralph-tui run`: pressing `q` (or Ctrl-C) inside the Ink TUI
-  reliably stops the loop again — field reports surfaced an
-  environment where Ink's `useInput` silently failed to enter
-  raw mode, leaving `q` echoing to the terminal as cooked-mode
-  input while the loop kept running and the user had to
-  double-Ctrl-C to escape. `bin/tui.mjs` now installs a stdlib
-  `readline.emitKeypressEvents` keystroke listener on
-  `process.stdin` BEFORE mounting Ink and explicitly calls
-  `setRawMode(true)` itself, so the keystroke path is live
-  regardless of whether Ink's hook ever fires. Both listeners
-  share the same `onAbort` (which routes to `runner.stopRun`,
-  idempotent), so a double-fire from Ink + readline is
-  harmless. The fallback only attaches when stdin is a TTY —
-  CI / piped runs short-circuit to a no-op cleanup. For Ctrl-C
-  in raw mode (where the kernel does NOT generate SIGINT),
-  the handler synthesises `process.kill(process.pid, "SIGINT")`
-  to the parent so the existing `installSignal` graceful-stop
-  message still prints and the second-Ctrl-C hard-abort gate
-  still works.
-
 ### Features
 - `events.mjs` gains the `stage_plan` / `stage_plan_amend` /
   `task_list` / `task_start` / `task_end` / `commit_observed`
@@ -425,6 +404,27 @@
   matches the sum of `extension/*.mjs` sizes and the file count
   matches `extension/*.mjs.length` — so a future hardcode of
   either value is caught at test time.
+
+### Fixes
+- `ralph-tui run`: pressing `q` (or Ctrl-C) inside the Ink TUI
+  reliably stops the loop again — field reports surfaced an
+  environment where Ink's `useInput` silently failed to enter
+  raw mode, leaving `q` echoing to the terminal as cooked-mode
+  input while the loop kept running and the user had to
+  double-Ctrl-C to escape. `bin/tui.mjs` now installs a stdlib
+  `readline.emitKeypressEvents` keystroke listener on
+  `process.stdin` BEFORE mounting Ink and explicitly calls
+  `setRawMode(true)` itself, so the keystroke path is live
+  regardless of whether Ink's hook ever fires. Both listeners
+  share the same `onAbort` (which routes to `runner.stopRun`,
+  idempotent), so a double-fire from Ink + readline is
+  harmless. The fallback only attaches when stdin is a TTY —
+  CI / piped runs short-circuit to a no-op cleanup. For Ctrl-C
+  in raw mode (where the kernel does NOT generate SIGINT),
+  the handler synthesises `process.kill(process.pid, "SIGINT")`
+  to the parent so the existing `installSignal` graceful-stop
+  message still prints and the second-Ctrl-C hard-abort gate
+  still works.
 
 ### Fixes
 - `runGitCommand` (`extension/handler.mjs:645`) now explicitly

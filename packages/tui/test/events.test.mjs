@@ -1634,3 +1634,110 @@ test("foldEvents: malformed worktree_created (missing fields) is a no-op", () =>
     const snap = foldEvents(events);
     assert.equal(snap.activeWorktree, null);
 });
+
+// ─── Issue #56 — per-iter stat snapshots & filesChanged carry-through ───
+
+test("Issue #56: foldEvents — iteration_start snapshots tokensAtStart from cumulative tokens", () => {
+    const events = [
+        { type: "armed", ts: 100, runId: "r", label: "self_improve" },
+        { type: "iteration_start", ts: 200, runId: "r", iteration: 1 },
+        { type: "iteration_end", ts: 300, runId: "r", iteration: 1, excerpt: "ok",
+          tokens: { input: 0, output: 500 }, premiumRequests: 2 },
+        // Iter 2 starts with cumulative tokens=500, premium=2.
+        { type: "iteration_start", ts: 400, runId: "r", iteration: 2 },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.iterations.length, 2);
+    // Iter 1 captured tokens={0,0} (run had not yet emitted any usage).
+    assert.deepEqual(snap.iterations[0].tokensAtStart, { input: 0, output: 0 });
+    assert.equal(snap.iterations[0].premiumAtStart, null);
+    // Iter 2 snapshot picks up the post-iter-1 totals.
+    assert.deepEqual(snap.iterations[1].tokensAtStart, { input: 0, output: 500 });
+    assert.equal(snap.iterations[1].premiumAtStart, 2);
+});
+
+test("Issue #56: foldEvents — iteration_end carries filesChanged through to iter object", () => {
+    const events = [
+        { type: "armed", ts: 100, runId: "r", label: "self_improve" },
+        { type: "iteration_start", ts: 200, runId: "r", iteration: 1 },
+        { type: "iteration_end", ts: 300, runId: "r", iteration: 1, excerpt: "ok",
+          tokens: { input: 0, output: 100 }, filesChanged: 7 },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.iterations[0].filesChanged, 7);
+});
+
+test("Issue #56: foldEvents — iteration_end without filesChanged leaves field undefined (replay-safe)", () => {
+    const events = [
+        { type: "armed", ts: 100, runId: "r", label: "self_improve" },
+        { type: "iteration_start", ts: 200, runId: "r", iteration: 1 },
+        // No filesChanged — pre-issue-56 events.jsonl shape.
+        { type: "iteration_end", ts: 300, runId: "r", iteration: 1, excerpt: "ok",
+          tokens: { input: 0, output: 100 } },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.iterations[0].filesChanged, undefined);
+});
+
+test("Issue #56: serializeEvent — filesChanged round-trips on iteration_end when finite >= 0", () => {
+    const ev = {
+        type: "iteration_end",
+        ts: 1,
+        runId: "r",
+        iteration: 1,
+        excerpt: "ok",
+        tokens: { input: 0, output: 50 },
+        filesChanged: 3,
+    };
+    const line = serializeEvent(ev);
+    const back = parseEventLine(line);
+    assert.equal(back.filesChanged, 3);
+});
+
+test("Issue #56: serializeEvent — filesChanged of 0 round-trips (zero is a valid value)", () => {
+    const ev = {
+        type: "iteration_end",
+        ts: 1,
+        runId: "r",
+        iteration: 1,
+        excerpt: "ok",
+        tokens: { input: 0, output: 50 },
+        filesChanged: 0,
+    };
+    const back = parseEventLine(serializeEvent(ev));
+    assert.equal(back.filesChanged, 0);
+});
+
+test("Issue #56: serializeEvent — malformed filesChanged is dropped", () => {
+    for (const bad of [Number.NaN, Infinity, -1, "5", null]) {
+        const out = serializeEvent({
+            type: "iteration_end",
+            ts: 1,
+            runId: "r",
+            iteration: 1,
+            excerpt: "ok",
+            tokens: { input: 0, output: 50 },
+            filesChanged: bad,
+        });
+        const back = parseEventLine(out);
+        assert.equal(back.filesChanged, undefined, `bad value ${bad} must be dropped`);
+    }
+});
+
+test("Issue #56: foldEvents — second iter's tokensAtStart reflects mid-iter usage_update accumulation", () => {
+    // Pin that the snapshot at iter-2 start picks up usage_update
+    // increments from iter 1, not just iteration_end totals. Mirrors
+    // the live-emission path in runner.mjs.
+    const events = [
+        { type: "armed", ts: 100, runId: "r", label: "self_improve" },
+        { type: "iteration_start", ts: 200, runId: "r", iteration: 1 },
+        { type: "usage_update", ts: 250, runId: "r", iteration: 1,
+          tokens: { input: 0, output: 750 }, premiumRequests: 1 },
+        { type: "iteration_end", ts: 300, runId: "r", iteration: 1, excerpt: "ok",
+          tokens: { input: 0, output: 750 }, premiumRequests: 1 },
+        { type: "iteration_start", ts: 400, runId: "r", iteration: 2 },
+    ];
+    const snap = foldEvents(events);
+    assert.deepEqual(snap.iterations[1].tokensAtStart, { input: 0, output: 750 });
+    assert.equal(snap.iterations[1].premiumAtStart, 1);
+});

@@ -529,6 +529,11 @@ export function looksLikeGitCommit(command) {
     return false;
 }
 
+/** Validate a git SHA: 7–40 lowercase or uppercase hex chars. Used
+ *  by `readHeadCommit`, `computeIterFilesChanged`, and the iter-start
+ *  HEAD capture in the iter loop. */
+const SHA_RE = /^[0-9a-f]{7,40}$/i;
+
 /** Default `gitExec` implementation — runs a git subcommand
  *  synchronously via `child_process.spawnSync` and returns the
  *  stdout (UTF-8) on success, or `null` on any error / non-zero
@@ -802,7 +807,7 @@ export function sweepOrphanWorktrees({ runsRoot, cwd, env, gitExec, now = () => 
 export function readHeadCommit({ gitExec, cwd, env }) {
     if (typeof gitExec !== "function") return null;
     const sha = (gitExec({ args: ["rev-parse", "--short", "HEAD"], cwd, env }) ?? "").trim();
-    if (!/^[0-9a-f]{7,40}$/i.test(sha)) return null;
+    if (!SHA_RE.test(sha)) return null;
     // %s = subject, then a literal NUL separator we control,
     // then %(trailers:only=true,unfold=true) = each trailer on
     // its own line.
@@ -823,6 +828,61 @@ export function readHeadCommit({ gitExec, cwd, env }) {
         if (trailers.length >= 8) break;
     }
     return { sha, subject, trailers };
+}
+
+/** Run `gitExec` and return a trimmed SHA when the output validates,
+ *  otherwise null. Centralises the rev-parse → trim → validate dance
+ *  used at iter start and inside `computeIterFilesChanged`. */
+function gitRevParseHead({ gitExec, cwd, env }) {
+    if (typeof gitExec !== "function") return null;
+    const raw = (gitExec({ args: ["rev-parse", "HEAD"], cwd, env }) ?? "").trim();
+    return SHA_RE.test(raw) ? raw : null;
+}
+
+/** Compute the per-iter file-change count: committed delta (file
+ *  count between `iterStartSha` and current HEAD) + uncommitted
+ *  churn (file count from `git status --porcelain`).
+ *
+ *  Returns `null` when `gitExec` is not a function so the caller
+ *  can omit the field from the `iteration_end` payload — the
+ *  Timeline cell stays hidden for non-git cwds / test injection
+ *  without a stub. When `iterStartSha` is null, the committed
+ *  delta is skipped and only the uncommitted churn contributes
+ *  (partial visibility beats none).
+ *
+ *  @param {object} opts
+ *  @param {(req: {args: string[], cwd: string, env: object}) => string|null} opts.gitExec
+ *  @param {string} opts.cwd
+ *  @param {object} [opts.env]
+ *  @param {string|null} opts.iterStartSha
+ *  @returns {number|null}
+ */
+export function computeIterFilesChanged({ gitExec, cwd, env, iterStartSha }) {
+    if (typeof gitExec !== "function") return null;
+    let committed = 0;
+    if (typeof iterStartSha === "string" && SHA_RE.test(iterStartSha)) {
+        const curSha = gitRevParseHead({ gitExec, cwd, env });
+        if (curSha && curSha !== iterStartSha) {
+            const diffOut = gitExec({
+                args: ["diff", "--name-only", `${iterStartSha}..HEAD`],
+                cwd, env,
+            });
+            if (typeof diffOut === "string") committed = countNonEmptyLines(diffOut);
+        }
+    }
+    const statusOut = gitExec({ args: ["status", "--porcelain"], cwd, env });
+    const uncommitted = typeof statusOut === "string" ? countNonEmptyLines(statusOut) : 0;
+    return committed + uncommitted;
+}
+
+/** Count non-empty lines in a string. Tolerates `\r\n` line endings
+ *  and treats whitespace-only lines as empty. */
+function countNonEmptyLines(s) {
+    let count = 0;
+    for (const rawLine of s.split("\n")) {
+        if (rawLine.replace(/\r$/, "").trim()) count++;
+    }
+    return count;
 }
 
 /** Parse the line count from `gh ... list` text output. The agent's
@@ -1475,6 +1535,13 @@ export async function runRalphTui(opts) {
         });
         stdout.write?.(`# iter ${iter}/${max}\n`);
 
+        // Capture HEAD SHA at iter start so the iter-end
+        // `filesChanged` calc can diff committed work landed during
+        // the iter. Returns null for non-git cwds / wedged repos,
+        // in which case the per-iter file delta degrades to
+        // "uncommitted churn only".
+        const iterStartSha = gitRevParseHead({ gitExec, cwd, env });
+
         // Decide whether to resume an existing session or start a
         // fresh one. --continue captures sessionId at iter 1 then
         // resumes it; --fresh always starts fresh.
@@ -2061,6 +2128,16 @@ export async function runRalphTui(opts) {
             tokens: { input: 0, output: runOutputTokens },
         };
         if (runPremiumRequests !== null) iterEndEv.premiumRequests = runPremiumRequests;
+        // Per-iter file-change count (committed delta + uncommitted
+        // churn). Returns null when `gitExec` is unavailable, in
+        // which case we omit the field so the Timeline cell stays
+        // hidden rather than rendering `0` (which would lie).
+        const filesChanged = computeIterFilesChanged({
+            gitExec, cwd, env, iterStartSha,
+        });
+        if (Number.isFinite(filesChanged) && filesChanged >= 0) {
+            iterEndEv.filesChanged = filesChanged;
+        }
         emitter.write(iterEndEv);
         updateState(runId, (s) => { s.iter = iter; return s; }, env);
         if (onIteration) {

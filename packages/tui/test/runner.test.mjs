@@ -1327,6 +1327,7 @@ import {
     computePinnedTailAmendments,
     looksLikeGitCommit,
     readHeadCommit,
+    computeIterFilesChanged,
 } from "../src/runner.mjs";
 import { PINNED_TAIL_STAGES } from "../src/events.mjs";
 
@@ -1691,10 +1692,16 @@ test("runRalphTui: failed git commit substage does NOT trigger commit_observed",
         worktree: false,
     });
     assert.equal(events.filter((e) => e.type === "commit_observed").length, 0);
-    // Arm-time replay-on-mount calls gitExec once (rev-parse).
-    // Returns null → readHeadCommit short-circuits, no log call.
+    // gitExec call sites in this scenario:
+    //   1. arm-time replay-on-mount `rev-parse --short HEAD` (issue #54 slice 2c)
+    //      → returns null → readHeadCommit short-circuits, no log call.
+    //   2. iter-start `rev-parse HEAD` (issue #56 slice 4) → returns null
+    //      → iterStartSha stays null.
+    //   3. iter-end `git status --porcelain` (issue #56 slice 4) →
+    //      returns null → filesChanged degrades to 0 (omitted).
     // Failed-commit substage path doesn't shell to git either.
-    assert.equal(gitExecCalls, 1, "gitExec called once at arm-time replay (rev-parse), short-circuits on null");
+    assert.equal(gitExecCalls, 3,
+        "arm-time rev-parse + iter-start rev-parse + iter-end status --porcelain");
 });
 
 test("runRalphTui: non-bash tool with 'git commit' in argsSummary does NOT fire commit_observed", async () => {
@@ -2272,9 +2279,14 @@ test("runRalphTui smoke: full marker stream surfaces stage_plan + task_list + ta
     assert.equal(snap.lastCommit?.sha, "abc1234");
     assert.equal(snap.lastCommit?.subject, "feat(tui): smoke");
 
-    // The runner shelled out to git four times: arm-time
-    // (rev-parse + log) + iter-1 commit (rev-parse + log).
-    assert.equal(gitCalls, 4, "arm-time + iter-1 each compose rev-parse + log");
+    // The runner shelled out to git six times:
+    //   - arm-time replay (rev-parse --short HEAD + log)
+    //   - iter-1 commit substage (rev-parse --short HEAD + log)
+    //   - iter-1 start: rev-parse HEAD (issue #56 slice 4 — stub
+    //     returns null for non-`--short` rev-parse, so iterStartSha
+    //     is null and the iter-end skips the diff)
+    //   - iter-1 end: status --porcelain (issue #56 slice 4)
+    assert.equal(gitCalls, 6, "arm-time + iter-1 each compose rev-parse + log; plus issue #56 iter-start rev-parse + iter-end status --porcelain");
 });
 
 // ─── Issue #57 — session_attached emission contract ──────────────
@@ -2412,4 +2424,166 @@ test("runRalphTui: omits session_attached when result.sessionId is missing", asy
     });
     const sa = events.filter((e) => e.type === "session_attached");
     assert.equal(sa.length, 0, "no event when reducer didn't surface a sessionId");
+});
+
+// ─── Issue #56 slice 4 — computeIterFilesChanged + iteration_end carries field ───
+
+test("computeIterFilesChanged: gitExec=null returns null (non-git cwd / test injection)", () => {
+    assert.equal(computeIterFilesChanged({
+        gitExec: null, cwd: "/repo", env: {}, iterStartSha: "abc1234",
+    }), null);
+});
+
+test("computeIterFilesChanged: HEAD changed → counts diff + status lines", () => {
+    const calls = [];
+    const gitExec = ({ args }) => {
+        calls.push(args.join(" "));
+        if (args[0] === "rev-parse" && args[1] === "HEAD") return "def5678\n";
+        if (args[0] === "diff" && args[1] === "--name-only") {
+            // 3 committed files
+            return "src/a.mjs\nsrc/b.mjs\ntest/c.test.mjs\n";
+        }
+        if (args[0] === "status" && args[1] === "--porcelain") {
+            // 2 uncommitted churn lines
+            return " M README.md\n?? new-file.txt\n";
+        }
+        return null;
+    };
+    const out = computeIterFilesChanged({
+        gitExec, cwd: "/repo", env: {}, iterStartSha: "abc1234",
+    });
+    assert.equal(out, 5, "3 committed + 2 uncommitted");
+    assert.deepEqual(calls, [
+        "rev-parse HEAD",
+        "diff --name-only abc1234..HEAD",
+        "status --porcelain",
+    ]);
+});
+
+test("computeIterFilesChanged: HEAD unchanged → committed=0, status only", () => {
+    const gitExec = ({ args }) => {
+        if (args[0] === "rev-parse" && args[1] === "HEAD") return "abc1234\n";
+        if (args[0] === "status" && args[1] === "--porcelain") return " M one.mjs\n";
+        return null;
+    };
+    const out = computeIterFilesChanged({
+        gitExec, cwd: "/repo", env: {}, iterStartSha: "abc1234",
+    });
+    assert.equal(out, 1, "no commit landed → only the one uncommitted file counts");
+});
+
+test("computeIterFilesChanged: iterStartSha=null → skip diff entirely, count only status", () => {
+    const calls = [];
+    const gitExec = ({ args }) => {
+        calls.push(args[0]);
+        if (args[0] === "status") return "?? a\n?? b\n?? c\n";
+        return null;
+    };
+    const out = computeIterFilesChanged({
+        gitExec, cwd: "/repo", env: {}, iterStartSha: null,
+    });
+    assert.equal(out, 3);
+    // No rev-parse / diff calls when iterStartSha is null.
+    assert.deepEqual(calls, ["status"]);
+});
+
+test("computeIterFilesChanged: gitExec returns null for everything → 0 (clean repo)", () => {
+    const out = computeIterFilesChanged({
+        gitExec: () => null, cwd: "/repo", env: {}, iterStartSha: "abc1234",
+    });
+    assert.equal(out, 0);
+});
+
+test("computeIterFilesChanged: tolerates blank lines / \\r\\n line endings", () => {
+    const gitExec = ({ args }) => {
+        if (args[0] === "status") return "?? a\r\n\r\n?? b\r\n";
+        return null;
+    };
+    assert.equal(computeIterFilesChanged({
+        gitExec, cwd: "/repo", env: {}, iterStartSha: null,
+    }), 2);
+});
+
+test("runRalphTui: iteration_end carries filesChanged when gitExec returns canned diff/status", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "files-changed-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    // gitExec stub: arm-time + iter-1 readHeadCommit, plus iter-start
+    // rev-parse HEAD (returns SHA1), iter-end rev-parse HEAD (returns
+    // SHA2 — HEAD changed), iter-end diff (2 files), iter-end status
+    // (1 uncommitted).
+    let revParseHeadCalls = 0;
+    const gitExec = ({ args }) => {
+        if (args[0] === "rev-parse" && args[1] === "--short") return "abc1234\n";
+        if (args[0] === "log") return "subject ";
+        if (args[0] === "rev-parse" && args[1] === "HEAD") {
+            revParseHeadCalls += 1;
+            // 1st = iter-start; 2nd = iter-end (computeIterFilesChanged).
+            return revParseHeadCalls === 1 ? "0000aaa\n" : "0000bbb\n";
+        }
+        if (args[0] === "diff" && args[1] === "--name-only") {
+            return "file1.mjs\nfile2.mjs\n";  // 2 committed
+        }
+        if (args[0] === "status" && args[1] === "--porcelain") {
+            return " M dirty.mjs\n";  // 1 uncommitted
+        }
+        return null;
+    };
+    const spawn = makeMockSpawn([
+        {
+            stdout: [
+                JSON.stringify({ type: "assistant.message", data: { content: "wrap up COMPLETE" } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+            ].join("\n") + "\n",
+            exitCode: 0,
+        },
+    ]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+        gitExec,
+    });
+    const iterEnds = events.filter((e) => e.type === "iteration_end");
+    assert.equal(iterEnds.length, 1);
+    assert.equal(iterEnds[0].filesChanged, 3, "2 committed + 1 uncommitted");
+});
+
+test("runRalphTui: iteration_end omits filesChanged when gitExec is not provided (test/non-git)", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "no-files-changed-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const spawn = makeMockSpawn([
+        {
+            stdout: [
+                JSON.stringify({ type: "assistant.message", data: { content: "wrap up COMPLETE" } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+            ].join("\n") + "\n",
+            exitCode: 0,
+        },
+    ]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+        gitExec: null,
+    });
+    const iterEnds = events.filter((e) => e.type === "iteration_end");
+    assert.equal(iterEnds.length, 1);
+    assert.equal(iterEnds[0].filesChanged, undefined,
+        "field omitted when gitExec is null so Timeline cell stays hidden");
 });

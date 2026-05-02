@@ -82,6 +82,36 @@
   caffeinate pip render together they sit in a right-aligned
   cluster with a two-space gutter between them; the version pip
   stays at the far edge.
+- Issue #56 — TUI `<Timeline>` rows gain four per-iter stat cells
+  between the iteration # and the excerpt: `4.2s` / `1m23s`
+  duration (live-elapsed for the in-flight iter via `<App>`'s 1Hz
+  tick), `1.2k tok` token delta (cumulative `snap.tokens` minus an
+  iter-start snapshot captured by `foldEvents` on
+  `iteration_start`), `⊕N` premium-request delta (same shape;
+  hidden when both cur and start are null), and `📁N` files-changed
+  count (committed delta + uncommitted churn computed by the
+  runner at iter close via `git diff --name-only` + `git status
+  --porcelain` and attached to the `iteration_end` event). All
+  cells render dim-on-zero so quiet iters stay quiet, and missing
+  data renders `—` (or hides the cell entirely for premium /
+  files) so a pre-this-issue `events.jsonl` replay shows no
+  crash, no `NaN`, no `undefined`. New helpers `formatDuration`,
+  `formatTokenDelta`, `computeTokenDelta`, `computePremiumDelta`
+  exported from `<Timeline>` for unit-testability; new
+  `computeIterFilesChanged` exported from `runner.mjs` (with
+  shared `gitRevParseHead` + `SHA_RE` extracted from the existing
+  `readHeadCommit`). `iteration_end` event schema gains an
+  optional `filesChanged: number` field; the serializer drops
+  malformed values (NaN / Infinity / negative) so a third-party
+  emitter cannot poison the stream. New tests pin every cell:
+  `formatDuration` boundary cases, in-flight live elapsed, 0-ms
+  iter renders `0.0s` not `NaN`, token delta renders `1.2k` for
+  ≥ 1000, replay-safety dash for old iters without
+  `tokensAtStart`, premium cell hidden when both null,
+  `filesChanged` round-trips through serialize/parse, and an
+  end-to-end `runRalphTui` test stubs `gitExec` with canned
+  diff/status output and pins the iter-end event's `filesChanged`
+  field.
 
 - Issue #57 — `ralph-tui watch` Live panel streams the agent's
   output (assistant text, tool calls, tool results) for the

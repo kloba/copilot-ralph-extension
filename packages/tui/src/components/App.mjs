@@ -236,7 +236,7 @@ export default function App({ eventStream, events: initial = [], runId, appVersi
         h(StagesRow, { snapshot }),
         h(TasksPane, { snapshot }),
         h(SubstagesPane, { snapshot }),
-        h(Timeline, { snapshot }),
+        h(Timeline, { snapshot, now: isLive ? now : undefined }),
         h(LiveOutputPane, {
             snapshot,
             lines: liveOutput.lines,

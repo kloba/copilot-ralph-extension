@@ -160,6 +160,59 @@
   "premium 0" pre-iter-1.
 
 ### Fixes
+- `self_improve` loop no longer terminates one stage short of
+  done on tier (b) STALE OPEN PR work items, no longer aborts
+  while real backlog work is sitting unpicked, and no longer
+  emits COMPLETE on no-op iters that walked
+  ORIENT/IDEATE/CRITIQUE/BASELINE without producing a commit.
+  The baked `PROMPT_SELF_IMPROVE` body in
+  `extension/prompts.mjs` now pins three contracts the agent
+  had been silently violating:
+  (1) **tier (b) terminal state is MERGED** (or auto-merge
+  armed via `gh pr merge --auto`), not "mergeable with green
+  CI" — step 2.b, step 8 PUSH (with explicit `gh pr merge`
+  invocation + the squash/merge/rebase style detection
+  hint), step 9 END (per-tier terminal-state enumeration),
+  and HARD RULES all reinforce it; the misleading "driving
+  that PR to a mergeable state IS the iteration" wording is
+  gone, and the fallback for "merge can't complete this iter"
+  now correctly tells the agent to **end the iter without
+  emitting COMPLETE** (so the loop iterates) rather than the
+  previous self-defeating "emit COMPLETE and the next iter
+  will re-pick" (COMPLETE terminates the whole loop, so there
+  is no next iter).
+  (2) **`ABORT_NO_IMPROVEMENTS` is the literal backlog-empty
+  signal**, only valid when tiers (a)/(b)/(c) are objectively
+  empty AND no genuine (d) is identifiable — concurrent-agent
+  activity, contested file scope, "this work feels too large
+  for one iter", and "I'm uncertain how to fix this" are
+  explicitly disclaimed as abort grounds. The corrected
+  response when work exists but is blocked from THIS iter is
+  either picking a different non-blocked work item from the
+  same tier or ending the iter without a terminal token (no
+  COMPLETE, no ABORT) so the loop iterates and re-orients on
+  the next premium request.
+  (3) **COMPLETE requires shipped work THIS iter** — at
+  minimum a COMMIT with the IMPLEMENT/TEST stages preceding
+  it. An iter that walked only ORIENT/IDEATE/CRITIQUE/BASELINE
+  and went straight to END without producing a commit MUST
+  NOT emit COMPLETE; the correct response is either picking a
+  different work item and walking IMPLEMENT/TEST/COMMIT/PUSH,
+  or ending the iter without any terminal token. Step 2.b
+  now also explicitly disclaims intentionally-draft /
+  mergeable-and-green PRs as tier (b) candidates so the agent
+  doesn't pick them just to discover "no work needed" and
+  emit COMPLETE on a no-op iter — those PRs are skipped and
+  tier (c) is consulted instead.
+  Three new regression-pin tests in `test/extension.test.mjs`
+  cover all three contracts (`PROMPT_SELF_IMPROVE tier (b)
+  terminal state is MERGED, not just mergeable`,
+  `PROMPT_SELF_IMPROVE ABORT_NO_IMPROVEMENTS contract`, and
+  `PROMPT_SELF_IMPROVE COMPLETE requires shipped work this
+  iter`) and pin the specific anti-pattern wording the agent
+  rationalised against, so a future edit cannot silently
+  re-create any of the three failure modes.
+
 - `ralph-tui run` no longer prints a spurious
   `ExperimentalWarning: Detected unsettled top-level await at
   …/packages/tui/bin/tui.mjs:<EOF>` line on exit. Root cause:

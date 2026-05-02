@@ -389,6 +389,25 @@
   `1 character.` and `N characters.`.
 
 ### Refactor
+- Extracted `safeResolveEventsPath(label, runId)` helper
+  in `packages/tui/bin/tui.mjs` and routed both
+  `cmdReplay` and `cmdWatch` through it. Both commands
+  previously open-coded the same try/catch wrapper (added
+  in iters 167 and 168) that caught the `TypeError`
+  thrown by `resolveRunEventsPath` for path-traversal
+  runIds, emitted a one-line error via `fail()`, and
+  returned exit code 2. Centralising the wrapper keeps
+  the two call sites a single line apiece and means a
+  future tweak — a new traversal clause raising a
+  different error type, or a third command needing the
+  same guard — lands in one place rather than drifting
+  between two. The helper returns the resolved events
+  path on success or `null` on the bail path (the
+  caller still emits the correct exit code). Existing
+  iter-167 (`cmdReplay`) and iter-168 (`cmdWatch via
+  main()`) traversal-runId tests cover both routes
+  unchanged.
+
 - Extracted `iterJsonlRows(raw)` generator in
   `packages/tui/src/writer.mjs` and routed the three
   formerly-duplicated JSONL line-iteration sites through it:

@@ -149,25 +149,37 @@ function cmdList(opts = {}) {
     return 0;
 }
 
+// Iter 171 — `resolveRunEventsPath` throws TypeError for path-traversal
+// runIds (`../etc/passwd`, NUL bytes, etc; see writer.mjs's
+// `assertSafeRunId`). Both `cmdReplay` (iter 167) and `cmdWatch`
+// (iter 168) duplicated a near-identical try/catch wrapper that
+// emitted a clean one-line error via `fail()` and returned exit
+// code 2. Centralising the wrapper here keeps the two call sites a
+// single line apiece and means a future tweak (a new traversal
+// clause raising a different error type, or a third command needing
+// the same guard) lands in one place rather than drifting between
+// two. Returns the resolved events path on success, or `null` if
+// the caller should bail with exit code 2 (the helper already
+// invoked `fail()` for the user-facing error).
+function safeResolveEventsPath(label, runId) {
+    try {
+        return resolveRunEventsPath(runId);
+    } catch (err) {
+        if (err instanceof TypeError) {
+            fail(`${label}: ${err.message}`);
+            return null;
+        }
+        throw err;
+    }
+}
+
 export function cmdReplay(runId) {
     if (!runId) {
         fail("replay: <runId> is required (try `ralph-tui list` first)");
         return 2;
     }
-    let path;
-    try {
-        path = resolveRunEventsPath(runId);
-    } catch (err) {
-        // Iter 167 — `resolveRunEventsPath` throws TypeError on path-
-        // traversal runIds (`../etc/passwd`, runIds with `\0`, etc).
-        // Without this catch the user sees a raw stack trace; route
-        // through `fail()` for a clean one-line error and exit code 2.
-        if (err instanceof TypeError) {
-            fail(`replay: ${err.message}`);
-            return 2;
-        }
-        throw err;
-    }
+    const path = safeResolveEventsPath("replay", runId);
+    if (path === null) return 2;
     const events = readEventsFile(path);
     if (!events.length) {
         process.stdout.write(`No events for run ${runId} (looked at ${path}).\n`);
@@ -189,20 +201,8 @@ async function cmdWatch(runId, opts) {
         }
         target = entries[0].runId;
     }
-    let path;
-    try {
-        path = resolveRunEventsPath(target);
-    } catch (err) {
-        // Iter 167 — same fail-fast guard as `cmdReplay`. A user
-        // supplying a path-traversal runId via `ralph-tui watch
-        // ../etc/passwd` would otherwise see a raw TypeError stack
-        // instead of a clean error message.
-        if (err instanceof TypeError) {
-            fail(`watch: ${err.message}`);
-            return 2;
-        }
-        throw err;
-    }
+    const path = safeResolveEventsPath("watch", target);
+    if (path === null) return 2;
     const plain = opts.plain || !isTTY();
     if (!plain) {
         // The Ink renderer (slice 5) lives behind a dynamic import so a

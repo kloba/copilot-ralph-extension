@@ -1080,6 +1080,141 @@ test("PROMPT_GROW_PROJECT scope is FEATURES ONLY — bugs and human-filed asks b
     assert.match(p, /skip|emit ABORT_NO_BACKLOG/i, "must instruct the agent to skip non-feature issues (or abort) rather than ship them");
 });
 
+test("PROMPT_SELF_IMPROVE tier (b) terminal state is MERGED, not just mergeable (premature-COMPLETE regression)", () => {
+    // Regression pin for the failure mode where iter 1 picked PR
+    // #53 (a tier-(b) STALE OPEN PR), drove it to mergeable +
+    // green CI, then emitted COMPLETE — leaving the PR unmerged
+    // and the loop terminated one stage short of done.
+    // The fix: tier (b) terminal state is MERGED INTO THE
+    // DEFAULT BRANCH (or `gh pr merge --auto` armed).
+    const p = PROMPT_SELF_IMPROVE;
+
+    // Step 2.b body must spell out "MERGED INTO THE DEFAULT
+    // BRANCH IS the iteration" (caps for emphasis), not the old
+    // "driving that PR to a mergeable state IS the iteration"
+    // wording that mislead the agent into stopping at mergeable.
+    assert.match(p, /MERGED INTO THE DEFAULT BRANCH IS the iteration/,
+        "step 2.b must pin tier (b) terminal state as MERGED INTO THE DEFAULT BRANCH");
+    assert.ok(!/driving that PR to a mergeable state IS the iteration/.test(p),
+        "anti-pattern: step 2.b must NOT use 'driving that PR to a mergeable state IS the iteration' wording (regression source)");
+
+    // Step 8 PUSH must mention `gh pr merge --auto` so auto-merge
+    // is the preferred path, plus the squash/merge/rebase style
+    // detection hint and the CI-watch fallback for repos without
+    // auto-merge enabled.
+    assert.match(p, /gh pr merge.*--auto/,
+        "step 8 must instruct `gh pr merge --auto` as the preferred merge path");
+    assert.match(p, /--squash[^]*--merge[^]*--rebase/,
+        "step 8 must enumerate `--squash` / `--merge` / `--rebase` flags so the agent picks the matching project style");
+    assert.match(p, /gh pr checks .*--watch|gh pr list --state merged/,
+        "step 8 must surface a CI-watch / merged-PR-listing fallback for repos without auto-merge");
+
+    // Step 9 END must enumerate per-tier terminal states so the
+    // agent can't conflate "PR is in good shape" with "iter is
+    // done", and must include the "WITHOUT emitting COMPLETE"
+    // fallback for the slow-CI / can't-finish-merge case.
+    assert.match(p, /Tier \(b\)[^]*loop-authored[^]*pushable[^]*PR MERGED into default branch/,
+        "step 9 must enumerate the loop-authored / pushable tier (b) terminal state as MERGED into default branch");
+    assert.match(p, /pushed-but-unmerged is NOT terminal/,
+        "step 9 must explicitly disclaim 'pushed-but-unmerged' as a terminal state");
+    assert.match(p, /end the iter WITHOUT emitting COMPLETE/,
+        "step 9 must give the agent the 'end iter without COMPLETE' fallback for slow-CI / merge-blocked cases");
+
+    // HARD RULES must pin the same contract so a future edit
+    // can't silently regress the prompt by softening just step 9.
+    assert.match(p, /Tier \(b\) STALE OPEN PR work items are not done at "pushed \+ green CI"/,
+        "HARD RULES must pin tier (b) terminal state at MERGED, not pushed+green");
+});
+
+test("PROMPT_SELF_IMPROVE ABORT_NO_IMPROVEMENTS contract — concurrent-agent / contested-scope is NOT grounds for abort (premature-ABORT regression)", () => {
+    // Regression pin for the failure mode where the agent saw
+    // 6 open issues + 1 mergeable PR in the backlog but emitted
+    // ABORT_NO_IMPROVEMENTS because it detected a concurrent
+    // agent editing files and conflated "contested scope" with
+    // "no improvements exist". ABORT terminates the whole loop,
+    // so the run ended while real backlog work was sitting
+    // unpicked.
+    const p = PROMPT_SELF_IMPROVE;
+
+    // Section header must exist so the agent has a clear
+    // anchor to reason from.
+    assert.match(p, /ABORT_NO_IMPROVEMENTS CONTRACT/,
+        "step 2 must include an explicit ABORT_NO_IMPROVEMENTS CONTRACT section header");
+
+    // The four objective preconditions for a valid abort.
+    assert.match(p, /tier \(a\) RED CI list is empty/i,
+        "ABORT contract must require tier (a) empty");
+    assert.match(p, /tier \(b\) STALE OPEN PR list is empty/i,
+        "ABORT contract must require tier (b) empty");
+    assert.match(p, /tier \(c\) OPEN HUMAN-FILED ISSUE list is empty/i,
+        "ABORT contract must require tier (c) empty");
+    assert.match(p, /tier \(d\) yields no genuine user-visible improvement/i,
+        "ABORT contract must require tier (d) yields no genuine improvement");
+
+    // The four explicit non-grounds (the actual regression
+    // scenarios the agent has rationalised).
+    assert.match(p, /Another agent appears to be editing files[^]*NOT grounds for ABORT_NO_IMPROVEMENTS/i,
+        "ABORT contract must disclaim 'concurrent agent activity' as abort grounds");
+    assert.match(p, /too large for one iter[^]*NOT grounds for ABORT_NO_IMPROVEMENTS/i,
+        "ABORT contract must disclaim 'too large for one iter' as abort grounds");
+    assert.match(p, /uncertain how to fix this[^]*NOT grounds for ABORT_NO_IMPROVEMENTS/i,
+        "ABORT contract must disclaim 'uncertain how to fix' as abort grounds");
+    assert.match(p, /contested|overlap/i,
+        "ABORT contract must reference contested-scope / file-overlap as a non-ground");
+
+    // The two correct-response remediations.
+    assert.match(p, /pick a (work item whose file scope does NOT overlap|different non-blocked work item|smaller scoped slice)/i,
+        "ABORT contract must instruct picking a different non-blocked work item as the correct response");
+    assert.match(p, /end the iter WITHOUT emitting (ABORT_NO_IMPROVEMENTS or COMPLETE|any terminal token)/i,
+        "ABORT contract must instruct ending iter without a terminal token so the loop iterates");
+
+    // HARD RULES pin so a future edit can't silently regress
+    // the contract by softening just the in-step prose.
+    assert.match(p, /ABORT_NO_IMPROVEMENTS is the literal backlog-empty signal/i,
+        "HARD RULES must pin ABORT_NO_IMPROVEMENTS as the literal backlog-empty signal");
+});
+
+test("PROMPT_SELF_IMPROVE COMPLETE requires shipped work this iter (no-op-COMPLETE regression)", () => {
+    // Regression pin for the failure mode where iter 1 walked
+    // ORIENT → IDEATE → CRITIQUE → BASELINE → END (skipping
+    // IMPLEMENT, TEST, COMMIT, PUSH entirely), emitted COMPLETE,
+    // and terminated the loop. The agent had picked PR #53 as
+    // the tier (b) work item, decided "it's already MERGEABLE +
+    // green CI + intentionally DRAFT, no work needed", and
+    // wrongly treated that as a successful iter — when in fact
+    // the PR didn't qualify for tier (b) at all (no failing
+    // checks / CONFLICTING / unaddressed review), and the
+    // correct response was to pick a tier (c) issue instead.
+    const p = PROMPT_SELF_IMPROVE;
+
+    // Step 2.b must explicitly disclaim "no-op terminal" PRs
+    // (mergeable, green CI, intentionally-draft) as tier (b)
+    // candidates, so the agent doesn't pick them just to emit
+    // COMPLETE on a no-op iter.
+    assert.match(p, /(intentionally|draft)[^]*kept|skip them and look at tier \(c\)/i,
+        "step 2.b must disclaim intentionally-draft / no-op PRs as tier (b) candidates so the agent doesn't waste an iter on them");
+    assert.match(p, /Picking such a PR and then emitting COMPLETE because "no work was needed" is a failure mode/,
+        "step 2.b must explicitly call out the 'pick → no-op → COMPLETE' anti-pattern");
+
+    // Step 9 END must spell out the COMPLETE-requires-shipped-
+    // work contract in its own subsection so the agent can't
+    // rationalise around it.
+    assert.match(p, /COMPLETE-REQUIRES-SHIPPED-WORK CONTRACT/,
+        "step 9 must include an explicit COMPLETE-REQUIRES-SHIPPED-WORK CONTRACT subsection");
+    assert.match(p, /walked ORIENT[^]*IDEATE[^]*CRITIQUE[^]*BASELINE[^]*END[^]*without entering IMPLEMENT, TEST, COMMIT, or PUSH/,
+        "step 9 contract must enumerate the 'walked ORIENT/IDEATE/CRITIQUE/BASELINE/END but skipped IMPLEMENT/TEST/COMMIT/PUSH' failure shape");
+    assert.match(p, /at least one COMMIT[^]*THIS iter/,
+        "step 9 contract must require at least one COMMIT this iter as a precondition for COMPLETE");
+    assert.match(p, /work item turned out to need no changes|work item turned out to be already in good shape/i,
+        "step 9 contract must explicitly call out the 'misclassified work item' anti-pattern");
+
+    // HARD RULES pin so future edits can't soften just step 9.
+    assert.match(p, /COMPLETE requires shipped work THIS iter/,
+        "HARD RULES must pin 'COMPLETE requires shipped work THIS iter'");
+    assert.match(p, /walked only ORIENT[^]*went straight to END without producing a commit MUST NOT emit COMPLETE/,
+        "HARD RULES must explicitly forbid emitting COMPLETE on no-commit iters");
+});
+
 test("PROMPT_GROW_PROJECT encourages packing the paid-turn (multiple complete features per iter when independent)", () => {
     // Mirror of the self_improve packing pin. Same pricing-model
     // argument: when two proposed issues are independent and

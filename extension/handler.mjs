@@ -1912,6 +1912,16 @@ export function createRalphController(opts = {}) {
                 // gate as ralph_loop so typos surface loudly.
                 const bad = validateOptionalArgShape("ralph_stop", args, RALPH_STOP_KEYS);
                 if (bad) return bad;
+                // Type-guard `reason` BEFORE parseUserReason silently
+                // coerces non-strings to null. Without this guard, a
+                // caller passing `reason: 123` (bug or templating
+                // accident) saw success with no recorded note — the
+                // original input vanished into a silent drop. Now the
+                // failure is loud, matching how ralph_loop validates
+                // every other typed field.
+                if (args?.reason !== undefined && args.reason !== null && typeof args.reason !== "string") {
+                    return failure(`ralph_stop: reason must be a string (got ${describeArgType(args.reason)}).`);
+                }
                 const { i, max, label } = state.active;
                 // parseUserReason: shared with ralph_pause. Flattens
                 // multi-line input + caps length + coerces empty to
@@ -1969,6 +1979,14 @@ export function createRalphController(opts = {}) {
                 if (!state.active) return noActiveLoopFailure("ralph_pause");
                 const bad = validateOptionalArgShape("ralph_pause", args, RALPH_PAUSE_KEYS);
                 if (bad) return bad;
+                // Type-guard `reason` BEFORE parseUserReason silently
+                // coerces non-strings to null. See ralph_stop for the
+                // same guard + rationale; both handlers pin the
+                // identical contract so the user gets a consistent
+                // error regardless of which tool they hit first.
+                if (args?.reason !== undefined && args.reason !== null && typeof args.reason !== "string") {
+                    return failure(`ralph_pause: reason must be a string (got ${describeArgType(args.reason)}).`);
+                }
                 const a = state.active;
                 const { i, max, label } = a;
                 if (a.paused) {

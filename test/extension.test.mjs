@@ -3051,21 +3051,25 @@ test("ralph_stop with empty/whitespace-only reason silently drops it (note=undef
     }
 });
 
-test("ralph_stop with non-string reason silently drops it (note=undefined, loop still stops)", async () => {
-    // ralph_stop's `reason` arg accepts the loose contract "string or
-    // missing"; passing a number / object / array is treated the same
-    // as omitting it. This is intentional leniency — a buggy caller
-    // that miscoerces should still be able to stop the loop rather
-    // than wedging it. Lock in the contract so a future tightening
-    // (e.g. rejecting non-string loudly) is a deliberate decision.
+test("ralph_stop with non-string reason rejects loudly with typed error (loop still active)", async () => {
+    // ralph_stop's `reason` arg used to accept the loose contract
+    // "string or missing" and silently drop a number / object / array.
+    // That made buggy callers' miscoercion invisible — the loop stopped
+    // but the user's intended note vanished. We tightened the contract
+    // to surface a typed failure, matching how ralph_loop validates
+    // every other typed field (see fix(handler): durationMs cohort).
+    // The deliberate-decision sentinel comment in the prior version of
+    // this test is now resolved: rejection is loud, the loop stays
+    // active so the caller can retry with a corrected call.
     const { stop, controller } = await arm({ max_iterations: 5 });
     const r = await stop.handler({ reason: 42 });
-    assert.equal(r.resultType, "success");
-    assert.equal(r.note, undefined, "non-string reason must NOT be coerced into the note");
-    assert.doesNotMatch(r.textResultForLlm, /\(42\)/, "the numeric value must not leak into the user-facing message");
-    assert.equal(controller.state.lastResult.reason, "user_stopped");
-    assert.equal(controller.state.lastResult.note, undefined);
-    assert.equal(controller.state.active, null);
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /^ralph_stop: reason must be a string \(got number\)\./);
+    assert.notEqual(controller.state.active, null, "loop must not be stopped when validation fails");
+    // A correctly-typed call still works.
+    const ok = await stop.handler({ reason: "ok" });
+    assert.equal(ok.resultType, "success");
+    assert.equal(controller.state.lastResult.note, "ok");
 });
 
 test("ralph_stop rejects unknown keys (typo guard, mirrors ralph_loop)", async () => {
@@ -6597,4 +6601,48 @@ test("finish: durationMs clamped to 0 when totalPausedMs exceeds elapsed", async
     const r = await stop.handler({});
     assert.equal(r.resultType, "success");
     assert.equal(controller.state.lastResult.durationMs, 0);
+});
+
+test("ralph_stop: rejects non-string reason with typed error (number)", async () => {
+    const { session, controller, stop } = await arm({ prompt: "p" });
+    await runTurn(session, "first");
+    const r = await stop.handler({ reason: 123 });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /^ralph_stop: reason must be a string \(got number\)\./);
+    // State must be unchanged — a rejected stop is a no-op.
+    assert.ok(controller.state.active, "loop should still be active after rejected stop");
+});
+
+test("ralph_stop: rejects non-string reason (boolean)", async () => {
+    const { session, stop } = await arm({ prompt: "p" });
+    await runTurn(session, "first");
+    const r = await stop.handler({ reason: true });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /^ralph_stop: reason must be a string \(got boolean\)\./);
+});
+
+test("ralph_pause: rejects non-string reason with typed error (array)", async () => {
+    const { session, controller, ralph } = await arm({ prompt: "p" });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    await runTurn(session, "first");
+    const r = await pause.handler({ reason: ["a", "b"] });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /^ralph_pause: reason must be a string \(got array\)\./);
+    // Ensure pause did NOT take effect.
+    assert.equal(controller.state.active.paused, false);
+    void ralph;
+});
+
+test("ralph_pause / ralph_stop: null reason still treated as not-supplied (no false rejection)", async () => {
+    const { session, controller, stop } = await arm({ prompt: "p" });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    await runTurn(session, "first");
+    // null is the SDK's "not supplied" sentinel for optional fields —
+    // must continue to be accepted, not flipped to a typed error.
+    const p = await pause.handler({ reason: null });
+    assert.equal(p.resultType, "success");
+    assert.equal(controller.state.active.paused, true);
+    assert.equal(controller.state.active.pauseReason, null);
+    const s = await stop.handler({ reason: null });
+    assert.equal(s.resultType, "success");
 });

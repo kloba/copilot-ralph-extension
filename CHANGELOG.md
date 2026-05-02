@@ -3,6 +3,25 @@
 ## Unreleased
 
 ### Fixes
+- `ralph_stop` and `ralph_pause` now reject a
+  non-string `reason` with a clear typed error
+  (`ralph_stop: reason must be a string (got
+  number).`) instead of silently dropping it.
+  Previously a caller passing `reason: 42` (or
+  a templating-bug `reason: false`, `reason:
+  ["x"]`) saw `success` with the note vanished
+  — the buggy input was invisible and could
+  silently corrupt log markers, the
+  `ralph_status.last.note` field, and the
+  emitted pause/terminal events. The new guard
+  triggers BEFORE `parseUserReason`'s string
+  coercion so the error is loud, mirrors how
+  `ralph_loop` validates every other typed
+  field, and leaves `state.active` unchanged so
+  the caller can retry with a fixed call. `null`
+  is still treated as "not supplied" (SDK
+  sentinel), so existing callers passing `null`
+  see no behaviour change.
 - `result.durationMs` now actually subtracts
   paused time from wall-clock elapsed, matching
   the long-standing typedef contract

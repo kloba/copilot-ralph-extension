@@ -587,6 +587,24 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Pinned the second-pass salvage branch in
+  `extension/events-emit.mjs`'s `serialize()` — the path that
+  strips `excerpt` + `note` and re-serializes when the first
+  JSON pass exceeds the 16KB hard line cap. Pre-iter-164 the
+  salvage was tested only in the unsalvageable direction
+  (32KB junk in a non-clip field — drops); the salvageable
+  direction was unguarded, so a future "simplify" refactor
+  collapsing the two passes into a single drop-on-overflow
+  would silently start losing every legitimate event whose
+  excerpt + payload combined to exceed 16KB. New test in
+  `test/events-emit.test.mjs` synthesises an event whose
+  first-pass byte length is over cap but second-pass (after
+  stripping the two clip-eligible fields) fits, asserts
+  exactly one line is appended, that the line stays under the
+  16KB cap, and that `type` / `runId` / `iteration` / `payload`
+  survive while `excerpt` / `note` are gone.
+  Mutation-verified: collapsing the salvage to an immediate
+  drop fires the test red (actual=0, expected=1 captured).
 - Behavioural coverage for `readRunIndex`'s rejection of
   empty-runId / missing-runId / non-string-runId rows in
   `packages/tui/test/writer.test.mjs`. The iter-159 fix

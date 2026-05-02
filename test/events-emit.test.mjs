@@ -414,3 +414,65 @@ test("events-emit MAX_EXCERPT_CHARS lockstep: TUI serializeEvent caps excerpt+no
         );
     }
 });
+
+test("createEventEmitter: serialize salvages an oversize event by stripping excerpt+note (second-pass under 16KB cap)", () => {
+    // Iter 164 — `serialize()` in extension/events-emit.mjs implements
+    // a two-pass strategy when the JSON line exceeds the 16KB hard cap:
+    //   1. First try with all fields — if under cap, write as-is.
+    //   2. If over cap, delete excerpt + note (the only fields the
+    //      module clips upstream) and re-serialize. If now under cap,
+    //      ship the slimmed-down event. Otherwise drop.
+    // Pre-iter-164 this salvage branch was tested only in the
+    // unsalvageable direction (32KB junk in a non-clip field — drops).
+    // The salvageable direction was unguarded: a future "simplify"
+    // refactor that collapsed the two passes into a single drop-on-
+    // overflow would silently start losing every legitimate event
+    // whose excerpt + payload combined to exceed 16KB. This pins
+    // the contract: at-cap → ship, over-cap-but-salvageable →
+    // re-emit without excerpt/note, over-cap-anyway → drop.
+    //
+    // To trigger the salvage branch we need (a) clip-eligible fields
+    // (excerpt + note) populated near their 500-char post-clip cap so
+    // the JSON has visible weight from them, AND (b) a non-clipped
+    // field large enough that its presence + excerpt + note exceeds
+    // 16KB but its presence alone fits. excerpt+note clip to ~500
+    // chars each, so they together are at most ~1KB. Pad a non-clip
+    // field to ~15.7KB so first pass is ~16.7KB (over), second pass
+    // (after stripping excerpt+note) is ~15.7KB (under).
+    const captured = [];
+    const e = createEventEmitter({
+        label: "ralph_loop",
+        startedAt: 1,
+        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        fs: {
+            mkdirSync: () => {},
+            appendFileSync: (_, line) => captured.push(line),
+        },
+    });
+    const excerpt = "E".repeat(500);
+    const note = "N".repeat(500);
+    const payload = "P".repeat(15700); // not clipped by this module
+    e.write({
+        type: "iteration_end",
+        runId: "r",
+        ts: 1,
+        iteration: 1,
+        excerpt,
+        note,
+        payload,
+    });
+    assert.equal(captured.length, 1, "salvage path should ship exactly one line");
+    const line = captured[0];
+    assert.ok(
+        Buffer.byteLength(line, "utf8") <= 16 * 1024 + 1, // +1 for trailing newline added by write()
+        "salvaged line must respect the 16KB byte cap",
+    );
+    const parsed = JSON.parse(line.trim());
+    assert.equal(parsed.type, "iteration_end", "type field is preserved through salvage");
+    assert.equal(parsed.runId, "r", "runId is preserved through salvage");
+    assert.equal(parsed.iteration, 1, "iteration counter is preserved through salvage");
+    assert.equal(typeof parsed.payload, "string", "non-clip-eligible fields survive salvage");
+    assert.equal(parsed.payload.length, 15700, "payload field is shipped intact");
+    assert.equal(parsed.excerpt, undefined, "excerpt is stripped during salvage");
+    assert.equal(parsed.note, undefined, "note is stripped during salvage");
+});

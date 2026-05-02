@@ -444,3 +444,45 @@ test("pruneRuns: missing index.jsonl returns empty result", () => {
     });
     assert.deepEqual(result, { removed: [], kept: 0 });
 });
+
+test("createEventWriter: rejects path-traversal runIds (sandbox-escape guard)", () => {
+    // Pre-iter-146 createEventWriter only validated runId for non-empty
+    // string — its sibling resolveRunEventsPath (read path) and
+    // pruneRuns (delete path) had isPathTraversalRunId guards but the
+    // primary write surface did not. A runId like "../escape" or
+    // "a/b" would silently escape the runs root via
+    // path.join(root, runId, "events.jsonl"). Production runIds come
+    // from makeRunId which only emits [A-Za-z0-9_-], so this is
+    // defensive — but it brings the read/write/delete paths into the
+    // same lockstep contract.
+    const cases = [
+        { runId: "../escape", label: "parent-relative" },
+        { runId: "a/b", label: "embedded slash" },
+        { runId: "a\\b", label: "embedded backslash" },
+        { runId: ".", label: "current-dir literal" },
+        { runId: "..", label: "parent-dir literal" },
+        { runId: "ralph_loop-1/../etc", label: "valid prefix + traversal" },
+        { runId: "with\0null", label: "null byte" },
+    ];
+    for (const { runId, label } of cases) {
+        assert.throws(
+            () => createEventWriter({ runId, env: { RALPH_EVENTS_DIR: "/tmp/ralph-test-traversal" } }),
+            (err) => err instanceof TypeError && /path separators or traversal segments/.test(err.message),
+            `runId ${JSON.stringify(runId)} (${label}) must throw a TypeError before any fs work`,
+        );
+    }
+
+    // Symmetry: the canonical makeRunId-shape MUST still pass — the guard
+    // must reject ONLY traversal payloads, never legitimate runIds.
+    const tmp = mkTmp();
+    try {
+        const w = createEventWriter({
+            runId: "ralph_loop-deadbeef",
+            env: { RALPH_EVENTS_DIR: tmp },
+        });
+        assert.equal(typeof w.emit, "function", "legitimate runIds must still construct successfully");
+        w.close();
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+});

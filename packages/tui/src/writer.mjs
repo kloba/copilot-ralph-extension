@@ -102,6 +102,16 @@ export function createEventWriter({
     if (typeof runId !== "string" || !runId) {
         throw new TypeError("createEventWriter: runId must be a non-empty string");
     }
+    // Defensive symmetry with `resolveRunEventsPath` (line 47) and
+    // `pruneRuns` (line 361): production runIds come from `makeRunId`
+    // and only contain `[A-Za-z0-9_-]`, but createEventWriter is the
+    // primary write surface — letting a runId with `..` or `/` through
+    // here would let a future caller (or hostile test fixture) escape
+    // the runs sandbox via `path.join(root, runId, …)`. Guarding here
+    // keeps the read + write + delete paths in lockstep.
+    if (isPathTraversalRunId(runId)) {
+        throw new TypeError(`createEventWriter: runId ${JSON.stringify(runId)} contains path separators or traversal segments`);
+    }
 
     const root = resolveRunsRoot({ env, os, path });
     const runDir = path.join(root, runId);

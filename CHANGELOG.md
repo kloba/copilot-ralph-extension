@@ -77,6 +77,28 @@
   either value is caught at test time.
 
 ### Fixes
+- `packages/tui/src/writer.mjs`'s `createEventWriter` now
+  rejects path-traversal runIds (`"../escape"`, `"a/b"`,
+  `"a\\b"`, `"."`, `".."`, `"with\0null"`) with the same
+  TypeError contract its sibling readers and deleters have
+  shipped since slice 5: `resolveRunEventsPath` (read path,
+  line 47) and `pruneRuns` (delete path, line 361) both
+  routed runIds through `isPathTraversalRunId`, but the
+  primary write surface did not. Production runIds come
+  from `makeRunId` and only contain `[A-Za-z0-9_-]`, so this
+  is defensive — but it brings the read / write / delete
+  paths into one lockstep contract: a hostile or corrupted
+  runId can no longer escape the runs sandbox via
+  `path.join(root, runId, "events.jsonl")` regardless of
+  which surface the caller hits first. Pinned by a new test
+  in `packages/tui/test/writer.test.mjs` covering seven
+  documented traversal payloads plus a symmetry assertion
+  that the canonical `makeRunId`-shape (e.g.
+  `"ralph_loop-deadbeef"`) still constructs successfully so
+  the guard rejects ONLY traversal payloads, never
+  legitimate runIds. Regression catch verified by deleting
+  the new `isPathTraversalRunId(runId)` block — only the
+  targeted test fires.
 - `packages/tui/bin/tui.mjs`'s `cmdReplay` and `cmdWatch`
   now follow each `fail(...)` call with an explicit
   `return 2`, matching the symmetry contract every other

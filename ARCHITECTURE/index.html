@@ -591,6 +591,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#token-tracking-issue-7" class="md-nav__link">
+    <span class="md-ellipsis">
+      Token tracking (issue #7)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#caffeinate-integration-issue-8" class="md-nav__link">
     <span class="md-ellipsis">
       Caffeinate integration (issue #8)
@@ -728,6 +737,15 @@
 </ul>
 <h2 id="adaptive-iteration-budget-issue-4">Adaptive iteration budget (issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/4">#4</a>)<a class="headerlink" href="#adaptive-iteration-budget-issue-4" title="Permanent link">&para;</a></h2>
 <p>Opt-in. When the loop reaches <code>max_iterations</code>, <code>evaluateAdaptiveSignals(a, gitExec)</code> returns a non-null reason iff <em>either</em> <code>git diff --shortstat HEAD</code> or <code>git status --porcelain</code> reports working-tree changes, <em>or</em> the rolling 3-iteration content-hash window contains ≥ 2 distinct hashes. A positive signal grants <code>adaptive_extension</code> more iterations, capped at <code>adaptive_max_total</code>. Stagnation / completion / abort still win unconditionally because they're checked earlier in <code>onIdle</code>.</p>
+<h2 id="token-tracking-issue-7">Token tracking (issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/7">#7</a>)<a class="headerlink" href="#token-tracking-issue-7" title="Permanent link">&para;</a></h2>
+<p><code>assistant.message</code> events from the root agent are routed through two helpers in <code>handler.mjs</code>: <code>extractUsage(ev)</code> reads <code>data.usage.{input_tokens, output_tokens, model}</code> (or the flat <code>data.usage_input_tokens</code>/<code>usage_output_tokens</code>/<code>usage_model</code> form used by the SDK's events table); <code>creditUsage(a, usage)</code> accumulates the result onto <code>a.tokens.input</code> / <code>a.tokens.output</code>, appends a per-iteration breakdown to <code>byIteration</code> (<code>{iter, input, output, model}</code>), and folds per-model totals into <code>byModel</code>. Sub-agent events are filtered upstream by <code>isSubAgentEvent</code>, so token credit covers root-agent usage only.</p>
+<p>Two safety contracts the helpers enforce:</p>
+<ul>
+<li><strong>Negative-rejection.</strong> <code>extractUsage</code> requires both peers to be <code>&gt;= 0</code> AND at least one positive. Malformed events with a negative peer (e.g. <code>{input_tokens: -500, output_tokens: 50}</code>) are returned as <code>null</code> instead of being credited — a negative credit would <em>decrease</em> the cumulative budget, silently masking a configured <code>max_tokens</code> cap and pushing the context-window pct calculation negative. Both the nested and flat paths share this contract.</li>
+<li><strong>Pause-time isolation.</strong> While <code>state.active.paused</code> is true, <code>onAssistantMessage</code> short-circuits before <code>creditUsage</code> runs, so pause-time chat does not credit tokens to the loop's budget. See <a href="../concepts/#pause--resume-semantics">Concepts → Pause / resume semantics</a> for the full contract.</li>
+</ul>
+<p>Two thresholds are derived from the running <code>tokens.input</code> total against <code>MODEL_CONTEXT_WINDOWS[model]</code>: the user-tunable <code>warn_at_pct</code> (default 80%) fires a single ⚠ "approaching" log line per loop, and a hard-coded 95% threshold fires a ⚠ "critical" line. Both dedupe via <code>tokens.warnedThresholds</code> so each threshold logs at most once. If <code>warn_at_pct &gt;= 95</code>, the 80%-keyed branch is skipped to avoid duplicate warnings on the same usage spike. Unknown models log a one-time "no known context-window size; skipping window warnings" notice (<code>tokens.unknownModelLogged</code>) so the user knows the threshold checks are inert for that model.</p>
+<p>The <code>max_tokens</code> cap (set at arm time) is checked at the end of each iteration in <code>onIdle</code>; the running total — input + output — is compared against the cap, and the loop finishes with <code>reason: "max_tokens"</code> once it crosses. Because pause-time and rejected events do not credit, this cap is never tripped by chat-time activity or malformed events.</p>
 <h2 id="caffeinate-integration-issue-8">Caffeinate integration (issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/8">#8</a>)<a class="headerlink" href="#caffeinate-integration-issue-8" title="Permanent link">&para;</a></h2>
 <p>Opt-in via <code>RALPH_CAFFEINATE=1</code>. On macOS, <code>armLoop</code> spawns <code>caffeinate -i [-d] -w &lt;pid&gt;</code> to inhibit display/system sleep for the duration of the loop. <code>finish()</code> (and every error path) kills the caffeinate process. Tests inject a <code>spawnFn</code> stub via <code>createRalphController({ caffeinate: { spawnFn } })</code>.</p>
 <h2 id="test-architecture">Test architecture<a class="headerlink" href="#test-architecture" title="Permanent link">&para;</a></h2>

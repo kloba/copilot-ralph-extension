@@ -6476,3 +6476,49 @@ test("install.sh: --project --dry-run reports $GIT_ROOT/.github/extensions/ralph
     // Sanity: must NOT be the user-scoped path.
     assert.doesNotMatch(r.stdout, /\.copilot\/extensions\/ralph/);
 });
+
+// -----------------------------------------------------------------------------
+// docs/faq.md drift guard. The page used to be a 4-line stub that just
+// linked to the README — fine for a v0 docs scaffold but useless for users
+// hunting a real answer. The replacement is a Q/A page distilled from the
+// README's Troubleshooting + Limitations sections plus the Pause/resume
+// concepts page. Pin a few load-bearing claims so a future "simplify" PR
+// can't silently revert it to the old stub or strip critical answers.
+// -----------------------------------------------------------------------------
+
+test("docs/faq.md is no longer the stub and answers core operational questions", () => {
+    const faq = readFileSync(resolve(REPO_ROOT, "docs/faq.md"), "utf8");
+    // Stub markers that MUST be gone.
+    assert.doesNotMatch(faq, /Stub page/i, "FAQ must not be a stub anymore");
+    assert.doesNotMatch(faq, /Scaffold only/i, "FAQ must not be a stub anymore");
+    // Headline questions that MUST be present (regression guard against
+    // future "simplify" PRs that drop sections wholesale).
+    const requiredHeadings = [
+        /Why doesn't `\/extensions` list `ralph` after install\?/,
+        /Why does arming fail with .*already armed/,
+        /Why did my loop stop after exactly one iteration\?/,
+        /Why does my loop never finish\?/,
+        /How do I stop a loop that's running away\?/,
+        /Pause and resume — what's the difference vs stop\?/,
+        /Where does a running loop's event log live\?/,
+        /How are loop-driven commits attributed\?/,
+        /How do I opt out of the second .copilot-ralph. trailer\?/,
+    ];
+    for (const re of requiredHeadings) {
+        assert.match(faq, re, `FAQ missing required Q heading matching ${re}`);
+    }
+    // Cross-doc links stay accurate: faq must reference the concepts
+    // page's Pause/resume section by anchor (kept in lockstep with the
+    // existing iter-47 drift-guard on docs/concepts.md).
+    assert.match(faq, /concepts\.md#pause--resume-semantics/);
+    // Reliability claims pulled from the codebase — break the FAQ if
+    // they ever drift away from the actual handler behaviour:
+    // (a) RALPH_NO_ATTRIBUTION suppresses ONLY the second trailer.
+    assert.match(faq, /suppresses [\s\S]{0,40}only[\s\S]{0,80}second[\s\S]{0,40}trailer/i);
+    // (b) ralph_pause is idempotent, ralph_resume is not.
+    assert.match(faq, /pause[\s\S]{0,80}idempotent/i);
+    assert.match(faq, /resume[\s\S]{0,40}\*\*not\*\* idempotent/i);
+    // (c) The default runs root path — used by the events emitter.
+    assert.match(faq, /~\/\.copilot\/ralph\/runs/);
+    assert.match(faq, /RALPH_EVENTS_DIR/);
+});

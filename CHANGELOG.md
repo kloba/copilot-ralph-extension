@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Documentation
+- Replace the `docs/faq.md` stub (a 4-line
+  pointer to the README) with a real Q&A page
+  distilled from the README's Troubleshooting +
+  Limitations sections plus
+  [`docs/concepts.md`](docs/concepts.md). Covers
+  setup ("why doesn't /extensions list ralph"),
+  running a loop ("why did my loop stop after
+  one iteration", "why does my loop never
+  finish", how to stop / pause / resume), output
+  & observability (where `events.jsonl` lives,
+  the `RALPH_EVENTS_DIR` override, why
+  `pausedForMs` can round to 0), and commit
+  attribution (the dual `Co-authored-by:`
+  trailers + the `RALPH_NO_ATTRIBUTION=1`
+  opt-out and its prompt-honored caveat). A
+  drift-guard test pins the headings + a few
+  load-bearing claims so a future "simplify" PR
+  can't silently regress the page.
+
 ### Refactor
 - `activeLoopGuard` now reports a paused active
   loop as `paused (iteration N/M)` instead of

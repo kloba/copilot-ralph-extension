@@ -185,3 +185,46 @@ test("events: iteration_end carries excerpt and per-iter token totals", async ()
     assert.equal(typeof last.tokens.input, "number");
     assert.equal(typeof last.tokens.output, "number");
 });
+
+// Iter 116 — pin the emitted `pause` event's `reason` field to NULL
+// when the user supplies no reason (`{}`) OR a whitespace-only reason
+// (`"   \t\n   "`). The existing test on line 127+ pins the explicit-
+// reason form (reason === "lunch"); the no-reason / whitespace-only
+// branches were drift-prone — `parseUserReason` collapses them to
+// null at the boundary, but nothing was asserting that null actually
+// rides the JSONL event field that downstream TUI consumers parse.
+//
+// Without this guard, a regression that "preserved" whitespace-only
+// reasons (e.g. `reason: a.pauseReason ?? args?.reason ?? null`)
+// would silently leak literal "   \t\n   " into events.jsonl,
+// where a TUI rendering `(PAUSED — <reason>)` would print a blank
+// reason after the em-dash and nothing else would catch it. Pin the
+// contract here so that regression is impossible.
+test("events: pause event reason is null when reason is absent", async () => {
+    const { session, controller, calls } = await arm({ max_iterations: 5 });
+    session.emit("session.idle", { data: {} });   // iter 1 fires
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    await pause.handler({});
+    const pauseEv = calls[0].events.find((e) => e.type === "pause");
+    assert.ok(pauseEv, "pause event must be emitted");
+    assert.equal(pauseEv.reason, null, "absent reason must serialize as null, not undefined / '' / missing key");
+    // The `reason` key MUST exist on the event (downstream consumers
+    // do `if ("reason" in ev)` not `if (ev.reason)`); a missing key
+    // would silently change the JSON shape.
+    assert.ok("reason" in pauseEv, "reason key must be present even when null");
+});
+
+test("events: pause event reason is null when reason is whitespace-only", async () => {
+    const { session, controller, calls } = await arm({ max_iterations: 5 });
+    session.emit("session.idle", { data: {} });   // iter 1 fires
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    // Mix every common whitespace shape: spaces, tabs, newlines, CRLF.
+    await pause.handler({ reason: "   \t\r\n   " });
+    const pauseEv = calls[0].events.find((e) => e.type === "pause");
+    assert.ok(pauseEv);
+    assert.equal(
+        pauseEv.reason,
+        null,
+        "whitespace-only reason must collapse to null end-to-end (matching parseUserReason's contract)",
+    );
+});

@@ -155,6 +155,17 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Pin the emitted `pause` JSONL event's `reason` field to
+  `null` when the user supplies no reason (`{}`) OR a
+  whitespace-only reason. The existing test only pinned the
+  explicit-string form; the no-reason / whitespace branches
+  were drift-prone — `parseUserReason` collapses them to null
+  at the boundary, but nothing was asserting that null
+  actually rides the field downstream TUI consumers parse.
+  Two new tests in `test/handler-events.test.mjs` exercise
+  the recording-factory path and additionally assert the
+  `reason` key is present (not missing) so downstream
+  consumers using `"reason" in ev` cannot regress on shape.
 - Pin the documented `ralph_status` one-line summary format
   for the paused-without-reason branch:
   ` (PAUSED, for {ms}ms)` (no em-dash). The em-dash-with-

@@ -1,7 +1,7 @@
 # AGENTS.md — Development Guide for Humans and AI Agents
 
 This file is the authoritative process guide for anyone (human or AI) making
-changes to **copilot-ralph-extension**. It pins the three conventions that
+changes to **autopilot**. It pins the three conventions that
 keep the project releasable without drama: **Semantic Versioning** for the
 public surface, **Keep a Changelog** for `CHANGELOG.md`, and **Conventional
 Commits** for git history. Together they let us cut a release by tagging
@@ -68,7 +68,7 @@ what makes automated changelog generation possible.
 
 Use the package or directory name when it narrows the change:
 `extension`, `tui`, `install`, `release`, `docs`, `prompt`, or a tool name
-(`grow_project`, `ralph_loop`, `ralph_status`, …). Scope is optional but
+(`grow_project`, `ap_loop`, `ap_status`, …). Scope is optional but
 encouraged — it lands in changelog grouping.
 
 ### Breaking changes
@@ -96,11 +96,11 @@ bump with a `### Breaking` changelog section).
 ### Examples (good)
 
 ```
-feat(ralph_status): include adaptive extension history in snapshot
+feat(ap_status): include adaptive extension history in snapshot
 fix(install): atomic per-file copy via temp + rename to avoid torn reads
 docs(agents): add Conventional Commits guide
 chore(deps): bump node engine floor to 20
-refactor(handler): extract gitExec helper for ralph_status reuse
+refactor(handler): extract gitExec helper for ap_status reuse
 feat(grow_project)!: drop pre-flight ideation when backlog non-empty
 ```
 
@@ -199,9 +199,13 @@ The placement reasoning:
 
 - Reference the issue or PR (`(issue #25)` or `(#42)`).
 - Write what the user observes, not the diff. ("Adds opt-out env var
-  `RALPH_NO_ATTRIBUTION` to suppress the second `copilot-ralph`
+  `AUTOPILOT_NO_ATTRIBUTION` to suppress the second `copilot-ralph`
   trailer" — not "added new branch in handler.mjs").
 - Wrap prose at ~72 chars for readable git diffs.
+
+Legacy `RALPH_*` env-var names are still read for one release with a one-line stderr deprecation notice.
+
+Legacy `~/.copilot/ralph[ -tui]/runs` paths are still read on first run with a one-line stderr migration notice; new runs write to the autopilot* paths.
 
 ### Release flow
 

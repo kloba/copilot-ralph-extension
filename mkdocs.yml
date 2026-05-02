@@ -1,17 +1,20 @@
-# MkDocs Material configuration for the Ralph documentation site.
-# Tracked in issue #2: https://github.com/kloba/copilot-ralph-extension/issues/2
+# MkDocs Material configuration for the autopilot documentation site.
+# Tracked in issue #2: https://github.com/kloba/autopilot/issues/2
 #
 # Build locally:
 #   pip install mkdocs-material
 #   mkdocs serve   # http://127.0.0.1:8000
 #
 # Deploys via .github/workflows/docs.yml on pushes to main.
+#
+# Legacy RALPH_* env-var names are still read for one release with a one-line stderr deprecation notice.
+# Legacy ~/.copilot/ralph[ -tui]/runs paths are still read on first run with a one-line stderr migration notice; new runs write to the autopilot* paths.
 
-site_name: Ralph
+site_name: autopilot
 site_description: An autonomous iterative loop for the GitHub Copilot CLI.
-site_url: https://kloba.github.io/copilot-ralph-extension/
-repo_url: https://github.com/kloba/copilot-ralph-extension
-repo_name: kloba/copilot-ralph-extension
+site_url: https://kloba.github.io/autopilot/
+repo_url: https://github.com/kloba/autopilot
+repo_name: kloba/autopilot
 edit_uri: edit/main/docs/
 
 theme:

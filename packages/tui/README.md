@@ -50,7 +50,8 @@ the next slice; if its module isn't installed, `watch` falls back to
 node packages/tui/bin/tui.mjs --help
 
 # 2. List recorded runs (writes from extension/events-emit.mjs end up
-#    in $RALPH_EVENTS_DIR or ~/.copilot/autopilot/events).
+#    in $AUTOPILOT_EVENTS_DIR or ~/.copilot/autopilot/events; legacy
+#    $RALPH_EVENTS_DIR is still honored).
 node packages/tui/bin/tui.mjs list
 
 # 3. Replay a finished run as plain log lines.
@@ -113,7 +114,7 @@ Tips:
 ## Override the runs root
 
 ```sh
-export RALPH_EVENTS_DIR=/tmp/ralph-runs
+export AUTOPILOT_EVENTS_DIR=/tmp/autopilot-runs
 node packages/tui/bin/tui.mjs list
 ```
 
@@ -123,20 +124,25 @@ Useful for:
 * CI jobs that want to assert on a specific run without depending on
   the user's home directory.
 * Replaying a captured `events.jsonl` from a teammate (drop their
-  file at `$RALPH_EVENTS_DIR/<runId>/events.jsonl`).
+  file at `$AUTOPILOT_EVENTS_DIR/<runId>/events.jsonl`).
+
+Legacy `RALPH_*` env-var names are still read for one release with a one-line stderr deprecation notice.
+
+Legacy `~/.copilot/ralph[ -tui]/runs` paths are still read on first run with a one-line stderr migration notice; new runs write to the autopilot* paths.
 
 ## Auto-upgrade for each `run`
 
 Long-haul `autopilot run` loops (e.g. `--self-improve` draining a
 backlog over hours) often want to start on the freshest source. The
-repo ships `scripts/ralph-tui-fresh.sh` — a thin Bash wrapper that
+repo ships `scripts/autopilot-fresh.sh` — a thin Bash wrapper that
 runs `git pull --quiet --ff-only` from the repo root *only* when the
 first arg is `run`, then `exec`s `node packages/tui/bin/tui.mjs`
-with the same args.
+with the same args. The old `scripts/ralph-tui-fresh.sh` path stays
+as a deprecating wrapper.
 
 ```sh
 # In ~/.zshrc or ~/.bashrc — point at your local clone:
-alias autopilot="$HOME/repos/autopilot/scripts/ralph-tui-fresh.sh"
+alias autopilot="$HOME/repos/autopilot/scripts/autopilot-fresh.sh"
 
 # Then long-haul runs auto-upgrade before iter 1:
 autopilot run --self-improve --continue

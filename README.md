@@ -1,8 +1,8 @@
-# copilot-ralph-extension
+# autopilot
 
 > Autonomous iterative loop for **GitHub Copilot CLI**, implemented as an in-session extension.
 
-[![CI](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml)
+[![CI](https://github.com/kloba/autopilot/actions/workflows/ci.yml/badge.svg)](https://github.com/kloba/autopilot/actions/workflows/ci.yml)
 [![Inspired by](https://img.shields.io/badge/inspired_by-Anthropic_Ralph_Wiggum-blue)](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)
 
 **Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Development](#development) · [Documentation](#documentation) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [Inspecting a running loop](#inspecting-a-running-loop-ap_status-tool) · [Adaptive budget](#adaptive-iteration-budget) · [Pause/resume](#pause-and-resume) · [How it works](#how-it-works) · [Commit attribution](#commit-attribution) · [Keep system awake](#keep-system-awake-caffeinate-macos) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog) · [License](#license)
@@ -31,13 +31,13 @@ If you want fresh-context iterations, use a shell-wrapper implementation. If you
 ### Option A — User-scoped (persists across all repos)
 
 ```bash
-mkdir -p ~/.copilot/extensions/ralph
+mkdir -p ~/.copilot/extensions/autopilot
 # Order matters: leaf modules first, entry point (extension.mjs) LAST.
 # If `/extensions reload` fires mid-download, this guarantees the SDK
 # never sees a new entry point importing missing/old siblings.
 for f in events-emit.mjs prompts.mjs handler.mjs extension.mjs; do
-  curl -fsSL "https://raw.githubusercontent.com/kloba/copilot-ralph-extension/main/extension/$f" \
-    -o ~/.copilot/extensions/ralph/$f
+  curl -fsSL "https://raw.githubusercontent.com/kloba/autopilot/main/extension/$f" \
+    -o ~/.copilot/extensions/autopilot/$f
 done
 ```
 
@@ -47,50 +47,52 @@ Then in any Copilot CLI session, run:
 /extensions
 ```
 
-…and confirm `ralph` is loaded. Or simply restart Copilot CLI.
+…and confirm `autopilot` is loaded. Or simply restart Copilot CLI.
 
 ### Option B — Project-scoped (only in one repo)
 
 ```bash
-mkdir -p .github/extensions/ralph
+mkdir -p .github/extensions/autopilot
 # Same leaf-first ordering as Option A — see comment there.
 for f in events-emit.mjs prompts.mjs handler.mjs extension.mjs; do
-  curl -fsSL "https://raw.githubusercontent.com/kloba/copilot-ralph-extension/main/extension/$f" \
-    -o .github/extensions/ralph/$f
+  curl -fsSL "https://raw.githubusercontent.com/kloba/autopilot/main/extension/$f" \
+    -o .github/extensions/autopilot/$f
 done
 ```
 
 ### Option C — From source
 
 ```bash
-git clone https://github.com/kloba/copilot-ralph-extension
-cd copilot-ralph-extension
-./install.sh                # user-scoped → ~/.copilot/extensions/ralph
-./install.sh --project      # project-scoped → .github/extensions/ralph (cwd must be inside a git repo)
+git clone https://github.com/kloba/autopilot
+cd autopilot
+./install.sh                # user-scoped → ~/.copilot/extensions/autopilot
+./install.sh --project      # project-scoped → .github/extensions/autopilot (cwd must be inside a git repo)
 ./install.sh --dry-run      # show what would be installed without writing anything
-./install.sh --version      # print the extension version (e.g. "copilot-ralph-extension v0.6.0") and exit
+./install.sh --version      # print the extension version (e.g. "autopilot v0.6.0") and exit
 ./install.sh --help         # print usage and exit
 ```
 
 `install.sh` syntax-checks each source file with `node --check` and writes via temp-file + atomic `mv`, so a concurrent Copilot CLI reload can never see a half-written `handler.mjs`.
 
-> **Windows note:** the runtime extension (`extension.mjs`, `handler.mjs`, and `events-emit.mjs`) is plain ESM and works wherever Copilot CLI runs. The `install.sh` script requires a Bash shell — on Windows use **WSL**, **Git Bash**, or **MSYS2**. As a fallback, follow Option A or B above (the `mkdir -p` + `curl` snippets) inside any POSIX-ish shell, or copy every `.mjs` file from `extension/` manually into `%USERPROFILE%\.copilot\extensions\ralph\`.
+> **Windows note:** the runtime extension (`extension.mjs`, `handler.mjs`, and `events-emit.mjs`) is plain ESM and works wherever Copilot CLI runs. The `install.sh` script requires a Bash shell — on Windows use **WSL**, **Git Bash**, or **MSYS2**. As a fallback, follow Option A or B above (the `mkdir -p` + `curl` snippets) inside any POSIX-ish shell, or copy every `.mjs` file from `extension/` manually into `%USERPROFILE%\.copilot\extensions\autopilot\`.
 
 ### Option D — Pin a specific tagged release
 
-The default install snippets curl from `main`, which is rolling-latest. To pin a specific revision (recommended for shared/CI environments), download the assets attached to a [GitHub Release](https://github.com/kloba/copilot-ralph-extension/releases):
+The default install snippets curl from `main`, which is rolling-latest. To pin a specific revision (recommended for shared/CI environments), download the assets attached to a [GitHub Release](https://github.com/kloba/autopilot/releases):
 
 ```bash
 VERSION=v0.7.0
-mkdir -p ~/.copilot/extensions/ralph
+mkdir -p ~/.copilot/extensions/autopilot
 # Same leaf-first ordering as Option A — see comment there.
 for f in events-emit.mjs prompts.mjs handler.mjs extension.mjs; do
-  curl -fsSL "https://github.com/kloba/copilot-ralph-extension/releases/download/$VERSION/$f" \
-    -o ~/.copilot/extensions/ralph/$f
+  curl -fsSL "https://github.com/kloba/autopilot/releases/download/$VERSION/$f" \
+    -o ~/.copilot/extensions/autopilot/$f
 done
 ```
 
-For a project-scoped pin, swap `~/.copilot/extensions/ralph` for `.github/extensions/ralph` inside your repo. See [`docs/RELEASING.md`](docs/RELEASING.md) for the release workflow that produces these assets.
+For a project-scoped pin, swap `~/.copilot/extensions/autopilot` for `.github/extensions/autopilot` inside your repo. See [`docs/RELEASING.md`](docs/RELEASING.md) for the release workflow that produces these assets.
+
+> Legacy `~/.copilot/ralph[ -tui]/runs` paths are still read on first run with a one-line stderr migration notice; new runs write to the autopilot* paths.
 
 ## Usage
 
@@ -112,7 +114,7 @@ The tool **arms** the loop and returns immediately. Iterations then play out as 
 | `stagnation_limit` | `3` | Abort after N consecutive byte-identical responses (0 disables, must be ≥ 2 if set — `1` is rejected since no comparison is possible after a single response) |
 | `max_tokens` | _(none)_ | Optional cumulative token cap (input + output combined). Loop stops with reason `max_tokens` when crossed at end of an iteration. Useful to bound spend on long-running self-improve / grow-project runs. |
 | `warn_at_pct` | `80` | First context-window warning threshold (percent of model's total window). A second hard-coded warning fires at 95%. Each fires at most once per loop run. |
-| `adaptive_budget` | `false` | Opt-in adaptive iteration budget (issue [#4](https://github.com/kloba/copilot-ralph-extension/issues/4)). When the loop reaches `max_iterations` and progress signals are positive (see [Adaptive iteration budget](#adaptive-iteration-budget) below), grants `adaptive_extension` more iterations, capped at `adaptive_max_total`. |
+| `adaptive_budget` | `false` | Opt-in adaptive iteration budget (issue [#4](https://github.com/kloba/autopilot/issues/4)). When the loop reaches `max_iterations` and progress signals are positive (see [Adaptive iteration budget](#adaptive-iteration-budget) below), grants `adaptive_extension` more iterations, capped at `adaptive_max_total`. |
 | `adaptive_extension` | `10` | Iterations granted per adaptive extension. Ignored when `adaptive_budget` is `false`. Integer, 1–1000. |
 | `adaptive_max_total` | `min(max_iterations*5, 1000)` | Hard ceiling for the effective max even after adaptive extensions. Must be ≥ `max_iterations` and ≤ 1000. |
 
@@ -240,36 +242,36 @@ Each iteration walks the agent through thirteen stages: **ORIENT** (`gh issue li
 
 > ⚠️ **The baked prompt instructs the agent to emit `COMPLETE` at the end of every iteration and `ABORT_NO_BACKLOG` when the backlog is exhausted.** As with `self_improve`, `completion_promise` would fire on iter 1 if `min_iterations` allowed it; the default `min_iterations: 10` defers honoring `COMPLETE` until iter 10. Set `min_iterations` equal to `max_iterations` to drain the full budget. Use `ap_stop` to tear down a long-running session early.
 
-### Out-of-session driver (`ralph-tui run`)
+### Out-of-session driver (`autopilot run`)
 
 The in-session loop tools (`ap_loop` / `self_improve` / `grow_project`) reuse the same Copilot CLI session across every iteration, so context grows monotonically — useful when each iter builds on the last, but it caps the practical iteration count and the Copilot SDK exposes no session-history reset to extension code, so a "clean context per iter" mode is not possible from inside the tool surface.
 
-The `ralph-tui run` subcommand is the **out-of-session** alternative: it spawns each iteration as a fresh `copilot -p "<prompt>" --allow-all-tools --output-format json` subprocess and gives you both shapes:
+The `autopilot run` subcommand is the **out-of-session** alternative: it spawns each iteration as a fresh `copilot -p "<prompt>" --allow-all-tools --output-format json` subprocess and gives you both shapes:
 
 ```bash
 # Drain the backlog with a fresh context every iter (no growing history).
-ralph-tui run --self-improve --fresh --max 50
+autopilot run --self-improve --fresh --max 50
 
 # Drain the backlog while the conversation history grows across iters
 # (closer to the in-session ap_loop shape, but with a TTY-free driver).
-ralph-tui run --self-improve --continue --max 50
+autopilot run --self-improve --continue --max 50
 
 # Grow the project backlog with a focus area, fresh context per iter.
-ralph-tui run --grow-project --fresh --focus "ralph-tui replay UX" --max 30
+autopilot run --grow-project --fresh --focus "autopilot replay UX" --max 30
 
 # Custom prompt mode.
-ralph-tui run --prompt "Refactor extension/handler.mjs..." --fresh
+autopilot run --prompt "Refactor extension/handler.mjs..." --fresh
 ```
 
-Pick exactly one prompt mode (`--self-improve` / `--grow-project` / `--prompt "..."`) AND exactly one context mode (`--continue` / `--fresh`). `--continue` captures the terminal `result.sessionId` from the JSONL stream on iter 1 and resumes via `--resume=<sessionId>` on iter 2+; `--fresh` re-spawns with no session reuse so every iteration starts from a clean slate. Events flow into the same `~/.copilot/ralph-tui/runs/<runId>/events.jsonl` stream the in-session runner uses, so `ralph-tui watch / replay / list / stats` all work unchanged.
+Pick exactly one prompt mode (`--self-improve` / `--grow-project` / `--prompt "..."`) AND exactly one context mode (`--continue` / `--fresh`). `--continue` captures the terminal `result.sessionId` from the JSONL stream on iter 1 and resumes via `--resume=<sessionId>` on iter 2+; `--fresh` re-spawns with no session reuse so every iteration starts from a clean slate. Events flow into the same `~/.copilot/autopilot-tui/runs/<runId>/events.jsonl` stream the in-session runner uses, so `autopilot watch / replay / list / stats` all work unchanged.
 
 Sibling commands operate on a live run's state file:
 
 ```bash
-ralph-tui run --pause   <runId>     # pause at next iter boundary
-ralph-tui run --resume  <runId>     # resume a paused run
-ralph-tui run --stop    <runId>     # request graceful stop
-ralph-tui run --status  <runId>     # snapshot of run state
+autopilot run --pause   <runId>     # pause at next iter boundary
+autopilot run --resume  <runId>     # resume a paused run
+autopilot run --stop    <runId>     # request graceful stop
+autopilot run --status  <runId>     # snapshot of run state
 ```
 
 `SIGINT` / `SIGTERM` at the driver process flips `stopRequested=true` via the same lock-protected CAS path; the in-flight child is allowed to exit naturally before the driver emits the terminal `abort` event with `reason: "user_stopped"`.
@@ -360,7 +362,7 @@ Behaviour notes:
 
 ## Adaptive iteration budget
 
-By default, `ap_loop` (and `self_improve`, `grow_project`) hard-stops at `max_iterations`. Sometimes the loop is genuinely making progress at the terminator and a flat cap aborts useful work. Issue [#4](https://github.com/kloba/copilot-ralph-extension/issues/4) adds an opt-in **adaptive budget**: when the loop hits `max_iterations`, the controller checks two cheap signals — and if either is positive, grants `adaptive_extension` more iterations (capped by `adaptive_max_total`).
+By default, `ap_loop` (and `self_improve`, `grow_project`) hard-stops at `max_iterations`. Sometimes the loop is genuinely making progress at the terminator and a flat cap aborts useful work. Issue [#4](https://github.com/kloba/autopilot/issues/4) adds an opt-in **adaptive budget**: when the loop hits `max_iterations`, the controller checks two cheap signals — and if either is positive, grants `adaptive_extension` more iterations (capped by `adaptive_max_total`).
 
 Signals (positive ⇒ extend):
 
@@ -382,7 +384,7 @@ ap_loop({
 Each granted extension is logged (`adaptive budget extended N → M (reason: …)`) and surfaced on the loop's final `RalphResult` as `result.adaptive = { enabled, originalMax, effectiveMax, extensions, history }`.
 ## Pause and resume
 
-Long autonomous runs sometimes need a manual checkpoint — to read a diff, run tests by hand, fix something, then continue. `ap_pause` and `ap_resume` (issue [#3](https://github.com/kloba/copilot-ralph-extension/issues/3)) let you do that without losing iteration count or conversation context:
+Long autonomous runs sometimes need a manual checkpoint — to read a diff, run tests by hand, fix something, then continue. `ap_pause` and `ap_resume` (issue [#3](https://github.com/kloba/autopilot/issues/3)) let you do that without losing iteration count or conversation context:
 
 ```js
 ap_pause({ reason: "manual review of the refactor" });
@@ -467,7 +469,7 @@ If you arm a new `ap_loop` *before* the next user prompt fires, the prior run's 
 
 ## Commit attribution
 
-The baked `self_improve` and `grow_project` SDLC prompts instruct the agent to add `Co-authored-by:` trailers to every commit so loop-driven changes are attributable. `ap_loop` reaches parity by appending a small commit-attribution rider to the user-supplied prompt at arm time — so any commit produced during a `ap_loop` iteration carries the same dual trailer. By default, every loop-driven commit ships **two** trailers (per [issue #1](https://github.com/kloba/copilot-ralph-extension/issues/1)):
+The baked `self_improve` and `grow_project` SDLC prompts instruct the agent to add `Co-authored-by:` trailers to every commit so loop-driven changes are attributable. `ap_loop` reaches parity by appending a small commit-attribution rider to the user-supplied prompt at arm time — so any commit produced during a `ap_loop` iteration carries the same dual trailer. By default, every loop-driven commit ships **two** trailers (per [issue #1](https://github.com/kloba/autopilot/issues/1)):
 
 ```
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
@@ -478,11 +480,13 @@ The first identifies the agent. The second attributes the commit to a dedicated 
 
 ### Opt-out
 
-Set `RALPH_NO_ATTRIBUTION=1` in the environment before arming the loop to suppress the second `copilot-ralph` trailer. The first `Copilot` trailer still ships, since it identifies the agent that made the change. The opt-out is **honored by the prompt** (baked SDLC prompt for `self_improve` / `grow_project`; appended rider for `ap_loop`), not by the extension code path — the agent reads the env var during the COMMIT stage and omits the trailer accordingly.
+Set `AUTOPILOT_NO_ATTRIBUTION=1` in the environment before arming the loop to suppress the second `copilot-ralph` trailer. The first `Copilot` trailer still ships, since it identifies the agent that made the change. The opt-out is **honored by the prompt** (baked SDLC prompt for `self_improve` / `grow_project`; appended rider for `ap_loop`), not by the extension code path — the agent reads the env var during the COMMIT stage and omits the trailer accordingly.
 
 ```bash
-RALPH_NO_ATTRIBUTION=1 copilot   # subsequent ap_loop / self_improve / grow_project loops omit the copilot-ralph trailer
+AUTOPILOT_NO_ATTRIBUTION=1 copilot   # subsequent ap_loop / self_improve / grow_project loops omit the copilot-ralph trailer
 ```
+
+> Legacy `RALPH_*` env-var names (e.g. `RALPH_NO_ATTRIBUTION=1`) are still read for one release with a one-line stderr deprecation notice.
 
 ### Caveats
 
@@ -495,14 +499,14 @@ RALPH_NO_ATTRIBUTION=1 copilot   # subsequent ap_loop / self_improve / grow_proj
 Long `ap_loop` / `self_improve` / `grow_project` runs can outlast macOS's idle-sleep timeout, which interrupts in-flight tool calls and timers. Opt in to a `caffeinate`-backed sleep block for the duration of the loop:
 
 ```bash
-RALPH_CAFFEINATE=1 copilot                                # block idle sleep only (default)
-RALPH_CAFFEINATE=1 RALPH_CAFFEINATE_SCOPE=idle+display copilot   # also keep the display awake
+AUTOPILOT_CAFFEINATE=1 copilot                                # block idle sleep only (default)
+AUTOPILOT_CAFFEINATE=1 AUTOPILOT_CAFFEINATE_SCOPE=idle+display copilot   # also keep the display awake
 ```
 
 | Variable | Values | Default | Effect |
 |---|---|---|---|
-| `RALPH_CAFFEINATE` | `1` / `true` / `yes` / `on` (case-insensitive) — anything else disables | unset (disabled) | Master switch. When unset, the extension **never** spawns `caffeinate`. |
-| `RALPH_CAFFEINATE_SCOPE` | `idle` or `idle+display` | `idle` | `idle` blocks idle/system sleep but lets the display lock for security. `idle+display` also prevents display sleep. |
+| `AUTOPILOT_CAFFEINATE` | `1` / `true` / `yes` / `on` (case-insensitive) — anything else disables | unset (disabled) | Master switch. When unset, the extension **never** spawns `caffeinate`. |
+| `AUTOPILOT_CAFFEINATE_SCOPE` | `idle` or `idle+display` | `idle` | `idle` blocks idle/system sleep but lets the display lock for security. `idle+display` also prevents display sleep. |
 
 Behaviour:
 
@@ -510,16 +514,17 @@ Behaviour:
 - Killed automatically on loop completion, `ap_stop`, abort, or detach. The `-w` flag is a belt-and-braces fallback so a hard crash of the CLI still releases the wake-lock.
 - **macOS only.** On Linux/Windows the helper is a silent no-op (a single log line records the skip). Future PRs may add `systemd-inhibit` / `SetThreadExecutionState` equivalents.
 - **Graceful when the binary is missing.** If `caffeinate` isn't on `PATH` or `spawn` fails, the loop runs without sleep prevention and logs the failure — it never aborts the loop over a power-management nicety.
-- **Disabled by default.** The extension does not modify system power state unless you set `RALPH_CAFFEINATE`.
+- **Disabled by default.** The extension does not modify system power state unless you set `AUTOPILOT_CAFFEINATE`.
+- **Legacy names.** `RALPH_CAFFEINATE` / `RALPH_CAFFEINATE_SCOPE` are still read for one release with a one-line stderr deprecation notice.
 
 ## Troubleshooting
 
-- **`/extensions` doesn't list `ralph`.** Confirm every `.mjs` from `extension/` (currently `extension.mjs`, `handler.mjs`, and `events-emit.mjs`) is present in `~/.copilot/extensions/ralph/` (user-scoped) or `.github/extensions/ralph/` (project-scoped, only visible from inside that repo) and restart Copilot CLI. `./install.sh` from source double-checks every file with `node --check` before writing, and a partial copy (e.g. only the first two modules) crashes at module-load with `Cannot find module './events-emit.mjs'`.
+- **`/extensions` doesn't list `autopilot`.** Confirm every `.mjs` from `extension/` (currently `extension.mjs`, `handler.mjs`, and `events-emit.mjs`) is present in `~/.copilot/extensions/autopilot/` (user-scoped) or `.github/extensions/autopilot/` (project-scoped, only visible from inside that repo) and restart Copilot CLI. `./install.sh` from source double-checks every file with `node --check` before writing, and a partial copy (e.g. only the first two modules) crashes at module-load with `Cannot find module './events-emit.mjs'`.
 - **`<owner> is already armed/running` failure.** Only one loop runs per session at a time — call `ap_stop` before re-arming. The leading word (`ap_loop`, `self_improve`, or `grow_project`) reflects whichever tool armed the active loop, so the guard fires on any of the three when one of the others is active.
 - **`abort_promise … overlap as substrings`.** `completion_promise` and `abort_promise` must be disjoint phrases (e.g. `"DONE"` and `"DONE_FAIL"` is rejected because one contains the other). Pick non-overlapping tokens.
 - **Loop ends immediately with `reason: send_error`.** The first `session.send` call rejected — usually because `controller.attach(session)` was not called or the session is no longer live. Check `result.note` for the underlying error.
 - **Loop runs N+ times instead of stopping.** Check that the prompt actually instructs the agent to emit the `completion_promise` literally; with a quoted/paraphrased completion phrase the loop only stops at `max_iterations`.
-- **Commit is missing the `copilot-ralph` `Co-authored-by:` trailer (or shipping it despite `RALPH_NO_ATTRIBUTION=1`).** The dual-trailer + opt-out behaviour lives in the [baked SDLC prompt](#commit-attribution), not in the extension code path — the agent reads the env var during COMMIT and decides accordingly. If the second trailer is missing on a commit you expected to attribute, re-run the iteration with the var unset (or audit `git log -1 --pretty=%B` to confirm); if it's still present despite the opt-out, the sub-agent likely couldn't see `process.env` (Limitations).
+- **Commit is missing the `copilot-ralph` `Co-authored-by:` trailer (or shipping it despite `AUTOPILOT_NO_ATTRIBUTION=1`).** The dual-trailer + opt-out behaviour lives in the [baked SDLC prompt](#commit-attribution), not in the extension code path — the agent reads the env var during COMMIT and decides accordingly. If the second trailer is missing on a commit you expected to attribute, re-run the iteration with the var unset (or audit `git log -1 --pretty=%B` to confirm); if it's still present despite the opt-out, the sub-agent likely couldn't see `process.env` (Limitations).
 
 ## Limitations
 
@@ -530,7 +535,7 @@ Behaviour:
 - **Iteration timing is loop-arm-relative and pause-deducted.** The `(elapsed Xms)` value in iter logs is wall-clock from arming. The final `durationMs` on the result is **active time** — wall-clock from arming minus `total_paused_ms` (cumulative time the loop spent paused via `ap_pause`), so a loop paused for an hour and then run for five minutes reports `durationMs ≈ 5 min`, not `≈ 65 min`. Per-turn timing isn't tracked. See [Pause and resume](#pause-and-resume) for the pause semantics.
 - **One loop per session.** Arming a second `ap_loop` (or a `self_improve`, or a `grow_project`) while one is active fails fast — you must `ap_stop` the active loop first. The guard applies symmetrically across all three tools: a `ap_loop` while `self_improve` or `grow_project` is active is also rejected, and vice versa.
 - **`self_improve` keeps re-iterating with no commits.** The baked SDLC prompt instructs the agent to emit `COMPLETE` when the staircase is done. Until that token appears in an iteration, the loop runs to `max_iterations`. To stop early, either `ap_stop` it manually or prepend a tighter `focus` so each iteration converges faster.
-- **Attribution opt-out is honored by the prompt, not enforced by the runtime.** [`RALPH_NO_ATTRIBUTION=1`](#opt-out) suppresses the second `copilot-ralph` `Co-authored-by:` trailer only because the prompt instructs the agent to read the env var during the COMMIT stage and omit the trailer (baked into `self_improve` / `grow_project` SDLC prompts; appended as a rider to user prompts on `ap_loop`). The extension does not rewrite commits — if a sub-agent ignores the env var (or runs in a context where `process.env` isn't visible), the trailer can still ship. Audit a commit afterwards with `git log -1 --pretty=%B` if attribution must be guaranteed off.
+- **Attribution opt-out is honored by the prompt, not enforced by the runtime.** [`AUTOPILOT_NO_ATTRIBUTION=1`](#opt-out) suppresses the second `copilot-ralph` `Co-authored-by:` trailer only because the prompt instructs the agent to read the env var during the COMMIT stage and omit the trailer (baked into `self_improve` / `grow_project` SDLC prompts; appended as a rider to user prompts on `ap_loop`). The extension does not rewrite commits — if a sub-agent ignores the env var (or runs in a context where `process.env` isn't visible), the trailer can still ship. Audit a commit afterwards with `git log -1 --pretty=%B` if attribution must be guaranteed off.
 
 ## Requirements
 

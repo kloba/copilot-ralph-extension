@@ -24,7 +24,7 @@ These pins live in [`packages/tui/package.json`](../packages/tui/package.json)
 and are only required for the interactive Ink-rendered `watch` / `run`
 UI. The non-render layer (`prompts.mjs`, `runner.mjs`, `events*.mjs`,
 `writer.mjs`, `tail.mjs`, `plain.mjs`, `bin/tui.mjs`) is zero-dep so
-plain-mode `ralph-tui list` / `replay` / `watch --plain` runs straight
+plain-mode `autopilot list` / `replay` / `watch --plain` runs straight
 from a fresh source checkout with no `npm install`.
 
 ## Why Ink?
@@ -75,7 +75,7 @@ the extension's webview stays consistent with the CLI.
 
 Commander has been the dominant Node CLI parser since 2011 and is
 what tools like ESLint, Vue CLI, and `pnpm` ship with. The reasons
-for picking it for `ralph-tui`:
+for picking it for `autopilot`:
 
 * **Subcommand ergonomics.** `program.command("replay <runId>")` and
   `program.command("watch [runId]")` map 1:1 to our `cmd` switch.

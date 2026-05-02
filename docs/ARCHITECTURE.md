@@ -4,7 +4,7 @@ This document is for contributors and future-self maintenance. End-user docs liv
 
 ## What ships
 
-The project ships a single artifact: the `ralph-tui` CLI. It drives autonomous Copilot CLI loops by spawning each iteration as a fresh `copilot -p ...` subprocess, parses the JSONL stdout for terminal markers, and tails a per-run `events.jsonl` event stream so a separate terminal can `ralph-tui watch` the live timeline.
+The project ships a single artifact: the `autopilot` CLI. It drives autonomous Copilot CLI loops by spawning each iteration as a fresh `copilot -p ...` subprocess, parses the JSONL stdout for terminal markers, and tails a per-run `events.jsonl` event stream so a separate terminal can `autopilot watch` the live timeline.
 
 The previous in-session Copilot CLI extension (`ralph_loop` / `self_improve` / `grow_project` / `ralph_status` / `ralph_pause` / `ralph_resume` / `ralph_stop` tools) was retired — see [`CHANGELOG.md`](../CHANGELOG.md). All forward work lives in `packages/tui/`.
 
@@ -15,7 +15,7 @@ packages/tui/
 ├── bin/tui.mjs        # CLI entry — argv parser + dispatcher
 ├── src/
 │   ├── prompts.mjs    # Baked SDLC prompts (PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT)
-│   ├── runner.mjs     # `ralph-tui run` driver — spawns each iter, tracks state.json
+│   ├── runner.mjs     # `autopilot run` driver — spawns each iter, tracks state.json
 │   ├── events.mjs     # Pure event contract (read side)
 │   ├── events-emit.mjs # Zero-dep JSONL emitter (write side)
 │   ├── writer.mjs     # JSONL reader + index aggregator (`list`/`stats`/`prune`)
@@ -31,7 +31,7 @@ scripts/
 └── ralph-tui-fresh.sh # Optional `git pull --ff-only` wrapper for long runs
 ```
 
-## `ralph-tui run` — the driver
+## `autopilot run` — the driver
 
 [`runner.mjs`](../packages/tui/src/runner.mjs) is the heart of the project. Each iteration is a fresh subprocess:
 
@@ -66,7 +66,7 @@ The runner emits one JSON object per line via [`events-emit.mjs`](../packages/tu
 
 | Type | Emitted when |
 | ---- | ------------ |
-| `armed` | Once per run, on driver start. Also written to `<runs-root>/index.jsonl` so `ralph-tui list` / `stats` can enumerate without scanning every per-run dir. |
+| `armed` | Once per run, on driver start. Also written to `<runs-root>/index.jsonl` so `autopilot list` / `stats` can enumerate without scanning every per-run dir. |
 | `iteration_start` | Before spawning the next `copilot -p` subprocess. |
 | `iteration_end` | After the subprocess exits; carries the iter's response excerpt and tokens (when usage events were observed). |
 | `pause` / `resume` | Honored at the next iter boundary after the corresponding flag flip. |
@@ -95,10 +95,10 @@ The baked prompts include hard-coded `COMPLETE` / `ABORT_…` tokens. A load-tim
 Out-of-band flags written to the run's `state.json`:
 
 ```bash
-ralph-tui run --pause   <runId>     # set pauseRequested=true
-ralph-tui run --resume  <runId>     # clear pauseRequested
-ralph-tui run --stop    <runId>     # set stopRequested=true
-ralph-tui run --status  <runId>     # read state.json + render
+autopilot run --pause   <runId>     # set pauseRequested=true
+autopilot run --resume  <runId>     # clear pauseRequested
+autopilot run --stop    <runId>     # set stopRequested=true
+autopilot run --status  <runId>     # read state.json + render
 ```
 
 The driver re-reads `state.json` at every iter boundary; the in-flight Copilot child is **never killed mid-iter** — the driver waits for natural exit before honoring pause/stop. `SIGINT` / `SIGTERM` at the driver process maps onto `--stop` via the same lock-protected CAS path.
@@ -112,6 +112,6 @@ The driver re-reads `state.json` at every iter boundary; the in-flight Copilot c
 
 ## Why we removed the in-session extension
 
-The original project began as an in-session Copilot CLI extension that exposed `ralph_loop` / `self_improve` / `grow_project` tools to the active Copilot session via the `@github/copilot-sdk/extension` SDK's `joinSession` + `session.idle` event contract. The TUI driver (`ralph-tui run`) eventually grew to cover every feature of the in-session tools — same baked prompts, same pause/resume/stop/status, same adaptive budget — without imposing the SDK contract on every cross-cutting change.
+The original project began as an in-session Copilot CLI extension that exposed `ralph_loop` / `self_improve` / `grow_project` tools to the active Copilot session via the `@github/copilot-sdk/extension` SDK's `joinSession` + `session.idle` event contract. The TUI driver (`autopilot run`) eventually grew to cover every feature of the in-session tools — same baked prompts, same pause/resume/stop/status, same adaptive budget — without imposing the SDK contract on every cross-cutting change.
 
 Maintaining both engines required keeping every prompt change, every event-vocabulary entry, and every adaptive-budget tweak in lockstep across two implementations. Deleting the in-session engine retired that whole drift surface. See issue #50 for the full rationale.

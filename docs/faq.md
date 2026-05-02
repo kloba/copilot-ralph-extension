@@ -1,27 +1,42 @@
 # FAQ
 
-Short answers to the questions that come up most often when running Ralph in anger. Most of these point at a deeper section in the [README](https://github.com/kloba/autopilot#readme) or at [`docs/concepts.md`](concepts.md) — keep this page narrow and link out rather than duplicating prose.
+Short answers to the questions that come up most often when running `autopilot` in anger. Most of these point at a deeper section in the [README](https://github.com/kloba/autopilot#readme) or at [`docs/concepts.md`](concepts.md) — keep this page narrow and link out rather than duplicating prose.
 
 ## Setup
 
-### Do I need any npm dependencies?
+### I just want to try autopilot with no install. Does plain mode work from a fresh checkout?
 
-Not for plain mode. The non-render layer (`prompts.mjs`, `runner.mjs`, `events*.mjs`, `writer.mjs`, `tail.mjs`, `plain.mjs`, `bin/tui.mjs`) is zero-dep — only Node ≥ 20 is required. The interactive Ink-rendered `watch` / `run` UI pulls Ink + React + Yoga + Commander via `cd packages/tui && npm install`.
-
-### How do I install a specific tagged release?
-
-Check out the matching tag in your clone:
+Yes — the non-render layer (`prompts.mjs`, `runner.mjs`, `events*.mjs`, `writer.mjs`, `tail.mjs`, `plain.mjs`, `bin/tui.mjs`) is zero-dep. From the repo root:
 
 ```bash
-git checkout vX.Y.Z
 node packages/tui/bin/tui.mjs --help
 ```
 
-Tags are immutable, so a pinned checkout never silently shifts. A future release will publish `autopilot` to npm so `npm i -g autopilot@X.Y.Z` works.
+Only the Ink-rendered `watch` / `run` UIs require `cd packages/tui && npm install`.
+
+### Do I need any npm dependencies?
+
+Not for plain mode (see the previous FAQ) — only Node ≥ 20 is required. The interactive Ink-rendered `watch` / `run` UI pulls Ink + React + Yoga + Commander via `cd packages/tui && npm install`.
+
+### How do I install a specific tagged release?
+
+Today the install is a clone + `npm link`; pin a tag with `git checkout` before `npm install`:
+
+```bash
+git clone https://github.com/kloba/autopilot.git
+cd autopilot
+git checkout v0.7.0          # pin to a tagged release; tags are immutable
+cd packages/tui
+npm install
+npm link                      # exposes `autopilot` on $PATH
+autopilot --help
+```
+
+A future release will publish `autopilot` to npm so `npm i -g autopilot@X.Y.Z` works.
 
 ### What happened to the `~/.copilot/extensions/ralph` install?
 
-The previous in-session Copilot CLI extension was retired — see [`CHANGELOG.md`](../CHANGELOG.md). If you still have `~/.copilot/extensions/ralph` from an older install, `rm -rf ~/.copilot/extensions/ralph` and switch to `autopilot run` as documented in the [README](../README.md#usage).
+The in-session Copilot CLI extension was retired in 0.7.0 — see the [`CHANGELOG.md`](../CHANGELOG.md) extension-drop entry. The standalone `autopilot` binary is now the only product, and the legacy `extension/` directory is gone. If you still have an `~/.copilot/extensions/ralph` directory from an older install, it is inert (`/extensions reload` will no longer find a `ralph` extension); `rm -rf ~/.copilot/extensions/ralph` and switch to the `autopilot` CLI as documented in the [README](../README.md#usage).
 
 ## Running a loop
 
@@ -53,7 +68,13 @@ See [`docs/concepts.md` → Pause / resume semantics](concepts.md#pause--resume-
 
 ### Where does a running loop's event log live?
 
-By default: `~/.copilot/ralph-tui/runs/<runId>/events.jsonl`. Override the runs root with `RALPH_TUI_RUNS_DIR`. The `<runId>` shape is `${label}-${startedAt}` — sortable, filesystem-safe, and surfaced in the `armed` event.
+By default: `~/.copilot/autopilot/runs/<runId>/events.jsonl`. Override the runs root with `AUTOPILOT_RUNS_DIR`. The `<runId>` shape is `${label}-${startedAt}` — sortable, filesystem-safe, and surfaced in the `armed` event.
+
+Legacy `~/.copilot/ralph-tui/runs` is read on first run if the new path doesn't exist; new emissions write to the autopilot path.
+
+### Which environment variables does autopilot read?
+
+Canonical names are `AUTOPILOT_RUNS_DIR`, `AUTOPILOT_COPILOT_BIN`, and `AUTOPILOT_NO_ATTRIBUTION`. Legacy `RALPH_TUI_*` env-var names still work via fallback for one release with a one-line stderr deprecation notice.
 
 ### How do I tail a running loop's events?
 
@@ -80,7 +101,13 @@ Every commit produced inside a loop carries two `Co-authored-by:` trailers — o
 
 ### How do I opt out of the second `copilot-ralph` trailer?
 
-Set `RALPH_NO_ATTRIBUTION=1` in the environment before running the loop. The opt-out suppresses **only** the second `copilot-ralph` trailer; the first `Copilot` trailer always ships. Note that the opt-out is honored by the prompt, not enforced by the runtime — if a sub-agent ignores `process.env`, the trailer can still appear. Audit afterwards with `git log -1 --pretty=%B` to confirm.
+Set `AUTOPILOT_NO_ATTRIBUTION=1` in the environment before running the loop. The opt-out suppresses **only** the second trailer:
+
+```
+Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>
+```
+
+The first `Copilot` trailer always ships. The legacy `RALPH_NO_ATTRIBUTION=1` env var is still recognized for backwards compatibility. The opt-out is honored by the prompt, not enforced by the runtime — if a sub-agent ignores `process.env`, the trailer can still appear. Audit afterwards with `git log -1 --pretty=%B` to confirm.
 
 ## Anything else?
 

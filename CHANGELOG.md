@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### CI
+- `.github/workflows/release.yml` now runs `npm run check` after
+  `npm test` so a release tag cannot ship a syntactically broken
+  shipped `.mjs`. The release runner does not `cd packages/tui &&
+  npm install`, so any syntax error under `packages/tui/src` (where
+  ink/react are absent at release time) would not fail the test
+  step on its own — `npm run check` is the dependency-free parse-
+  walker that covers every root. Drift-guard test pins the step so
+  a future "trim the workflow" PR cannot silently strip it.
+
 ### Tests
 - Pin `extractUsage`'s edge-case rejection contract: NaN-from-string
   (`input_tokens: "abc"`), Infinity, double-NaN, all-zero usage,

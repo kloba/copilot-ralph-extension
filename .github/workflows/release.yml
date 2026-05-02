@@ -75,6 +75,18 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Portable syntax check shipped .mjs (scripts/check.mjs)
+        # Belt-and-suspenders alongside `npm test`: the test suite imports
+        # most of `extension/`, but TUI source under `packages/tui/src`
+        # only loads when ink/react are installed, so a syntax error
+        # there would not fail `npm test` in this release job (we don't
+        # `cd packages/tui && npm install` here). The portable
+        # `scripts/check.mjs` parse-checks every shipped .mjs across all
+        # roots and is dependency-free, so a release tag cannot ship a
+        # syntactically broken TUI file. The check is cheap (~5 s) and
+        # runs AFTER tests so a real test failure surfaces first.
+        run: npm run check
+
       - name: Extract CHANGELOG section for this version
         id: notes
         env:

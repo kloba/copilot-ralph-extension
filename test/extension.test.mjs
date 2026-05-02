@@ -7189,3 +7189,16 @@ test("extractUsage rejects all-zero usage and missing usage object", async () =>
     assert.equal(a.tokens.input, before.input + 50);
     assert.equal(a.tokens.byIteration.length, before.len + 1);
 });
+
+test("release.yml runs `npm run check` so a release tag cannot ship a broken TUI .mjs", () => {
+    // Drift guard: the release pipeline must parse-check every shipped
+    // .mjs (including packages/tui/src/* which the root `npm test` does
+    // NOT import in the release runner — ink / react aren't installed
+    // there). `scripts/check.mjs` is the dependency-free walker that
+    // covers all roots; pin that release.yml invokes it. A "trim the
+    // workflow" PR that drops this step would let release tags ship
+    // syntactically broken TUI files.
+    const release = readFileSync(resolve(REPO_ROOT, ".github/workflows/release.yml"), "utf8");
+    assert.match(release, /run: npm run check/,
+        "release.yml must run `npm run check` to syntax-validate shipped .mjs");
+});

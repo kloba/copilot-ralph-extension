@@ -3,6 +3,18 @@
 ## Unreleased
 
 ### Features
+- `install.sh` now prints the extension version on the
+  dry-run header (`Version:   vX.Y.Z`) and the post-install
+  success line (`✅ Installed ralph extension vX.Y.Z to …`).
+  Sourced via `awk` from `extension/handler.mjs`'s
+  `export const VERSION` constant (a single source of truth
+  shared with `ralph_status`), so the install confirmation
+  cannot drift away from what the running extension reports.
+  An empty-version guard fails the install loudly if a
+  future refactor changes the declaration shape rather than
+  silently printing `v ` to the user. Drift-guarded with
+  three tests pinning the header line, the success line,
+  and the failure mode.
 - `install.sh --dry-run` now annotates each file in the
   listing with `[new]` / `[overwrite]` / `[unchanged]` and
   emits a closing `Changes: A new, B existing` summary so a

@@ -8852,3 +8852,81 @@ test("install.sh: cleanup() returns 0 explicitly so the EXIT trap cannot leak a 
     assert.match(m[0], /return\s+0\s*\n\s*\}\s*$/m,
         "cleanup() must end with an explicit `return 0` so the EXIT trap doesn't propagate the loop's last `[[ -e ]]` false as the script's exit code");
 });
+
+// Iter 109 — install.sh extracts the extension's version from
+// handler.mjs's `export const VERSION = "X.Y.Z"` declaration and
+// prints it on both the dry-run header (`Version:   vX.Y.Z`) and
+// the post-install success line (`Installed ralph extension vX.Y.Z
+// to …`). Single source of truth: handler.mjs's VERSION constant
+// is what the running extension reports via `ralph_status`, so the
+// install output cannot drift away from what's actually loaded.
+test("install.sh: --dry-run header prints `Version: vX.Y.Z` matching extension/handler.mjs VERSION", () => {
+    const handler = readFileSync(resolve(REPO_ROOT, "extension/handler.mjs"), "utf8");
+    const m = handler.match(/^export const VERSION = "([^"]+)";/m);
+    assert.ok(m, "extension/handler.mjs must declare an `export const VERSION = \"X.Y.Z\";` line");
+    const version = m[1];
+    const r = spawnSync("bash", [resolve(REPO_ROOT, "install.sh"), "--dry-run"], { encoding: "utf8" });
+    assert.equal(r.status, 0, `install.sh --dry-run exited ${r.status}; stderr=${r.stderr}`);
+    const re = new RegExp(`^Version:\\s+v${version.replace(/\./g, "\\.")}\\s*$`, "m");
+    assert.match(r.stdout, re,
+        `dry-run header must include "Version:   v${version}" so a contributor verifying an upgrade can confirm at a glance which version would be installed`);
+});
+
+test("install.sh: success line prints `Installed ralph extension vX.Y.Z` matching VERSION", () => {
+    const handler = readFileSync(resolve(REPO_ROOT, "extension/handler.mjs"), "utf8");
+    const version = handler.match(/^export const VERSION = "([^"]+)";/m)[1];
+    const sandboxHome = mkdtempSync(join(tmpdir(), "ralph-install-success-version-"));
+    try {
+        const r = spawnSync(
+            "bash",
+            [resolve(REPO_ROOT, "install.sh")],
+            { encoding: "utf8", env: { ...process.env, HOME: sandboxHome } },
+        );
+        assert.equal(r.status, 0, `install.sh exited ${r.status}; stderr=${r.stderr}`);
+        const re = new RegExp(`✅ Installed ralph extension v${version.replace(/\./g, "\\.")} to `);
+        assert.match(r.stdout, re,
+            `success line must echo "Installed ralph extension v${version} to …" so the post-install confirmation matches what ralph_status reports at runtime`);
+    } finally {
+        rmSync(sandboxHome, { recursive: true, force: true });
+    }
+});
+
+test("install.sh: VERSION extraction fails loudly if handler.mjs declaration shape changes", async () => {
+    // Drift guard: a future refactor that renames the constant or
+    // changes the declaration shape MUST surface as a hard install
+    // failure (non-zero exit + clear stderr) rather than silently
+    // printing "Installed ralph extension v to …". Set up an
+    // isolated sandbox that mirrors the repo, mutate handler.mjs to
+    // strip the VERSION line, and assert install.sh refuses to run.
+    const fs = await import("node:fs");
+    const sandboxRoot = mkdtempSync(join(tmpdir(), "ralph-install-version-drift-"));
+    try {
+        const sandboxExt = `${sandboxRoot}/extension`;
+        fs.mkdirSync(sandboxExt, { recursive: true });
+        for (const f of ["extension.mjs", "handler.mjs", "events-emit.mjs"]) {
+            fs.copyFileSync(resolve(REPO_ROOT, "extension", f), `${sandboxExt}/${f}`);
+        }
+        fs.copyFileSync(resolve(REPO_ROOT, "install.sh"), `${sandboxRoot}/install.sh`);
+        fs.chmodSync(`${sandboxRoot}/install.sh`, 0o755);
+        // Strip the canonical VERSION declaration line so awk returns empty.
+        const handler = readFileSync(`${sandboxExt}/handler.mjs`, "utf8");
+        const tampered = handler.replace(
+            /^export const VERSION = "[^"]+";.*$/m,
+            "// VERSION declaration removed for install-fails-loudly test",
+        );
+        fs.writeFileSync(`${sandboxExt}/handler.mjs`, tampered);
+        const sandboxHome = `${sandboxRoot}/home`;
+        fs.mkdirSync(sandboxHome, { recursive: true });
+        const r = spawnSync(
+            "bash",
+            [`${sandboxRoot}/install.sh`, "--dry-run"],
+            { encoding: "utf8", env: { ...process.env, HOME: sandboxHome } },
+        );
+        assert.notEqual(r.status, 0,
+            "install.sh must exit non-zero when the VERSION declaration is missing — silently printing an empty version would mask the drift");
+        assert.match(r.stderr, /could not extract VERSION/i,
+            "stderr must explain that VERSION extraction failed and what shape was expected");
+    } finally {
+        rmSync(sandboxRoot, { recursive: true, force: true });
+    }
+});

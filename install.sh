@@ -55,6 +55,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$SCRIPT_DIR/extension"
 FILES=(extension.mjs handler.mjs events-emit.mjs)
 
+# Extract the extension's version from `extension/handler.mjs`'s
+# `export const VERSION = "X.Y.Z";` declaration so the install
+# success/dry-run output prints exactly the version that will be
+# active after restart. Sourcing from handler.mjs (rather than
+# package.json) avoids a dependency on `node` / a JSON parser at
+# install time and keeps the version surface a single source of
+# truth — handler.mjs's constant is what the running extension
+# reports via `ralph_status`. A future drift in the declaration
+# shape would surface as an empty VERSION; the guard below fails
+# the install loudly rather than print "Installed ralph extension
+# v to …".
+VERSION="$(awk -F'"' '/^export const VERSION = "/{print $2; exit}' "$SOURCE_DIR/handler.mjs")"
+if [[ -z "$VERSION" ]]; then
+  echo "Error: could not extract VERSION from $SOURCE_DIR/handler.mjs (expected an 'export const VERSION = \"X.Y.Z\";' line)." >&2
+  exit 1
+fi
+
 for f in "${FILES[@]}"; do
   if [[ ! -f "$SOURCE_DIR/$f" ]]; then
     echo "Error: $SOURCE_DIR/$f not found." >&2
@@ -97,6 +114,7 @@ fi
 
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "DRY RUN — no files will be written."
+  echo "Version:   v$VERSION"
   echo "Source:    $SOURCE_DIR/"
   echo "Target:    $TARGET_DIR/"
   echo "Files:"
@@ -186,6 +204,6 @@ for f in "${FILES[@]}"; do
   fi
 done
 
-echo "✅ Installed ralph extension to $TARGET_DIR/"
+echo "✅ Installed ralph extension v$VERSION to $TARGET_DIR/"
 echo ""
 echo "Restart Copilot CLI (or run /extensions reload) to activate."

@@ -162,7 +162,10 @@ has no matching section.
 1. Open a release PR that:
    - Renames `## Unreleased` → `## X.Y.Z — YYYY-MM-DD`.
    - Adds a fresh empty `## Unreleased` block at the top.
-   - Bumps `version` in `package.json`.
+   - Bumps `version` in `package.json` **and** the matching
+     `VERSION` constant in `extension/handler.mjs` (kept in sync
+     by the `VERSION matches package.json` test — bumping only one
+     fails CI).
 2. Merge.
 3. `git tag vX.Y.Z && git push origin vX.Y.Z`.
 4. Release workflow validates and publishes (see issue #10).

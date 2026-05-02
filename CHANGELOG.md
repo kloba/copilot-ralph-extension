@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Internal
+- Bake an exported `VERSION` constant in `extension/handler.mjs`
+  matching `package.json#version`. This is the precursor to
+  issue [#25](https://github.com/kloba/copilot-ralph-extension/issues/25)
+  (version check on extension load): the future check needs a
+  baked-in "this is the version installed at
+  `~/.copilot/extensions/ralph/`" anchor, and `install.sh` does
+  not ship `package.json` to the install target so a runtime
+  `require("../package.json")` would crash on installed copies.
+  A new `VERSION matches package.json` test reads the source
+  `package.json` and asserts the constant matches, so a release
+  PR that bumps one without the other fails CI before merge.
+  `AGENTS.md`'s release flow is updated to call out the dual
+  bump.
+
 ### Tests
 - `coerceNumberField` (extension/handler.mjs:945) gains direct
   unit-test coverage. Pins the helper's input contract: rejects

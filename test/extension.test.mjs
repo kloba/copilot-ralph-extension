@@ -7752,3 +7752,23 @@ test("coerceNumberField: error message echoes the requested fieldName", () => {
         assert.ok(r.error.includes(fieldName), `error must include ${fieldName} (got ${r.error})`);
     }
 });
+
+test("VERSION matches package.json#version (sync guard)", async () => {
+    // The VERSION constant in extension/handler.mjs is hand-baked
+    // because `install.sh` does not ship `package.json` to the
+    // installed copy at `~/.copilot/extensions/ralph/`. A
+    // `require("../package.json")` at module-load time would crash
+    // on installed copies, so we keep the literal in source and
+    // verify here that release PRs bumping `package.json#version`
+    // also bumped the constant. CI runs this on every push, so a
+    // mismatch trips before merge.
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const url = await import("node:url");
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const pkg = JSON.parse(await fs.readFile(path.join(here, "..", "package.json"), "utf8"));
+    const { VERSION } = __test__;
+    assert.equal(typeof VERSION, "string", "VERSION must be a string");
+    assert.match(VERSION, /^\d+\.\d+\.\d+(?:-[\w.]+)?$/, "VERSION must look like SemVer 2.0.0");
+    assert.equal(VERSION, pkg.version, `VERSION (${VERSION}) must match package.json#version (${pkg.version}) — bump both together in release PR`);
+});

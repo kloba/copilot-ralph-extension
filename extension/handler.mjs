@@ -21,6 +21,18 @@ import { createEventEmitter as defaultEventEmitter } from "./events-emit.mjs";
 // without paying the import cost up front.
 const moduleRequire = createRequire(import.meta.url);
 
+// Hand-baked extension version. Kept in sync with `package.json#version`
+// by the `VERSION matches package.json` test (`test/extension.test.mjs`),
+// which runs in CI on every push. We hard-code the literal here rather
+// than reading `package.json` at runtime because `install.sh` only ships
+// `extension.mjs handler.mjs events-emit.mjs` to `~/.copilot/extensions/
+// ralph/` — a `require("../package.json")` would crash on installed
+// copies. The constant is exported so a future "version check on
+// extension load" feature (issue #25) and any tooling that introspects
+// the snapshot has a single source of truth without a torn-read window
+// during reinstall.
+export const VERSION = "0.6.0";
+
 const DEFAULTS = Object.freeze({
     max_iterations: 20,
     min_iterations: 1,
@@ -2450,4 +2462,4 @@ export function createRalphController(opts = {}) {
     };
 }
 
-export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, classifyPorcelainLine, parseUserReason, coerceNumberField };
+export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, classifyPorcelainLine, parseUserReason, coerceNumberField, VERSION };

@@ -9142,3 +9142,33 @@ test("README documents both PAUSED summary forms (with-reason em-dash + bare no-
         "README's Pause visibility bullet must document the bare no-reason summary form (no em-dash)",
     );
 });
+
+// Iter 118 — drift guard for `docs/ARCHITECTURE.md`'s DI options
+// list. Pre-iter-118 the doc enumerated `{ caffeinate, git, adaptive }`
+// only — `events` (the JSONL emitter slot wired by issue #22 in
+// handler.mjs's createRalphController) was silently missing. A
+// contributor reading ARCHITECTURE.md to learn how to stub a writer
+// in a test would have to grep handler.mjs to find the slot. Pin
+// every supported DI option here so the doc cannot regress when a
+// future opts.* slot is added without updating the architecture
+// reference.
+test("docs(architecture): DI options list includes every supported createRalphController slot", () => {
+    const arch = readFileSync(resolve(REPO_ROOT, "docs/ARCHITECTURE.md"), "utf8");
+    // Pin the canonical comma-list. Order is intentional: `caffeinate
+    // git adaptive events` matches the order in handler.mjs's
+    // createRalphController body. Match only the literal substring;
+    // an editor adding a new slot must update both the code AND the
+    // doc together.
+    assert.match(
+        arch,
+        /createRalphController\(\{\s*caffeinate,\s*git,\s*adaptive,\s*events\s*\}\)/,
+        "ARCHITECTURE.md must list every DI option supported by createRalphController",
+    );
+    // Also pin a brief description of the events slot so a future
+    // commit can't strip it back to the bare comma-list.
+    assert.match(
+        arch,
+        /JSONL event emit/i,
+        "ARCHITECTURE.md must briefly describe what the events DI slot is for",
+    );
+});

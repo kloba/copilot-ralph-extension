@@ -228,6 +228,19 @@
   time instead of as a misleading green check on `main`.
 
 ### Documentation
+- `docs/ARCHITECTURE.md`'s "Test architecture" section now
+  lists every DI option `createRalphController({...})`
+  supports — previously the comma-list enumerated only
+  `{ caffeinate, git, adaptive }` and silently omitted the
+  `events` slot wired by issue #22 (JSONL emitter override
+  used by `test/handler-events.test.mjs`). A contributor
+  reading ARCHITECTURE.md to learn how to stub a writer in
+  a test would have had to grep handler.mjs to find the
+  slot. The fix adds `events` to the list with a brief
+  description (true / { env, fs } / { factory } shapes).
+  Drift-guard test pins both the comma-list and a brief
+  events-slot description so the doc cannot silently
+  regress when a future opts.* slot is added.
 - README's "Pause visibility" bullet now documents BOTH
   `ralph_status` `textResultForLlm` summary forms — the
   with-reason em-dash variant `(PAUSED — <reason>, for

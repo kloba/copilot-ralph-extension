@@ -106,5 +106,5 @@ Opt-in via `RALPH_CAFFEINATE=1`. On macOS, `armLoop` spawns `caffeinate -i [-d] 
 - `node:test` runner; no third-party test deps.
 - `makeFakeSession()` returns a `{ on, emit, send, log }` object that mimics the SDK's event bus.
 - `runTurn(session, content)` drives one iteration: emits `assistant.message` then `session.idle`.
-- DI on the controller (`createRalphController({ caffeinate, git, adaptive })`) lets tests stub external effects (process spawn, git exec) without monkey-patching.
+- DI on the controller (`createRalphController({ caffeinate, git, adaptive, events })`) lets tests stub external effects (process spawn, git exec, JSONL event emit) without monkey-patching. The `events` slot is the issue [#22](https://github.com/kloba/copilot-ralph-extension/issues/22) JSONL emitter wiring — accepts `true` (default emitter), `{ env, fs }` (default emitter w/ overrides), or `{ factory }` (custom emitter built per-arm); see the inline JSDoc above `armLoop` for the full contract.
 - Several **shape-pin tests** lock down field counts and key sets on `state.active`, the success-envelope, the parsed-args object, and the tool-array order. These exist specifically to catch refactors that silently leak internal scratch into the LLM-facing surface.

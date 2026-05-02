@@ -49,6 +49,21 @@
   either value is caught at test time.
 
 ### Fixes
+- `install.sh` now prints a friendly "Error: …/handler.mjs
+  not found" + recovery hint when the source tree is missing
+  `extension/handler.mjs` (e.g. a user copied only the script
+  out of the repo without bringing the `extension/` subdir
+  along). Previously the awk that extracts `VERSION` at the
+  top of the script crashed with the cryptic `awk: can't open
+  file …` and exit code 2 — the user had no clue which piece
+  was missing or how to recover. The new guard mirrors the
+  per-file friendly diagnostic that the later `FILES`
+  existence loop already produces for every other file in
+  the install set, so the error message is symmetric across
+  all four sources. Pinned by a new test that runs `install.sh`
+  in a sandbox dir without the `extension/` subdir and asserts
+  the friendly stderr message + exit 1 (not awk's exit 2)
+  + empty stdout.
 - README's three manual-install `curl` loops (Option A
   user-scoped, Option B project-scoped, Option D pinned
   release) now download `events-emit.mjs` and `handler.mjs`

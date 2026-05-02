@@ -16,6 +16,19 @@ set -euo pipefail
 # declaration shape — fail loudly rather than print "v" and continue.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$SCRIPT_DIR/extension"
+# Friendly diagnostic when the source tree is missing handler.mjs (e.g. a
+# user copied install.sh out of the repo without the extension/ subdir).
+# Without this guard, awk below fails with the cryptic "awk: can't open
+# file ..." message and an exit code of 2 — the user has no clue they
+# need to bring the extension/ subdir along. Surfacing the friendly error
+# up front mirrors the per-file check that runs later for the rest of
+# FILES; doing it here too keeps the error message symmetric across all
+# four files in the install set.
+if [[ ! -f "$SOURCE_DIR/handler.mjs" ]]; then
+  echo "Error: $SOURCE_DIR/handler.mjs not found." >&2
+  echo "  Hint: install.sh must live next to the extension/ subdir from this repo. Re-clone or re-download the full source tree." >&2
+  exit 1
+fi
 VERSION="$(awk -F'"' '/^export const VERSION = "/{print $2; exit}' "$SOURCE_DIR/handler.mjs")"
 if [[ -z "$VERSION" ]]; then
   echo "Error: could not extract VERSION from $SOURCE_DIR/handler.mjs (expected an 'export const VERSION = \"X.Y.Z\";' line)." >&2

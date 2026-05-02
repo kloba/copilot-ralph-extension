@@ -9265,3 +9265,49 @@ test("install.sh: --help advertises --version", () => {
     assert.equal(r.status, 0);
     assert.match(r.stdout, /--version/);
 });
+
+test("install.sh: missing extension/handler.mjs surfaces a friendly diagnostic, not a cryptic awk error", async () => {
+    // Iter 125 — install.sh's VERSION extraction runs awk against
+    // $SOURCE_DIR/handler.mjs at the very top of the script (above
+    // the FILES existence check loop). Before the iter 125 fix, a
+    // user who copied install.sh out of the repo without the
+    // extension/ subdir saw only:
+    //
+    //   awk: can't open file <path>
+    //    source line number 1
+    //
+    // and an exit code of 2 — no hint that the missing piece is
+    // the extension/ subdir, no pointer to the recovery action.
+    // The fix adds an explicit `[[ -f ... ]]` guard ahead of the
+    // awk that prints a labeled "Error:" + "Hint:" pair to stderr
+    // and exits 1, mirroring the friendly diagnostics that the
+    // later FILES existence loop already produces for every other
+    // file in the install set.
+    //
+    // Pin both pieces: the friendly stderr message AND that exit
+    // is 1 (not 2 — awk's natural code). Stdout must be empty so
+    // a CI script reading stdout doesn't mistake the diagnostic
+    // for any kind of installable output.
+    const sandbox = mkdtempSync(join(tmpdir(), "ralph-install-missing-"));
+    try {
+        // Copy install.sh alone — NO extension/ subdir, simulating
+        // a user who fetched only the script.
+        const dst = join(sandbox, "install.sh");
+        const src = readFileSync(resolve(REPO_ROOT, "install.sh"), "utf8");
+        const fs = await import("node:fs");
+        fs.writeFileSync(dst, src);
+        const r = spawnSync("bash", [dst, "--dry-run"], { encoding: "utf8" });
+        assert.equal(r.status, 1, `expected exit 1, got ${r.status}; stderr=${r.stderr}`);
+        assert.equal(r.stdout, "", `stdout must be empty on the failure path; got: ${r.stdout}`);
+        assert.match(r.stderr, /Error: .*\/extension\/handler\.mjs not found\./);
+        assert.match(r.stderr, /Hint:.*extension\/ subdir/i);
+        // Pin that the cryptic awk message no longer appears as the
+        // primary diagnostic — if a future refactor accidentally
+        // dropped the friendly guard, the awk fallback would still
+        // emit "awk: can't open file" and the user experience would
+        // silently regress.
+        assert.doesNotMatch(r.stderr, /awk: can't open file/i);
+    } finally {
+        rmSync(sandbox, { recursive: true, force: true });
+    }
+});

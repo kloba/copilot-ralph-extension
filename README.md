@@ -8,7 +8,7 @@
 
 `autopilot` drives a coding agent through three levels of decomposition, then loops:
 
-1. **Level 1 — find what to do.** Scan the repo (red CI, stale PRs, open issues, SDLC hardening rotation) and pick **one** concrete work item.
+1. **Level 1 — find what to do.** Scan the repo (red CI, stale PRs, open issues, SDLC hardening rotation) and pick **one** concrete work item. If nothing is queued, ideate a new feature and file it as a GitHub issue first, then pick it up.
 2. **Level 2 — split into stages.** Break the work item into SDLC stages: orient → critique → baseline → implement → test → commit → push.
 3. **Level 3 — split into tasks.** Break each stage into the smallest executable steps the agent can deliver in one turn.
 

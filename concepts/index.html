@@ -610,20 +610,54 @@ emits its <code>iteration_end</code> event. Pause only takes effect on the
 value it reached.</p>
 <p>While paused, you may chat freely with the agent. Those turns are
 real conversation turns, but they do <strong>not</strong> consume iterations and
-they do <strong>not</strong> count toward the stagnation streak (see below).</p>
+they do <strong>not</strong> count toward the stagnation streak (see below). The
+loop also <strong>isolates</strong> its bookkeeping from the pause-time chat:</p>
+<ul>
+<li><strong>Token budget isolation.</strong> <code>assistant.message</code> events that arrive
+  while paused are not credited to <code>tokens.input</code> / <code>tokens.output</code> /
+  <code>byIteration</code> / <code>byModel</code>. A long pause-time conversation cannot
+  push the loop's cumulative usage past a configured <code>max_tokens</code>
+  cap (so the loop will not finish with <code>reason="max_tokens"</code> on the
+  first post-resume idle as a side-effect of you reading a diff with
+  the agent), and it cannot trip the <code>warn_at_pct</code> context-window
+  threshold either.</li>
+<li><strong>Completion / abort isolation.</strong> Pause-time chat content does not
+  accumulate into the rolling buffer that <code>onIdle</code> inspects for the
+  configured <code>completion_promise</code> / <code>abort_promise</code> substrings. A
+  casual mention of the trigger phrase in your pause-time chat — e.g.
+  <em>"I'll mark this COMPLETE when the refactor lands"</em> — will <strong>not</strong>
+  terminate the loop. Trade-off: a genuine completion / abort signal
+  that landed in the in-flight iteration's response right before you
+  paused is forfeited; you can still read it via
+  <code>ralph_status.last_response_excerpt</code> and <code>ralph_stop</code> the loop
+  explicitly if you want to honor it.</li>
+</ul>
 <p><code>ralph_pause</code> is idempotent: calling it on an already-paused loop is
 a no-op and returns success. The two failure modes are:</p>
 <ol>
 <li>No loop is currently active (<code>{ active: false }</code>).</li>
 <li>The <code>reason</code> argument exceeds 500 chars (validation rejection).</li>
 </ol>
-<p><code>ralph_resume</code> flips <code>paused</code> back to <code>false</code> and <strong>resets the
-stagnation streak</strong> (<code>streak = 0</code>, <code>prev = null</code>). The comment in the
-code spells out why: <em>"manual intervention almost always changes
-context"</em>. Without this reset, a paused → user-tweaks-source →
-resumed loop would carry a stale <code>prev</code> response and a non-zero
-<code>streak</code>, so the very next iteration could trip the stagnation guard
-even though the conversation context has changed substantially.</p>
+<p><code>ralph_resume</code> flips <code>paused</code> back to <code>false</code> and resets three
+pieces of state that would otherwise leak pause-time context into
+the next iteration's evaluation:</p>
+<ul>
+<li>The <strong>stagnation streak</strong> (<code>streak = 0</code>, <code>prev = null</code>). The
+  comment in the code spells out why: <em>"manual intervention almost
+  always changes context"</em>. Without this reset, a paused →
+  user-tweaks-source → resumed loop would carry a stale <code>prev</code>
+  response and a non-zero <code>streak</code>, so the very next iteration
+  could trip the stagnation guard even though the conversation
+  context has changed substantially.</li>
+<li>The <strong>last-assistant-content buffer</strong> (<code>state.lastAssistantContent
+  = ""</code>). Even though <code>ralph_pause</code> itself stops new pause-time
+  content from being appended (see "Completion / abort isolation"
+  above), the in-flight iteration's response that arrived <strong>before</strong>
+  the pause is still sitting in that buffer at resume time. Clearing
+  it on resume guarantees the post-resume idle evaluates an empty
+  string for completion / abort triggers — same defense-in-depth
+  reasoning as the streak reset.</li>
+</ul>
 <p><code>ralph_resume</code> returns failure if the loop is <strong>not</strong> currently
 paused — the error message is
 <code>ralph_resume: &lt;label&gt; is not paused. Use ralph_pause first, or
@@ -653,12 +687,12 @@ paused.</p>
 <tr>
 <td><code>ralph_pause</code></td>
 <td>Loop active (paused or unpaused)</td>
-<td>Sets <code>paused = true</code>. Currently-running iteration finishes normally.</td>
+<td>Sets <code>paused = true</code>. Currently-running iteration finishes normally. Pause-time <code>assistant.message</code> events are not credited to the loop's token budget and do not accumulate into the completion/abort buffer.</td>
 </tr>
 <tr>
 <td><code>ralph_resume</code></td>
 <td>Loop active <strong>and</strong> paused</td>
-<td>Clears <code>paused</code>, resets <code>streak</code>/<code>prev</code>, adds elapsed pause to <code>total_paused_ms</code>.</td>
+<td>Clears <code>paused</code>, resets <code>streak</code> / <code>prev</code> / <code>lastAssistantContent</code>, adds elapsed pause to <code>total_paused_ms</code>.</td>
 </tr>
 <tr>
 <td><code>ralph_stop</code></td>

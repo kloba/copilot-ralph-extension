@@ -74,6 +74,17 @@ jobs:
           fi
           echo "Syntax-checked $count .mjs files."
 
+      - name: Portable syntax check (scripts/check.mjs)
+        # Independent code path that exercises the same property as the
+        # bash "Syntax check" step above using the portable Node script
+        # (`scripts/check.mjs`, wired as `npm run check`). If the two
+        # diverge — e.g. someone updates the bash roots without touching
+        # the script, or vice versa — running both catches the drift
+        # immediately. Also gives contributors confidence that the local
+        # `npm run check` they run before pushing matches what CI will
+        # do. Cheap (~5s); same files, different walker.
+        run: npm run check
+
       - name: Run tests
         run: npm test
 

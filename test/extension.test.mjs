@@ -6980,3 +6980,37 @@ test("sub-agent assistant.message during pause: sub-agent guard wins (no token c
     assert.equal(a.observedMessageThisFire, false,
         "sub-agent message during pause must NOT set observedMessageThisFire — sub-agent guard runs before paused guard");
 });
+
+test("ci.yml syntax-check find roots match scripts/check.mjs ROOTS", () => {
+    // Drift guard: the bash "Syntax check" step in .github/workflows/ci.yml
+    // and the portable `scripts/check.mjs` (`npm run check`) must walk the
+    // SAME set of roots. CI now runs both side-by-side (iter 62) so a
+    // mismatch would be caught loudly the first time a contributor pushes
+    // — but this test catches it locally before push, with a precise
+    // diff message.
+    const ci = readFileSync(resolve(REPO_ROOT, ".github/workflows/ci.yml"), "utf8");
+    const script = readFileSync(resolve(REPO_ROOT, "scripts/check.mjs"), "utf8");
+    // Extract bash `find <roots> -type f -name '*.mjs'` argument list.
+    const bashMatch = ci.match(/find\s+([^\n]+?)\s+-type f -name/);
+    assert.ok(bashMatch, "ci.yml must contain a `find <roots> -type f -name` invocation");
+    const bashRoots = bashMatch[1].trim().split(/\s+/).filter(Boolean).sort();
+    // Extract scripts/check.mjs ROOTS array.
+    const scriptMatch = script.match(/const ROOTS = \[([^\]]+)\]/);
+    assert.ok(scriptMatch, "scripts/check.mjs must declare a ROOTS array literal");
+    const scriptRoots = scriptMatch[1]
+        .split(",")
+        .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+        .filter(Boolean)
+        .sort();
+    assert.deepStrictEqual(scriptRoots, bashRoots,
+        `scripts/check.mjs ROOTS (${scriptRoots.join(", ")}) must match ` +
+        `ci.yml find roots (${bashRoots.join(", ")}). Update both together.`);
+});
+
+test("ci.yml runs `npm run check` so the portable script is exercised in CI", () => {
+    // Companion to the roots-parity test: pin that CI actually invokes
+    // `npm run check` so the portable script's own bugs are caught by CI
+    // (not just by contributors who happen to run it locally).
+    const ci = readFileSync(resolve(REPO_ROOT, ".github/workflows/ci.yml"), "utf8");
+    assert.match(ci, /run: npm run check/);
+});

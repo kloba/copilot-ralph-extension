@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### CI
+- `.github/workflows/ci.yml` now runs `npm run check` (the portable
+  `scripts/check.mjs` syntax checker added in iter 58) alongside the
+  existing bash `Syntax check` step. Two independent code paths
+  exercise the same property; if the bash form drifts from the Node
+  script (e.g. roots updated in one but not the other), CI fails on
+  the first push instead of letting a contributor discover it
+  locally weeks later. A drift-guard test extracts the find-roots
+  from `ci.yml` and the `ROOTS` array from `scripts/check.mjs`,
+  sorts both, and asserts deep-equal — so the parity is also pinned
+  pre-push.
+
 ### Tests
 - Pin the ordering of the two early-exit guards in
   `onAssistantMessage` (`isSubAgentEvent` first, then the paused

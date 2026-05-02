@@ -10080,3 +10080,66 @@ test("package.json author matches LICENSE copyright holder", () => {
     assert.equal(pkg.author, licenseAuthor,
         `package.json#author (${JSON.stringify(pkg.author)}) must match LICENSE copyright holder (${JSON.stringify(licenseAuthor)}). Update both together to avoid drift across metadata sources.`);
 });
+
+test("describeArgType labels every JS type unambiguously (direct)", () => {
+    // Iter 152 — pin `describeArgType` directly. The helper feeds 4+
+    // user-facing error messages (validateArgShape, validateOptional-
+    // ReasonField, parseFocus, validatePromiseField, the listener-
+    // returned-non-function warning at controller-attach time). It has
+    // two non-obvious branches that pure `typeof` would get wrong:
+    //   1. typeof null === "object" — must report "null".
+    //   2. typeof [] === "object" — must report "array".
+    // Without those branches, an error like "arguments must be an
+    // object (got object)" is unhelpful when the caller passed null.
+    // Pin both special cases AND the typeof passthrough so a future
+    // refactor (say, switching to a switch-on-typeof form) cannot
+    // silently lose the precise typing.
+    const { describeArgType } = __test__;
+    // Special cases — the whole point of having this helper.
+    assert.equal(describeArgType(null), "null", "null must NOT be reported as 'object'");
+    assert.equal(describeArgType([]), "array", "array must NOT be reported as 'object'");
+    assert.equal(describeArgType([1, 2, 3]), "array");
+    // typeof passthrough.
+    assert.equal(describeArgType(undefined), "undefined");
+    assert.equal(describeArgType(42), "number");
+    assert.equal(describeArgType(NaN), "number", "NaN is still typeof number — describeArgType doesn't second-guess");
+    assert.equal(describeArgType("foo"), "string");
+    assert.equal(describeArgType(""), "string");
+    assert.equal(describeArgType(true), "boolean");
+    assert.equal(describeArgType({}), "object");
+    assert.equal(describeArgType({ a: 1 }), "object");
+    assert.equal(describeArgType(() => {}), "function");
+    assert.equal(describeArgType(Symbol("s")), "symbol");
+    assert.equal(describeArgType(123n), "bigint");
+});
+
+test("displayValue quotes strings + stringifies non-strings (direct)", () => {
+    // Iter 152 — pin `displayValue` directly. Used in 6+ "(got X)"
+    // error messages where the caller's bad value is echoed back.
+    // Two contracts that aren't obvious from the body:
+    //   1. Strings get JSON.stringify'd — so an empty / whitespace-only
+    //      value displays as `""` / `"   "` instead of an invisible
+    //      blank that hides the bug from the user.
+    //   2. NaN / Infinity render as themselves (because String() works),
+    //      not as JSON.stringify's "null" — preserving the diagnostic
+    //      signal for malformed numeric input.
+    const { displayValue } = __test__;
+    // Strings: quoted, escapes preserved.
+    assert.equal(displayValue("hello"), '"hello"');
+    assert.equal(displayValue(""), '""', "empty string MUST display as `\"\"` so the user sees they passed nothing");
+    assert.equal(displayValue("  "), '"  "', "whitespace-only must remain visible");
+    assert.equal(displayValue('a"b'), '"a\\"b"', "quotes inside the string must be escaped");
+    assert.equal(displayValue("a\nb"), '"a\\nb"', "newlines must be escaped, not literal — keeps the error one-liner");
+    // Non-strings: String() coerces.
+    assert.equal(displayValue(42), "42");
+    assert.equal(displayValue(0), "0");
+    assert.equal(displayValue(-1.5), "-1.5");
+    assert.equal(displayValue(true), "true");
+    assert.equal(displayValue(false), "false");
+    assert.equal(displayValue(null), "null");
+    assert.equal(displayValue(undefined), "undefined");
+    // The two big values that JSON.stringify mishandles — must use String() form.
+    assert.equal(displayValue(NaN), "NaN", "NaN must NOT render as null (JSON.stringify(NaN) === 'null')");
+    assert.equal(displayValue(Infinity), "Infinity", "Infinity must NOT render as null (JSON.stringify(Infinity) === 'null')");
+    assert.equal(displayValue(-Infinity), "-Infinity");
+});

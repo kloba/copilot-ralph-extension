@@ -473,6 +473,23 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Pin `describeArgType` and `displayValue` validation helpers
+  with direct unit tests in `test/extension.test.mjs`. Both
+  helpers feed every "(got X)" tail in the extension's
+  user-facing error messages (validateArgShape,
+  validateOptionalReasonField, parseFocus, validatePromise-
+  Field, the listener-returned-non-function warning) but
+  pre-iter-152 had zero direct coverage — a regression that
+  dropped `describeArgType`'s null special case (so a caller
+  passing `null` would be told "got object") or that swapped
+  `displayValue`'s `JSON.stringify` for plain `String()` (so
+  empty / whitespace-only strings rendered as invisible
+  blanks) would have slipped past every existing test. The
+  new tests pin both special cases (null, array) plus the
+  typeof passthrough for describeArgType, and pin string-
+  quoting + the NaN/Infinity-via-String contract for
+  displayValue. Both helpers are now exported from the
+  `__test__` bag for direct exercise.
 - Pin `install.sh`'s `reject_duplicate --project` arm with a
   sibling assertion to the existing `--dry-run --dry-run`
   test in `test/extension.test.mjs`. The reject_duplicate

@@ -3,6 +3,17 @@
 ## Unreleased
 
 ### Features
+- `install.sh --dry-run` now prints an `Installed:`
+  line above the existing `Version:` line, sourced
+  from the target dir's `handler.mjs` (if any). Reads
+  top-to-bottom as upgrade direction (`Installed:
+  v0.5.0` → `Version: v0.6.0`) so a contributor or CI
+  script staging an upgrade no longer has to cd into
+  the target dir and grep handler.mjs themselves.
+  Renders as `Installed: (none)` when the extension was
+  never installed before. Two new tests pin both
+  branches AND the line ordering (Installed above
+  Version, never the reverse).
 - `install.sh` now accepts `--version` (long form) and `-V`
   (short form) flags that print
   `copilot-ralph-extension vX.Y.Z` and exit 0. Sourced from

@@ -151,6 +151,23 @@ fi
 
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "DRY RUN — no files will be written."
+  # Show the currently-installed version (if any) so a contributor
+  # running `--dry-run` knows whether they're staging a fresh install,
+  # an upgrade, a downgrade, or a no-op reinstall — without having to
+  # cd into TARGET_DIR and grep handler.mjs themselves. The same awk
+  # extractor used at the top of this script is run against the target
+  # dir's handler.mjs; missing target / unparseable VERSION renders as
+  # "(none)" so the dry-run output stays informative even when the
+  # extension was never installed before. Emitted before the "Version:"
+  # line so the upgrade direction (old → new) reads top-to-bottom.
+  installed_version="(none)"
+  if [[ -f "$TARGET_DIR/handler.mjs" ]]; then
+    installed_extracted="$(awk -F'"' '/^export const VERSION = "/{print $2; exit}' "$TARGET_DIR/handler.mjs" 2>/dev/null || true)"
+    if [[ -n "$installed_extracted" ]]; then
+      installed_version="v$installed_extracted"
+    fi
+  fi
+  echo "Installed: $installed_version"
   echo "Version:   v$VERSION"
   echo "Source:    $SOURCE_DIR/"
   echo "Target:    $TARGET_DIR/"

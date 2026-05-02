@@ -9350,3 +9350,56 @@ test("install.sh: every long-form flag advertised by --help is also documented i
         );
     }
 });
+
+test("install.sh --dry-run: surfaces currently-installed version when target dir already has handler.mjs", async () => {
+    // Iter 127 — `./install.sh --dry-run` now prints an "Installed:"
+    // line above the existing "Version:" line, sourced from the same
+    // awk extractor used to read the SOURCE_DIR's `export const
+    // VERSION` declaration but pointed at the TARGET_DIR copy. This
+    // makes upgrade direction obvious from the dry-run alone (e.g.
+    // `Installed: v0.5.0` → `Version: v0.6.0` reads top-to-bottom)
+    // and saves CI scripts from cd-ing into the target dir to grep
+    // the running version themselves.
+    //
+    // Two branches to pin separately:
+    //   1. Target dir exists with a handler.mjs → "Installed: vX.Y.Z".
+    //   2. Target dir missing → "Installed: (none)".
+    const sandboxHome = mkdtempSync(join(tmpdir(), "ralph-install-installed-"));
+    try {
+        // Branch 2 first: nothing pre-installed — Installed should
+        // render as "(none)" rather than crash on a missing file.
+        const noneRun = spawnSync(
+            "bash",
+            [resolve(REPO_ROOT, "install.sh"), "--dry-run"],
+            { encoding: "utf8", env: { ...process.env, HOME: sandboxHome } },
+        );
+        assert.equal(noneRun.status, 0, `--dry-run exited ${noneRun.status}; stderr=${noneRun.stderr}`);
+        assert.match(noneRun.stdout, /^Installed: \(none\)$/m, `--dry-run with no prior install must print "Installed: (none)"; got: ${noneRun.stdout}`);
+        // Branch 1: pre-seed handler.mjs with a fake older VERSION at
+        // the user-scoped target path, run --dry-run again. The
+        // extractor must report the seeded version verbatim.
+        const targetDir = `${sandboxHome}/.copilot/extensions/ralph`;
+        const fs = await import("node:fs");
+        fs.mkdirSync(targetDir, { recursive: true });
+        fs.writeFileSync(
+            join(targetDir, "handler.mjs"),
+            `// stub for test\nexport const VERSION = "0.0.42-test";\n`,
+        );
+        const upgradeRun = spawnSync(
+            "bash",
+            [resolve(REPO_ROOT, "install.sh"), "--dry-run"],
+            { encoding: "utf8", env: { ...process.env, HOME: sandboxHome } },
+        );
+        assert.equal(upgradeRun.status, 0, `--dry-run exited ${upgradeRun.status}; stderr=${upgradeRun.stderr}`);
+        assert.match(upgradeRun.stdout, /^Installed: v0\.0\.42-test$/m, `--dry-run must surface the prior handler.mjs's VERSION verbatim; got: ${upgradeRun.stdout}`);
+        // The "Version:" (new) line is still present alongside.
+        assert.match(upgradeRun.stdout, /^Version:\s+v\d+\.\d+\.\d+/m);
+        // Order: Installed (old) MUST appear before Version (new) so
+        // upgrade direction reads top-to-bottom.
+        const idxInstalled = upgradeRun.stdout.indexOf("Installed:");
+        const idxVersion = upgradeRun.stdout.indexOf("Version:");
+        assert.ok(idxInstalled >= 0 && idxVersion > idxInstalled, `expected "Installed:" line above "Version:" line; got: ${upgradeRun.stdout}`);
+    } finally {
+        rmSync(sandboxHome, { recursive: true, force: true });
+    }
+});

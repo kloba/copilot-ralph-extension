@@ -1,12 +1,12 @@
 # Contributing
 
-Thanks for your interest in `copilot-ralph-extension`! This page is the entry point for contributors. End-user docs live in the [README](../README.md).
+Thanks for your interest in autopilot! This page is the entry point for contributors. End-user docs live in the [README](../README.md).
 
 ## Local development setup
 
 ```bash
 git clone https://github.com/kloba/autopilot.git
-cd copilot-ralph-extension
+cd autopilot
 npm test    # runs the node:test suite under packages/*/test (no install needed for the non-render layer)
 ```
 
@@ -18,13 +18,20 @@ cd packages/tui && npm install   # pulls Ink + React + Yoga + Commander
 
 ## Running autopilot locally
 
-For day-to-day iteration:
+For day-to-day iteration (after `npm link` puts `autopilot` on your `$PATH`):
 
 ```bash
-# From the repo root, no install needed for plain mode:
-node packages/tui/bin/tui.mjs run --self-improve --fresh --max 5
+# From any directory:
+autopilot run --self-improve --fresh --max 5
 
 # Watch the live timeline in another terminal:
+autopilot watch
+```
+
+If you'd rather not `npm link`, invoke the bin script directly:
+
+```bash
+node packages/tui/bin/tui.mjs run --self-improve --fresh --max 5
 node packages/tui/bin/tui.mjs watch
 ```
 
@@ -42,10 +49,10 @@ Every commit MUST include both `Co-authored-by` trailers in this order:
 
 ```
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
-Co-authored-by: copilot-ralph <noreply+copilot-ralph@github.com>
+Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>
 ```
 
-The first attributes the underlying Copilot model; the second attributes the loop that executed the iteration. Order matters — GitHub surfaces the first co-author more prominently. See the [README "Commit attribution" section](../README.md#commit-attribution) and [CHANGELOG](../CHANGELOG.md) for full rationale and opt-out (`RALPH_NO_ATTRIBUTION=1`).
+The first attributes the underlying Copilot model; the second attributes the loop that executed the iteration. Order matters — GitHub surfaces the first co-author more prominently. See the [README "Commit attribution" section](../README.md#commit-attribution) and [CHANGELOG](../CHANGELOG.md) for full rationale and opt-out (`AUTOPILOT_NO_ATTRIBUTION=1`, with legacy `RALPH_NO_ATTRIBUTION=1` still recognized as fallback).
 
 ## Pull request expectations
 

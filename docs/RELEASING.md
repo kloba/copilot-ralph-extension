@@ -1,6 +1,6 @@
 # Releasing
 
-`copilot-ralph-extension` ships as the `ralph-tui` standalone TUI app. There is **no npm publish** today; releases are tagged commits on `main` plus an annotated GitHub Release page. The auto-attached source zipball / tarball is the canonical download.
+`copilot-ralph-extension` ships as the `autopilot` standalone TUI app. There is **no npm publish** today; releases are tagged commits on `main` plus an annotated GitHub Release page. The auto-attached source zipball / tarball is the canonical download.
 
 A tag-driven release-automation workflow ships at [`.github/workflows/release.yml`](../.github/workflows/release.yml) (see issue [#10](https://github.com/kloba/autopilot/issues/10) for the rationale). Pushing a `vX.Y.Z` tag verifies `package.json` matches the tag, asserts a matching `CHANGELOG.md` section exists, runs `npm test` + `npm run check`, and creates the GitHub Release with the matching changelog section as the body. The manual checklist below is the fallback when the workflow is unavailable or you need to cut a release out-of-band.
 
@@ -32,7 +32,7 @@ A tag-driven release-automation workflow ships at [`.github/workflows/release.ym
 
 We follow **Semantic Versioning**:
 
-- **MAJOR** — breaking change to the `ralph-tui` CLI surface (renamed/removed subcommand or flag, removed env var, changed JSONL event shape).
+- **MAJOR** — breaking change to the `autopilot` CLI surface (renamed/removed subcommand or flag, removed env var, changed JSONL event shape).
 - **MINOR** — new subcommand, new flag, new opt-in feature.
 - **PATCH** — bug fix, doc-only change, internal refactor with no user-visible behavior change.
 
@@ -49,7 +49,7 @@ git checkout vX.Y.Z
 node packages/tui/bin/tui.mjs --help
 ```
 
-A future release will publish `ralph-tui` to npm so `npm i -g ralph-tui@X.Y.Z` works; until then the source checkout above is the supported install path.
+A future release will publish `autopilot` to npm so `npm i -g autopilot@X.Y.Z` works; until then the source checkout above is the supported install path.
 
 ## Hotfix branches
 

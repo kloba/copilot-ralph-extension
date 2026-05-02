@@ -51,6 +51,14 @@ test("EVENT_TYPES is the closed set documented in the issue", () => {
         // additive (appended at end); see `usage_update` semantics
         // in events.mjs.
         "usage_update",
+        // Issue #57 — live-output panel. Surfaces the Copilot CLI
+        // session id (captured by `runner.mjs` from the active iter's
+        // terminal `result.sessionId`) so the TUI can mount a tail
+        // against `~/.copilot/session-state/<sessionId>.jsonl`.
+        // Strictly additive — older runs without the event still
+        // replay through this reader unchanged; the panel just shows
+        // its "(waiting for session)" empty state.
+        "session_attached",
     ]);
 });
 
@@ -1246,7 +1254,7 @@ test("slice9: formatEventLine renders commit_observed with short sha + subject +
 // ─── usage_update / premiumRequests round-trip + fold ───────────────
 // The runner emits `usage_update` mid-iter (per assistant.message
 // outputTokens delta + per result.usage.premiumRequests) so the
-// TUI Header / DetailPane snapshot updates while the agent is
+// TUI Header snapshot updates while the agent is
 // still working — pre-fix, `tokens 0` / no premium counter were
 // stuck for the entire iter because `iteration_end` was the only
 // event carrying usage.
@@ -1397,4 +1405,94 @@ test("Issue #54 slice 2a: foldEvents — usage_update with empty/missing excerpt
     ];
     const snap = foldEvents(events);
     assert.equal(snap.iterations[0].excerpt, null);
+});
+
+// ─── Issue #57 — session_attached event + snapshot.sessionId ──────
+
+test("session_attached: serialize→parse round-trips with sessionId field", () => {
+    const ev = {
+        type: "session_attached", ts: 100, runId: "r-1",
+        iteration: 1, sessionId: "abc-123-def",
+    };
+    const line = serializeEvent(ev);
+    const back = parseEventLine(line);
+    assert.equal(back.type, "session_attached");
+    assert.equal(back.sessionId, "abc-123-def");
+    assert.equal(back.iteration, 1);
+});
+
+test("session_attached: serializeEvent rejects missing/empty sessionId", () => {
+    assert.throws(
+        () => serializeEvent({ type: "session_attached", ts: 1, runId: "r-1" }),
+        /requires a non-empty sessionId/,
+    );
+    assert.throws(
+        () => serializeEvent({ type: "session_attached", ts: 1, runId: "r-1", sessionId: "" }),
+        /requires a non-empty sessionId/,
+    );
+});
+
+test("session_attached: serializeEvent caps sessionId at 64 chars", () => {
+    const long = "x".repeat(200);
+    const line = serializeEvent({
+        type: "session_attached", ts: 1, runId: "r-1", sessionId: long,
+    });
+    const back = parseEventLine(line);
+    assert.equal(back.sessionId.length, 64);
+});
+
+test("foldEvents: session_attached populates snapshot.sessionId", () => {
+    const events = [
+        { type: "armed", ts: 1, runId: "r", label: "ralph_loop", maxIterations: 5 },
+        { type: "iteration_start", ts: 2, runId: "r", iteration: 1 },
+        { type: "session_attached", ts: 3, runId: "r", iteration: 1, sessionId: "uuid-1" },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.sessionId, "uuid-1");
+});
+
+test("foldEvents: snapshot.sessionId is null before any session_attached fires", () => {
+    const events = [
+        { type: "armed", ts: 1, runId: "r", label: "ralph_loop", maxIterations: 5 },
+        { type: "iteration_start", ts: 2, runId: "r", iteration: 1 },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.sessionId, null);
+});
+
+test("foldEvents: armed clears a prior run's sessionId (multi-run replay)", () => {
+    const events = [
+        { type: "armed", ts: 1, runId: "r1", label: "a", maxIterations: 1 },
+        { type: "session_attached", ts: 2, runId: "r1", iteration: 1, sessionId: "s1" },
+        { type: "complete", ts: 3, runId: "r1", reason: "promise" },
+        { type: "armed", ts: 4, runId: "r2", label: "b", maxIterations: 1 },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.runId, "r2");
+    assert.equal(snap.sessionId, null);
+});
+
+test("foldEvents: a later session_attached overrides an earlier one (non-continue mode iter rotation)", () => {
+    const events = [
+        { type: "armed", ts: 1, runId: "r", label: "a", maxIterations: 5 },
+        { type: "session_attached", ts: 2, runId: "r", iteration: 1, sessionId: "s1" },
+        { type: "session_attached", ts: 3, runId: "r", iteration: 2, sessionId: "s2" },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.sessionId, "s2");
+});
+
+test("foldEvents: malformed session_attached (empty sessionId) is a no-op", () => {
+    // Defence-in-depth: the serializer rejects empty values so a
+    // well-formed JSONL line cannot carry one, but a hand-crafted
+    // events.jsonl might. The fold silently drops the bad value
+    // rather than overwriting a prior good one.
+    const events = [
+        { type: "armed", ts: 1, runId: "r", label: "a", maxIterations: 1 },
+        { type: "session_attached", ts: 2, runId: "r", iteration: 1, sessionId: "good" },
+        { type: "session_attached", ts: 3, runId: "r", iteration: 1, sessionId: "" },
+        { type: "session_attached", ts: 4, runId: "r", iteration: 1, sessionId: 123 },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.sessionId, "good");
 });

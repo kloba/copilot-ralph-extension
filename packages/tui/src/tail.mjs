@@ -3,14 +3,21 @@
 // readEventsFile() reads a complete events.jsonl synchronously — used by
 // `replay` for fixed historical runs and by tests.
 //
-// tailEventsFile() returns an async iterator that yields events as the
-// writer appends them. It uses fs.watch + a polling fallback so it works
-// on platforms where watch events are unreliable (Linux network mounts,
-// Docker bind mounts on macOS, …). The iterator stops when:
-//   - the consumer calls .return() / breaks the for-await loop,
-//   - a `complete` or `abort` event is observed (terminal markers — no
-//     more events will land), OR
-//   - tailOptions.signal aborts.
+// tailJsonlFile() is the generic tailer: it watches a JSONL file, parses
+// each line via a caller-supplied `parseLine` predicate, and stops when
+// the caller-supplied `isTerminal` predicate returns truthy (or runs
+// forever if `isTerminal` is omitted). Inode + birthtime + size tracking
+// already covers rotation, truncation, replacement, and ENOENT polling.
+//
+// tailEventsFile() is the events-flavoured wrapper used by the rest of
+// the TUI: it parses lines via `parseEventLine` (so unknown-type lines
+// are dropped) and stops on `complete` / `abort` markers.
+//
+// tailSessionFile() (issue #57) is the session-log wrapper used by the
+// live-output panel: it parses lines via permissive JSON.parse so the
+// Copilot CLI's evolving event schema can land lines we don't yet
+// recognise without us silently dropping them. The session log has no
+// terminal marker — the consumer aborts via signal when its loop ends.
 //
 // Zero deps (Node stdlib only) — same constraint as the rest of the
 // TUI's non-render layer. Only the Ink renderer gets to depend on
@@ -22,6 +29,22 @@ import { setTimeout as delay } from "node:timers/promises";
 import { parseEventLine } from "./events.mjs";
 
 const TERMINAL_TYPES = new Set(["complete", "abort"]);
+
+/**
+ * JSON.parse the line, returning null on any error so a malformed line
+ * silently disappears — matches parseEventLine's tolerance contract.
+ *
+ * @param {string} line
+ * @returns {object|null}
+ */
+function safeJsonParse(line) {
+    try {
+        const parsed = JSON.parse(line);
+        return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+        return null;
+    }
+}
 
 /**
  * Read and parse every JSONL line in `filePath`. Skips malformed lines
@@ -63,7 +86,8 @@ export function splitAndParse(buf) {
 }
 
 /**
- * Tail a JSONL file and yield parsed events as they arrive.
+ * Tail a JSONL file and yield parsed objects as they arrive. Generic
+ * version: caller supplies `parseLine` and (optionally) `isTerminal`.
  *
  * Implementation notes:
  *   - We track the byte offset of the last fully-consumed line so a
@@ -75,24 +99,31 @@ export function splitAndParse(buf) {
  *     immediately when the file actually grows.
  *   - When the file doesn't yet exist we poll for it. The watch path
  *     deliberately does not throw on ENOENT.
+ *   - `parseLine` returning `null` drops the line silently; this is the
+ *     mechanism by which both events.jsonl (unknown type) and session
+ *     log (malformed JSON) tolerate noise.
+ *   - `isTerminal` is consulted on each yielded value; truthy means
+ *     "no further events will be of interest, stop the iterator".
+ *     Omit to tail forever (until signal aborts).
  *
  * @param {string} filePath
  * @param {Object} [options]
- * @param {object} [options.fs]              Override fs (tests).
- * @param {AbortSignal} [options.signal]     Cancel the iterator.
- * @param {number} [options.pollMs]          Polling interval. Default 200.
- * @param {boolean} [options.stopOnTerminal] Auto-stop on complete/abort.
- *                                           Default true.
- * @param {() => Promise<void>} [options.sleep] Test-only sleep injector.
+ * @param {object} [options.fs]                    Override fs (tests).
+ * @param {AbortSignal} [options.signal]           Cancel the iterator.
+ * @param {number} [options.pollMs]                Polling interval. Default 200.
+ * @param {(line: string) => object|null} [options.parseLine] Line parser; null → drop.
+ * @param {(ev: object) => boolean} [options.isTerminal]      Stop predicate.
+ * @param {() => Promise<void>} [options.sleep]    Test-only sleep injector.
  * @returns {AsyncIterable<object>}
  */
-export function tailEventsFile(filePath, options = {}) {
+export function tailJsonlFile(filePath, options = {}) {
     if (typeof filePath !== "string" || !filePath) {
-        throw new TypeError("tailEventsFile: filePath must be a non-empty string");
+        throw new TypeError("tailJsonlFile: filePath must be a non-empty string");
     }
     const fs = options.fs ?? fsDefault;
     const pollMs = Number.isFinite(options.pollMs) && options.pollMs > 0 ? options.pollMs : 200;
-    const stopOnTerminal = options.stopOnTerminal !== false;
+    const parseLine = typeof options.parseLine === "function" ? options.parseLine : safeJsonParse;
+    const isTerminal = typeof options.isTerminal === "function" ? options.isTerminal : null;
     const signal = options.signal;
     const sleep = options.sleep ?? ((ms) => delay(ms, undefined, { signal }));
 
@@ -200,10 +231,10 @@ export function tailEventsFile(filePath, options = {}) {
                 for (const line of ready.split("\n")) {
                     const trimmed = line.trim();
                     if (!trimmed) continue;
-                    const ev = parseEventLine(trimmed);
+                    const ev = parseLine(trimmed);
                     if (!ev) continue;
                     yield ev;
-                    if (stopOnTerminal && TERMINAL_TYPES.has(ev.type)) {
+                    if (isTerminal && isTerminal(ev)) {
                         done = true;
                         break;
                     }
@@ -216,4 +247,57 @@ export function tailEventsFile(filePath, options = {}) {
             }
         },
     };
+}
+
+/**
+ * Tail an events.jsonl produced by extension/events-emit.mjs. Validates
+ * each line via parseEventLine (drops unknown event types) and stops on
+ * `complete` / `abort` markers (unless `stopOnTerminal: false`).
+ *
+ * Thin wrapper around `tailJsonlFile` — see that function's options for
+ * everything except the events-specific knobs documented below.
+ *
+ * @param {string} filePath
+ * @param {Object} [options]
+ * @param {boolean} [options.stopOnTerminal] Auto-stop on complete/abort. Default true.
+ * @returns {AsyncIterable<object>}
+ */
+export function tailEventsFile(filePath, options = {}) {
+    if (typeof filePath !== "string" || !filePath) {
+        throw new TypeError("tailEventsFile: filePath must be a non-empty string");
+    }
+    const stopOnTerminal = options.stopOnTerminal !== false;
+    return tailJsonlFile(filePath, {
+        fs: options.fs,
+        signal: options.signal,
+        pollMs: options.pollMs,
+        sleep: options.sleep,
+        parseLine: parseEventLine,
+        isTerminal: stopOnTerminal ? (ev) => TERMINAL_TYPES.has(ev.type) : null,
+    });
+}
+
+/**
+ * Tail a Copilot CLI session log at
+ * `~/.copilot/session-state/<sessionId>.jsonl` (issue #57). Permissive
+ * JSON.parse so a schema evolution upstream lands without us dropping
+ * lines. No terminal predicate — the session log outlives any single
+ * arm; the consumer aborts via `signal` when its loop unmounts.
+ *
+ * @param {string} filePath
+ * @param {Object} [options]  Same shape as `tailJsonlFile` minus `parseLine`/`isTerminal`.
+ * @returns {AsyncIterable<object>}
+ */
+export function tailSessionFile(filePath, options = {}) {
+    if (typeof filePath !== "string" || !filePath) {
+        throw new TypeError("tailSessionFile: filePath must be a non-empty string");
+    }
+    return tailJsonlFile(filePath, {
+        fs: options.fs,
+        signal: options.signal,
+        pollMs: options.pollMs,
+        sleep: options.sleep,
+        parseLine: safeJsonParse,
+        isTerminal: null,
+    });
 }

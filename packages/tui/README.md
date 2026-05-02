@@ -38,7 +38,7 @@ ralph-tui --version  | -V            Print the ralph-tui package version.
 
 `--plain` is **auto-enabled when stdout is not a TTY** so CI logs and
 `asciinema rec` outputs stay grep-friendly and ANSI-free. The
-interactive Ink-rendered watch UI (Header / Timeline / DetailPane /
+interactive Ink-rendered watch UI (Header / Timeline / LiveOutputPane /
 Controls — see [docs/cli-stack.md](../../docs/cli-stack.md)) ships in
 the next slice; if its module isn't installed, `watch` falls back to
 `--plain` automatically.

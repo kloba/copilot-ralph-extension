@@ -413,7 +413,7 @@ export function pruneRuns({
             survivors.push(trimmed);
             continue;
         }
-        if (typeof obj.ts === "number" && obj.ts < cutoff) {
+        if (Number.isFinite(obj.ts) && obj.ts < cutoff) {
             removed.push({ runId: obj.runId, ts: obj.ts });
         } else {
             survivors.push(trimmed);

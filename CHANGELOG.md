@@ -77,6 +77,27 @@
   either value is caught at test time.
 
 ### Fixes
+- `pruneRuns` (the engine behind `ralph-tui prune`) now also
+  guards the `obj.ts < cutoff` deletion gate with
+  `Number.isFinite(obj.ts)`. Pre-iter-163 the gate was
+  `typeof obj.ts === "number" && obj.ts < cutoff`. Because
+  `typeof -Infinity === "number"` is true and `-Infinity < N`
+  is true for every finite cutoff, a hand-edited or corrupted
+  index.jsonl row carrying `ts: -1e500` (which `JSON.parse`
+  promotes to `-Infinity`) would have silently swept the
+  matching legitimate per-run directory into `removed` and
+  `rmSync`'d it from disk. Mirrors the iter-158 hardening of
+  `aggregateRuns` on events.jsonl rows; defence in depth on the
+  same class of bug for the index.jsonl side. The writer never
+  emits `-Infinity` (`JSON.stringify(-Infinity) === "null"`),
+  so this only ever bites a hand-edited or partially-corrupted
+  index file — but a stuck-in-prune-loop user reporting "my
+  legitimate runs keep disappearing" would have had no clue
+  the corrupted-ts row was the cause. Pinned with a
+  drift-guard test in `packages/tui/test/writer.test.mjs` that
+  forges the `-1e500` literal in the JSONL line, asserts
+  `JSON.parse` indeed yields `-Infinity`, runs `pruneRuns`,
+  and verifies the legitimate run dir survives.
 - `pruneRuns` (the engine behind `ralph-tui prune`) no longer
   treats an empty-string `runId` as a valid armed-row to delete.
   Pre-iter-159 the row filter at the top of the loop checked

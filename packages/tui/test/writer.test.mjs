@@ -639,3 +639,37 @@ test("readRunIndex: empty-runId / missing-runId / non-string-runId rows are skip
     assert.equal(entries.length, 1, "only the legitimate row should survive (4 invalid shapes rejected)");
     assert.equal(entries[0].runId, "real-1", "the surviving row must be the one with the non-empty string runId");
 });
+
+test("pruneRuns: hand-edited ts=-Infinity row does NOT prematurely delete the run dir (Number.isFinite guard, iter 162→163)", () => {
+    // Iter 163 — `pruneRuns` previously gated removal with
+    // `typeof obj.ts === "number" && obj.ts < cutoff`. Because
+    // `typeof -Infinity === "number"` is true and `-Infinity < N`
+    // is true for every finite cutoff, a hand-edited or corrupted
+    // index.jsonl row carrying `ts: -Infinity` (e.g. the user
+    // typed `-1e500` while debugging, JSON.parse promoted it to
+    // `-Infinity`) would silently sweep the matching legitimate
+    // run dir into `removed`, then rmSync would delete it. Mirrors
+    // the iter-158 `aggregateRuns` Number.isFinite hardening on
+    // events.jsonl rows; a defence-in-depth pin against the same
+    // class of bug on the index.jsonl side.
+    const root = mkTmp();
+    const indexPath = path.join(root, "index.jsonl");
+    const liveRunId = "ralph_loop-1700000000000";
+    const liveRunDir = path.join(root, liveRunId);
+    fs.mkdirSync(liveRunDir, { recursive: true });
+    fs.writeFileSync(path.join(liveRunDir, "events.jsonl"), "{}\n", "utf8");
+    // Forge a row whose ts JSON.parses to -Infinity. We cannot just
+    // use the literal `-1e500` — JSON.stringify would emit "null".
+    // Construct the line by hand to mimic a corrupted writer dump.
+    const corruptedRow = '{"type":"armed","runId":"' + liveRunId + '","label":"ralph_loop","startedAt":1700000000000,"ts":-1e500}\n';
+    fs.writeFileSync(indexPath, corruptedRow, "utf8");
+    // Sanity check: parsing this row indeed yields -Infinity (so the
+    // bug it pins is the actually-reachable one, not theoretical).
+    const parsed = JSON.parse(corruptedRow);
+    assert.equal(parsed.ts, -Infinity, "JSON.parse of the literal -1e500 must materialise as -Infinity");
+
+    const result = pruneRuns({ olderThanMs: 1, now: () => Date.now(), env: { RALPH_EVENTS_DIR: root } });
+
+    assert.equal(result.removed.length, 0, "ts=-Infinity row must NOT be marked for removal — finite-ts guard");
+    assert.equal(fs.existsSync(liveRunDir), true, "the legitimate run dir must survive a corrupted-ts row in the index");
+});

@@ -3,12 +3,12 @@
 // module so it can be imported by:
 //
 //   - extension/handler.mjs — the in-session loop runner
-//   - packages/tui/src/runner.mjs — the out-of-session ralph-tui run
+//   - packages/tui/src/runner.mjs — the out-of-session autopilot run
 //     driver (each iter is a fresh `copilot -p ...` subprocess)
 //
 // Both runners must ship the IDENTICAL prompt body, otherwise behaviour
 // diverges between `self_improve` / `grow_project` (in-session) and
-// `ralph-tui run --self-improve` / `ralph-tui run --grow-project`
+// `autopilot run --self-improve` / `autopilot run --grow-project`
 // (out-of-session). Centralising the prompt source removes that drift
 // surface entirely.
 //

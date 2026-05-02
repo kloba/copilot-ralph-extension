@@ -1,4 +1,4 @@
-// Extension: ralph
+// Extension: autopilot
 // Hook/event-driven autonomous iterative loop for GitHub Copilot CLI.
 // Inspired by the Stop-hook re-injection pattern.
 
@@ -13,7 +13,7 @@ const controller = createRalphController({ events: true });
 // in /extensions nor any clue why. Emit stderr and rethrow.
 function fatal(stage, err) {
     const msg = err && err.message ? err.message : String(err);
-    process.stderr.write(`ralph extension: failed to ${stage}: ${msg}\n`);
+    process.stderr.write(`autopilot extension: failed to ${stage}: ${msg}\n`);
     throw err;
 }
 

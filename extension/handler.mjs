@@ -33,7 +33,7 @@ const moduleRequire = createRequire(import.meta.url);
 // which runs in CI on every push. We hard-code the literal here rather
 // than reading `package.json` at runtime because `install.sh` only ships
 // `extension.mjs handler.mjs events-emit.mjs` to `~/.copilot/extensions/
-// ralph/` — a `require("../package.json")` would crash on installed
+// autopilot/` — a `require("../package.json")` would crash on installed
 // copies. The constant is exported so a future "version check on
 // extension load" feature (issue #25) and any tooling that introspects
 // the snapshot has a single source of truth without a torn-read window
@@ -220,15 +220,21 @@ const VERB_BY_REASON = Object.freeze({
 //     load-time loop below validates both contain the literals in the
 //     correct order and document both opt-out env vars).
 //   - The __test__ exports (BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER,
-//     BAKED_ATTRIBUTION_OPT_OUT, BAKED_ATTRIBUTION_OPT_OUT_PRIMARY) used
+//     BAKED_ATTRIBUTION_OPT_OUT, BAKED_ATTRIBUTION_OPT_OUT_LEGACY) used
 //     by the canonical-source pin test.
 // Renaming any of these literals (e.g. registering the bot under a
 // different login, swapping the noreply domain) requires updating
 // every surface above.
 const BAKED_COPILOT_TRAILER = "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>";
 const BAKED_RALPH_TRAILER = "Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>";
-const BAKED_ATTRIBUTION_OPT_OUT = "RALPH_NO_ATTRIBUTION=1";
-const BAKED_ATTRIBUTION_OPT_OUT_PRIMARY = "AUTOPILOT_NO_ATTRIBUTION=1";
+// Primary opt-out env var (project-rename stage 4). The constant NAME
+// keeps the historical _OPT_OUT spelling so existing __test__ exports
+// stay stable; only its VALUE flipped from the legacy RALPH_* form.
+const BAKED_ATTRIBUTION_OPT_OUT = "AUTOPILOT_NO_ATTRIBUTION=1";
+// Legacy opt-out env var, kept as a load-time invariant so prompts
+// continue to document both spellings while existing user scripts
+// that still set RALPH_NO_ATTRIBUTION=1 keep working.
+const BAKED_ATTRIBUTION_OPT_OUT_LEGACY = "RALPH_NO_ATTRIBUTION=1";
 
 // Issue #1 (ap_loop parity): unlike self_improve / grow_project which
 // embed the COMMIT stage in their full baked SDLC prompt, ap_loop takes
@@ -245,7 +251,7 @@ const BAKED_RALPH_LOOP_RIDER = `---
 CONTROLLER REQUIREMENT — commit attribution: if this iteration produces any git commit, append BOTH Co-authored-by trailers in this exact order at the end of the commit message (separated from the body by a blank line):
   ${BAKED_COPILOT_TRAILER}
   ${BAKED_RALPH_TRAILER}
-The second trailer attributes loop-driven commits to the dedicated copilot-ralph bot account so they are passively searchable across public GitHub. If the environment variable ${BAKED_ATTRIBUTION_OPT_OUT_PRIMARY} (or legacy ${BAKED_ATTRIBUTION_OPT_OUT}) is set, omit ONLY the second copilot-ralph trailer; the first Copilot trailer always ships. If this iteration creates no commit, ignore this requirement.`;
+The second trailer attributes loop-driven commits to the dedicated copilot-ralph bot account so they are passively searchable across public GitHub. If the environment variable ${BAKED_ATTRIBUTION_OPT_OUT} (or legacy ${BAKED_ATTRIBUTION_OPT_OUT_LEGACY}) is set, omit ONLY the second copilot-ralph trailer; the first Copilot trailer always ships. If this iteration creates no commit, ignore this requirement.`;
 
 for (const [label, prompt] of [
     ["PROMPT_SELF_IMPROVE", PROMPT_SELF_IMPROVE],
@@ -264,9 +270,9 @@ for (const [label, prompt] of [
             `handler.mjs: ${label} must document the "${BAKED_ATTRIBUTION_OPT_OUT}" opt-out env var alongside the dual Co-authored-by trailers. Issue #1 attribution invariant.`,
         );
     }
-    if (!prompt.includes(BAKED_ATTRIBUTION_OPT_OUT_PRIMARY)) {
+    if (!prompt.includes(BAKED_ATTRIBUTION_OPT_OUT_LEGACY)) {
         throw new Error(
-            `handler.mjs: ${label} must document the "${BAKED_ATTRIBUTION_OPT_OUT_PRIMARY}" opt-out env var alongside the dual Co-authored-by trailers. Issue #1 attribution invariant.`,
+            `handler.mjs: ${label} must document the "${BAKED_ATTRIBUTION_OPT_OUT_LEGACY}" opt-out env var alongside the dual Co-authored-by trailers. Issue #1 attribution invariant.`,
         );
     }
 }
@@ -383,8 +389,11 @@ function pauseElapsedFromAt(pausedAt, now) {
 // the CLI — no orphaned wake-locks.
 //
 // Disabled by default. Enable via env var:
-//     RALPH_CAFFEINATE=1                 → enable, scope = idle (default)
-//     RALPH_CAFFEINATE_SCOPE=idle+display → also block display sleep
+//     AUTOPILOT_CAFFEINATE=1                 → enable, scope = idle (default)
+//     AUTOPILOT_CAFFEINATE_SCOPE=idle+display → also block display sleep
+// The legacy spellings RALPH_CAFFEINATE / RALPH_CAFFEINATE_SCOPE still
+// work as a quiet fallback; the first time either fires per process,
+// a single-line stderr deprecation notice is emitted.
 //
 // On non-darwin platforms or when the binary is missing, the helper degrades
 // to a silent no-op — never fail the loop over a power-management nicety.
@@ -392,16 +401,51 @@ function pauseElapsedFromAt(pausedAt, now) {
 const CAFFEINATE_TRUTHY = new Set(["1", "true", "yes", "on"]);
 const CAFFEINATE_SCOPES = new Set(["idle", "idle+display"]);
 
-function isCaffeinateEnabled(env) {
-    const raw = env?.RALPH_CAFFEINATE;
-    if (typeof raw !== "string") return false;
-    return CAFFEINATE_TRUTHY.has(raw.trim().toLowerCase());
+// One-shot per-process deprecation notices for legacy env-var fallbacks.
+// We deliberately keep this in-memory only (no sentinel file) because the
+// caffeinate / no-attribution surfaces are read often enough during a
+// session that disk-based dedup would add complexity without payoff —
+// the goal is to nudge the user once per CLI run, not once forever.
+const _legacyEnvNoticeFired = new Set();
+function _warnLegacyEnvOnce(legacyName, primaryName, stderr = process.stderr) {
+    if (_legacyEnvNoticeFired.has(legacyName)) return;
+    _legacyEnvNoticeFired.add(legacyName);
+    try {
+        stderr.write?.(`[autopilot] note: env $${legacyName} is deprecated, please use $${primaryName} (still honored)\n`);
+    } catch { /* best-effort */ }
+}
+// Test seam — reset the per-process notice flags so each test starts
+// from a clean slate.
+function _resetLegacyEnvNotices() { _legacyEnvNoticeFired.clear(); }
+
+// Primary $AUTOPILOT_CAFFEINATE; falls back to legacy $RALPH_CAFFEINATE
+// with a one-line stderr deprecation on first fallback firing.
+function isCaffeinateEnabled(env, stderr) {
+    const primary = env?.AUTOPILOT_CAFFEINATE;
+    if (typeof primary === "string") {
+        return CAFFEINATE_TRUTHY.has(primary.trim().toLowerCase());
+    }
+    const legacy = env?.RALPH_CAFFEINATE;
+    if (typeof legacy !== "string") return false;
+    const enabled = CAFFEINATE_TRUTHY.has(legacy.trim().toLowerCase());
+    if (enabled) _warnLegacyEnvOnce("RALPH_CAFFEINATE", "AUTOPILOT_CAFFEINATE", stderr);
+    return enabled;
 }
 
-function resolveCaffeinateScope(env) {
-    const raw = env?.RALPH_CAFFEINATE_SCOPE;
-    if (typeof raw !== "string") return "idle";
-    const v = raw.trim().toLowerCase();
+// Primary $AUTOPILOT_CAFFEINATE_SCOPE; falls back to legacy
+// $RALPH_CAFFEINATE_SCOPE with a one-line stderr deprecation on first
+// fallback firing. Bogus values collapse to "idle" the same way the
+// primary parse does — keep a typo from disabling sleep prevention.
+function resolveCaffeinateScope(env, stderr) {
+    const primary = env?.AUTOPILOT_CAFFEINATE_SCOPE;
+    if (typeof primary === "string") {
+        const v = primary.trim().toLowerCase();
+        return CAFFEINATE_SCOPES.has(v) ? v : "idle";
+    }
+    const legacy = env?.RALPH_CAFFEINATE_SCOPE;
+    if (typeof legacy !== "string") return "idle";
+    _warnLegacyEnvOnce("RALPH_CAFFEINATE_SCOPE", "AUTOPILOT_CAFFEINATE_SCOPE", stderr);
+    const v = legacy.trim().toLowerCase();
     return CAFFEINATE_SCOPES.has(v) ? v : "idle";
 }
 
@@ -421,16 +465,17 @@ function caffeinateFlagsForScope(scope) {
  * @param {Function} deps.spawnFn - child_process.spawn-compatible
  * @param {(msg: string) => void} deps.log
  * @param {string} deps.label - "ap_loop" | "self_improve" | "grow_project"
+ * @param {{ write: Function }} [deps.stderr] - sink for legacy-env deprecation notices
  * @returns {(() => void) | null}
  */
-function startCaffeinate({ env, platform, pid, spawnFn, log, label }) {
-    if (!isCaffeinateEnabled(env)) return null;
+function startCaffeinate({ env, platform, pid, spawnFn, log, label, stderr }) {
+    if (!isCaffeinateEnabled(env, stderr)) return null;
     if (platform !== "darwin") {
         log(`${label}: caffeinate skipped — platform ${platform} not supported (darwin only)`);
         return null;
     }
     if (typeof spawnFn !== "function") return null;
-    const scope = resolveCaffeinateScope(env);
+    const scope = resolveCaffeinateScope(env, stderr);
     const flags = caffeinateFlagsForScope(scope);
     const args = [flags, "-w", String(pid)];
     let child;
@@ -1115,12 +1160,15 @@ export function validateArgs(args) {
 export function createRalphController(opts = {}) {
     // Caffeinate dependency injection (issue #8). Tests pass stubs; production
     // resolves child_process.spawn lazily so the import cost is paid only when
-    // RALPH_CAFFEINATE is actually enabled.
+    // AUTOPILOT_CAFFEINATE (or legacy RALPH_CAFFEINATE) is actually enabled.
     const caffeinateDeps = {
         env: opts.caffeinate?.env ?? process.env,
         platform: opts.caffeinate?.platform ?? process.platform,
         pid: opts.caffeinate?.pid ?? process.pid,
         spawnFn: opts.caffeinate?.spawnFn ?? null,
+        // Tests inject `caffeinate.stderr = { write }` so legacy-env
+        // deprecations don't pollute the tap stream.
+        stderr: opts.caffeinate?.stderr ?? process.stderr,
     };
     // Git dependency injection (issue #5). `ap_status` calls gitExec(args)
     // synchronously; tests replace it with a stub that returns canned results.
@@ -1160,7 +1208,7 @@ export function createRalphController(opts = {}) {
     // armLoop call and attached to state.active.events. `factory` is the
     // injection seam tests use to record without touching disk.
     //   opts.events = false | undefined         → off
-    //   opts.events = true                      → on, default emitter (writes ~/.copilot/ralph/runs)
+    //   opts.events = true                      → on, default emitter (writes ~/.copilot/autopilot/events; legacy ~/.copilot/ralph/runs honored on fallback)
     //   opts.events = { factory }               → on, custom factory({label, startedAt}) → writer
     //   opts.events = { env, fs }               → on, default emitter w/ overrides
     const eventsConfig = (() => {
@@ -1663,7 +1711,7 @@ export function createRalphController(opts = {}) {
         // caffeinate is actually enabled (avoids paying the require cost
         // for every loop arm). Tests inject spawnFn directly via opts.
         let spawnFn = caffeinateDeps.spawnFn;
-        if (!spawnFn && isCaffeinateEnabled(caffeinateDeps.env) && caffeinateDeps.platform === "darwin") {
+        if (!spawnFn && isCaffeinateEnabled(caffeinateDeps.env, caffeinateDeps.stderr) && caffeinateDeps.platform === "darwin") {
             try {
                 ({ spawn: spawnFn } = moduleRequire("node:child_process"));
             } catch { /* swallow — startCaffeinate handles null spawnFn */ }
@@ -1675,6 +1723,7 @@ export function createRalphController(opts = {}) {
             spawnFn,
             log,
             label,
+            stderr: caffeinateDeps.stderr,
         });
         // Snapshot git HEAD/branch at arm-time for ap_status's
         // "files changed since loop started" diff. Best-effort — a non-git
@@ -2434,4 +2483,4 @@ export function createRalphController(opts = {}) {
     };
 }
 
-export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_ATTRIBUTION_OPT_OUT_PRIMARY, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, classifyPorcelainLine, parseUserReason, coerceNumberField, VERSION, compareSemver, VERB_BY_REASON, isCaffeinateEnabled, resolveCaffeinateScope, caffeinateFlagsForScope, describeArgType, displayValue, pauseElapsedFromAt };
+export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_ATTRIBUTION_OPT_OUT_LEGACY, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, classifyPorcelainLine, parseUserReason, coerceNumberField, VERSION, compareSemver, VERB_BY_REASON, isCaffeinateEnabled, resolveCaffeinateScope, caffeinateFlagsForScope, describeArgType, displayValue, pauseElapsedFromAt, _resetLegacyEnvNotices };

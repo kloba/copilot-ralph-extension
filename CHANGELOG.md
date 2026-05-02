@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Breaking
+
+- **Project renamed `copilot-ralph-extension` → `autopilot`.** Top-level npm package, sub-package `@copilot-ralph-extension/tui` → `@autopilot/tui`, binary `ralph-tui` → `autopilot`, GitHub repo URL `kloba/copilot-ralph-extension` → `kloba/autopilot`. (refs #49)
+- **Tools renamed `ralph_{loop,status,pause,resume,stop}` → `ap_*`.** `self_improve` and `grow_project` keep their names. Existing scripts using the old tool names will fail with `unknown tool` errors. (refs #49)
+- **Runtime paths flipped.** Default events root `~/.copilot/ralph/runs` → `~/.copilot/autopilot/runs`; default TUI runner state root `~/.copilot/ralph-tui/runs` → `~/.copilot/autopilot-tui/runs`; install root `~/.copilot/extensions/ralph` → `~/.copilot/extensions/autopilot`; `.github/extensions/ralph` → `.github/extensions/autopilot`. On first run, if the new path doesn't yet exist and the legacy `~/.copilot/ralph[-tui]/runs` does, the new code reads from the legacy path and prints a one-line stderr migration notice (sentinel-gated so it doesn't reprint). Subsequent writes land in the new path. (refs #49)
+- **Env vars renamed `RALPH_*` → `AUTOPILOT_*`** (`RALPH_EVENTS_DIR` → `AUTOPILOT_EVENTS_DIR`; `RALPH_TUI_RUNS_DIR` → `AUTOPILOT_RUNS_DIR`; `RALPH_TUI_COPILOT_BIN` → `AUTOPILOT_COPILOT_BIN`; `RALPH_NO_ATTRIBUTION` → `AUTOPILOT_NO_ATTRIBUTION`; `RALPH_CAFFEINATE` → `AUTOPILOT_CAFFEINATE`; `RALPH_CAFFEINATE_SCOPE` → `AUTOPILOT_CAFFEINATE_SCOPE`). Old names are still read for one release with a one-line stderr deprecation notice on first read. (refs #49)
+- **`events.jsonl` vocabulary breaking.** Event `label` values flip `ralph_loop` → `ap_loop`, `ralph_pause` → `ap_pause`, etc. The `runId` mode prefixes `ralph-tui-self-improve` / `ralph-tui-grow-project` / `ralph-tui-prompt` flip to `autopilot-self-improve` / `autopilot-grow-project` / `autopilot-prompt`. No compatibility shim — external scripts filtering on the old labels must update their patterns. (refs #49)
+- **`scripts/ralph-tui-fresh.sh` is now a deprecating wrapper around `scripts/autopilot-fresh.sh`.** Existing aliases keep working (with a one-line stderr notice on each invocation). The wrapper will be removed in a future release. (refs #49)
+
+### Preserved
+
+- The `Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>` trailer literal continues to ship on every loop-driven commit. Cross-GitHub searchability of past + future loop commits is preserved verbatim. The `AUTOPILOT_NO_ATTRIBUTION=1` env var (legacy `RALPH_NO_ATTRIBUTION=1` still works) suppresses ONLY the second trailer; the first `Copilot` trailer always ships. (refs #49)
+
 ### Features
 - Issue #54 — `ralph-tui run` UX hardening across the
   three-level layout. The four top panes

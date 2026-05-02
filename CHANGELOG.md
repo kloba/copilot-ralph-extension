@@ -60,6 +60,23 @@
   either value is caught at test time.
 
 ### Fixes
+- `install.sh --project` now surfaces a distinct error when
+  the `git` binary is missing from `PATH`, instead of
+  conflating that case with "not inside a git repo". A
+  pre-flight `command -v git` check fires before
+  `git rev-parse --show-toplevel`, prints
+  `Error: --project requires the 'git' binary in PATH, but
+  it was not found.` + a Hint pointing at the user-scoped
+  install path as a one-line recovery. Previously the
+  `git rev-parse 2>/dev/null || true` swallowed the
+  binary-missing exit code along with every other failure
+  mode and surfaced the misleading "not inside a git repo"
+  message — sending the user looking for a phantom repo
+  rather than installing git. Pinned by a sandbox test that
+  builds a minimal `PATH` containing only the coreutils
+  install.sh exercises before the `--project` branch
+  (`dirname`, `awk`) and asserts both the new error AND
+  that the misleading wording is NOT what surfaces.
 - `install.sh` now prints a friendly "Error: …/handler.mjs
   not found" + recovery hint when the source tree is missing
   `extension/handler.mjs` (e.g. a user copied only the script

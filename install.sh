@@ -132,6 +132,19 @@ else
 fi
 
 if [[ "$SEEN_PROJECT" == "1" ]]; then
+  # Surface a clear error when `git` itself is missing from PATH instead
+  # of relying on `git rev-parse` failing through the empty-string
+  # fallthrough below — that path mis-attributes a missing binary as
+  # "not inside a git repo", sending the user looking for a phantom repo
+  # rather than installing git. `command -v` is a bash builtin so this
+  # check works even on minimal containers where coreutils may be
+  # trimmed (the user can't have hit --project without `bash` running
+  # this script anyway, so the builtin is always available).
+  if ! command -v git >/dev/null 2>&1; then
+    echo "Error: --project requires the 'git' binary in PATH, but it was not found." >&2
+    echo "  Hint: install git, or omit --project to install into the user-scoped path (~/.copilot/extensions/ralph)." >&2
+    exit 1
+  fi
   GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
   if [[ -z "$GIT_ROOT" ]]; then
     echo "Error: --project requires being inside a git repo." >&2

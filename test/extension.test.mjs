@@ -9431,3 +9431,55 @@ test("install.sh: -h short flag is an alias for --help", () => {
     assert.match(shortRun.stdout, /Usage: \.\/install\.sh/);
     assert.equal(shortRun.stderr, "", `-h emitted unexpected stderr: ${shortRun.stderr}`);
 });
+
+test("install.sh --project: clear error when git binary is not in PATH", async () => {
+    // Iter 129 — `--project` previously delegated git detection to
+    // `git rev-parse --show-toplevel 2>/dev/null || true`, treating an
+    // empty result as "not inside a git repo". A user on a minimal
+    // container or chroot where the `git` binary is genuinely absent
+    // (rare locally, but it does happen in CI Docker images that
+    // intentionally omit git) would see the misleading "not inside a
+    // git repo" diagnostic and waste time looking for a phantom repo
+    // instead of installing git. Pin the new pre-check (`command -v
+    // git`) so the binary-missing case surfaces a distinct error
+    // mentioning git explicitly. The "not inside a repo" error
+    // (covered elsewhere) stays unchanged.
+    //
+    // Sandboxing: build a fresh PATH directory containing only the
+    // coreutils install.sh exercises BEFORE the --project branch
+    // (`dirname` to resolve SCRIPT_DIR, `awk` to extract VERSION).
+    // We deliberately do NOT symlink `git`, so `command -v git`
+    // evaluates false. node is intentionally omitted too — the
+    // install.sh "Warning: node not found; skipping syntax check"
+    // path is the documented graceful-degradation, so it's fine to
+    // exercise it here.
+    const stubBin = mkdtempSync(join(tmpdir(), "ralph-no-git-"));
+    const fs = await import("node:fs");
+    try {
+        for (const tool of ["dirname", "awk"]) {
+            const r = spawnSync("which", [tool], { encoding: "utf8" });
+            if (r.status !== 0 || !r.stdout.trim()) {
+                throw new Error(`required tool '${tool}' not found in test env PATH`);
+            }
+            fs.symlinkSync(r.stdout.trim(), join(stubBin, tool));
+        }
+        const r = spawnSync(
+            "/bin/bash",
+            [resolve(REPO_ROOT, "install.sh"), "--project"],
+            {
+                encoding: "utf8",
+                env: { PATH: stubBin, HOME: process.env.HOME ?? "/tmp" },
+            },
+        );
+        assert.equal(r.status, 1, `expected exit 1 (git missing); got ${r.status} stderr=${r.stderr}`);
+        // Error mentions git explicitly + the new Hint pointing at the
+        // user-scoped fallback (so the user has a one-line recovery).
+        assert.match(r.stderr, /Error: --project requires the 'git' binary in PATH, but it was not found\./);
+        assert.match(r.stderr, /Hint:.*install git.*--project.*user-scoped path/i);
+        // The misleading "not inside a git repo" diagnostic must NOT
+        // be the one surfaced for binary-missing — drift guard.
+        assert.doesNotMatch(r.stderr, /requires being inside a git repo/);
+    } finally {
+        rmSync(stubBin, { recursive: true, force: true });
+    }
+});

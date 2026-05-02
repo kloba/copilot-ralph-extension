@@ -3,6 +3,76 @@
 ## Unreleased
 
 ### Features
+- `events.mjs` gains the `stage_plan` / `stage_plan_amend` /
+  `task_list` / `task_start` / `task_end` / `commit_observed`
+  event vocabulary so the agent-emitted flex stage plan +
+  per-stage task list + LastCommit footer specced by issue
+  #48 slice 9 can be carried in `events.jsonl` (and replayed
+  losslessly by the TUI). `serializeEvent` rejects malformed
+  payloads up-front: empty `stage_plan.stages[]` (after the
+  non-string filter), `stage_plan_amend` with neither `add`
+  nor `remove` or with an empty `reason`, `task_list` with
+  no stage, `task_start` with `sub<1`, `task_end` with an
+  outcome outside `["ok","fail","skip"]`, and
+  `commit_observed` with a SHA that doesn't match
+  `/^[0-9a-f]{7,40}$/i` (SHA stored lowercase so dedupe and
+  equality work). The new `enforcePinnedTail` pure utility
+  takes any agent-supplied stages array, strips entries
+  matching the canonical tail (`COMMIT`, `PUSH`, `END`) from
+  any position, re-appends them in canonical order at the
+  tail, and returns `{stages, repaired}` so the runner can
+  emit a visible `stage_plan_amend` with `reason:
+  "pinned-tail-enforcement"` whenever it had to repair the
+  plan (silent normalization is forbidden — every
+  correction must surface in `events.jsonl` so the timeline
+  stays a faithful narrative). `foldEvents` extends its
+  snapshot with `currentPlan`, `planAmendments[]`,
+  `currentTaskList`, `taskInFlight`, `recentTasks[]`, and
+  `lastCommit`; `armed` resets all of them, `workitem_start`
+  resets the plan / task list / in-flight task (each work
+  item gets a fresh plan), `stage_start` resets the task
+  list and in-flight task (each stage gets a fresh task
+  list), and a `task_end` computes its own `durationMs` from
+  the matching `task_start` so plain mode and the renderer
+  see a consistent value. Plain mode adds `plan `, `pamen`,
+  `tlist`, `tsk+ `, `tsk- `, and `commt` verbs plus the new
+  `stages=[…]`, `add=`, `remove=`, `after=`, `items=[…]`,
+  `desc="…"`, `sha=` (12-char prefix; full SHA stays in
+  JSONL), `subject="…"`, and `trailers=N` (count only — full
+  trailer payload stays in JSONL) field renderers. Strictly
+  additive: `EVENT_TYPES` keeps the original 14 entries in
+  the original order, the six new ones append below them,
+  and a historic `events.jsonl` produced before this change
+  replays identically.
+
+- `events.mjs` gains the `workitem_start` / `workitem_end`
+  event vocabulary plus the `WORKITEM_KINDS` enum
+  (`["issue","pr","red_ci"]`) so the L1 work-item — the single
+  unit the loop is currently fixing — can be named in
+  `events.jsonl` and surfaced by the TUI header (slice 3 of
+  issue #48). `serializeEvent` validates the `kind` field on
+  workitem events (rejects an unknown kind), clips `title` at
+  200 chars surrogate-safely, and accepts an optional numeric
+  `ref` (issue / PR number, or run id for `red_ci`) plus an
+  optional `closesN` on `workitem_end` for the
+  `Closes #N`-footer case. `foldEvents` tracks
+  `activeWorkItem` (cleared on `workitem_end` and reset on
+  `armed`), appends to `completedWorkItems[]`, and increments
+  a run-local `closedByLoop` counter once per `workitem_end`
+  that carries a `closesN` — kept strictly separate from
+  `backlog.closedByLoop` (the runner's snapshot value) so
+  the two cannot drift. A mid-run replay (a `workitem_end`
+  with no preceding `workitem_start`) appends with
+  `startedAt: null` rather than re-using a stale value, and a
+  mismatched `(kind, ref)` end-event no longer blanks out the
+  active item. Plain mode renders `wkit+` / `wkit-` verbs and
+  the new `kind=`, `ref=`, `title="…"`, `closesN=` columns
+  (whitespace in the title collapses to a single space and
+  the value is JSON-stringified so awk consumers see one
+  token). Strictly additive; existing event types and the
+  `events.jsonl` schema stay backwards-compatible — historic
+  replays without workitem events render identically.
+
 - `ralph-tui run` now mounts the Ink TUI by default on a TTY,
   giving daemon / live-loop users the iter -> stage -> substage
   hierarchy + backlog pressure header that issue #48 specced

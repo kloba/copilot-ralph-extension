@@ -53,6 +53,24 @@ const VERB = {
     stage_end: "stge-",
     substage: "sub  ",
     backlog_snapshot: "back ",
+    // Issue #48 slice 3 — L1 work-item events. `wkit+` / `wkit-` keep
+    // the 5-char verb shape so the column layout under `awk` /
+    // `cut` stays stable; the issue body's example (`workitem+`,
+    // `workitem-`) is illustrative — we use the same shorter verb
+    // family the existing rows use (`stge+`, `iter+`, `sub  `).
+    workitem_start: "wkit+",
+    workitem_end: "wkit-",
+    // Issue #48 slice 9 — flex stage plan + task list + per-task
+    // execution. `plan ` and `pamen` (5 chars each, padded) match the
+    // existing 5-char verb width. Task verbs (`tsk+ ` / `tsk- `) follow
+    // the `iter+/-` family. `commt` flags a commit-observed footer
+    // record so a `grep ' commt '` selects every commit the loop made.
+    stage_plan: "plan ",
+    stage_plan_amend: "pamen",
+    task_list: "tlist",
+    task_start: "tsk+ ",
+    task_end: "tsk- ",
+    commit_observed: "commt",
 };
 
 /**
@@ -107,6 +125,66 @@ export function formatEventLine(ev) {
     if (Number.isFinite(ev.openPrs)) parts.push(`openPrs=${ev.openPrs}`);
     if (Number.isFinite(ev.openIssues)) parts.push(`openIssues=${ev.openIssues}`);
     if (Number.isFinite(ev.closedByLoop)) parts.push(`closedByLoop=${ev.closedByLoop}`);
+    // Issue #48 slice 3 — L1 work-item fields. `kind` is rendered
+    // unquoted (it's drawn from a closed enum: issue / pr / red_ci),
+    // `ref` is unquoted (always numeric — issue/PR number, or run id
+    // for red_ci), and `title` is JSON-stringified because human-
+    // authored titles routinely contain whitespace and quotes.
+    // `closesN` is the issue number a workitem_end event closed.
+    if (typeof ev.kind === "string" && ev.kind) parts.push(`kind=${ev.kind}`);
+    if (Number.isFinite(ev.ref)) parts.push(`ref=${ev.ref}`);
+    if (typeof ev.title === "string" && ev.title) {
+        const collapsed = safeSliceChars(ev.title.replace(/\s+/g, " "), 80);
+        parts.push(`title=${JSON.stringify(collapsed)}`);
+    }
+    if (Number.isFinite(ev.closesN)) parts.push(`closesN=${ev.closesN}`);
+    // Issue #48 slice 9 — stage_plan / stage_plan_amend / task_list /
+    // task_start / task_end / commit_observed fields. Each gates on
+    // its own type/finiteness so a partial event still renders the
+    // fields it has.
+    if (Array.isArray(ev.stages) && ev.stages.length) {
+        // Render the plan compactly as `stages=[A,B,C,D]` so the
+        // headless mode matches the issue's mockup line:
+        //   stage_plan  …  stages=[REPRO,ROOT_CAUSE,FIX,…]
+        // Filter out empty/non-string entries defensively even though
+        // serializeEvent already does so.
+        const items = ev.stages
+            .filter((s) => typeof s === "string" && s)
+            .map((s) => s.replace(/[\s,]+/g, "_"));
+        parts.push(`stages=[${items.join(",")}]`);
+    }
+    if (typeof ev.add === "string" && ev.add) parts.push(`add=${ev.add}`);
+    if (typeof ev.remove === "string" && ev.remove) parts.push(`remove=${ev.remove}`);
+    if (typeof ev.after === "string" && ev.after) parts.push(`after=${ev.after}`);
+    if (Array.isArray(ev.items) && ev.items.length) {
+        // task_list `items=[...]`. JSON.stringify each item because
+        // task descriptions are free-text imperatives and routinely
+        // contain whitespace + punctuation.
+        const items = ev.items
+            .filter((s) => typeof s === "string" && s)
+            .map((s) => JSON.stringify(safeSliceChars(s.replace(/\s+/g, " "), 80)));
+        parts.push(`items=[${items.join(",")}]`);
+    }
+    if (typeof ev.desc === "string" && ev.desc) {
+        const collapsed = safeSliceChars(ev.desc.replace(/\s+/g, " "), 80);
+        parts.push(`desc=${JSON.stringify(collapsed)}`);
+    }
+    if (typeof ev.sha === "string" && ev.sha) {
+        // Render only the first 12 hex chars so plain-mode lines stay
+        // narrow; full SHA is preserved in the JSONL event itself.
+        parts.push(`sha=${ev.sha.slice(0, 12)}`);
+    }
+    if (typeof ev.subject === "string" && ev.subject) {
+        const collapsed = safeSliceChars(ev.subject.replace(/\s+/g, " "), 80);
+        parts.push(`subject=${JSON.stringify(collapsed)}`);
+    }
+    if (Array.isArray(ev.trailers) && ev.trailers.length) {
+        // Trailers are key:value short strings; render the count
+        // rather than the full payload to keep plain-mode lines from
+        // exploding when a commit has multiple Co-authored-by lines.
+        // The TUI reads trailers from the JSONL event directly.
+        parts.push(`trailers=${ev.trailers.length}`);
+    }
     if (typeof ev.reason === "string" && ev.reason) {
         // JSON.stringify the reason iff it contains whitespace, so a
         // user-supplied multi-word reason from ralph_pause / ralph_stop

@@ -503,3 +503,47 @@ test("formatEventLine: backlog_snapshot omits absent counters (null != 0)", () =
     assert.doesNotMatch(line, /openIssues=/);
     assert.doesNotMatch(line, /closedByLoop=/);
 });
+
+// ─── Issue #48 slice 3: workitem plain-line shape ────────────────────
+
+test("formatEventLine: workitem_start uses wkit+ verb and renders kind + ref + title", () => {
+    const line = formatEventLine({
+        type: "workitem_start", ts: 0, runId: "r-1", iteration: 4,
+        kind: "issue", ref: 42, title: "fix flaky parser test",
+    });
+    assert.match(line, /\swkit\+\s/);
+    assert.match(line, /kind=issue/);
+    assert.match(line, /ref=42/);
+    assert.match(line, /title="fix flaky parser test"/);
+});
+
+test("formatEventLine: workitem_end uses wkit- verb and renders closesN", () => {
+    const line = formatEventLine({
+        type: "workitem_end", ts: 0, runId: "r-1", iteration: 8,
+        kind: "issue", ref: 42, closesN: 42,
+    });
+    assert.match(line, /\swkit-\s/);
+    assert.match(line, /kind=issue/);
+    assert.match(line, /ref=42/);
+    assert.match(line, /closesN=42/);
+});
+
+test("formatEventLine: workitem title field collapses internal whitespace and JSON-quotes it", () => {
+    const line = formatEventLine({
+        type: "workitem_start", ts: 0, runId: "r",
+        kind: "issue", ref: 1, title: "fix\nflaky\tparser   test",
+    });
+    // JSON.stringify is used so a title containing whitespace stays a
+    // single awk-parseable token. Internal whitespace collapses to one
+    // space (matching the args / excerpt convention).
+    assert.match(line, /title="fix flaky parser test"/);
+});
+
+test("formatEventLine: workitem_end without closesN omits the field (PR / red_ci case)", () => {
+    const line = formatEventLine({
+        type: "workitem_end", ts: 0, runId: "r",
+        kind: "pr", ref: 41,
+    });
+    assert.match(line, /kind=pr/);
+    assert.doesNotMatch(line, /closesN=/);
+});

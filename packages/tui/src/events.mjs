@@ -48,7 +48,40 @@ export const MAX_EVENT_LINE_BYTES = 16 * 1024;
  * stage-level types (`stage_start`, `stage_end`, `substage`) plus
  * `backlog_snapshot` were added in slice 1 of issue #48 to enable the
  * 3-level hierarchical TUI (iteration → SDLC stage → sub-stage) and
- * the backlog-pressure header. */
+ * the backlog-pressure header. The `workitem_start` / `workitem_end`
+ * pair (issue #48 slice 3) names the L1 work item — the single
+ * issue / PR / red-CI run the loop is currently fixing — so the TUI
+ * header can render `work item: issue #42 …` and so a replay can
+ * compute "(N already closed by loop)" purely from the event stream
+ * without re-running `gh`.
+ *
+ * Slice 9 of issue #48 adds the deeper hierarchy levels:
+ *
+ * - `stage_plan` — `{ stages: string[] }` emitted on the iter that
+ *   generates the per-work-item stage plan. The plan replaces the old
+ *   "fixed 9-step SDLC baked into the prompt" model: the agent picks
+ *   stages appropriate to the work-item kind (e.g. `REPRO` instead of
+ *   `BASELINE` for a red-CI work item) and the runner enforces the
+ *   pinned tail (`COMMIT → PUSH → END`) via `enforcePinnedTail()`.
+ *   See `PINNED_TAIL_STAGES`.
+ * - `stage_plan_amend` — `{ add?, remove?, after?, reason }` emitted
+ *   whenever the plan is modified mid-run. Issued by the agent when
+ *   it discovers a missing stage AND by the runner when it had to
+ *   normalize the agent's plan (`reason: "pinned-tail-enforcement"`).
+ *   The TUI surfaces these as growing badges in the Stage-plan row so
+ *   the user sees what was added / corrected.
+ * - `task_list` — `{ stage, items: string[] }` emitted lazily when
+ *   the loop first enters a stage. Each stage on the plan gets a
+ *   fresh task list scoped to the current work item.
+ * - `task_start` — `{ stage, sub, desc }` emitted when the loop
+ *   pops a pending task off the list and starts running it.
+ * - `task_end` — `{ stage, sub, outcome, durationMs? }` paired with
+ *   `task_start`. `outcome` is one of `TASK_OUTCOMES` (`ok` / `fail`
+ *   / `skip`).
+ * - `commit_observed` — `{ sha, subject, trailers? }` emitted when
+ *   the runner spots a `git commit` substage completing successfully.
+ *   Drives the LastCommit footer in the TUI directly off the event
+ *   stream so replay fidelity survives `git reset`s after the run. */
 export const EVENT_TYPES = Object.freeze([
     "armed",
     "iteration_start",
@@ -62,7 +95,84 @@ export const EVENT_TYPES = Object.freeze([
     "stage_end",
     "substage",
     "backlog_snapshot",
+    "workitem_start",
+    "workitem_end",
+    "stage_plan",
+    "stage_plan_amend",
+    "task_list",
+    "task_start",
+    "task_end",
+    "commit_observed",
 ]);
+
+/** Recognised L1 work-item kinds — the categorisation used in the
+ *  ORIENT scan: an open issue, a stale open PR, or a failing CI run.
+ *  `workitem_start` events MUST set `kind` to one of these values; the
+ *  serializer rejects anything else so a typo in the runner can't
+ *  silently corrupt the L1 column. */
+export const WORKITEM_KINDS = Object.freeze(["issue", "pr", "red_ci"]);
+const WORKITEM_KIND_SET = new Set(WORKITEM_KINDS);
+
+/** Pinned tail stages — every `stage_plan` MUST end with these three
+ *  stages, in this order. The agent generates the per-work-item stage
+ *  plan but cannot remove or reorder this tail: a work item always
+ *  finishes by committing, pushing, and emitting an END marker that
+ *  releases the L1 slot. The runner enforces this contract via
+ *  `enforcePinnedTail()` and emits a visible `stage_plan_amend` event
+ *  (reason: `pinned-tail-enforcement`) whenever it had to repair the
+ *  agent's plan — the issue body explicitly forbids silent rewrites
+ *  ("the agent may not silently rewrite the plan; if it discovers a
+ *  missing stage … it must emit a `stage_plan_amend` event with a
+ *  clear reason"), so the same visibility contract applies when the
+ *  enforcer is the runner instead of the agent. */
+export const PINNED_TAIL_STAGES = Object.freeze(["COMMIT", "PUSH", "END"]);
+
+/** Recognised outcomes for a `task_end` event — `ok` for a task that
+ *  completed normally, `fail` for one that errored out (the loop will
+ *  decide whether to retry or skip), `skip` for one the agent
+ *  intentionally bypassed (e.g. a duplicate finding under PLAN). The
+ *  serializer rejects anything else so a typo in the runner cannot
+ *  silently corrupt outcome reporting in the TUI's task pane. */
+export const TASK_OUTCOMES = Object.freeze(["ok", "fail", "skip"]);
+const TASK_OUTCOME_SET = new Set(TASK_OUTCOMES);
+
+/** Normalize a candidate stage list so the pinned tail (`COMMIT → PUSH
+ *  → END`) is always present, in the canonical order, at the end.
+ *
+ *  Behaviour:
+ *  - Strips any pre-existing `COMMIT` / `PUSH` / `END` from anywhere in
+ *    the list so a misplaced pinned stage in the middle is not
+ *    duplicated at the tail.
+ *  - Appends `[COMMIT, PUSH, END]` in that order. Always exactly
+ *    three pinned stages at the end.
+ *  - Returns a fresh frozen array so callers cannot mutate the result.
+ *  - Returns the canonical pinned tail alone when the input is empty
+ *    or non-array (defensive: an empty plan still has the closing
+ *    rituals).
+ *
+ *  Provenance: `repaired` is true iff the output differs from the
+ *  input as a sequence (case-sensitive). The runner uses this flag to
+ *  emit a `stage_plan_amend` event (`reason: "pinned-tail-enforcement"`)
+ *  whenever it had to repair the agent's plan, so replay shows
+ *  exactly what the agent said vs what the runner enforced.
+ *
+ *  @param {string[]} stages
+ *  @returns {{ stages: readonly string[], repaired: boolean }}
+ */
+export function enforcePinnedTail(stages) {
+    const input = Array.isArray(stages) ? stages.filter((s) => typeof s === "string" && s) : [];
+    const pinnedSet = new Set(PINNED_TAIL_STAGES);
+    const head = input.filter((s) => !pinnedSet.has(s));
+    const out = Object.freeze([...head, ...PINNED_TAIL_STAGES]);
+
+    let repaired = input.length !== out.length;
+    if (!repaired) {
+        for (let i = 0; i < out.length; i++) {
+            if (input[i] !== out[i]) { repaired = true; break; }
+        }
+    }
+    return { stages: out, repaired };
+}
 
 /** Canonical SDLC stage list for self_improve, in execution order.
  *
@@ -240,6 +350,153 @@ export function serializeEvent(ev) {
     if (Number.isFinite(ev.openIssues)) out.openIssues = ev.openIssues;
     if (Number.isFinite(ev.closedByLoop)) out.closedByLoop = ev.closedByLoop;
 
+    // Work-item fields (issue #48 slice 3). `kind` is validated against
+    // WORKITEM_KIND_SET only when the event type is workitem_start /
+    // workitem_end so a future event type can reuse the field name
+    // without inheriting the validation. Required on workitem_start —
+    // we throw if missing, matching the strictness of `runId` / `ts`.
+    if (ev.type === "workitem_start" || ev.type === "workitem_end") {
+        if (!WORKITEM_KIND_SET.has(ev.kind)) {
+            throw new TypeError(
+                `serializeEvent: ${ev.type} requires kind in ${JSON.stringify(WORKITEM_KINDS)} ` +
+                `(got ${JSON.stringify(ev.kind)})`,
+            );
+        }
+        out.kind = ev.kind;
+        if (Number.isFinite(ev.ref)) out.ref = ev.ref;
+        if (typeof ev.title === "string" && ev.title) {
+            // Cap at 200 chars — issue / PR titles can be long but the
+            // TUI header truncates at ~80 visible chars anyway and the
+            // event-line ceiling is 16 KB. 200 leaves headroom for
+            // emoji-heavy titles without bloating events.jsonl.
+            out.title = safeSliceChars(ev.title, 200);
+        }
+    }
+    if (Number.isFinite(ev.closesN)) out.closesN = ev.closesN;
+
+    // Stage-plan / task / commit-observed fields (issue #48 slice 9).
+    // All gated on event type so an unrelated event with a `stages`
+    // field (none today) cannot accidentally pick up the validation.
+    if (ev.type === "stage_plan") {
+        if (!Array.isArray(ev.stages) || ev.stages.length === 0) {
+            throw new TypeError(
+                "serializeEvent: stage_plan requires non-empty stages[] of strings",
+            );
+        }
+        // Each stage is capped at 64 chars (matching `stageName`); the
+        // whole plan is capped at 64 entries so a malformed agent
+        // output that emits `[STAGE_PLAN: …100 stages…]` cannot blow
+        // past the per-line ceiling. 64 stages is well above any real
+        // SDLC the agent would emit (default skeleton is 6 stages;
+        // even an aggressively expanded plan tops out under 20).
+        const stages = [];
+        for (const s of ev.stages) {
+            if (typeof s !== "string" || !s) continue;
+            stages.push(safeSliceChars(s, 64));
+            if (stages.length >= 64) break;
+        }
+        if (stages.length === 0) {
+            throw new TypeError(
+                "serializeEvent: stage_plan requires at least one non-empty string stage",
+            );
+        }
+        out.stages = stages;
+    }
+    if (ev.type === "stage_plan_amend") {
+        // amend events MUST set at least one of `add` / `remove` so a
+        // no-op amendment cannot bloat the stream. `reason` is also
+        // required: the issue body explicitly says amendments must
+        // surface a clear reason for replay.
+        const hasAdd = typeof ev.add === "string" && ev.add;
+        const hasRemove = typeof ev.remove === "string" && ev.remove;
+        if (!hasAdd && !hasRemove) {
+            throw new TypeError(
+                "serializeEvent: stage_plan_amend requires at least one of add/remove",
+            );
+        }
+        if (typeof ev.reason !== "string" || !ev.reason) {
+            throw new TypeError(
+                "serializeEvent: stage_plan_amend requires a non-empty reason",
+            );
+        }
+        if (hasAdd) out.add = safeSliceChars(ev.add, 64);
+        if (hasRemove) out.remove = safeSliceChars(ev.remove, 64);
+        if (typeof ev.after === "string" && ev.after) out.after = safeSliceChars(ev.after, 64);
+        // `reason` already serialized above (line ~219) via the shared
+        // 500-char cap, so it's already in `out`.
+    }
+    if (ev.type === "task_list") {
+        if (typeof ev.stage !== "string" || !ev.stage) {
+            throw new TypeError("serializeEvent: task_list requires a non-empty stage name");
+        }
+        if (!Array.isArray(ev.items)) {
+            throw new TypeError("serializeEvent: task_list requires items[] (may be empty)");
+        }
+        out.stage = safeSliceChars(ev.stage, 64);
+        const items = [];
+        for (const it of ev.items) {
+            if (typeof it !== "string") continue;
+            // Tasks are short imperative descriptions; cap at 200
+            // chars. Empty strings are filtered out so an off-by-one
+            // in the agent's marker emission can't poison the list.
+            const capped = safeSliceChars(it, 200);
+            if (capped) items.push(capped);
+            if (items.length >= 64) break;
+        }
+        out.items = items;
+    }
+    if (ev.type === "task_start" || ev.type === "task_end") {
+        if (typeof ev.stage !== "string" || !ev.stage) {
+            throw new TypeError(`serializeEvent: ${ev.type} requires a non-empty stage name`);
+        }
+        if (!Number.isFinite(ev.sub) || ev.sub < 1) {
+            throw new TypeError(`serializeEvent: ${ev.type} requires sub >= 1`);
+        }
+        out.stage = safeSliceChars(ev.stage, 64);
+        out.sub = ev.sub;
+        if (ev.type === "task_start") {
+            if (typeof ev.desc !== "string" || !ev.desc) {
+                throw new TypeError("serializeEvent: task_start requires a non-empty desc");
+            }
+            out.desc = safeSliceChars(ev.desc, 500);
+        }
+        if (ev.type === "task_end") {
+            if (!TASK_OUTCOME_SET.has(ev.outcome)) {
+                throw new TypeError(
+                    `serializeEvent: task_end requires outcome in ${JSON.stringify(TASK_OUTCOMES)} ` +
+                    `(got ${JSON.stringify(ev.outcome)})`,
+                );
+            }
+            out.outcome = ev.outcome;
+            if (Number.isFinite(ev.durationMs)) out.durationMs = ev.durationMs;
+        }
+    }
+    if (ev.type === "commit_observed") {
+        if (typeof ev.sha !== "string" || !/^[0-9a-f]{7,40}$/i.test(ev.sha)) {
+            throw new TypeError(
+                "serializeEvent: commit_observed requires sha matching [0-9a-f]{7,40}",
+            );
+        }
+        if (typeof ev.subject !== "string" || !ev.subject) {
+            throw new TypeError("serializeEvent: commit_observed requires a non-empty subject");
+        }
+        out.sha = ev.sha.toLowerCase();
+        out.subject = safeSliceChars(ev.subject, 200);
+        if (Array.isArray(ev.trailers)) {
+            // Each trailer is a short `Key: value` string; cap each at
+            // 200 chars and the whole list at 8 entries so a runaway
+            // agent commit message with dozens of co-author trailers
+            // cannot bloat the event line.
+            const trailers = [];
+            for (const t of ev.trailers) {
+                if (typeof t !== "string" || !t) continue;
+                trailers.push(safeSliceChars(t, 200));
+                if (trailers.length >= 8) break;
+            }
+            if (trailers.length) out.trailers = trailers;
+        }
+    }
+
     const line = JSON.stringify(out);
     if (Buffer.byteLength(line, "utf8") > MAX_EVENT_LINE_BYTES) {
         throw new RangeError(
@@ -307,6 +564,15 @@ export function foldEvents(events) {
      *   recentStages: Array<{stage:number, name:string, startedAt:number, endedAt:number|null, durationMs:number|null, outcome:string|null}>,
      *   currentStageSubstages: Array<{sub:number, ts:number, verb:string|null, argsSummary:string|null, outcome:string|null, durationMs:number|null}>,
      *   backlog: {redCi:number|null, openPrs:number|null, openIssues:number|null, closedByLoop:number|null}|null,
+     *   activeWorkItem: {kind:string, ref:number|null, title:string|null, startedAt:number}|null,
+     *   completedWorkItems: Array<{kind:string, ref:number|null, title:string|null, startedAt:number|null, endedAt:number, closesN:number|null}>,
+     *   closedByLoop: number,
+     *   currentPlan: {stages: string[], setAt: number}|null,
+     *   planAmendments: Array<{add:string|null, remove:string|null, after:string|null, reason:string, ts:number}>,
+     *   currentTaskList: {stage: string, items: string[], setAt: number}|null,
+     *   taskInFlight: {stage: string, sub: number, desc: string, startedAt: number}|null,
+     *   recentTasks: Array<{stage: string, sub: number, desc: string|null, outcome: string, durationMs: number|null, startedAt: number|null, endedAt: number}>,
+     *   lastCommit: {sha: string, subject: string, trailers: string[], ts: number}|null,
      * }} */
     const snap = {
         runId: null,
@@ -326,6 +592,40 @@ export function foldEvents(events) {
         recentStages: [],
         currentStageSubstages: [],
         backlog: null,
+        // Issue #48 slice 3 — L1 work-item tracking. activeWorkItem is
+        // the unit currently being addressed (one issue / PR / red CI
+        // run); it nulls out at workitem_end. completedWorkItems is
+        // the run-local log of finished L1 units, used by the renderer
+        // to render the "(N of M backlog already done)" pip in the
+        // header. closedByLoop is the number of completed work items
+        // that emitted a `closesN` (i.e. closed an issue), derived
+        // strictly from workitem_end events — kept separate from
+        // backlog.closedByLoop (the runner's snapshot value) so the
+        // two cannot drift.
+        activeWorkItem: null,
+        completedWorkItems: [],
+        closedByLoop: 0,
+        // Issue #48 slice 9 — L2 stage plan + L2.5 task list + L3
+        // task-in-flight cursor + LastCommit footer source.
+        // currentPlan tracks the agent-emitted stage plan for the
+        // active L1 work item; nulls out at workitem_start (each
+        // work item gets a fresh plan). planAmendments accumulates
+        // every stage_plan_amend the run has seen, used by the TUI
+        // to render `+ added` / `- removed` badges in the Stage-plan
+        // row. currentTaskList tracks the L2.5 list for the active
+        // stage; nulls out at stage_start (each stage has a fresh
+        // task list). taskInFlight names the L3 task currently
+        // running; nulls out at task_end. recentTasks is the
+        // run-local log of finished L3 tasks the TUI surfaces under
+        // the Tasks pane. lastCommit is fed strictly by
+        // commit_observed events so replay fidelity survives a
+        // post-run `git reset` — `git log -1` is NOT consulted.
+        currentPlan: null,
+        planAmendments: [],
+        currentTaskList: null,
+        taskInFlight: null,
+        recentTasks: [],
+        lastCommit: null,
     };
 
     for (const ev of events) {
@@ -349,6 +649,15 @@ export function foldEvents(events) {
                 snap.recentStages = [];
                 snap.currentStageSubstages = [];
                 snap.backlog = null;
+                snap.activeWorkItem = null;
+                snap.completedWorkItems = [];
+                snap.closedByLoop = 0;
+                snap.currentPlan = null;
+                snap.planAmendments = [];
+                snap.currentTaskList = null;
+                snap.taskInFlight = null;
+                snap.recentTasks = [];
+                snap.lastCommit = null;
                 break;
             case "iteration_start":
                 if (Number.isFinite(ev.iteration)) {
@@ -407,6 +716,13 @@ export function foldEvents(events) {
                     ? ev.stageName : `STAGE_${ev.stage}`;
                 snap.activeStage = { stage: ev.stage, name, startedAt: ev.ts };
                 snap.currentStageSubstages = [];
+                // Each L2 stage has its own L2.5 task list — null it
+                // out so a stale list from the previous stage cannot
+                // bleed into the new one. taskInFlight follows: a
+                // task that was running when the stage ended is no
+                // longer "in flight" once the new stage begins.
+                snap.currentTaskList = null;
+                snap.taskInFlight = null;
                 break;
             }
             case "stage_end": {
@@ -456,6 +772,175 @@ export function foldEvents(events) {
                     openPrs: Number.isFinite(ev.openPrs) ? ev.openPrs : null,
                     openIssues: Number.isFinite(ev.openIssues) ? ev.openIssues : null,
                     closedByLoop: Number.isFinite(ev.closedByLoop) ? ev.closedByLoop : null,
+                };
+                break;
+            }
+            case "workitem_start": {
+                if (!WORKITEM_KIND_SET.has(ev.kind)) break;
+                snap.activeWorkItem = {
+                    kind: ev.kind,
+                    ref: Number.isFinite(ev.ref) ? ev.ref : null,
+                    title: typeof ev.title === "string" && ev.title ? ev.title : null,
+                    startedAt: ev.ts,
+                };
+                // Each L1 work item gets a fresh plan + task list.
+                // Reset the L2/L2.5/L3 cursor so the new work item
+                // doesn't inherit the previous work item's stages or
+                // tasks (the issue body says the agent generates a
+                // *per-work-item* stage plan).
+                snap.currentPlan = null;
+                snap.currentTaskList = null;
+                snap.taskInFlight = null;
+                break;
+            }
+            case "workitem_end": {
+                if (!WORKITEM_KIND_SET.has(ev.kind)) break;
+                // Match the closing event to the active item by (kind, ref)
+                // when a ref is present; otherwise fall back to the active
+                // item's identity. A workitem_end with no preceding
+                // workitem_start (replay started mid-run) still appends to
+                // completedWorkItems so the renderer's count stays right —
+                // we just have no startedAt to record.
+                const startedAt = snap.activeWorkItem
+                    && snap.activeWorkItem.kind === ev.kind
+                    && (
+                        (Number.isFinite(ev.ref) && snap.activeWorkItem.ref === ev.ref)
+                        || !Number.isFinite(ev.ref)
+                    )
+                    ? snap.activeWorkItem.startedAt
+                    : null;
+                const title = typeof ev.title === "string" && ev.title
+                    ? ev.title
+                    : (snap.activeWorkItem && startedAt !== null ? snap.activeWorkItem.title : null);
+                const closesN = Number.isFinite(ev.closesN) ? ev.closesN : null;
+                snap.completedWorkItems.push({
+                    kind: ev.kind,
+                    ref: Number.isFinite(ev.ref) ? ev.ref : null,
+                    title,
+                    startedAt,
+                    endedAt: ev.ts,
+                    closesN,
+                });
+                if (closesN !== null) snap.closedByLoop += 1;
+                if (
+                    snap.activeWorkItem
+                    && snap.activeWorkItem.kind === ev.kind
+                    && (
+                        (Number.isFinite(ev.ref) && snap.activeWorkItem.ref === ev.ref)
+                        || !Number.isFinite(ev.ref)
+                    )
+                ) {
+                    snap.activeWorkItem = null;
+                }
+                break;
+            }
+            case "stage_plan": {
+                if (!Array.isArray(ev.stages) || ev.stages.length === 0) break;
+                const stages = ev.stages
+                    .filter((s) => typeof s === "string" && s)
+                    .map(String);
+                if (stages.length === 0) break;
+                snap.currentPlan = { stages, setAt: ev.ts };
+                break;
+            }
+            case "stage_plan_amend": {
+                const hasAdd = typeof ev.add === "string" && ev.add;
+                const hasRemove = typeof ev.remove === "string" && ev.remove;
+                if (!hasAdd && !hasRemove) break;
+                const amendment = {
+                    add: hasAdd ? ev.add : null,
+                    remove: hasRemove ? ev.remove : null,
+                    after: typeof ev.after === "string" && ev.after ? ev.after : null,
+                    reason: typeof ev.reason === "string" ? ev.reason : "",
+                    ts: ev.ts,
+                };
+                snap.planAmendments.push(amendment);
+                // Apply the amendment to the current plan so the
+                // renderer can show the up-to-date plan + the badge
+                // history side by side. Insert-after semantics: when
+                // `after` is provided, splice the new stage right
+                // after that anchor; otherwise append to the tail.
+                if (snap.currentPlan) {
+                    const next = [...snap.currentPlan.stages];
+                    if (hasRemove) {
+                        const idx = next.indexOf(ev.remove);
+                        if (idx !== -1) next.splice(idx, 1);
+                    }
+                    if (hasAdd) {
+                        let insertAt = next.length;
+                        if (amendment.after) {
+                            const anchor = next.indexOf(amendment.after);
+                            if (anchor !== -1) insertAt = anchor + 1;
+                        }
+                        next.splice(insertAt, 0, ev.add);
+                    }
+                    snap.currentPlan = { stages: next, setAt: ev.ts };
+                }
+                break;
+            }
+            case "task_list": {
+                if (typeof ev.stage !== "string" || !ev.stage) break;
+                if (!Array.isArray(ev.items)) break;
+                const items = ev.items.filter((s) => typeof s === "string" && s);
+                snap.currentTaskList = { stage: ev.stage, items, setAt: ev.ts };
+                break;
+            }
+            case "task_start": {
+                if (typeof ev.stage !== "string" || !ev.stage) break;
+                if (!Number.isFinite(ev.sub)) break;
+                snap.taskInFlight = {
+                    stage: ev.stage,
+                    sub: ev.sub,
+                    desc: typeof ev.desc === "string" ? ev.desc : "",
+                    startedAt: ev.ts,
+                };
+                break;
+            }
+            case "task_end": {
+                if (typeof ev.stage !== "string" || !ev.stage) break;
+                if (!Number.isFinite(ev.sub)) break;
+                if (!TASK_OUTCOME_SET.has(ev.outcome)) break;
+                const startedAt = snap.taskInFlight
+                    && snap.taskInFlight.stage === ev.stage
+                    && snap.taskInFlight.sub === ev.sub
+                    ? snap.taskInFlight.startedAt
+                    : null;
+                const desc = snap.taskInFlight
+                    && snap.taskInFlight.stage === ev.stage
+                    && snap.taskInFlight.sub === ev.sub
+                    ? snap.taskInFlight.desc
+                    : null;
+                const durationMs = Number.isFinite(ev.durationMs)
+                    ? ev.durationMs
+                    : (startedAt !== null && Number.isFinite(ev.ts) ? ev.ts - startedAt : null);
+                snap.recentTasks.push({
+                    stage: ev.stage,
+                    sub: ev.sub,
+                    desc,
+                    outcome: ev.outcome,
+                    durationMs,
+                    startedAt,
+                    endedAt: ev.ts,
+                });
+                if (
+                    snap.taskInFlight
+                    && snap.taskInFlight.stage === ev.stage
+                    && snap.taskInFlight.sub === ev.sub
+                ) {
+                    snap.taskInFlight = null;
+                }
+                break;
+            }
+            case "commit_observed": {
+                if (typeof ev.sha !== "string" || !ev.sha) break;
+                if (typeof ev.subject !== "string" || !ev.subject) break;
+                snap.lastCommit = {
+                    sha: ev.sha,
+                    subject: ev.subject,
+                    trailers: Array.isArray(ev.trailers)
+                        ? ev.trailers.filter((t) => typeof t === "string" && t)
+                        : [],
+                    ts: ev.ts,
                 };
                 break;
             }

@@ -29,6 +29,24 @@ test("EVENT_TYPES is the closed set documented in the issue", () => {
         "stage_end",
         "substage",
         "backlog_snapshot",
+        // Issue #48 slice 3 — L1 work-item events. Names the single
+        // issue / PR / red CI run the loop is currently fixing so
+        // the TUI header can render `work item: issue #42 …` and
+        // so a replay can compute "(N already closed by loop)"
+        // purely from the event stream without re-running `gh`.
+        "workitem_start",
+        "workitem_end",
+        // Issue #48 slice 9 — flex stage plan + per-stage task list +
+        // one-task-per-iter cursor + LastCommit footer. Strictly
+        // additive (appended below the slice-3 work-item pair); the
+        // older 14 types above must never reorder so historical
+        // events.jsonl files keep replaying unchanged.
+        "stage_plan",
+        "stage_plan_amend",
+        "task_list",
+        "task_start",
+        "task_end",
+        "commit_observed",
     ]);
 });
 
@@ -581,4 +599,581 @@ test("PROMPT_SELF_IMPROVE / PROMPT_GROW_PROJECT explicitly instruct the agent to
     assert.match(PROMPT_SELF_IMPROVE, /\[STAGE: ORIENT\]/, "PROMPT_SELF_IMPROVE must include the literal [STAGE: ORIENT] example");
     assert.match(PROMPT_GROW_PROJECT, /STAGE MARKERS/, "PROMPT_GROW_PROJECT must declare a STAGE MARKERS section");
     assert.match(PROMPT_GROW_PROJECT, /\[STAGE: SELECT\]/, "PROMPT_GROW_PROJECT must include the literal [STAGE: SELECT] example");
+});
+
+// ─── Issue #48 slice 3: L1 work-item event vocabulary ────────────────
+
+import { WORKITEM_KINDS } from "../src/events.mjs";
+
+test("WORKITEM_KINDS is the closed enum from the issue body", () => {
+    assert.deepEqual([...WORKITEM_KINDS], ["issue", "pr", "red_ci"]);
+});
+
+test("serializeEvent: workitem_start round-trips kind + ref + title", () => {
+    const ev = {
+        type: "workitem_start", ts: 100, runId: "r-1", iteration: 4,
+        kind: "issue", ref: 42, title: "fix flaky parser test",
+    };
+    const back = parseEventLine(serializeEvent(ev));
+    assert.deepEqual(back, ev);
+});
+
+test("serializeEvent: workitem_start accepts the pr and red_ci kinds", () => {
+    const pr = parseEventLine(serializeEvent({
+        type: "workitem_start", ts: 1, runId: "r", kind: "pr", ref: 41, title: "feat: extract gitExec",
+    }));
+    assert.equal(pr.kind, "pr");
+    const red = parseEventLine(serializeEvent({
+        type: "workitem_start", ts: 1, runId: "r", kind: "red_ci", ref: 1234, title: "Deploy docs site #1234",
+    }));
+    assert.equal(red.kind, "red_ci");
+});
+
+test("serializeEvent: workitem_start rejects an unknown kind", () => {
+    assert.throws(
+        () => serializeEvent({ type: "workitem_start", ts: 1, runId: "r", kind: "epic", ref: 1 }),
+        /requires kind in \["issue","pr","red_ci"\]/,
+    );
+});
+
+test("serializeEvent: workitem_end requires a kind too (symmetric validation)", () => {
+    assert.throws(
+        () => serializeEvent({ type: "workitem_end", ts: 1, runId: "r" }),
+        /workitem_end requires kind/,
+    );
+});
+
+test("serializeEvent: workitem_end round-trips kind + ref + closesN", () => {
+    const ev = {
+        type: "workitem_end", ts: 200, runId: "r-1", iteration: 8,
+        kind: "issue", ref: 42, closesN: 42,
+    };
+    const back = parseEventLine(serializeEvent(ev));
+    assert.deepEqual(back, ev);
+});
+
+test("serializeEvent: workitem_start clips an oversized title at 200 chars", () => {
+    const huge = "x".repeat(2000);
+    const line = serializeEvent({ type: "workitem_start", ts: 1, runId: "r", kind: "issue", ref: 1, title: huge });
+    const obj = JSON.parse(line);
+    assert.equal(obj.title.length, 200);
+});
+
+test("serializeEvent: workitem_start drops absent ref / title (workitem_start with kind only is valid)", () => {
+    const line = serializeEvent({ type: "workitem_start", ts: 1, runId: "r", kind: "red_ci" });
+    const obj = JSON.parse(line);
+    assert.equal(obj.kind, "red_ci");
+    assert.ok(!("ref" in obj), "absent ref must not be serialized as 0");
+    assert.ok(!("title" in obj), "absent title must not be serialized as null");
+});
+
+test("foldEvents: workitem_start sets activeWorkItem; workitem_end clears it and appends to completedWorkItems", () => {
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r", label: "self_improve" },
+        { type: "workitem_start", ts: 10, runId: "r", iteration: 1, kind: "issue", ref: 42, title: "fix flaky parser test" },
+    ]);
+    assert.deepEqual(snap.activeWorkItem, {
+        kind: "issue", ref: 42, title: "fix flaky parser test", startedAt: 10,
+    });
+    assert.deepEqual(snap.completedWorkItems, []);
+
+    const snap2 = foldEvents([
+        { type: "armed", ts: 1, runId: "r", label: "self_improve" },
+        { type: "workitem_start", ts: 10, runId: "r", iteration: 1, kind: "issue", ref: 42, title: "fix flaky parser test" },
+        { type: "workitem_end", ts: 50, runId: "r", iteration: 1, kind: "issue", ref: 42, closesN: 42 },
+    ]);
+    assert.equal(snap2.activeWorkItem, null);
+    assert.equal(snap2.completedWorkItems.length, 1);
+    assert.deepEqual(snap2.completedWorkItems[0], {
+        kind: "issue", ref: 42, title: "fix flaky parser test",
+        startedAt: 10, endedAt: 50, closesN: 42,
+    });
+    assert.equal(snap2.closedByLoop, 1, "workitem_end with closesN bumps the closedByLoop counter");
+});
+
+test("foldEvents: workitem_end without closesN does not bump closedByLoop (PR merge / CI green isn't a closed issue)", () => {
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r", label: "self_improve" },
+        { type: "workitem_start", ts: 10, runId: "r", kind: "pr", ref: 41, title: "feat: gitExec" },
+        { type: "workitem_end", ts: 50, runId: "r", kind: "pr", ref: 41 },
+    ]);
+    assert.equal(snap.closedByLoop, 0);
+    assert.equal(snap.completedWorkItems.length, 1);
+    assert.equal(snap.completedWorkItems[0].closesN, null);
+});
+
+test("foldEvents: multiple workitem cycles accumulate on completedWorkItems", () => {
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r", label: "self_improve" },
+        { type: "workitem_start", ts: 10, runId: "r", kind: "issue", ref: 1, title: "a" },
+        { type: "workitem_end", ts: 20, runId: "r", kind: "issue", ref: 1, closesN: 1 },
+        { type: "workitem_start", ts: 30, runId: "r", kind: "issue", ref: 2, title: "b" },
+        { type: "workitem_end", ts: 40, runId: "r", kind: "issue", ref: 2, closesN: 2 },
+        { type: "workitem_start", ts: 50, runId: "r", kind: "pr", ref: 41 },
+        { type: "workitem_end", ts: 60, runId: "r", kind: "pr", ref: 41 },
+    ]);
+    assert.equal(snap.completedWorkItems.length, 3);
+    assert.equal(snap.closedByLoop, 2, "PR end without closesN doesn't bump");
+    assert.equal(snap.activeWorkItem, null);
+});
+
+test("foldEvents: armed clears active + completed work items and resets closedByLoop (replay across runs)", () => {
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r1", label: "self_improve" },
+        { type: "workitem_start", ts: 10, runId: "r1", kind: "issue", ref: 1, title: "a" },
+        { type: "workitem_end", ts: 20, runId: "r1", kind: "issue", ref: 1, closesN: 1 },
+        { type: "armed", ts: 100, runId: "r2", label: "self_improve" },
+    ]);
+    assert.equal(snap.runId, "r2");
+    assert.equal(snap.activeWorkItem, null);
+    assert.deepEqual(snap.completedWorkItems, []);
+    assert.equal(snap.closedByLoop, 0);
+});
+
+test("foldEvents: workitem_end with no preceding workitem_start still appends (mid-run replay)", () => {
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r", label: "self_improve" },
+        { type: "workitem_end", ts: 50, runId: "r", kind: "issue", ref: 42, closesN: 42 },
+    ]);
+    assert.equal(snap.completedWorkItems.length, 1);
+    assert.equal(snap.completedWorkItems[0].startedAt, null,
+        "no preceding workitem_start ⇒ startedAt is null, not a stale value");
+    assert.equal(snap.closedByLoop, 1);
+});
+
+test("foldEvents: workitem_end with mismatched (kind, ref) does NOT clear activeWorkItem", () => {
+    // Defensive against a runner bug emitting workitem_end for the
+    // wrong unit. The current item must stay active so the renderer
+    // doesn't blank out mid-iter.
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r", label: "self_improve" },
+        { type: "workitem_start", ts: 10, runId: "r", kind: "issue", ref: 42, title: "active" },
+        { type: "workitem_end", ts: 50, runId: "r", kind: "issue", ref: 99 },
+    ]);
+    assert.deepEqual(snap.activeWorkItem, {
+        kind: "issue", ref: 42, title: "active", startedAt: 10,
+    });
+    // The mismatched end still appends to completedWorkItems — it
+    // happened, even if it's an orphan. The renderer can decide
+    // whether to surface it.
+    assert.equal(snap.completedWorkItems.length, 1);
+    assert.equal(snap.completedWorkItems[0].ref, 99);
+});
+
+// ---------------------------------------------------------------------------
+// Issue #48 slice 9 — flex stage plan + per-stage task list +
+// one-task-per-iter cursor + LastCommit footer.
+// ---------------------------------------------------------------------------
+
+import {
+    PINNED_TAIL_STAGES,
+    TASK_OUTCOMES,
+    enforcePinnedTail,
+} from "../src/events.mjs";
+
+test("slice9: PINNED_TAIL_STAGES is the canonical [COMMIT, PUSH, END] tuple", () => {
+    assert.deepEqual([...PINNED_TAIL_STAGES], ["COMMIT", "PUSH", "END"]);
+    assert.ok(Object.isFrozen(PINNED_TAIL_STAGES),
+        "PINNED_TAIL_STAGES must be frozen so a downstream consumer cannot mutate it");
+});
+
+test("slice9: TASK_OUTCOMES is the closed enum [ok, fail, skip]", () => {
+    assert.deepEqual([...TASK_OUTCOMES], ["ok", "fail", "skip"]);
+});
+
+test("slice9: enforcePinnedTail appends [COMMIT, PUSH, END] when missing", () => {
+    const r = enforcePinnedTail(["PLAN", "IMPLEMENT", "TEST"]);
+    assert.deepEqual([...r.stages], ["PLAN", "IMPLEMENT", "TEST", "COMMIT", "PUSH", "END"]);
+    assert.equal(r.repaired, true,
+        "appending the pinned tail must mark the result as repaired so the runner emits a stage_plan_amend");
+});
+
+test("slice9: enforcePinnedTail leaves a correctly-tailed plan untouched and unrepaired", () => {
+    const r = enforcePinnedTail(["PLAN", "IMPLEMENT", "TEST", "COMMIT", "PUSH", "END"]);
+    assert.deepEqual([...r.stages], ["PLAN", "IMPLEMENT", "TEST", "COMMIT", "PUSH", "END"]);
+    assert.equal(r.repaired, false);
+});
+
+test("slice9: enforcePinnedTail strips and re-appends a pinned stage in the wrong position", () => {
+    // `COMMIT` appears mid-list (before TEST). The enforcer must
+    // strip it and put it back at the tail in the canonical order so
+    // the agent cannot accidentally COMMIT mid-stage.
+    const r = enforcePinnedTail(["PLAN", "COMMIT", "IMPLEMENT", "TEST"]);
+    assert.deepEqual([...r.stages], ["PLAN", "IMPLEMENT", "TEST", "COMMIT", "PUSH", "END"]);
+    assert.equal(r.repaired, true);
+});
+
+test("slice9: enforcePinnedTail returns the canonical pinned tail alone for an empty input", () => {
+    const r = enforcePinnedTail([]);
+    assert.deepEqual([...r.stages], ["COMMIT", "PUSH", "END"]);
+    assert.equal(r.repaired, true,
+        "empty input still required the enforcer to append three stages, so repaired must be true");
+});
+
+test("slice9: enforcePinnedTail tolerates non-array input by falling back to the pinned tail alone", () => {
+    // Defensive contract: a runner that passes through a malformed
+    // marker payload (e.g. `[STAGE_PLAN: "not-an-array"]`) must not
+    // throw — it must produce a usable plan with the pinned tail.
+    const r = enforcePinnedTail(/** @type {any} */ (null));
+    assert.deepEqual([...r.stages], ["COMMIT", "PUSH", "END"]);
+    assert.equal(r.repaired, true);
+});
+
+test("slice9: enforcePinnedTail filters non-string entries before strip-and-tail", () => {
+    const r = enforcePinnedTail(["PLAN", 42, null, "IMPLEMENT", undefined, "TEST"]);
+    assert.deepEqual([...r.stages], ["PLAN", "IMPLEMENT", "TEST", "COMMIT", "PUSH", "END"]);
+    assert.equal(r.repaired, true);
+});
+
+test("slice9: enforcePinnedTail returns a frozen array", () => {
+    const r = enforcePinnedTail(["PLAN"]);
+    assert.ok(Object.isFrozen(r.stages),
+        "callers (the runner emit + the renderer) must not be able to mutate the result");
+});
+
+test("slice9: serializeEvent + parseEventLine round-trip a stage_plan event", () => {
+    const ev = {
+        type: "stage_plan",
+        ts: 1_000,
+        runId: "run-1",
+        stages: ["PLAN", "IMPLEMENT", "TEST", "COMMIT", "PUSH", "END"],
+    };
+    const line = serializeEvent(ev);
+    const parsed = parseEventLine(line);
+    assert.deepEqual(parsed.stages, ev.stages);
+    assert.equal(parsed.type, "stage_plan");
+});
+
+test("slice9: serializeEvent rejects stage_plan with empty stages[]", () => {
+    assert.throws(() => serializeEvent({
+        type: "stage_plan",
+        ts: 1_000,
+        runId: "run-1",
+        stages: [],
+    }), /stage_plan requires non-empty stages/);
+});
+
+test("slice9: serializeEvent caps stage_plan stages[] at 64 entries", () => {
+    const stages = Array.from({ length: 100 }, (_, i) => `S${i}`);
+    const line = serializeEvent({
+        type: "stage_plan",
+        ts: 1_000,
+        runId: "run-1",
+        stages,
+    });
+    const parsed = parseEventLine(line);
+    assert.equal(parsed.stages.length, 64);
+});
+
+test("slice9: serializeEvent rejects stage_plan when every entry is empty/non-string", () => {
+    // After filtering out the non-strings, we'd have no valid stages
+    // left — that should throw rather than emit a synthetic empty plan.
+    assert.throws(() => serializeEvent({
+        type: "stage_plan",
+        ts: 1_000,
+        runId: "run-1",
+        stages: [42, null, "", undefined],
+    }), /at least one non-empty/);
+});
+
+test("slice9: serializeEvent + round-trip a stage_plan_amend with add", () => {
+    const ev = {
+        type: "stage_plan_amend",
+        ts: 2_000,
+        runId: "run-1",
+        add: "HOTFIX",
+        after: "TEST",
+        reason: "flaky lint task surfaced an unrelated regression",
+    };
+    const line = serializeEvent(ev);
+    const parsed = parseEventLine(line);
+    assert.equal(parsed.add, "HOTFIX");
+    assert.equal(parsed.after, "TEST");
+    assert.equal(parsed.reason, ev.reason);
+});
+
+test("slice9: serializeEvent rejects stage_plan_amend without add OR remove", () => {
+    assert.throws(() => serializeEvent({
+        type: "stage_plan_amend",
+        ts: 2_000,
+        runId: "run-1",
+        reason: "no-op",
+    }), /requires at least one of add\/remove/);
+});
+
+test("slice9: serializeEvent rejects stage_plan_amend without reason", () => {
+    assert.throws(() => serializeEvent({
+        type: "stage_plan_amend",
+        ts: 2_000,
+        runId: "run-1",
+        add: "HOTFIX",
+    }), /requires a non-empty reason/);
+});
+
+test("slice9: serializeEvent + round-trip a task_list event", () => {
+    const ev = {
+        type: "task_list",
+        ts: 3_000,
+        runId: "run-1",
+        stage: "FIX",
+        items: [
+            "extract gitExec helper",
+            "replace inline git in handler.mjs",
+            "add gitExec unit test",
+        ],
+    };
+    const parsed = parseEventLine(serializeEvent(ev));
+    assert.equal(parsed.stage, "FIX");
+    assert.deepEqual(parsed.items, ev.items);
+});
+
+test("slice9: serializeEvent allows an empty task_list (a stage may end up no-op)", () => {
+    const parsed = parseEventLine(serializeEvent({
+        type: "task_list",
+        ts: 3_000,
+        runId: "run-1",
+        stage: "PLAN",
+        items: [],
+    }));
+    assert.deepEqual(parsed.items, []);
+});
+
+test("slice9: serializeEvent rejects task_list without a stage", () => {
+    assert.throws(() => serializeEvent({
+        type: "task_list",
+        ts: 3_000,
+        runId: "run-1",
+        items: [],
+    }), /requires a non-empty stage/);
+});
+
+test("slice9: serializeEvent + round-trip a task_start event", () => {
+    const parsed = parseEventLine(serializeEvent({
+        type: "task_start",
+        ts: 4_000,
+        runId: "run-1",
+        stage: "FIX",
+        sub: 3,
+        desc: "add gitExec unit test in test/runner.test.mjs",
+    }));
+    assert.equal(parsed.stage, "FIX");
+    assert.equal(parsed.sub, 3);
+    assert.match(parsed.desc, /gitExec unit test/);
+});
+
+test("slice9: serializeEvent rejects task_start with sub<1", () => {
+    assert.throws(() => serializeEvent({
+        type: "task_start",
+        ts: 4_000,
+        runId: "run-1",
+        stage: "FIX",
+        sub: 0,
+        desc: "do thing",
+    }), /requires sub >= 1/);
+});
+
+test("slice9: serializeEvent + round-trip a task_end event with each outcome", () => {
+    for (const outcome of TASK_OUTCOMES) {
+        const parsed = parseEventLine(serializeEvent({
+            type: "task_end",
+            ts: 5_000,
+            runId: "run-1",
+            stage: "FIX",
+            sub: 3,
+            outcome,
+            durationMs: 1234,
+        }));
+        assert.equal(parsed.outcome, outcome);
+        assert.equal(parsed.durationMs, 1234);
+    }
+});
+
+test("slice9: serializeEvent rejects task_end with an unknown outcome", () => {
+    assert.throws(() => serializeEvent({
+        type: "task_end",
+        ts: 5_000,
+        runId: "run-1",
+        stage: "FIX",
+        sub: 3,
+        outcome: "weird",
+    }), /requires outcome in/);
+});
+
+test("slice9: serializeEvent + round-trip a commit_observed event", () => {
+    const parsed = parseEventLine(serializeEvent({
+        type: "commit_observed",
+        ts: 6_000,
+        runId: "run-1",
+        sha: "ABCDEF1234567890",
+        subject: "fix(parser): tolerate trailing whitespace",
+        trailers: [
+            "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>",
+            "Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>",
+        ],
+    }));
+    // SHA stored lowercase so dedupe / equality works.
+    assert.equal(parsed.sha, "abcdef1234567890");
+    assert.match(parsed.subject, /trailing whitespace/);
+    assert.equal(parsed.trailers.length, 2);
+});
+
+test("slice9: serializeEvent rejects commit_observed with a malformed sha", () => {
+    assert.throws(() => serializeEvent({
+        type: "commit_observed",
+        ts: 6_000,
+        runId: "run-1",
+        sha: "not-a-sha",
+        subject: "x",
+    }), /sha matching/);
+});
+
+test("slice9: foldEvents tracks currentPlan + planAmendments + last applied amendment", () => {
+    const events = [
+        { type: "armed", ts: 100, runId: "r", label: "self_improve", maxIterations: 10, minIterations: 1 },
+        { type: "iteration_start", ts: 200, runId: "r", iteration: 1 },
+        { type: "workitem_start", ts: 300, runId: "r", kind: "issue", ref: 42, title: "fix it" },
+        { type: "stage_plan", ts: 400, runId: "r", stages: ["REPRO", "FIX", "TEST", "COMMIT", "PUSH", "END"] },
+        { type: "stage_plan_amend", ts: 500, runId: "r", add: "HOTFIX", after: "TEST", reason: "regression" },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.currentPlan.stages.length, 7,
+        "the amend with `after: TEST` must splice HOTFIX in right after TEST");
+    assert.deepEqual(snap.currentPlan.stages, [
+        "REPRO", "FIX", "TEST", "HOTFIX", "COMMIT", "PUSH", "END",
+    ]);
+    assert.equal(snap.planAmendments.length, 1);
+    assert.equal(snap.planAmendments[0].add, "HOTFIX");
+    assert.equal(snap.planAmendments[0].reason, "regression");
+});
+
+test("slice9: foldEvents resets currentPlan + currentTaskList + taskInFlight on workitem_start", () => {
+    const events = [
+        { type: "armed", ts: 100, runId: "r", label: "self_improve", maxIterations: 10, minIterations: 1 },
+        { type: "iteration_start", ts: 200, runId: "r", iteration: 1 },
+        { type: "workitem_start", ts: 300, runId: "r", kind: "issue", ref: 1, title: "first" },
+        { type: "stage_plan", ts: 400, runId: "r", stages: ["A", "COMMIT", "PUSH", "END"] },
+        { type: "task_list", ts: 500, runId: "r", stage: "A", items: ["t1", "t2"] },
+        { type: "task_start", ts: 600, runId: "r", stage: "A", sub: 1, desc: "do t1" },
+        // New work item kicks in BEFORE the task ended (the agent
+        // abandoned the previous one). The fold must not carry the
+        // stale plan / task list / in-flight task into the new work item.
+        { type: "workitem_start", ts: 700, runId: "r", kind: "pr", ref: 42, title: "second" },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.currentPlan, null);
+    assert.equal(snap.currentTaskList, null);
+    assert.equal(snap.taskInFlight, null);
+    assert.equal(snap.activeWorkItem.ref, 42);
+});
+
+test("slice9: foldEvents resets currentTaskList and taskInFlight on stage_start", () => {
+    const events = [
+        { type: "armed", ts: 100, runId: "r", label: "self_improve", maxIterations: 10, minIterations: 1 },
+        { type: "iteration_start", ts: 200, runId: "r", iteration: 1 },
+        { type: "workitem_start", ts: 300, runId: "r", kind: "issue", ref: 42, title: "x" },
+        { type: "stage_plan", ts: 400, runId: "r", stages: ["A", "B", "COMMIT", "PUSH", "END"] },
+        { type: "stage_start", ts: 500, runId: "r", stage: 1, stageName: "A" },
+        { type: "task_list", ts: 600, runId: "r", stage: "A", items: ["t1"] },
+        { type: "task_start", ts: 700, runId: "r", stage: "A", sub: 1, desc: "do t1" },
+        // Stage advances before the task ended. The fold must clear
+        // currentTaskList AND taskInFlight (so the renderer doesn't
+        // show a stale "in flight" task across the stage boundary).
+        { type: "stage_start", ts: 800, runId: "r", stage: 2, stageName: "B" },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.currentTaskList, null);
+    assert.equal(snap.taskInFlight, null);
+    assert.equal(snap.activeStage.name, "B");
+});
+
+test("slice9: foldEvents records each task_end into recentTasks with computed duration", () => {
+    const events = [
+        { type: "armed", ts: 100, runId: "r", label: "self_improve", maxIterations: 10, minIterations: 1 },
+        { type: "task_start", ts: 1_000, runId: "r", stage: "FIX", sub: 1, desc: "do thing" },
+        { type: "task_end", ts: 2_500, runId: "r", stage: "FIX", sub: 1, outcome: "ok" },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.recentTasks.length, 1);
+    assert.equal(snap.recentTasks[0].outcome, "ok");
+    // Computed: ts - startedAt = 2500 - 1000.
+    assert.equal(snap.recentTasks[0].durationMs, 1500);
+    assert.equal(snap.recentTasks[0].desc, "do thing");
+    assert.equal(snap.taskInFlight, null);
+});
+
+test("slice9: foldEvents commit_observed populates lastCommit", () => {
+    const events = [
+        { type: "armed", ts: 100, runId: "r", label: "self_improve", maxIterations: 10, minIterations: 1 },
+        { type: "commit_observed", ts: 1_000, runId: "r",
+          sha: "abc1234567890",
+          subject: "fix: thing",
+          trailers: ["Co-authored-by: X <x@y.z>"] },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.lastCommit.sha, "abc1234567890");
+    assert.equal(snap.lastCommit.subject, "fix: thing");
+    assert.deepEqual(snap.lastCommit.trailers, ["Co-authored-by: X <x@y.z>"]);
+});
+
+import { formatEventLine } from "../src/plain.mjs";
+
+test("slice9: formatEventLine renders stage_plan as `stages=[A,B,C,…]`", () => {
+    const line = formatEventLine({
+        type: "stage_plan",
+        ts: 0,
+        runId: "r",
+        stages: ["REPRO", "FIX", "TEST", "COMMIT", "PUSH", "END"],
+    });
+    assert.match(line, /\bstages=\[REPRO,FIX,TEST,COMMIT,PUSH,END\]/);
+    // Plain-mode verb is the 5-char `plan ` so `awk` users keep
+    // column alignment with the existing 5-char verbs.
+    assert.match(line, /\bplan /);
+});
+
+test("slice9: formatEventLine renders stage_plan_amend with add/after/reason", () => {
+    const line = formatEventLine({
+        type: "stage_plan_amend",
+        ts: 0,
+        runId: "r",
+        add: "HOTFIX",
+        after: "TEST",
+        reason: "regression",
+    });
+    assert.match(line, /\badd=HOTFIX\b/);
+    assert.match(line, /\bafter=TEST\b/);
+    assert.match(line, /\breason=regression\b/);
+    assert.match(line, /\bpamen\b/);
+});
+
+test("slice9: formatEventLine renders task_start with desc + sub", () => {
+    const line = formatEventLine({
+        type: "task_start",
+        ts: 0,
+        runId: "r",
+        stage: "FIX",
+        sub: 3,
+        desc: "add gitExec unit test",
+    });
+    assert.match(line, /\btsk\+ /);
+    assert.match(line, /\bsub=3\b/);
+    assert.match(line, /desc="add gitExec unit test"/);
+});
+
+test("slice9: formatEventLine renders commit_observed with short sha + subject + trailer count", () => {
+    const line = formatEventLine({
+        type: "commit_observed",
+        ts: 0,
+        runId: "r",
+        sha: "abcdef1234567890",
+        subject: "fix(parser): trailing whitespace",
+        trailers: [
+            "Co-authored-by: A <a@b.c>",
+            "Co-authored-by: B <b@b.c>",
+        ],
+    });
+    assert.match(line, /\bcommt\b/);
+    // Short SHA in plain mode (the JSONL keeps the full 16-char one).
+    assert.match(line, /\bsha=abcdef123456\b/);
+    assert.match(line, /subject="fix\(parser\): trailing whitespace"/);
+    assert.match(line, /\btrailers=2\b/);
 });

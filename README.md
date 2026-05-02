@@ -4,6 +4,10 @@
 
 [![CI](https://github.com/kloba/autopilot/actions/workflows/ci.yml/badge.svg)](https://github.com/kloba/autopilot/actions/workflows/ci.yml)
 
+![`autopilot watch` rendering a self-improve run mid-COMMIT, with stages, tasks, activity, and timeline panes](docs/images/autopilot-watch.jpg)
+
+> Above: `autopilot watch <runId>` tailing a `--self-improve` run on iter 1/10 — CRITIQUE/BASELINE/IMPLEMENT/TEST stages green, COMMIT in flight, with the live red-CI work item, sub-task ticks, recent tool calls, and per-iter timeline rendered side-by-side.
+
 ## How it works
 
 `autopilot` drives a coding agent through three levels of decomposition, then loops:

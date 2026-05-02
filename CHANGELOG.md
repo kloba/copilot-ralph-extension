@@ -45,6 +45,13 @@
   events root (`~/.copilot/ralph/runs`) and run-state root
   into a single per-run directory.
 
+### Documentation
+- README now leads with an `autopilot watch` screenshot
+  (`docs/images/autopilot-watch.jpg`) of a `--self-improve` run
+  mid-COMMIT — stages, tasks, activity, and timeline panes —
+  rendered above the TOC so first-time readers see the live TUI
+  before they hit the table of contents.
+
 ### Features
 - Issue #52 — `self_improve` now JIT-ideates ONE next feature
   issue when tiers (a)-(c) are empty (no red CI, no stale PR,

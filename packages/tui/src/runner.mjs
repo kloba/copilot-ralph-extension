@@ -558,6 +558,14 @@ function defaultGitExec({ args, cwd, env }) {
             env,
             encoding: "utf8",
             stdio: ["ignore", "pipe", "pipe"],
+            // Issue #54 slice 2c — arm-time replay shells out to git
+            // before the first iter renders. A 200 ms ceiling protects
+            // against a wedged git repo (lock file, hung credential
+            // helper) silently delaying the run.start path; the
+            // emitCommitObservedFromHead caller already swallows null,
+            // so a timeout just means "skip the LastCommit pane on
+            // mount" rather than crash.
+            timeout: 200,
         });
         if (r.status !== 0) return null;
         return typeof r.stdout === "string" ? r.stdout : null;
@@ -1108,6 +1116,34 @@ export async function runRalphTui(opts) {
         mode,
     });
 
+    // Issue #54 slice 2c — replay HEAD on mount so the LastCommit
+    // pane is never empty when commits exist on disk. Without this
+    // emit, a fresh run that hasn't yet made a commit (e.g. iter 0,
+    // or the first few iters of a `--prompt` run that doesn't touch
+    // git) shows an empty pane even though `git log -1` has plenty
+    // to surface. Carries `iteration: 0` so foldEvents lays the
+    // arm-time HEAD into `snap.lastCommit` before any iter has run;
+    // a later `commit_observed` from the iter loop simply
+    // overwrites it (which is the desired behaviour — newest commit
+    // wins). When `gitExec` is null (test runner without a stub) or
+    // the cwd isn't a repo, `readHeadCommit` returns null and we
+    // silently skip — the pane stays empty exactly like before.
+    try {
+        const armHead = readHeadCommit({ gitExec, cwd, env });
+        if (armHead) {
+            emitter.write({
+                type: "commit_observed",
+                ts: now(),
+                runId,
+                label,
+                iteration: 0,
+                sha: armHead.sha,
+                subject: armHead.subject,
+                trailers: armHead.trailers,
+            });
+        }
+    } catch { /* serialization rejection — skip */ }
+
     if (onRunId) {
         try { onRunId(runId); } catch { /* swallow */ }
     }
@@ -1442,6 +1478,20 @@ export async function runRalphTui(opts) {
         // reconciliation pulls everything back into agreement.
         let iterLiveOutputTokens = 0;
         let iterLivePremiumRequests = null;
+        // Issue #54 slice 2a — per-iter accumulator of root-agent
+        // assistant content used for live Timeline excerpt updates.
+        // Concatenates each `assistant.message.data.content` chunk
+        // (root agent only — sub-agent excerpts would clobber the
+        // user-visible iter narration). Capped at LIVE_EXCERPT_BYTES
+        // chars at emit time (events.mjs serializer also caps at 500
+        // surrogate-safely as defence in depth). Reset implicitly
+        // because the whole `onLine` closure is rebuilt per-iter.
+        let iterLiveExcerpt = "";
+        let iterLiveExcerptLastEmittedLen = 0;
+        // 80 chars ≈ one Timeline row's worth of new content. Below
+        // this we don't bother emitting — Timeline truncates to 80
+        // anyway, so a smaller delta would be invisible to the user.
+        const LIVE_EXCERPT_THRESHOLD = 80;
         const onLine = (rawEvent) => {
             // `runOneIteration` already wraps this in try/catch so a
             // throw here is silently swallowed — but a swallowed
@@ -1464,6 +1514,16 @@ export async function runRalphTui(opts) {
             try {
                 if (rawEvent && rawEvent.type === "assistant.message" && rawEvent.data && !rawEvent.agentId) {
                     const tok = Number(rawEvent.data.outputTokens);
+                    // Issue #54 slice 2a — accumulate root-agent
+                    // content for live Timeline excerpt streaming.
+                    // Done independently of the tokens path so a
+                    // root-agent message with no outputTokens (e.g.
+                    // a streamed-in-parts assistant message where
+                    // only the final chunk carries the cumulative
+                    // delta) still feeds the excerpt accumulator.
+                    if (typeof rawEvent.data.content === "string" && rawEvent.data.content.length > 0) {
+                        iterLiveExcerpt += rawEvent.data.content;
+                    }
                     if (Number.isFinite(tok) && tok > 0) {
                         iterLiveOutputTokens += tok;
                         const ev = {
@@ -1477,7 +1537,48 @@ export async function runRalphTui(opts) {
                         if (runPremiumRequests !== null || iterLivePremiumRequests !== null) {
                             ev.premiumRequests = (runPremiumRequests ?? 0) + (iterLivePremiumRequests ?? 0);
                         }
+                        // Piggyback live excerpt onto this same
+                        // event whenever we have new content. The
+                        // FIRST excerpt fires as soon as ANY content
+                        // accumulates so a terse iter (1-79 chars)
+                        // doesn't show `(working…)` for the whole
+                        // duration. Subsequent updates apply the
+                        // 80-char delta threshold so we don't churn
+                        // the event stream. Reusing the existing
+                        // usage_update keeps the event stream lean
+                        // (no separate excerpt-only event type) and
+                        // decouples emit cadence from token cadence.
+                        const newChars = iterLiveExcerpt.length - iterLiveExcerptLastEmittedLen;
+                        const isFirstExcerpt = iterLiveExcerptLastEmittedLen === 0 && iterLiveExcerpt.length > 0;
+                        if (isFirstExcerpt || newChars >= LIVE_EXCERPT_THRESHOLD) {
+                            ev.excerpt = iterLiveExcerpt.slice(0, 500);
+                            iterLiveExcerptLastEmittedLen = iterLiveExcerpt.length;
+                        }
                         emitter.write(ev);
+                    } else {
+                        const newChars = iterLiveExcerpt.length - iterLiveExcerptLastEmittedLen;
+                        const isFirstExcerpt = iterLiveExcerptLastEmittedLen === 0 && iterLiveExcerpt.length > 0;
+                        if (isFirstExcerpt || newChars >= LIVE_EXCERPT_THRESHOLD) {
+                            // No tokens, but new content worth
+                            // surfacing. Emit an excerpt-bearing
+                            // usage_update so the Timeline row
+                            // updates even when the agent is between
+                            // token-bearing message boundaries.
+                            const ev = {
+                                type: "usage_update",
+                                ts: now(),
+                                runId,
+                                label,
+                                iteration: iter,
+                                tokens: { input: 0, output: runOutputTokens + iterLiveOutputTokens },
+                                excerpt: iterLiveExcerpt.slice(0, 500),
+                            };
+                            if (runPremiumRequests !== null || iterLivePremiumRequests !== null) {
+                                ev.premiumRequests = (runPremiumRequests ?? 0) + (iterLivePremiumRequests ?? 0);
+                            }
+                            iterLiveExcerptLastEmittedLen = iterLiveExcerpt.length;
+                            emitter.write(ev);
+                        }
                     }
                 } else if (rawEvent && rawEvent.type === "result") {
                     const pr = Number(rawEvent.usage?.premiumRequests);

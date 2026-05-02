@@ -787,3 +787,116 @@ test("App: 3-level layout — work item header, plan stages, tasks pane, last co
     assert.match(out, /deadbee/);
     assert.match(out, /land 3-level renderer/);
 });
+
+// ─── Issue #54: panel headings + live excerpt + replay-on-mount ──────
+
+test("Issue #54 slice 1: Header renders 'Run' heading inside the bordered Box", { skip }, () => {
+    const snapshot = {
+        status: "running",
+        label: "self_improve",
+        runId: "r1700000000000",
+        iteration: 1,
+        maxIterations: 5,
+        minIterations: 1,
+        tokens: { input: 0, output: 0 },
+    };
+    const out = render(React.createElement(Header, { snapshot })).lastFrame();
+    // The heading must appear before the status badge / iter counter
+    // line so users see "Run" as the pane label, not buried below.
+    assert.match(out, /Run/);
+    const runIdx = out.indexOf("Run");
+    const iterIdx = out.indexOf("iter");
+    assert.ok(runIdx >= 0 && iterIdx > runIdx, "Run heading appears before iter counter");
+});
+
+test("Issue #54 slice 1: Timeline renders 'Timeline' heading", { skip }, () => {
+    const out = render(React.createElement(Timeline, { snapshot: { iterations: [] } })).lastFrame();
+    assert.match(out, /Timeline/);
+});
+
+test("Issue #54 slice 1: StagesRow renders 'Stages' heading", { skip }, async () => {
+    const StagesRow = (await import("../src/components/StagesRow.mjs")).default;
+    const snapshot = {
+        currentPlan: { stages: ["DIAG", "FIX", "TEST", "COMMIT", "PUSH", "END"] },
+        activeStage: { stage: 2, name: "FIX" },
+        recentStages: [{ stage: 1, name: "DIAG" }],
+    };
+    const out = render(React.createElement(StagesRow, { snapshot })).lastFrame();
+    assert.match(out, /Stages/);
+    // Heading sits ABOVE the pill row.
+    const headingIdx = out.indexOf("Stages");
+    const pillIdx = out.indexOf("DIAG");
+    assert.ok(headingIdx >= 0 && pillIdx > headingIdx, "Stages heading before pills");
+});
+
+test("Issue #54 slice 1: TasksPane renders 'Tasks' heading", { skip }, async () => {
+    const TasksPane = (await import("../src/components/TasksPane.mjs")).default;
+    // Empty-rows path.
+    const out1 = render(React.createElement(TasksPane, { snapshot: {} })).lastFrame();
+    assert.match(out1, /Tasks/);
+    // Rendered-rows path.
+    const snapshot = {
+        currentPlan: { stages: ["DIAG"] },
+        activeStage: { stage: 1, name: "DIAG" },
+        currentTaskList: { stage: "DIAG", items: ["read code", "form hypothesis"] },
+        taskInFlight: { stage: "DIAG", sub: 1, desc: "read code" },
+        recentTasks: [],
+    };
+    const out2 = render(React.createElement(TasksPane, { snapshot })).lastFrame();
+    assert.match(out2, /Tasks/);
+    const headingIdx = out2.indexOf("Tasks");
+    const taskIdx = out2.indexOf("read code");
+    assert.ok(headingIdx >= 0 && taskIdx > headingIdx, "Tasks heading before task rows");
+});
+
+test("Issue #54 slice 1: SubstagesPane renders 'Activity' heading separate from STAGE marker", { skip }, async () => {
+    const SubstagesPane = (await import("../src/components/SubstagesPane.mjs")).default;
+    const snapshot = {
+        activeStage: { stage: 2, name: "FIX" },
+        currentStageSubstages: [],
+    };
+    const out = render(React.createElement(SubstagesPane, { snapshot })).lastFrame();
+    // Heading is "Activity" (NOT "STAGE: FIX" — that lives in the body row).
+    assert.match(out, /Activity/);
+    // The stage-marker body row still surfaces the active stage name.
+    assert.match(out, /FIX/);
+    // Heading appears BEFORE the stage marker row.
+    const headingIdx = out.indexOf("Activity");
+    const stageIdx = out.indexOf("FIX");
+    assert.ok(headingIdx >= 0 && stageIdx > headingIdx, "Activity heading before STAGE marker row");
+});
+
+test("Issue #54 slice 2a: Timeline shows '(working…)' for in-flight iter with no excerpt", { skip }, () => {
+    const snapshot = {
+        iterations: [
+            { iteration: 1, endedAt: 1, excerpt: "first" },
+            { iteration: 2, endedAt: null, excerpt: null },
+        ],
+    };
+    const out = render(React.createElement(Timeline, { snapshot })).lastFrame();
+    assert.match(out, /first/);
+    assert.match(out, /working…/);
+    // Finished iters with no excerpt still get the historical
+    // "(no excerpt)" placeholder — replay fidelity for old runs.
+    const snapshot2 = {
+        iterations: [{ iteration: 1, endedAt: 1, excerpt: null }],
+    };
+    const out2 = render(React.createElement(Timeline, { snapshot: snapshot2 })).lastFrame();
+    assert.match(out2, /no excerpt/);
+});
+
+test("Issue #54 slice 2a: Timeline shows live-streamed excerpt on the in-flight iter", { skip }, () => {
+    // Excerpt streamed via usage_update during the iter — endedAt is
+    // still null, but excerpt is now non-empty. Timeline must
+    // render the excerpt (truncated to 80 chars) instead of
+    // "(working…)".
+    const snapshot = {
+        iterations: [
+            { iteration: 1, endedAt: null, excerpt: "ORIENT: scanning the backlog for stale CI runs" },
+        ],
+    };
+    const out = render(React.createElement(Timeline, { snapshot })).lastFrame();
+    assert.match(out, /ORIENT: scanning the backlog/);
+    assert.doesNotMatch(out, /working…/);
+    assert.doesNotMatch(out, /no excerpt/);
+});

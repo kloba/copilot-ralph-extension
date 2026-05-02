@@ -3,6 +3,49 @@
 ## Unreleased
 
 ### Features
+- Issue #54 — `ralph-tui run` UX hardening across the
+  three-level layout. The four top panes
+  (`<Header>` / `<StagesRow>` / `<TasksPane>` /
+  `<SubstagesPane>`) now render a bold-underline heading
+  (`Run` / `Stages` / `Tasks` / `Activity`) inside their
+  bordered Box matching the existing inside-border heading
+  convention used by `<Timeline>` / `<DetailPane>` /
+  `<LastCommit>`, so each pane is identifiable without
+  hovering for context. `<SubstagesPane>` decouples the
+  pane heading from the active-stage marker — `Activity` is
+  the heading and the `▸ STAGE_NAME` body row remains in the
+  first content position so the substage stream still scopes
+  visually to its parent stage. The `<Timeline>` pane now
+  shows `(working…)` (dim) for in-flight iters that haven't
+  yet streamed an excerpt, instead of the misleading
+  `(no excerpt)` which made finished and in-flight iters
+  indistinguishable; finished iters with no captured
+  excerpt still get the historical `(no excerpt)` placeholder
+  so replay fidelity for old runs is intact. `<Timeline>`
+  also picks up live excerpt streaming: the runner streams
+  root-agent `assistant.message.data.content` into existing
+  `usage_update` events whenever 80+ new chars accumulate,
+  capped at 500 chars surrogate-safely. `foldEvents` extends
+  the `usage_update` case to update `iterations[last].excerpt`
+  when the live event matches the in-flight iter (guarded by
+  `endedAt == null` so a late event can't clobber a closed
+  iter's excerpt) and `snap.lastExcerpt` for run-scope
+  display, so the user sees mid-iter narration update within
+  seconds of the agent emitting it rather than waiting for
+  `iteration_end` at iter close. The `<LastCommit>` pane is
+  no longer empty on mount when the run hasn't yet made a
+  commit: the runner shells `git rev-parse --short HEAD` +
+  `git log -1 --pretty=format:%s%(trailers:only)` once at
+  arm time (right after the canonical `armed` event,
+  carrying `iteration: 0`) so HEAD surfaces immediately;
+  `defaultGitExec` gained a 200 ms `spawnSync` timeout to
+  protect the start path against a wedged repo (lock file,
+  hung credential helper). When `gitExec` is null (test
+  injection without a stub) or the cwd isn't a git repo,
+  arm-time replay is silently skipped — no crash, no spurious
+  event, the pane just stays empty exactly like before the
+  fix when there's nothing to surface.
+
 - TUI 3-level renderer (issue #48 slice 9): the `<App>` layout
   now composes the new `<TasksPane>` + `<LastCommit>` panes
   alongside the existing `<Header>` / `<StagesRow>` /

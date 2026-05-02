@@ -1272,3 +1272,68 @@ test("foldEvents: iteration_end with tokens + premiumRequests pins snapshot to c
     assert.equal(snap.tokens.output, 350);
     assert.equal(snap.premiumRequests, 5);
 });
+
+// ─── Issue #54 slice 2a: usage_update with excerpt → live Timeline ────
+
+test("Issue #54 slice 2a: usage_update with excerpt round-trips through serializer", () => {
+    const ev = {
+        type: "usage_update",
+        ts: 1700000000000,
+        runId: "r",
+        label: "self_improve",
+        iteration: 3,
+        tokens: { input: 0, output: 250 },
+        excerpt: "ORIENT: scanning the backlog for stale CI runs",
+    };
+    const line = serializeEvent(ev);
+    const parsed = parseEventLine(line);
+    assert.equal(parsed.type, "usage_update");
+    assert.equal(parsed.excerpt, "ORIENT: scanning the backlog for stale CI runs");
+    assert.equal(parsed.tokens.output, 250);
+});
+
+test("Issue #54 slice 2a: foldEvents — usage_update with excerpt updates iter[last].excerpt when iter is in-flight", () => {
+    const events = [
+        { type: "armed", ts: 100, runId: "r", label: "self_improve" },
+        { type: "iteration_start", ts: 200, runId: "r", iteration: 1 },
+        { type: "usage_update", ts: 300, runId: "r", iteration: 1,
+          tokens: { input: 0, output: 50 },
+          excerpt: "ORIENT: scanning the backlog" },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.iterations.length, 1);
+    assert.equal(snap.iterations[0].excerpt, "ORIENT: scanning the backlog");
+    assert.equal(snap.iterations[0].endedAt, null, "iter still in-flight");
+    assert.equal(snap.lastExcerpt, "ORIENT: scanning the backlog");
+});
+
+test("Issue #54 slice 2a: foldEvents — usage_update excerpt does NOT clobber a closed iter's excerpt", () => {
+    // After iteration_end has closed iter 1, a stray late
+    // usage_update should leave iter 1's excerpt intact (replay
+    // fidelity). snap.lastExcerpt may still update — that's a
+    // run-scope field, not an iter-scope one — but the per-iter
+    // excerpt history is preserved.
+    const events = [
+        { type: "armed", ts: 100, runId: "r", label: "self_improve" },
+        { type: "iteration_start", ts: 200, runId: "r", iteration: 1 },
+        { type: "iteration_end", ts: 300, runId: "r", iteration: 1,
+          excerpt: "FINAL: iter-1 done", tokens: { input: 0, output: 100 } },
+        { type: "usage_update", ts: 400, runId: "r", iteration: 1,
+          tokens: { input: 0, output: 100 }, excerpt: "STRAY late update" },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.iterations[0].excerpt, "FINAL: iter-1 done",
+        "closed iter excerpt is not overwritten by post-end usage_update");
+});
+
+test("Issue #54 slice 2a: foldEvents — usage_update with empty/missing excerpt is a no-op for iter excerpt", () => {
+    const events = [
+        { type: "armed", ts: 100, runId: "r", label: "self_improve" },
+        { type: "iteration_start", ts: 200, runId: "r", iteration: 1 },
+        // iter starts with excerpt: null (per iteration_start init)
+        { type: "usage_update", ts: 300, runId: "r", iteration: 1,
+          tokens: { input: 0, output: 50 } },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.iterations[0].excerpt, null);
+});

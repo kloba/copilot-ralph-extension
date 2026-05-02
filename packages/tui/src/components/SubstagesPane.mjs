@@ -35,11 +35,16 @@ export default function SubstagesPane({ snapshot, maxRows = 12 }) {
     const active = snapshot?.activeStage ?? null;
     const subs = snapshot?.currentStageSubstages ?? [];
 
-    const titleText = active
+    // Issue #54 slice 1 — heading "Activity" decouples the pane
+    // title from the `▸ STAGE_NAME` line, which now sits as the
+    // first body row. Matches the inside-border heading convention
+    // used by Timeline / DetailPane / TasksPane.
+    const heading = h(Text, { bold: true, underline: true }, "Activity");
+
+    const stageRowText = active
         ? `▸ ${active.name}  (substage activity)`
         : "▸ (no active stage)";
-
-    const title = h(Text, { bold: true, color: "cyan" }, titleText);
+    const stageRow = h(Text, { bold: true, color: "cyan" }, stageRowText);
 
     let body;
     if (!subs || subs.length === 0) {
@@ -74,5 +79,5 @@ export default function SubstagesPane({ snapshot, maxRows = 12 }) {
         borderColor: "gray",
         paddingX: 1,
         flexDirection: "column",
-    }, title, body);
+    }, heading, stageRow, body);
 }

@@ -634,8 +634,14 @@ test("runRalphTui: emits armed → iteration_start → iteration_end → termina
         spawn,
         eventEmitter,
     });
-    const types = events.map((e) => e.type);
-    assert.deepEqual(types, ["armed", "iteration_start", "iteration_end", "complete"]);
+    // The skeleton sequence is armed → iteration_start →
+    // (any number of usage_update for live tokens / excerpt
+    // streaming, issue #54 slice 2a) → iteration_end → complete.
+    // Drop usage_update before asserting the skeleton so this test
+    // stays focused on the iteration-lifecycle contract and doesn't
+    // regress every time we tweak live-emission cadence.
+    const skeleton = events.map((e) => e.type).filter((t) => t !== "usage_update");
+    assert.deepEqual(skeleton, ["armed", "iteration_start", "iteration_end", "complete"]);
     // armed event must carry contextMode + mode + maxIterations for ralph-tui list.
     assert.equal(events[0].contextMode, "fresh");
     assert.equal(events[0].mode, "self-improve");
@@ -1585,9 +1591,25 @@ test("runRalphTui: bash 'git commit' substage → emits commit_observed with sha
         close: () => {},
     };
     const NUL = "\u0000";
+    // Issue #54 slice 2c — runner now also probes HEAD at arm time
+    // (replay-on-mount) so the LastCommit pane is never empty when
+    // the run starts. Stateful gitExec returns the pre-loop HEAD on
+    // the first rev-parse+log pair (arm-time), then advances to the
+    // post-commit HEAD for subsequent calls (the iter-1 commit
+    // substage probe). This pins both legitimate emit sites.
+    let revParseCalls = 0;
+    let logCalls = 0;
     const gitExec = ({ args }) => {
-        if (args[0] === "rev-parse" && args[1] === "--short") return "abc1234\n";
-        if (args[0] === "log") return `feat(x): test commit${NUL}Co-authored-by: Copilot <copilot@users.noreply.github.com>`;
+        if (args[0] === "rev-parse" && args[1] === "--short") {
+            revParseCalls += 1;
+            return revParseCalls === 1 ? "0000000\n" : "abc1234\n";
+        }
+        if (args[0] === "log") {
+            logCalls += 1;
+            return logCalls === 1
+                ? `chore: pre-loop baseline${NUL}`
+                : `feat(x): test commit${NUL}Co-authored-by: Copilot <copilot@users.noreply.github.com>`;
+        }
         return null;
     };
     const stdout = [
@@ -1610,10 +1632,16 @@ test("runRalphTui: bash 'git commit' substage → emits commit_observed with sha
         gitExec,
     });
     const cos = events.filter((e) => e.type === "commit_observed");
-    assert.equal(cos.length, 1, "exactly one commit_observed for one git commit substage");
-    assert.equal(cos[0].sha, "abc1234");
-    assert.equal(cos[0].subject, "feat(x): test commit");
-    assert.equal(cos[0].trailers.length, 1);
+    // Two events: arm-time HEAD replay (iteration:0) +
+    // iter-1 git commit substage observation (iteration:1).
+    assert.equal(cos.length, 2, "arm-time replay + iter-1 commit substage");
+    assert.equal(cos[0].iteration, 0, "first event is arm-time replay");
+    assert.equal(cos[0].sha, "0000000");
+    assert.equal(cos[0].subject, "chore: pre-loop baseline");
+    assert.equal(cos[1].iteration, 1, "second event is iter-1 commit");
+    assert.equal(cos[1].sha, "abc1234");
+    assert.equal(cos[1].subject, "feat(x): test commit");
+    assert.equal(cos[1].trailers.length, 1);
 });
 
 test("runRalphTui: failed git commit substage does NOT trigger commit_observed", async () => {
@@ -1624,6 +1652,14 @@ test("runRalphTui: failed git commit substage does NOT trigger commit_observed",
         write: (ev) => events.push(ev),
         close: () => {},
     };
+    // Issue #54 slice 2c — runner now also probes HEAD at arm time
+    // for replay-on-mount. With a stub returning null (simulating
+    // "not a git repo"), the arm-time probe still calls gitExec
+    // (rev-parse) but gets null back, so no commit_observed event
+    // is emitted. The bash-substage path (which is what this test
+    // pins) is unrelated and would not emit either since success=
+    // false. Net: 0 commit_observed events, but gitExec IS called
+    // once at arm-time.
     let gitExecCalls = 0;
     const gitExec = () => { gitExecCalls += 1; return null; };
     const stdout = [
@@ -1646,7 +1682,10 @@ test("runRalphTui: failed git commit substage does NOT trigger commit_observed",
         gitExec,
     });
     assert.equal(events.filter((e) => e.type === "commit_observed").length, 0);
-    assert.equal(gitExecCalls, 0, "gitExec never called for a failed commit");
+    // Arm-time replay-on-mount calls gitExec once (rev-parse).
+    // Returns null → readHeadCommit short-circuits, no log call.
+    // Failed-commit substage path doesn't shell to git either.
+    assert.equal(gitExecCalls, 1, "gitExec called once at arm-time replay (rev-parse), short-circuits on null");
 });
 
 test("runRalphTui: non-bash tool with 'git commit' in argsSummary does NOT fire commit_observed", async () => {
@@ -1679,6 +1718,77 @@ test("runRalphTui: non-bash tool with 'git commit' in argsSummary does NOT fire 
         gitExec,
     });
     assert.equal(events.filter((e) => e.type === "commit_observed").length, 0);
+});
+
+// ─── Issue #54 slice 2c: arm-time HEAD replay-on-mount ──────────────
+
+test("Issue #54 slice 2c: runRalphTui emits commit_observed at arm time when HEAD exists, even if iter makes no commits", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "arm-replay-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const NUL = "\u0000";
+    const gitExec = ({ args }) => {
+        if (args[0] === "rev-parse" && args[1] === "--short") return "deadbee\n";
+        if (args[0] === "log") return `chore: pre-loop baseline${NUL}Co-authored-by: Copilot <c@e>`;
+        return null;
+    };
+    // Iter that DOESN'T commit — just emits COMPLETE. The arm-time
+    // replay is what populates LastCommit so the user sees HEAD on
+    // mount instead of an empty pane.
+    const stdout = [
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:00.000Z",
+            data: { content: "COMPLETE" } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+        gitExec,
+    });
+    const cos = events.filter((e) => e.type === "commit_observed");
+    assert.equal(cos.length, 1, "exactly one commit_observed emitted at arm time");
+    assert.equal(cos[0].iteration, 0, "arm-time replay carries iteration: 0");
+    assert.equal(cos[0].sha, "deadbee");
+    assert.equal(cos[0].subject, "chore: pre-loop baseline");
+    assert.equal(cos[0].trailers.length, 1);
+});
+
+test("Issue #54 slice 2c: arm-time replay is silent when gitExec returns null (not a repo)", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "no-repo-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    // gitExec returns null for everything → not a repo / git missing.
+    const gitExec = () => null;
+    const stdout = [
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:00.000Z",
+            data: { content: "COMPLETE" } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+        gitExec,
+    });
+    assert.equal(events.filter((e) => e.type === "commit_observed").length, 0,
+        "no commit_observed emitted when gitExec returns null");
 });
 
 test("runRalphTui: WORKITEM_START + WORKITEM_END markers emit workitem events", async () => {
@@ -2064,15 +2174,27 @@ test("runRalphTui smoke: full marker stream surfaces stage_plan + task_list + ta
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
     // Stub gitExec so the smoke test doesn't depend on the test's cwd
     // being a real git repo. Returns canned data for the two
-    // composing calls readHeadCommit makes.
+    // composing calls readHeadCommit makes. Issue #54 slice 2c —
+    // arm-time replay-on-mount calls readHeadCommit once before
+    // iter-1 starts, then the iter-1 git commit substage calls it
+    // again. The stub uses distinct SHAs so the two emissions are
+    // distinguishable in the assertions below.
     let gitCalls = 0;
+    let revParseCalls = 0;
+    let logCalls = 0;
     const gitExec = ({ args }) => {
         gitCalls++;
         if (args[0] === "rev-parse" && args[1] === "--short") {
-            return "abc1234\n";
+            revParseCalls += 1;
+            // Arm-time HEAD before any iter has run.
+            // Iter-1 commit observation lands on the post-commit HEAD.
+            return revParseCalls === 1 ? "0000000\n" : "abc1234\n";
         }
         if (args[0] === "log") {
-            return "feat(tui): smoke\u0000Co-authored-by: Copilot <c@e>\nCo-authored-by: copilot-ralph <r@e>\n";
+            logCalls += 1;
+            return logCalls === 1
+                ? "chore: pre-loop baseline\u0000"
+                : "feat(tui): smoke\u0000Co-authored-by: Copilot <c@e>\nCo-authored-by: copilot-ralph <r@e>\n";
         }
         return null;
     };
@@ -2107,14 +2229,18 @@ test("runRalphTui smoke: full marker stream surfaces stage_plan + task_list + ta
     assert.equal(taskStart.sub, 1);
     const taskEnd = events.find((e) => e.type === "task_end");
     assert.equal(taskEnd.outcome, "ok");
-    const commitObs = events.find((e) => e.type === "commit_observed");
-    assert.equal(commitObs.sha, "abc1234");
-    assert.equal(commitObs.subject, "feat(tui): smoke");
-    assert.equal(commitObs.trailers.length, 2);
-
-    // commit_observed is exactly once (idempotent per toolCallId).
-    assert.equal(events.filter((e) => e.type === "commit_observed").length, 1,
-        "commit_observed must be idempotent per toolCallId");
+    // Two commit_observed events in order: arm-time replay then
+    // iter-1 commit substage. Pinning both proves slice 2c is wired
+    // and the iter-loop's per-toolCallId path is still idempotent.
+    const commitObsList = events.filter((e) => e.type === "commit_observed");
+    assert.equal(commitObsList.length, 2, "arm-time replay + iter-1 commit substage");
+    assert.equal(commitObsList[0].iteration, 0);
+    assert.equal(commitObsList[0].sha, "0000000");
+    assert.equal(commitObsList[0].subject, "chore: pre-loop baseline");
+    assert.equal(commitObsList[1].iteration, 1);
+    assert.equal(commitObsList[1].sha, "abc1234");
+    assert.equal(commitObsList[1].subject, "feat(tui): smoke");
+    assert.equal(commitObsList[1].trailers.length, 2);
 
     // foldEvents must build a snapshot the renderer can consume.
     const snap = foldEvents(events);
@@ -2126,10 +2252,12 @@ test("runRalphTui smoke: full marker stream surfaces stage_plan + task_list + ta
     );
     assert.deepEqual(snap.currentPlan?.stages, ["DIAG", "FIX", "TEST", "COMMIT", "PUSH", "END"]);
     assert.equal(snap.currentTaskList?.stage, "FIX");
+    // After both commit_observed emissions, snap.lastCommit reflects
+    // the most-recent (iter-1 commit), not the arm-time baseline.
     assert.equal(snap.lastCommit?.sha, "abc1234");
     assert.equal(snap.lastCommit?.subject, "feat(tui): smoke");
 
-    // The runner shelled out to git twice (rev-parse + log) for the
-    // single commit — proves the readHeadCommit path actually fired.
-    assert.equal(gitCalls, 2, "readHeadCommit composes two git commands");
+    // The runner shelled out to git four times: arm-time
+    // (rev-parse + log) + iter-1 commit (rev-parse + log).
+    assert.equal(gitCalls, 4, "arm-time + iter-1 each compose rev-parse + log");
 });

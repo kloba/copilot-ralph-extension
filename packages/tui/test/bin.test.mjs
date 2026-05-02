@@ -346,9 +346,9 @@ test("bin list (no --limit): all runs preserved", () => {
 });
 
 test("bin where: prints default runs root", () => {
-    const r = runBin(["where"], { RALPH_EVENTS_DIR: "" });  // empty -> default
+    const r = runBin(["where"], { AUTOPILOT_EVENTS_DIR: "", RALPH_EVENTS_DIR: "" });  // empty -> default
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /\.copilot\/ralph\/runs\n$/);
+    assert.match(r.stdout, /\.copilot\/autopilot\/events\n$/);
 });
 
 test("bin where: honours RALPH_EVENTS_DIR override", () => {

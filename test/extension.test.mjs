@@ -5225,9 +5225,9 @@ test("install.sh: --help prints the leading comment block", () => {
 test("install.sh: --dry-run reports target dir + sizes without writing", () => {
     // End-to-end behaviour test for the install path. Runs install.sh
     // under a sandboxed $HOME (so we never touch the developer's real
-    // ~/.copilot/extensions/ralph) and asserts:
+    // ~/.copilot/extensions/autopilot) and asserts:
     //   - exit 0
-    //   - target dir resolved to $HOME/.copilot/extensions/ralph
+    //   - target dir resolved to $HOME/.copilot/extensions/autopilot
     //   - every FILES entry shows up in the dry-run listing with a
     //     non-zero byte size
     //   - the sandbox dir is NOT created (dry-run truly writes nothing).
@@ -5241,7 +5241,7 @@ test("install.sh: --dry-run reports target dir + sizes without writing", () => {
         assert.equal(r.status, 0, `--dry-run exited ${r.status}; stderr=${r.stderr}`);
         assert.match(r.stdout, /DRY RUN/);
         assert.ok(
-            r.stdout.includes(`${sandboxHome}/.copilot/extensions/ralph/`),
+            r.stdout.includes(`${sandboxHome}/.copilot/extensions/autopilot/`),
             `expected sandbox target in stdout, got: ${r.stdout}`,
         );
         const onDisk = readdirSync(resolve(REPO_ROOT, "extension")).filter((f) =>
@@ -5256,7 +5256,7 @@ test("install.sh: --dry-run reports target dir + sizes without writing", () => {
         }
         // Dry-run must NOT have created the target dir.
         assert.equal(
-            existsSync(`${sandboxHome}/.copilot/extensions/ralph`),
+            existsSync(`${sandboxHome}/.copilot/extensions/autopilot`),
             false,
             "dry-run must not create the target directory",
         );
@@ -5420,7 +5420,7 @@ test("scripts/ralph-tui-fresh.sh: emits deprecation notice on stderr and forward
     assert.equal(r.status, 0, `--help exited ${r.status}; stderr=${r.stderr}`);
     assert.match(r.stderr, /deprecated/i,
         "legacy wrapper must print a deprecation notice on stderr");
-    assert.match(r.stdout, /ralph-tui — terminal visualizer/,
+    assert.match(r.stdout, /autopilot — terminal visualizer/,
         "legacy wrapper must passthrough `--help` to bin/tui.mjs's USAGE block via autopilot-fresh.sh");
 });
 
@@ -6906,7 +6906,7 @@ test("activeLoopGuard: paused beats pendingFire when both flags are set", async 
 
 // -----------------------------------------------------------------------------
 // install.sh --project flag handling. The --project arm computes the install
-// target as $(git rev-parse --show-toplevel)/.github/extensions/ralph; if no
+// target as $(git rev-parse --show-toplevel)/.github/extensions/autopilot; if no
 // git repo is in scope, the script must refuse instead of silently writing
 // somewhere unexpected (e.g. a stale TARGET_DIR from a previous run, or worse,
 // failing partway through after mkdir clobbered something). Pin both the
@@ -6940,10 +6940,10 @@ test("install.sh: --project outside a git repo refuses with a friendly error", (
     }
 });
 
-test("install.sh: --project --dry-run reports $GIT_ROOT/.github/extensions/ralph as target", () => {
+test("install.sh: --project --dry-run reports $GIT_ROOT/.github/extensions/autopilot as target", () => {
     // Happy path: when run from the repo root (the natural working dir for
     // a contributor running ./install.sh --project), the target must land
-    // under .github/extensions/ralph rooted at the git toplevel — NOT
+    // under .github/extensions/autopilot rooted at the git toplevel — NOT
     // under $HOME, and NOT under $PWD. cmp these against the actual
     // git rev-parse output so the test still passes when REPO_ROOT is a
     // symlinked path.
@@ -6959,7 +6959,7 @@ test("install.sh: --project --dry-run reports $GIT_ROOT/.github/extensions/ralph
     assert.equal(r.status, 0, `install.sh --project --dry-run must succeed; stderr=${r.stderr}`);
     assert.match(r.stdout, /DRY RUN — no files will be written\./);
     assert.ok(
-        r.stdout.includes(`Target:    ${root}/.github/extensions/ralph/`),
+        r.stdout.includes(`Target:    ${root}/.github/extensions/autopilot/`),
         `dry-run output must report git-root-relative target dir; got:\n${r.stdout}`,
     );
     // Sanity: must NOT be the user-scoped path.
@@ -8295,7 +8295,7 @@ test("coerceNumberField: error message echoes the requested fieldName", () => {
 test("VERSION matches package.json#version (sync guard)", async () => {
     // The VERSION constant in extension/handler.mjs is hand-baked
     // because `install.sh` does not ship `package.json` to the
-    // installed copy at `~/.copilot/extensions/ralph/`. A
+    // installed copy at `~/.copilot/extensions/autopilot/`. A
     // `require("../package.json")` at module-load time would crash
     // on installed copies, so we keep the literal in source and
     // verify here that release PRs bumping `package.json#version`
@@ -9126,7 +9126,7 @@ test("install.sh: --dry-run annotates each file with [unchanged] when target equ
     const fs = await import("node:fs");
     const sandboxHome = mkdtempSync(join(tmpdir(), "ralph-install-status-unchanged-"));
     try {
-        const targetDir = `${sandboxHome}/.copilot/extensions/ralph`;
+        const targetDir = `${sandboxHome}/.copilot/extensions/autopilot`;
         fs.mkdirSync(targetDir, { recursive: true });
         const onDisk = readdirSync(resolve(REPO_ROOT, "extension"))
             .filter((f) => f.endsWith(".mjs"));
@@ -9261,7 +9261,7 @@ test("install.sh: --dry-run annotates each file with [overwrite] when target dif
     const fs = await import("node:fs");
     const sandboxHome = mkdtempSync(join(tmpdir(), "ralph-install-status-overwrite-"));
     try {
-        const targetDir = `${sandboxHome}/.copilot/extensions/ralph`;
+        const targetDir = `${sandboxHome}/.copilot/extensions/autopilot`;
         fs.mkdirSync(targetDir, { recursive: true });
         const onDisk = readdirSync(resolve(REPO_ROOT, "extension"))
             .filter((f) => f.endsWith(".mjs"));
@@ -9352,10 +9352,10 @@ test("install.sh: a successful (non-dry-run) install exits 0 (cleanup trap must 
         );
         assert.equal(r.status, 0,
             `install.sh exited ${r.status} after a clean run; cleanup() trap must return 0 when no real failure occurred. stdout=${r.stdout}; stderr=${r.stderr}`);
-        assert.match(r.stdout, /Installed ralph extension/,
+        assert.match(r.stdout, /Installed autopilot/,
             "stdout must include the success line; install.sh should run end-to-end");
         // Sanity: every file landed.
-        const installedDir = `${sandboxHome}/.copilot/extensions/ralph`;
+        const installedDir = `${sandboxHome}/.copilot/extensions/autopilot`;
         for (const f of ["extension.mjs", "handler.mjs", "events-emit.mjs"]) {
             assert.ok(existsSync(`${installedDir}/${f}`),
                 `${f} must be present in the installed dir after a clean install`);
@@ -9381,7 +9381,7 @@ test("install.sh: cleanup() returns 0 explicitly so the EXIT trap cannot leak a 
 // Iter 109 — install.sh extracts the extension's version from
 // handler.mjs's `export const VERSION = "X.Y.Z"` declaration and
 // prints it on both the dry-run header (`Version:   vX.Y.Z`) and
-// the post-install success line (`Installed ralph extension vX.Y.Z
+// the post-install success line (`Installed autopilot vX.Y.Z
 // to …`). Single source of truth: handler.mjs's VERSION constant
 // is what the running extension reports via `ap_status`, so the
 // install output cannot drift away from what's actually loaded.
@@ -9397,7 +9397,7 @@ test("install.sh: --dry-run header prints `Version: vX.Y.Z` matching extension/h
         `dry-run header must include "Version:   v${version}" so a contributor verifying an upgrade can confirm at a glance which version would be installed`);
 });
 
-test("install.sh: success line prints `Installed ralph extension vX.Y.Z` matching VERSION", () => {
+test("install.sh: success line prints `Installed autopilot vX.Y.Z` matching VERSION", () => {
     const handler = readFileSync(resolve(REPO_ROOT, "extension/handler.mjs"), "utf8");
     const version = handler.match(/^export const VERSION = "([^"]+)";/m)[1];
     const sandboxHome = mkdtempSync(join(tmpdir(), "ralph-install-success-version-"));
@@ -9408,9 +9408,9 @@ test("install.sh: success line prints `Installed ralph extension vX.Y.Z` matchin
             { encoding: "utf8", env: { ...process.env, HOME: sandboxHome } },
         );
         assert.equal(r.status, 0, `install.sh exited ${r.status}; stderr=${r.stderr}`);
-        const re = new RegExp(`✅ Installed ralph extension v${version.replace(/\./g, "\\.")} to `);
+        const re = new RegExp(`✅ Installed autopilot v${version.replace(/\./g, "\\.")} to `);
         assert.match(r.stdout, re,
-            `success line must echo "Installed ralph extension v${version} to …" so the post-install confirmation matches what ap_status reports at runtime`);
+            `success line must echo "Installed autopilot v${version} to …" so the post-install confirmation matches what ap_status reports at runtime`);
     } finally {
         rmSync(sandboxHome, { recursive: true, force: true });
     }
@@ -9420,7 +9420,7 @@ test("install.sh: VERSION extraction fails loudly if handler.mjs declaration sha
     // Drift guard: a future refactor that renames the constant or
     // changes the declaration shape MUST surface as a hard install
     // failure (non-zero exit + clear stderr) rather than silently
-    // printing "Installed ralph extension v to …". Set up an
+    // printing "Installed autopilot v to …". Set up an
     // isolated sandbox that mirrors the repo, mutate handler.mjs to
     // strip the VERSION line, and assert install.sh refuses to run.
     const fs = await import("node:fs");
@@ -9555,7 +9555,7 @@ test("ap_status: paused-without-reason summary preserves docs format even after 
 // recovery hint.
 test("install.sh: friendly diagnostic when mkdir -p fails (parent is a regular file)", async () => {
     // Force mkdir failure by pointing $HOME at a regular file —
-    // mkdir of `$HOME/.copilot/extensions/ralph` then tries to
+    // mkdir of `$HOME/.copilot/extensions/autopilot` then tries to
     // create `.copilot` inside a non-directory, which fails with
     // ENOTDIR on every platform.
     const fs = await import("node:fs");
@@ -9772,7 +9772,7 @@ test("README curl install loops use leaf-first order matching install.sh's FILES
 // would `./install.sh` install?" gets the canonical answer without
 // having to parse `--dry-run` output (which writes more verbose lines)
 // or grep handler.mjs themselves.
-test("install.sh: --version prints `copilot-ralph-extension vX.Y.Z` and exits 0", () => {
+test("install.sh: --version prints `autopilot vX.Y.Z` and exits 0", () => {
     const r = spawnSync("bash", [resolve(REPO_ROOT, "install.sh"), "--version"], {
         encoding: "utf8",
     });
@@ -9781,8 +9781,8 @@ test("install.sh: --version prints `copilot-ralph-extension vX.Y.Z` and exits 0"
     // and is allowed to change between releases.
     assert.match(
         r.stdout,
-        /^copilot-ralph-extension v\d+\.\d+\.\d+/,
-        "--version output must start with `copilot-ralph-extension vX.Y.Z`",
+        /^autopilot v\d+\.\d+\.\d+/,
+        "--version output must start with `autopilot vX.Y.Z`",
     );
     // Cross-check: the printed version must equal the constant in handler.mjs.
     const handler = readFileSync(resolve(REPO_ROOT, "extension/handler.mjs"), "utf8");
@@ -9798,7 +9798,7 @@ test("install.sh: -V short flag is an alias for --version", () => {
         encoding: "utf8",
     });
     assert.equal(r.status, 0, `-V exited ${r.status}; stderr=${r.stderr}`);
-    assert.match(r.stdout, /^copilot-ralph-extension v\d+\.\d+\.\d+/);
+    assert.match(r.stdout, /^autopilot v\d+\.\d+\.\d+/);
 });
 
 test("install.sh: --help advertises --version", () => {
@@ -9924,7 +9924,7 @@ test("install.sh --dry-run: surfaces currently-installed version when target dir
         // Branch 1: pre-seed handler.mjs with a fake older VERSION at
         // the user-scoped target path, run --dry-run again. The
         // extractor must report the seeded version verbatim.
-        const targetDir = `${sandboxHome}/.copilot/extensions/ralph`;
+        const targetDir = `${sandboxHome}/.copilot/extensions/autopilot`;
         const fs = await import("node:fs");
         fs.mkdirSync(targetDir, { recursive: true });
         fs.writeFileSync(
@@ -10087,7 +10087,7 @@ test("install.sh --dry-run: distinguishes (none) from (unknown) when target hand
     // distinct, actionable signal.
     const sandboxHome = mkdtempSync(join(tmpdir(), "ralph-install-malformed-"));
     try {
-        const targetDir = `${sandboxHome}/.copilot/extensions/ralph`;
+        const targetDir = `${sandboxHome}/.copilot/extensions/autopilot`;
         const fs = await import("node:fs");
         fs.mkdirSync(targetDir, { recursive: true });
         // Seed a handler.mjs that EXISTS but has no parseable
@@ -10234,7 +10234,7 @@ test("install.sh --dry-run prints Direction line covering fresh / no-op / upgrad
     const { mkdirSync, writeFileSync } = await import("node:fs");
     const sandboxHome = mkdtempSync(join(tmpdir(), "ralph-install-direction-"));
     try {
-        const targetDir = join(sandboxHome, ".copilot/extensions/ralph");
+        const targetDir = join(sandboxHome, ".copilot/extensions/autopilot");
         const installScript = resolve(REPO_ROOT, "install.sh");
         // Read the project's actual VERSION so we can craft synthetic
         // installed handler.mjs files relative to it (sourceVersion).
@@ -10517,7 +10517,7 @@ test("ci.yml: post-test step pins working-tree cleanliness so the iter 149 artif
     // Iter 150 — drift guard for the new "Tests must leave the
     // working tree clean" step in `.github/workflows/ci.yml`. Iter
     // 149's first commit (1f4f509) accidentally swept three
-    // install-dogfood artifacts under `.github/extensions/ralph/`
+    // install-dogfood artifacts under `.github/extensions/autopilot/`
     // into the repo via `git add -A`, inflating the diff from ~50
     // lines to 2804 insertions. The CI step catches this class of
     // regression on PR before it lands on main; this test pins the
@@ -10531,7 +10531,7 @@ test("ci.yml: post-test step pins working-tree cleanliness so the iter 149 artif
     assert.match(ci, /git diff --exit-code/,
         "ci.yml's working-tree-clean step must run `git diff --exit-code` (tracked-file modification check)");
     assert.match(ci, /git status --porcelain/,
-        "ci.yml's working-tree-clean step must also run `git status --porcelain` (untracked-file check) — `git diff` alone would have missed iter 149's untracked .github/extensions/ralph/ artifacts");
+        "ci.yml's working-tree-clean step must also run `git status --porcelain` (untracked-file check) — `git diff` alone would have missed iter 149's untracked .github/extensions/autopilot/ artifacts");
 });
 
 test("package.json author matches LICENSE copyright holder", () => {

@@ -9190,7 +9190,6 @@ test("docs(architecture): DI options list includes every supported createRalphCo
 // install.sh painstakingly avoids. Pre-iter-121 the README listed
 // the entry point FIRST in all three install snippets.
 test("README curl install loops use leaf-first order matching install.sh's FILES", () => {
-    const readme = readFileSync(join(REPO_ROOT, "README.md"), "utf8");
     const installSh = readFileSync(join(REPO_ROOT, "install.sh"), "utf8");
     // Pin install.sh's canonical order (the source of truth).
     const installFilesMatch = installSh.match(/^FILES=\(([^)]+)\)/m);
@@ -9200,23 +9199,45 @@ test("README curl install loops use leaf-first order matching install.sh's FILES
         expectedOrder,
         "events-emit.mjs handler.mjs extension.mjs",
         "install.sh's FILES order is the source of truth — entry point LAST. " +
-        "Update this assertion AND every README curl loop in lockstep if you change it.",
+        "Update this assertion AND every doc curl loop in lockstep if you change it.",
     );
-    // Now require every README `for f in <list>; do` loop covering
-    // the runtime modules to use the same order. The regex captures
-    // the list; we then assert it equals expectedOrder verbatim.
-    const forLoops = [...readme.matchAll(/for f in ([^;]+); do/g)].map((m) => m[1].trim());
-    assert.ok(forLoops.length >= 3, `expected ≥3 curl install loops in README, found ${forLoops.length}`);
-    for (const list of forLoops) {
-        if (!/handler\.mjs/.test(list)) continue; // skip unrelated `for f in ...` loops if any
-        assert.equal(
-            list,
-            expectedOrder,
-            `README curl install loop has wrong file order: ${JSON.stringify(list)}. ` +
-            "Must match install.sh's FILES (entry point LAST) so a concurrent " +
-            "/extensions reload mid-curl can never load a new entry against missing/old siblings.",
-        );
+    // Iter 130 — broaden the drift guard from README-only to every
+    // markdown file under the repo that documents a manual `curl`
+    // install loop (README.md, docs/RELEASING.md, future docs/* like
+    // quickstart.md). docs/RELEASING.md previously listed entry point
+    // FIRST in its end-user pinning loop — exactly the regression
+    // this guard exists to prevent. Scan every .md in repo root +
+    // docs/ for `for f in <list>; do` patterns; if the list mentions
+    // handler.mjs (i.e. it's an extension-install loop, not unrelated
+    // shell), it MUST match install.sh's canonical order.
+    const docsDir = join(REPO_ROOT, "docs");
+    const mdFiles = [
+        join(REPO_ROOT, "README.md"),
+        ...readdirSync(docsDir)
+            .filter((f) => f.endsWith(".md"))
+            .map((f) => join(docsDir, f)),
+    ];
+    let totalLoops = 0;
+    for (const md of mdFiles) {
+        const text = readFileSync(md, "utf8");
+        const forLoops = [...text.matchAll(/for f in ([^;]+); do/g)].map((m) => m[1].trim());
+        for (const list of forLoops) {
+            if (!/handler\.mjs/.test(list)) continue; // skip unrelated `for f in ...` loops
+            totalLoops += 1;
+            assert.equal(
+                list,
+                expectedOrder,
+                `${md.replace(REPO_ROOT, "")}: curl install loop has wrong file order: ${JSON.stringify(list)}. ` +
+                "Must match install.sh's FILES (entry point LAST) so a concurrent " +
+                "/extensions reload mid-curl can never load a new entry against missing/old siblings.",
+            );
+        }
     }
+    // Belt-and-suspenders: ensure the scan actually found loops. A
+    // future refactor that moves install instructions out of these
+    // files (or renames the loop variable) would silently make the
+    // guard inert; require ≥3 (Option A + B + D in README at minimum).
+    assert.ok(totalLoops >= 3, `expected ≥3 install curl loops across docs, found ${totalLoops}`);
 });
 
 // Iter 123 — `--version`/`-V` flag: prints `copilot-ralph-extension

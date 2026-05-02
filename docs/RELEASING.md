@@ -50,7 +50,11 @@ Once a release exists with assets attached, end users can pin a specific revisio
 ```bash
 # Project-scoped pin
 mkdir -p .github/extensions/ralph
-for f in extension.mjs handler.mjs events-emit.mjs; do
+# Order matters: leaf modules first, entry point (extension.mjs) LAST —
+# mirrors install.sh's FILES array and README Option A/B/D. If
+# `/extensions reload` fires mid-download, this guarantees the SDK
+# never sees a new `extension.mjs` importing missing/old siblings.
+for f in events-emit.mjs handler.mjs extension.mjs; do
   curl -L -o ".github/extensions/ralph/$f" \
     "https://github.com/kloba/copilot-ralph-extension/releases/download/vX.Y.Z/$f"
 done

@@ -350,6 +350,23 @@
   time instead of as a misleading green check on `main`.
 
 ### Documentation
+- `docs/RELEASING.md`'s end-user pinning curl loop now uses
+  the leaf-first order (`events-emit.mjs handler.mjs
+  extension.mjs`) — entry point LAST — that `install.sh`'s
+  FILES array, README Options A/B/D, and the iter 121 README
+  fix all already pin. Previously the loop listed
+  `extension.mjs` FIRST: a download interrupted (or merely
+  slow) mid-loop with a concurrent `/extensions reload` would
+  briefly leave the SDK importing a new `extension.mjs`
+  against missing/old siblings — exactly the crash mode the
+  rest of the project was hardened against. The README-only
+  drift guard from iter 121 has been broadened to scan every
+  `.md` under repo root + `docs/` for `for f in …; do` curl
+  loops covering `handler.mjs`, so future docs additions
+  (quickstart.md, recipes.md, …) inherit the lockstep
+  enforcement automatically. Total install loops scanned in
+  the new assertion: ≥ 3 (Option A + B + D in README, plus
+  the new RELEASING.md entry).
 - README's install instructions now list `./install.sh
   --version` alongside the existing `--project`, `--dry-run`,
   and `--help` flags. The `--version` / `-V` flag landed in

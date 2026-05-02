@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Documentation
+- Fill in the "Pause / resume semantics" section
+  of docs/concepts.md (was a stub). Documents the
+  iteration-counter contract (pause does not
+  interrupt the in-flight iteration; takes effect
+  on the next session.idle), the pause idempotency
+  rule (ralph_pause is idempotent; ralph_resume is
+  NOT), the stagnation-streak reset on resume
+  (`streak = 0`, `prev = null` — manual
+  intervention changes context), and the
+  `paused_for_ms` / `total_paused_ms` accounting
+  exposed by ralph_status. Companion drift-guard
+  test pins the section header and its load-bearing
+  factual claims so a future code change cannot
+  silently invalidate the prose.
+
 ### Tests
 - Pin gitAheadBehind / gitUncommittedLines edge
   cases — the two helpers that feed ralph_status's

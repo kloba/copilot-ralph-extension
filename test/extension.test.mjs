@@ -6317,3 +6317,26 @@ test("gitUncommittedLines: handles insertion-only and deletion-only output", () 
         7,
     );
 });
+
+// -----------------------------------------------------------------------------
+// docs/concepts.md drift guard: the "Pause / resume semantics" section makes
+// concrete behavioural claims (streak resets on resume; total_paused_ms
+// accumulates; ralph_resume errors when not paused). If a future refactor
+// changes one of those behaviours in handler.mjs but doesn't update the doc,
+// the docs would silently lie. This test pins the section's existence + its
+// most load-bearing factual claims.
+// -----------------------------------------------------------------------------
+
+test("docs/concepts.md: Pause / resume semantics section exists and pins core claims", () => {
+    const doc = readFileSync(resolve(REPO_ROOT, "docs/concepts.md"), "utf8");
+    assert.match(doc, /## Pause \/ resume semantics/, "section header missing");
+    // Claims that must stay true as long as code does not change:
+    assert.match(doc, /reset[\s\S]*?streak|streak[\s\S]*?reset/i, "docs must mention stagnation streak reset on resume");
+    assert.match(doc, /total_paused_ms/, "docs must mention total_paused_ms accumulator");
+    assert.match(doc, /idempotent/i, "docs must describe pause idempotency");
+    assert.match(doc, /not\b[\s\S]*?idempotent/i, "docs must call out that resume is NOT idempotent");
+    // Whichever direction the table runs, both verbs must appear in it.
+    assert.match(doc, /ralph_pause/, "table must reference ralph_pause");
+    assert.match(doc, /ralph_resume/, "table must reference ralph_resume");
+    assert.match(doc, /ralph_stop/, "table must reference ralph_stop");
+});

@@ -1,12 +1,26 @@
 #!/usr/bin/env bash
 # Install copilot-ralph-extension to user-scoped Copilot CLI extensions dir.
-# Usage: ./install.sh [--project] [--dry-run] [--help]
-#   default:    ~/.copilot/extensions/ralph
-#   --project:  .github/extensions/ralph in current git repo
-#   --dry-run:  show what would be installed without writing anything
-#   --help:     show this message
+# Usage: ./install.sh [--project] [--dry-run] [--version|-V] [--help|-h]
+#   default:        ~/.copilot/extensions/ralph
+#   --project:      .github/extensions/ralph in current git repo
+#   --dry-run:      show what would be installed without writing anything
+#   --version, -V:  print the extension version and exit
+#   --help, -h:     show this message
 
 set -euo pipefail
+
+# Resolve script paths and extract the canonical version FIRST so the
+# --version flag (and the --help arm via the awk header extractor) can
+# use them without spawning a second awk invocation. The empty-version
+# guard catches a future refactor that breaks the `export const VERSION`
+# declaration shape — fail loudly rather than print "v" and continue.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_DIR="$SCRIPT_DIR/extension"
+VERSION="$(awk -F'"' '/^export const VERSION = "/{print $2; exit}' "$SOURCE_DIR/handler.mjs")"
+if [[ -z "$VERSION" ]]; then
+  echo "Error: could not extract VERSION from $SOURCE_DIR/handler.mjs (expected an 'export const VERSION = \"X.Y.Z\";' line)." >&2
+  exit 1
+fi
 
 DRY_RUN=0
 # These sentinels are set in the --dry-run / --project arms below and
@@ -34,6 +48,16 @@ for arg in "$@"; do
       awk '/^[^#]/{exit} NR>1{print}' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
+    --version|-V)
+      # Source-of-truth-shared with the dry-run header + post-install
+      # success line: every place that prints a version reads the same
+      # `export const VERSION` declaration in handler.mjs (extracted
+      # above). A user/CI script that wants to know "which version
+      # would this script install?" can now do so without parsing
+      # `--dry-run` output or reading handler.mjs themselves.
+      echo "copilot-ralph-extension v$VERSION"
+      exit 0
+      ;;
     --dry-run)
       reject_duplicate --dry-run SEEN_DRY_RUN
       # shellcheck disable=SC2034
@@ -51,8 +75,6 @@ for arg in "$@"; do
   esac
 done
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE_DIR="$SCRIPT_DIR/extension"
 # Order matters: leaf modules first, entry point LAST. The Copilot CLI
 # loads `extension.mjs` and that file imports handler.mjs + events-emit.mjs.
 # If a concurrent `/extensions reload` fires mid-install, replacing the
@@ -64,22 +86,15 @@ SOURCE_DIR="$SCRIPT_DIR/extension"
 # siblings whose API contract may have shifted under it.
 FILES=(events-emit.mjs handler.mjs extension.mjs)
 
-# Extract the extension's version from `extension/handler.mjs`'s
-# `export const VERSION = "X.Y.Z";` declaration so the install
-# success/dry-run output prints exactly the version that will be
-# active after restart. Sourcing from handler.mjs (rather than
+# VERSION is extracted from `extension/handler.mjs`'s `export const
+# VERSION = "X.Y.Z";` declaration above the arg-parse loop so the
+# --version flag can use it. Sourcing from handler.mjs (rather than
 # package.json) avoids a dependency on `node` / a JSON parser at
 # install time and keeps the version surface a single source of
 # truth — handler.mjs's constant is what the running extension
-# reports via `ralph_status`. A future drift in the declaration
-# shape would surface as an empty VERSION; the guard below fails
-# the install loudly rather than print "Installed ralph extension
-# v to …".
-VERSION="$(awk -F'"' '/^export const VERSION = "/{print $2; exit}' "$SOURCE_DIR/handler.mjs")"
-if [[ -z "$VERSION" ]]; then
-  echo "Error: could not extract VERSION from $SOURCE_DIR/handler.mjs (expected an 'export const VERSION = \"X.Y.Z\";' line)." >&2
-  exit 1
-fi
+# reports via `ralph_status`. The empty-version guard up there
+# fails the install loudly if a future refactor breaks the
+# declaration shape rather than printing "v" to the user.
 
 for f in "${FILES[@]}"; do
   if [[ ! -f "$SOURCE_DIR/$f" ]]; then

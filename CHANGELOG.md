@@ -3,6 +3,19 @@
 ## Unreleased
 
 ### Features
+- `install.sh` now accepts `--version` (long form) and `-V`
+  (short form) flags that print
+  `copilot-ralph-extension vX.Y.Z` and exit 0. Sourced from
+  the same `export const VERSION` declaration in
+  `extension/handler.mjs` that the dry-run header and the
+  post-install success line use, so a CI script asking "which
+  version would `./install.sh` install?" gets the canonical
+  answer in a single line without having to parse `--dry-run`
+  output (which is multi-line) or grep handler.mjs themselves.
+  The `--help` output now advertises both flags. Pinned by
+  three new tests (long flag, short flag, `--help` drift
+  guard) that cross-check the printed version against
+  `handler.mjs`'s declaration.
 - `install.sh` now prints the extension version on the
   dry-run header (`Version:   vX.Y.Z`) and the post-install
   success line (`✅ Installed ralph extension vX.Y.Z to …`).

@@ -9218,3 +9218,50 @@ test("README curl install loops use leaf-first order matching install.sh's FILES
         );
     }
 });
+
+// Iter 123 — `--version`/`-V` flag: prints `copilot-ralph-extension
+// vX.Y.Z` and exits 0. Sources VERSION from the SAME `export const
+// VERSION` declaration in handler.mjs that the dry-run header and the
+// post-install success line use, so a CI script asking "which version
+// would `./install.sh` install?" gets the canonical answer without
+// having to parse `--dry-run` output (which writes more verbose lines)
+// or grep handler.mjs themselves.
+test("install.sh: --version prints `copilot-ralph-extension vX.Y.Z` and exits 0", () => {
+    const r = spawnSync("bash", [resolve(REPO_ROOT, "install.sh"), "--version"], {
+        encoding: "utf8",
+    });
+    assert.equal(r.status, 0, `--version exited ${r.status}; stderr=${r.stderr}`);
+    // Pin the exact prefix; the version itself comes from handler.mjs
+    // and is allowed to change between releases.
+    assert.match(
+        r.stdout,
+        /^copilot-ralph-extension v\d+\.\d+\.\d+/,
+        "--version output must start with `copilot-ralph-extension vX.Y.Z`",
+    );
+    // Cross-check: the printed version must equal the constant in handler.mjs.
+    const handler = readFileSync(resolve(REPO_ROOT, "extension/handler.mjs"), "utf8");
+    const m = handler.match(/^export const VERSION = "([^"]+)";/m);
+    assert.ok(m, "extension/handler.mjs must declare `export const VERSION = \"X.Y.Z\";`");
+    assert.match(r.stdout, new RegExp(`v${m[1].replace(/\./g, "\\.")}`));
+    // No stderr noise — `--version` is consumed by CI scripts.
+    assert.equal(r.stderr, "", `--version emitted unexpected stderr: ${r.stderr}`);
+});
+
+test("install.sh: -V short flag is an alias for --version", () => {
+    const r = spawnSync("bash", [resolve(REPO_ROOT, "install.sh"), "-V"], {
+        encoding: "utf8",
+    });
+    assert.equal(r.status, 0, `-V exited ${r.status}; stderr=${r.stderr}`);
+    assert.match(r.stdout, /^copilot-ralph-extension v\d+\.\d+\.\d+/);
+});
+
+test("install.sh: --help advertises --version", () => {
+    // Drift guard: if a future refactor adds/removes flags, the leading
+    // comment block (rendered by the awk header extractor) must stay in
+    // sync with the actual case-arm set.
+    const r = spawnSync("bash", [resolve(REPO_ROOT, "install.sh"), "--help"], {
+        encoding: "utf8",
+    });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /--version/);
+});

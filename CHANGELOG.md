@@ -8,6 +8,9 @@
 ### Internal
 - Startup sweep removes orphan worktrees from prior `terminated` runs (~200 ms budget). (#66)
 
+### Tests
+- Pin `runRalphTui: emits armed → iteration_start → iteration_end → terminal sequence` to non-worktree mode by passing `worktree: false`, matching the convention established for two other gitExec-count-sensitive tests in #66. The lifecycle skeleton assertion no longer flakes on a fresh checkout (CI), where `git worktree add` succeeds and otherwise injects `worktree_created` / `worktree_kept` events into the recorded sequence. Worktree-aware lifecycle continues to be covered by `runner-worktree.test.mjs`.
+
 ### Breaking
 - Issue #51 — Replaced `ralph-tui run --continue` / `--fresh` with
   `--reset-on={workitem|iter|never}` (default `workitem`). The old

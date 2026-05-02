@@ -541,6 +541,23 @@
   invariant scan.
 
 ### Internal
+- Extracted the baked SDLC prompts (`PROMPT_SELF_IMPROVE`,
+  `PROMPT_GROW_PROJECT`) and their abort tokens
+  (`BAKED_ABORT_TOKEN`, `BAKED_BACKLOG_ABORT_TOKEN`) plus the
+  `COMPLETION_PROMISE` token into a new pure-stdlib production
+  module `extension/prompts.mjs`. Both `extension/handler.mjs`
+  (the in-session loop runner) and the upcoming `ralph-tui run`
+  driver (which spawns each iter as a fresh `copilot -p ...`
+  subprocess and therefore lives in `packages/tui/`) now import
+  the same prompt source — the in-session and out-of-session
+  loops cannot drift in prompt body. `install.sh` ships
+  `prompts.mjs` alongside the existing extension files in
+  leaf-first order (`events-emit.mjs prompts.mjs handler.mjs
+  extension.mjs` — entry point last so a concurrent
+  `/extensions reload` mid-install can never see a new entry
+  against old siblings). Pure refactor; load-time parity
+  guards for completion/abort tokens moved with the prompts.
+  No behaviour change; all 688 existing tests pass unchanged.
 - Extended the syntax-check coverage roots in
   `.github/workflows/ci.yml` and `scripts/check.mjs`
   (`npm run check`) to include `scripts/`. Pre-iter-170 a

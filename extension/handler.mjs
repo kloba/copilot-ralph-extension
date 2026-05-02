@@ -15,6 +15,13 @@
 import { createRequire } from "node:module";
 
 import { createEventEmitter as defaultEventEmitter } from "./events-emit.mjs";
+import {
+    COMPLETION_PROMISE,
+    BAKED_ABORT_TOKEN,
+    BAKED_BACKLOG_ABORT_TOKEN,
+    PROMPT_SELF_IMPROVE,
+    PROMPT_GROW_PROJECT,
+} from "./prompts.mjs";
 
 // Lazy-resolved sync `require` so we can pull child_process only when needed
 // (caffeinate when enabled, git for ralph_status / adaptive-budget, etc.)
@@ -103,7 +110,7 @@ export function compareSemver(a, b) {
 const DEFAULTS = Object.freeze({
     max_iterations: 20,
     min_iterations: 1,
-    completion_promise: "COMPLETE",
+    completion_promise: COMPLETION_PROMISE,
     stagnation_limit: 3,
     warn_at_pct: 80,
     adaptive_budget: false,
@@ -193,188 +200,6 @@ const VERB_BY_REASON = Object.freeze({
     max_tokens: "⏹ stopped",
 });
 
-// Project-agnostic SDLC backlog-drain prompt baked into the
-// `self_improve` tool. Each iteration walks the agent through:
-//   ORIENT  — read recent commits + best-effort enumerate red CI,
-//             open PRs, and open human-filed issues via the gh CLI
-//   IDEATE  — pick ONE backlog item by priority: RED CI →
-//             STALE OPEN PR → OPEN HUMAN-FILED ISSUE →
-//             ROTATING SDLC HARDENING (last-resort fallback). If
-//             none of the first three tiers has a candidate AND
-//             no genuine user-visible improvement is identifiable,
-//             abort rather than mine the codebase for non-issues.
-//   CRITIQUE — rubber-duck pass: state the change, the risk, and one
-//              alternative considered and rejected
-//   BASELINE — detect & run the project's existing test command
-//   IMPLEMENT — surgical edits only; no invented features
-//   TEST     — re-run; must stay green at same-or-higher count
-//   COMMIT   — conventional-commit prefix + dual Co-authored-by trailers
-//              (Copilot + copilot-ralph bot account; the second trailer
-//              is suppressed when RALPH_NO_ATTRIBUTION=1 is set in env)
-//   PUSH     — git push (non-fatal on push failure)
-//   END      — emit COMPLETE on its own line, or ABORT_NO_IMPROVEMENTS
-const PROMPT_SELF_IMPROVE = `You are running an autonomous backlog-draining iteration on the project in cwd. Each iteration is a paid premium request — drain as many real backlog items as fit in one turn (a failing CI run, a stale open pull request, an open human-filed issue), each as its own atomic commit with the tree green between them. If after honest investigation no real backlog item is actionable AND no genuine user-visible improvement is identifiable, emit ABORT_NO_IMPROVEMENTS rather than inventing defensive-guard or comment-alignment pseudo-improvements.
-
-PER-ITERATION SDLC WORKFLOW (each iteration is a paid premium request — pack the turn; multiple atomic commits are encouraged when the work permits):
-
-1. ORIENT.
-   - Run \`git log --oneline -20\` and read the most recent commits so you do not redo or undo prior iterations.
-   - If the \`gh\` CLI is available and authenticated, run all three of the following best-effort backlog probes (each \`|| true\` so a missing/unauth gh doesn't abort the iteration):
-     - \`gh run list --status failure --limit 10 2>/dev/null || true\` — failing GitHub Actions runs on the default / current branch are the highest-priority backlog item; a red CI blocks releases and silently breaks downstream consumers. Drill into the most recent failure with \`gh run view <run-id> --log-failed 2>/dev/null || true\` to capture the actual error before IDEATE.
-     - \`gh pr list --state open --limit 20 2>/dev/null || true\` — open pull requests. Stale PRs (failing checks, mergeable=CONFLICTING, unaddressed review comments, or no activity in days) are the second-priority backlog item. Inspect any candidate with \`gh pr view <pr-num> --json state,mergeable,statusCheckRollup,reviewDecision,headRefName 2>/dev/null || true\`.
-     - \`gh issue list --state open --limit 30 2>/dev/null || true\` — open issues. Treat any issue WITHOUT the \`grow-project\` (or \`proposed\`) label as a human-filed backlog item that THIS loop owns. Issues carrying \`grow-project\` / \`proposed\` are loop-ideated feature backlog and belong to a different runner — skim them so you don't duplicate, but do NOT pick them up here.
-   - Skim the project's primary docs: README, AGENTS.md, package.json / pyproject.toml / Cargo.toml / go.mod (whichever exist), CHANGELOG.
-   - Detect the project's existing test command (npm test, pytest, cargo test, go test ./..., etc).
-
-2. IDEATE.
-   PRIORITY ORDER (do not skip a higher tier when a candidate exists in it):
-     a. RED CI — if ORIENT surfaced any failing GitHub Actions run on the default branch / current branch HEAD, healing that failure IS the iteration. Reproduce the failure locally if possible, fix the root cause (not the symptom — do not add \`continue-on-error\` or delete the failing job to silence it), and verify the fix re-runs green via \`gh run rerun <run-id>\` or by pushing the fix and watching the new run. If the failure is a flaky test, harden it; if it's an env/dependency drift, pin or update; if it's a legitimate regression, revert or fix forward.
-     b. STALE OPEN PR — if ORIENT surfaced an open PR with failing checks, mergeable=CONFLICTING, an unaddressed review, or extended inactivity, driving that PR to a mergeable state IS the iteration. For PRs you can push to (a branch you authored / loop-authored), rebase onto the default branch, fix forward until checks are green, push, and merge. For PRs authored by someone else, leave a constructive \`gh pr review --comment\` summarising what's blocking — do NOT push to their branch.
-     c. OPEN HUMAN-FILED ISSUE — if ORIENT surfaced an open issue WITHOUT the \`grow-project\` / \`proposed\` label, addressing that issue end-to-end IS the iteration. Pick the oldest one with a clear, scoped fix (lowest number first when ties). Reference the issue via \`Closes #N\` (or \`Refs #N\` if the fix is partial). Issues carrying \`grow-project\` / \`proposed\` belong to the feature-backlog runner — leave them alone here.
-     d. ROTATING SDLC HARDENING — ONLY if tiers (a)-(c) are all empty AND a genuine user-visible improvement is identifiable. Pick ONE concrete improvement, rotating across the categories below so the loop covers the whole lifecycle over time:
-        - bug fix or edge-case hardening
-        - input validation / error message clarity
-        - tests for under-covered behaviour
-        - refactor for readability / dead-code removal
-        - dependency / config hygiene
-        - docs (README, CHANGELOG, comments) accuracy
-        - release engineering (version bump rules, CI hints, .gitignore, lockfile)
-        Avoid repeating the SDLC category used in the previous 2-3 commits. If you cannot identify a user-visible improvement, emit ABORT_NO_IMPROVEMENTS — defensive guards on hypothetical edge cases, drift-pinning of trivial format strings, and comment / doc alignment churn are NOT acceptable iteration output.
-
-3. CRITIQUE (rubber-duck pass).
-   Before editing, briefly state: the change, the risk it introduces, and one alternative you considered and rejected. Reject your own idea and pick a different one if the risk outweighs the value.
-
-4. BASELINE.
-   Run the project's existing test command and record pass/fail count. If the baseline is broken on entry and you cannot fix it in this single iteration, emit ABORT_NO_IMPROVEMENTS.
-
-5. IMPLEMENT.
-   Surgical edits only. No invented features. Do not change public API surface unless that change IS the improvement.
-
-6. TEST.
-   Re-run the same test command. It MUST pass at the same or higher count than baseline. If it fails, fix forward or revert, then re-run.
-
-7. COMMIT.
-   Short imperative subject prefixed with the SDLC category (\`fix:\`, \`feat:\`, \`test:\`, \`refactor:\`, \`docs:\`, \`chore:\`, \`ci:\`, \`perf:\`). Always include both trailers:
-     Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
-     Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>
-   The second trailer attributes the commit to the dedicated \`copilot-ralph\` bot account so loop-driven commits are passively searchable across public GitHub. If the environment variable \`RALPH_NO_ATTRIBUTION=1\` is set, omit ONLY the second \`copilot-ralph\` trailer; the first \`Copilot\` trailer always ships.
-   Write the commit message to a temp file in a SEPARATE shell call before running \`git commit -F\`; combining heredoc + commit in one call has historically failed silently. Prefer "cancel", "tear down", or "stop" in commit messages over forceful-action synonyms that some agent runtimes treat as trigger phrases.
-
-8. PUSH.
-   \`git push\` to origin. If push fails (no remote, auth, conflict), log it and continue; do not abort the loop on push failure.
-
-9. END THE TURN.
-   Emit the literal token COMPLETE on its own line so the loop advances. If no worthwhile improvement exists, emit ABORT_NO_IMPROVEMENTS instead.
-
-HARD RULES:
-- Stay in cwd; do not edit unrelated repos.
-- Tier (d) is a fallback, not a default. A run that exclusively produces tier (d) commits is a failure mode — the agent is mining the codebase for non-issues. When (a)-(c) are empty and no user-visible (d) improvement is identifiable, ABORT.
-- Each iteration is a paid premium request. Pack the turn — drain multiple backlog items in one iter as separate atomic commits when feasible, rather than burning a fresh premium request on each tiny commit. The tree must stay green between commits; if a commit reveals a regression in a later commit's scope, fix it inline before closing the iter.
-- Do not introduce new top-level dependencies, frameworks, or build systems unless that introduction IS the improvement and the rubber-duck critique justified it.
-- Do not delete or rewrite the project's existing license, README, or CHANGELOG wholesale; surgical edits only.`;
-
-// Literal abort token baked into PROMPT_SELF_IMPROVE. The completion
-// counterpart is DEFAULTS.completion_promise ("COMPLETE") and is reused
-// directly. Centralising the abort token here keeps the warnPromiseDrift
-// call site (in the self_improve handler) and the prompt body in lockstep
-// — if either drifts, the load-time parity guard below throws.
-const BAKED_ABORT_TOKEN = "ABORT_NO_IMPROVEMENTS";
-if (!PROMPT_SELF_IMPROVE.includes(DEFAULTS.completion_promise) ||
-    !PROMPT_SELF_IMPROVE.includes(BAKED_ABORT_TOKEN)) {
-    throw new Error(
-        `handler.mjs: PROMPT_SELF_IMPROVE must contain both "${DEFAULTS.completion_promise}" and "${BAKED_ABORT_TOKEN}" — the self_improve drift warning depends on this invariant.`,
-    );
-}
-
-// PROMPT_GROW_PROJECT is the baked SDLC prompt for the grow_project tool.
-// Unlike self_improve (which drains the existing backlog: red CI, stale
-// PRs, human-filed issues), this loop EXPANDS the backlog: it ideates a
-// set of new features as GitHub issues on the first iter, then ships one
-// or more end-to-end per subsequent iter against a three-part completion
-// gate (tests green + executable acceptance check + demo invocation).
-// Bugs, hardening, CI healing, and human-filed asks belong to
-// self_improve, not here. The literal abort token is
-// BAKED_BACKLOG_ABORT_TOKEN ("ABORT_NO_BACKLOG"), distinct from
-// self_improve's "ABORT_NO_IMPROVEMENTS" because the agent emits it for a
-// different reason: the backlog has been drained, not that no worthwhile
-// improvement exists.
-const PROMPT_GROW_PROJECT = `You are running an autonomous project-growth iteration on the project in cwd. Each iteration is a paid premium request — ship one or more complete features end-to-end from a GitHub-issue backlog (not placeholder slices), each as its own atomic commit with the tree green between them. If the backlog is drained or no proposed issue is ready, emit ABORT_NO_BACKLOG instead.
-
-This loop's job is to GROW the project with new features. Bug fixes, hardening, CI healing, refactors, and human-filed asks belong to the backlog-drain runner — not here. If a \`grow-project\`-labelled issue turns out to describe a bug or non-feature task, remove the \`grow-project\` and \`proposed\` labels (so the backlog-drain runner picks it up) and skip it.
-
-PER-ITERATION SDLC WORKFLOW (each iteration is a paid premium request — ship complete features, multiple if independent and small):
-
-1. ORIENT.
-   - \`gh issue list --label grow-project --state open\` to see the backlog.
-   - \`git log --oneline -20\` so you do not redo or undo prior iterations.
-   - Skim README, AGENTS.md, package.json / pyproject.toml / Cargo.toml / go.mod (whichever exist), CHANGELOG.
-   - Detect the project's existing test command (npm test, pytest, cargo test, go test ./..., etc).
-
-2. IDEATE (only if the backlog is empty AND this is the first iter).
-   Before creating issues, run \`gh label create grow-project --color 0e8a16 --description "feature backlog" 2>/dev/null || true\` and \`gh label create proposed --color fbca04 --description "ready to pick up" 2>/dev/null || true\` and \`gh label create in-progress --color d93f0b --description "actively being shipped" 2>/dev/null || true\` so the very first \`gh issue create --label X\` call doesn't fail on a missing label. The \`|| true\` swallows the "label already exists" error on subsequent runs.
-   Generate 5-10 small, well-scoped features. For each, run \`gh issue create --label grow-project --label proposed\` with a body that includes:
-     - Spec — one paragraph describing the feature.
-     - Acceptance criteria — a checkbox list of machine-checkable assertions (test name, CLI invocation + expected output, file existence + content match, etc).
-     - Demo command — a single CLI invocation that exercises the feature end-to-end and prints recognisable output.
-     - Optional \`Depends-on: #N\` line per dependency.
-   If the backlog is non-empty, skip this stage.
-
-3. SELECT.
-   Pick ONE issue with the \`proposed\` label, oldest first. Respect any \`Depends-on: #N\` lines: block if any dependency issue is still open. Re-label the chosen issue with \`gh issue edit N --add-label in-progress --remove-label proposed\`. If no proposed issue is ready, emit ABORT_NO_BACKLOG.
-
-4. CRITIQUE (rubber-duck pass).
-   Briefly state the change, the risk, and one alternative you considered+rejected. If the spec is unclear, post a refining comment on the issue before proceeding.
-
-5. BASELINE.
-   Run the project's existing test command and record pass/fail count. If the baseline is broken on entry and you cannot fix it in this single iteration, emit ABORT_NO_BACKLOG.
-
-6. IMPLEMENT.
-   Surgical edits only. No invented features beyond the issue's spec.
-
-7. TEST.
-   Re-run the same test command. It MUST pass at the same or higher count than baseline. If it fails, fix forward or revert, then re-run.
-
-8. ACCEPTANCE.
-   Execute every acceptance-criteria check from the issue body. Each one must pass. Tick the checkbox in the issue body via \`gh issue edit\` as you go.
-
-9. DEMO.
-   Execute the demo command. Capture its output and post it as a comment on the issue with \`gh issue comment N --body ...\` so the demo trace is durable.
-
-10. COMMIT.
-    Conventional-commit prefix (\`feat:\` is typical). Subject must reference the issue, e.g. \`feat(#42): add CSV export\`. Trailers MUST include all three:
-      Closes #N
-      Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
-      Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>
-    The second \`Co-authored-by\` trailer attributes the commit to the dedicated \`copilot-ralph\` bot account so loop-driven commits are passively searchable across public GitHub. If the environment variable \`RALPH_NO_ATTRIBUTION=1\` is set, omit ONLY the \`copilot-ralph\` trailer; the \`Closes #N\` and \`Copilot\` trailers always ship.
-    Write the commit message to a temp file in a SEPARATE shell call before running \`git commit -F\`; combining heredoc + commit in one call has historically failed silently. Prefer "cancel", "tear down", or "stop" in commit messages over forceful-action synonyms that some agent runtimes treat as trigger phrases.
-
-11. PUSH.
-    \`git push\` to origin. If push fails (no remote, auth, conflict), log it and continue; do not abort the loop on push failure.
-
-12. CLOSE.
-    \`gh issue close N --reason completed\`. The commit trailer auto-closes too, but be explicit so the close is recorded even if the push failed.
-
-13. END THE TURN.
-    Emit the literal token COMPLETE on its own line so the loop advances. If the backlog is drained, emit ABORT_NO_BACKLOG instead.
-
-HARD RULES:
-- Stay in cwd; do not edit unrelated repos.
-- This loop ships NEW FEATURES only. Bug fixes, hardening, CI healing, refactors, and human-filed asks belong to the backlog-drain runner. If a \`grow-project\`-labelled issue turns out to describe a bug or non-feature task, strip its \`grow-project\` / \`proposed\` labels and skip it; pick a different proposed feature or emit ABORT_NO_BACKLOG.
-- Each iteration is a paid premium request. When two proposed issues are independent and small, ship both in one iter as separate atomic commits (each through the full gate: tests green + acceptance + demo + close) rather than burning a fresh premium request on each. Do NOT shortcut the per-feature gate to fit more in.
-- Do not introduce new top-level dependencies, frameworks, or build systems unless that introduction IS the feature and the rubber-duck critique justified it.
-- Do not delete or rewrite the project's existing license, README, or CHANGELOG wholesale; surgical edits only.`;
-
-// Literal abort token baked into PROMPT_GROW_PROJECT. Centralised here so
-// the warnPromiseDrift call site (in the grow_project handler) and the
-// prompt body stay in lockstep — if either drifts, the load-time parity
-// guard below throws.
-const BAKED_BACKLOG_ABORT_TOKEN = "ABORT_NO_BACKLOG";
-if (!PROMPT_GROW_PROJECT.includes(DEFAULTS.completion_promise) ||
-    !PROMPT_GROW_PROJECT.includes(BAKED_BACKLOG_ABORT_TOKEN)) {
-    throw new Error(
-        `handler.mjs: PROMPT_GROW_PROJECT must contain both "${DEFAULTS.completion_promise}" and "${BAKED_BACKLOG_ABORT_TOKEN}" — the grow_project drift warning depends on this invariant.`,
-    );
-}
 
 // Issue #1: every loop-driven commit ships TWO Co-authored-by trailers
 // (Copilot agent + copilot-ralph bot account, with RALPH_NO_ATTRIBUTION=1

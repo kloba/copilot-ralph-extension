@@ -185,13 +185,13 @@
     
     
       <div class="md-header__source">
-        <a href="https://github.com/kloba/copilot-ralph-extension" title="Go to repository" class="md-source" data-md-component="source">
+        <a href="https://github.com/kloba/autopilot" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
   </div>
   <div class="md-source__repository">
-    kloba/copilot-ralph-extension
+    kloba/autopilot
   </div>
 </a>
       </div>
@@ -344,13 +344,13 @@
   </label>
   
     <div class="md-nav__source">
-      <a href="https://github.com/kloba/copilot-ralph-extension" title="Go to repository" class="md-source" data-md-component="source">
+      <a href="https://github.com/kloba/autopilot" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
   </div>
   <div class="md-source__repository">
-    kloba/copilot-ralph-extension
+    kloba/autopilot
   </div>
 </a>
     </div>
@@ -559,7 +559,7 @@
 
 <h1 id="releasing">Releasing<a class="headerlink" href="#releasing" title="Permanent link">&para;</a></h1>
 <p><code>copilot-ralph-extension</code> ships as the <code>ralph-tui</code> standalone TUI app. There is <strong>no npm publish</strong> today; releases are tagged commits on <code>main</code> plus an annotated GitHub Release page. The auto-attached source zipball / tarball is the canonical download.</p>
-<p>A tag-driven release-automation workflow ships at <a href="../.github/workflows/release.yml"><code>.github/workflows/release.yml</code></a> (see issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/10">#10</a> for the rationale). Pushing a <code>vX.Y.Z</code> tag verifies <code>package.json</code> matches the tag, asserts a matching <code>CHANGELOG.md</code> section exists, runs <code>npm test</code> + <code>npm run check</code>, and creates the GitHub Release with the matching changelog section as the body. The manual checklist below is the fallback when the workflow is unavailable or you need to cut a release out-of-band.</p>
+<p>A tag-driven release-automation workflow ships at <a href="../.github/workflows/release.yml"><code>.github/workflows/release.yml</code></a> (see issue <a href="https://github.com/kloba/autopilot/issues/10">#10</a> for the rationale). Pushing a <code>vX.Y.Z</code> tag verifies <code>package.json</code> matches the tag, asserts a matching <code>CHANGELOG.md</code> section exists, runs <code>npm test</code> + <code>npm run check</code>, and creates the GitHub Release with the matching changelog section as the body. The manual checklist below is the fallback when the workflow is unavailable or you need to cut a release out-of-band.</p>
 <h2 id="manual-release-checklist">Manual release checklist<a class="headerlink" href="#manual-release-checklist" title="Permanent link">&para;</a></h2>
 <ol>
 <li><strong>Verify <code>main</code> is green</strong>: <code>npm test</code> and the GitHub Actions CI workflow on the latest commit.</li>
@@ -593,7 +593,7 @@
 <p>The non-render layer has zero runtime dependencies, so dependency-driven version bumps don't apply there. The Ink renderer's package-lock churn falls under PATCH unless a major Ink/React/Yoga upgrade changes user-visible rendering.</p>
 <h2 id="pinning-a-specific-version-for-end-users">Pinning a specific version (for end users)<a class="headerlink" href="#pinning-a-specific-version-for-end-users" title="Permanent link">&para;</a></h2>
 <p>Once a release exists, end users can pin a specific revision by checking out the matching tag:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/kloba/copilot-ralph-extension
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/kloba/autopilot
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nb">cd</span><span class="w"> </span>copilot-ralph-extension
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>git<span class="w"> </span>checkout<span class="w"> </span>vX.Y.Z
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>--help

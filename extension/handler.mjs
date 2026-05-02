@@ -954,6 +954,12 @@ const RALPH_LOOP_KEYS = new Set([
 const RALPH_STOP_KEYS = new Set(["reason"]);
 const RALPH_PAUSE_KEYS = new Set(["reason"]);
 const RALPH_RESUME_KEYS = new Set([]);
+// ralph_status accepts no arguments. A frozen module-level
+// constant keeps the call site symmetrical with every other
+// tool's `validateOptionalArgShape(..., RALPH_*_KEYS)` call and
+// avoids allocating a fresh empty Set per ralph_status invocation
+// (cheap, but the consistency is the point — drift is the bug).
+const RALPH_STATUS_KEYS = new Set([]);
 const SELF_IMPROVE_KEYS = new Set([
     "max_iterations",
     "min_iterations",
@@ -2119,7 +2125,7 @@ export function createRalphController(opts = {}) {
                 additionalProperties: false,
             },
             handler: async (args) => {
-                const bad = validateOptionalArgShape("ralph_status", args, new Set());
+                const bad = validateOptionalArgShape("ralph_status", args, RALPH_STATUS_KEYS);
                 if (bad) return bad;
                 const snapshot = buildStatusSnapshot();
                 // The structured payload is the primary product. The

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Refactor
+- `ralph_status` now uses a module-level `RALPH_STATUS_KEYS` Set
+  for argument-shape validation, matching every other loop-control
+  tool (`RALPH_STOP_KEYS`, `RALPH_PAUSE_KEYS`, `RALPH_RESUME_KEYS`).
+  The previous form allocated a fresh `new Set()` inline at the
+  `validateOptionalArgShape("ralph_status", args, new Set())` call
+  site — cheap but drift-prone (a future change that adds an
+  optional argument to ralph_status would have to update the call
+  site instead of a single module constant). A new drift-guard
+  test pins the new constant's existence and forbids any future
+  reintroduction of the inline `new Set()` anti-pattern.
+
 ### Documentation
 - `SECURITY.md`'s in-scope file list now covers every runtime
   module shipped under `extension/` (currently `extension.mjs`,

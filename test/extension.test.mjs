@@ -8045,3 +8045,36 @@ test("SECURITY.md in-scope list covers every shipped extension/*.mjs (drift guar
         "SECURITY.md must point at install.sh's FILES array as the source-of-truth for in-scope modules",
     );
 });
+
+test("RALPH_*_KEYS constants are module-level (no inline new Set in tool handlers)", async () => {
+    // Iter 88 added RALPH_STATUS_KEYS for symmetry with
+    // RALPH_STOP_KEYS / RALPH_PAUSE_KEYS / RALPH_RESUME_KEYS so
+    // every loop-control tool uses the same module-level
+    // `validateOptionalArgShape(..., RALPH_*_KEYS)` shape. The
+    // previous form allocated a fresh `new Set()` inline per
+    // ralph_status invocation — cheap but drift-prone (a future
+    // refactor that adds an arg to ralph_status would have to
+    // update the call site rather than a module constant).
+    //
+    // This drift guard pins:
+    //   1. RALPH_STATUS_KEYS exists as a module-level Set; AND
+    //   2. no tool handler still uses the inline `new Set()`
+    //      anti-pattern on a `validateOptionalArgShape` call.
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const url = await import("node:url");
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const repoRoot = path.join(here, "..");
+    const handler = await fs.readFile(path.join(repoRoot, "extension/handler.mjs"), "utf8");
+
+    assert.match(
+        handler,
+        /^const RALPH_STATUS_KEYS = new Set\(\[\]\);/m,
+        "handler.mjs must declare RALPH_STATUS_KEYS at module scope alongside RALPH_STOP_KEYS / RALPH_PAUSE_KEYS / RALPH_RESUME_KEYS",
+    );
+    assert.doesNotMatch(
+        handler,
+        /validateOptionalArgShape\([^)]*new Set\(\)/,
+        "handler.mjs must not allocate a fresh `new Set()` inline at a validateOptionalArgShape call site — use a module-level RALPH_*_KEYS constant instead",
+    );
+});

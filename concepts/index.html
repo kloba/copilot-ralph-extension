@@ -419,6 +419,17 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Concepts
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         
   
@@ -428,6 +439,34 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#pause-resume-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pause / resume semantics
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -513,6 +552,23 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#pause-resume-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pause / resume semantics
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -543,6 +599,74 @@
 <li>Pause / resume semantics</li>
 <li>Adaptive iteration budget</li>
 </ul>
+<h2 id="pause-resume-semantics">Pause / resume semantics<a class="headerlink" href="#pause-resume-semantics" title="Permanent link">&para;</a></h2>
+<p><code>ralph_pause</code> and <code>ralph_resume</code> let you stop the next iteration from
+firing without losing the iteration counter, the conversation context,
+or the arm-time git snapshot. The iteration in flight at the moment
+you call <code>ralph_pause</code> is not interrupted — it runs to completion and
+emits its <code>iteration_end</code> event. Pause only takes effect on the
+<strong>next</strong> <code>session.idle</code>: the on-idle handler short-circuits when
+<code>active.paused</code> is <code>true</code>, and the iteration counter stays at the
+value it reached.</p>
+<p>While paused, you may chat freely with the agent. Those turns are
+real conversation turns, but they do <strong>not</strong> consume iterations and
+they do <strong>not</strong> count toward the stagnation streak (see below).</p>
+<p><code>ralph_pause</code> is idempotent: calling it on an already-paused loop is
+a no-op and returns success. The two failure modes are:</p>
+<ol>
+<li>No loop is currently active (<code>{ active: false }</code>).</li>
+<li>The <code>reason</code> argument exceeds 500 chars (validation rejection).</li>
+</ol>
+<p><code>ralph_resume</code> flips <code>paused</code> back to <code>false</code> and <strong>resets the
+stagnation streak</strong> (<code>streak = 0</code>, <code>prev = null</code>). The comment in the
+code spells out why: <em>"manual intervention almost always changes
+context"</em>. Without this reset, a paused → user-tweaks-source →
+resumed loop would carry a stale <code>prev</code> response and a non-zero
+<code>streak</code>, so the very next iteration could trip the stagnation guard
+even though the conversation context has changed substantially.</p>
+<p><code>ralph_resume</code> returns failure if the loop is <strong>not</strong> currently
+paused — the error message is
+<code>ralph_resume: &lt;label&gt; is not paused. Use ralph_pause first, or
+ralph_stop to cancel.</code> So unlike <code>ralph_pause</code>, <code>ralph_resume</code> is
+<strong>not</strong> idempotent.</p>
+<p>Pause time is tracked in two places visible via <code>ralph_status</code>:</p>
+<ul>
+<li><code>paused_for_ms</code> — the duration of the <strong>current</strong> pause (zero when
+  the loop is not paused).</li>
+<li><code>total_paused_ms</code> — cumulative pause time across <strong>all</strong> prior
+  pause/resume cycles in this run.</li>
+</ul>
+<p><code>total_paused_ms</code> is deducted from <code>durationMs</code> so the wall-clock
+elapsed time reported by the loop reflects active execution time
+only, not any time the user spent inspecting state with the loop
+paused.</p>
+<p>In summary, the contract is:</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>When it succeeds</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ralph_pause</code></td>
+<td>Loop active (paused or unpaused)</td>
+<td>Sets <code>paused = true</code>. Currently-running iteration finishes normally.</td>
+</tr>
+<tr>
+<td><code>ralph_resume</code></td>
+<td>Loop active <strong>and</strong> paused</td>
+<td>Clears <code>paused</code>, resets <code>streak</code>/<code>prev</code>, adds elapsed pause to <code>total_paused_ms</code>.</td>
+</tr>
+<tr>
+<td><code>ralph_stop</code></td>
+<td>Loop active (paused or unpaused)</td>
+<td>Cancels the loop entirely. Pausing first is not required.</td>
+</tr>
+</tbody>
+</table>
 
 
 

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Internal
+- Add `npm run check` — a portable, zero-dep
+  Node script (`scripts/check.mjs`) that walks
+  `extension/`, `packages/tui/src`, and
+  `packages/tui/bin` and runs `node --check` on
+  every shipped `.mjs`. Mirrors the CI
+  "Syntax check" job behavior identically (same
+  roots, same per-file invocation, same
+  ≥10-files guard, same `Syntax-checked N .mjs
+  files.` success line) so contributors can
+  validate locally before pushing without
+  waiting for the CI feedback loop. A test
+  pins the script's existence + the
+  `package.json#scripts.check` wiring + the
+  exit-0-on-clean-tree contract.
+
 ### Fixes
 - `ralph_resume` now clears `state.lastAssistantContent`
   before re-arming the idle handler. Previously,

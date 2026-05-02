@@ -237,7 +237,8 @@ Each iteration walks the agent through thirteen stages: **ORIENT** (`gh issue li
 ## Development
 
 ```bash
-npm test    # runs the node:test suite under test/ (no deps, no install needed)
+npm test     # runs the node:test suite under test/ (no deps, no install needed)
+npm run check  # syntax-checks every shipped .mjs (mirrors the CI "Syntax check" job)
 ```
 
 The handler logic lives in [`extension/handler.mjs`](extension/handler.mjs) and is decoupled from the SDK so it can be unit-tested with a fake session that drives events deterministically.

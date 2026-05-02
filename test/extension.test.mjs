@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, mkdtempSync, existsSync, rmSync } from "node:fs";
+import { readFileSync, readdirSync, mkdtempSync, existsSync, rmSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve, join } from "node:path";
@@ -6796,4 +6796,35 @@ test("ralph_resume clears lastAssistantContent so user-chat during pause cannot 
     runTurn(session, "iter N+1 output");
     assert.ok(controller.state.active, "abort token in pause-time chat must NOT abort the loop after resume");
     assert.equal(controller.state.lastResult, null);
+});
+
+test("`npm run check` is wired to scripts/check.mjs and exits 0 on a clean tree", () => {
+    // Iter 58: contributor-facing portable syntax check that mirrors the
+    // CI "Syntax check" job (.github/workflows/ci.yml). Pin three things
+    // so the script can't silently drift away from CI:
+    //   1. package.json declares the script and points at the right file.
+    //   2. The file actually exists (a missing scripts/check.mjs would
+    //      fail `npm run check` only at runtime, not at install time).
+    //   3. Running the script on the current tree exits 0 — i.e. every
+    //      shipped .mjs parses. This is a belt-and-braces co-validator
+    //      with the test runner itself (an unparseable .mjs would
+    //      already fail `npm test` because node:test imports its own
+    //      modules), but a separate path catches the case where the
+    //      bug is in a file the test suite never imports.
+    const pkg = JSON.parse(readFileSync(resolve(REPO_ROOT, "package.json"), "utf8"));
+    assert.equal(pkg.scripts?.check, "node scripts/check.mjs",
+        "package.json scripts.check must invoke scripts/check.mjs verbatim");
+    const checkPath = resolve(REPO_ROOT, "scripts/check.mjs");
+    assert.ok(statSync(checkPath).isFile(), "scripts/check.mjs must exist");
+    // Smoke-run. spawnSync surfaces non-zero exits as `status`.
+    const out = spawnSync(process.execPath, [checkPath], {
+        cwd: REPO_ROOT,
+        encoding: "utf8",
+    });
+    assert.equal(out.status, 0,
+        `scripts/check.mjs must exit 0 on a clean tree (got ${out.status}); stderr:\n${out.stderr}`);
+    // Pin the success line so it stays consistent with CI's
+    // "Syntax-checked N .mjs files." marker.
+    assert.match(out.stdout, /Syntax-checked \d+ \.mjs files\./,
+        "success output must include the CI-compatible marker line");
 });

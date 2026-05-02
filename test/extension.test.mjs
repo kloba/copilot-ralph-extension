@@ -6212,3 +6212,35 @@ test("reprefixRalphLoopError: forces a tool prefix on errors lacking the `ralph_
         "grow_project: ralph_v2: bogus",
     );
 });
+
+test("no CR (\\r) bytes in any shipped source file (LF-only line endings)", () => {
+    // Reliability guard pairing with .gitattributes `* text=auto eol=lf`.
+    // If a Windows contributor's editor saves a .mjs / install.sh with
+    // CRLF, several downstream pieces silently break:
+    //   1. install.sh's bash shebang fails with "bad interpreter" if the
+    //      file has CRLF.
+    //   2. install.sh's post-copy `cmp -s` verification would surface a
+    //      mismatch when source and copied target diverge on EOL bytes.
+    //   3. node --check accepts CRLF, so CI's syntax-check step would
+    //      not catch the drift.
+    // Scan every shipped source file (extension/, packages/tui/{src,bin}/,
+    // install.sh, all top-level workflows + AGENTS/README/CHANGELOG/MD
+    // docs) and reject any byte 0x0D — a single failure surfaces the
+    // exact offending file so the contributor knows which to re-save.
+    const targets = [
+        ...readdirSync(resolve(REPO_ROOT, "extension")).filter((f) => f.endsWith(".mjs")).map((f) => `extension/${f}`),
+        ...readdirSync(resolve(REPO_ROOT, "packages/tui/src")).filter((f) => f.endsWith(".mjs")).map((f) => `packages/tui/src/${f}`),
+        ...readdirSync(resolve(REPO_ROOT, "packages/tui/bin")).filter((f) => f.endsWith(".mjs")).map((f) => `packages/tui/bin/${f}`),
+        "install.sh",
+        "README.md",
+        "AGENTS.md",
+        "CHANGELOG.md",
+        ".gitattributes",
+    ];
+    for (const rel of targets) {
+        const path = resolve(REPO_ROOT, rel);
+        const buf = readFileSync(path);
+        const idx = buf.indexOf(0x0d);
+        assert.equal(idx, -1, `${rel} contains CR (\\r) at byte ${idx} — must be LF-only. Re-save the file with Unix line endings (most editors: "Save with line endings: LF").`);
+    }
+});

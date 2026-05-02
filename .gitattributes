@@ -1,0 +1,26 @@
+# Normalise line endings so a Windows contributor cloning the repo does not
+# end up with CRLF on shipped sources. CRLF in `.mjs` would still parse, but
+# CRLF in `install.sh` breaks the bash shebang, and CRLF anywhere in the
+# extension would surface as a `cmp -s` mismatch in install.sh's post-copy
+# verification step (since the source-of-truth bytes wouldn't match a
+# user-scoped target written via the same code path on a different OS).
+* text=auto eol=lf
+
+# Shell scripts are LF by spec — bash refuses CRLF shebangs ("bad
+# interpreter: No such file or directory"). Pin explicitly so a `* text`
+# default change downstream cannot accidentally re-introduce CRLF here.
+*.sh text eol=lf
+
+# Markdown + JS/MJS sources are LF for the same reason as the rest of the
+# tree; redundant under `* text=auto eol=lf` but explicit pins make the
+# intent legible to a contributor reading this file.
+*.md text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Treat lockfiles as text but never let merge tools touch them — manual
+# regeneration via `npm install` is the only correct conflict resolution.
+package-lock.json text merge=ours

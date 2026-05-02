@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Internal
+- Add `.gitattributes` pinning every shipped text
+  file to LF line endings (`* text=auto eol=lf`,
+  with explicit pins for `.sh` / `.mjs` / `.md` /
+  `.json` / `.yml`). Without this, a Windows
+  contributor's editor can save a `.mjs` or
+  `install.sh` with CRLF, which breaks bash
+  shebangs ("bad interpreter") AND surfaces as
+  byte-mismatch failures in install.sh's post-copy
+  `cmp -s` verification step. The lockfile gets
+  `merge=ours` so a regen-only conflict resolution
+  is the default. Companion test scans every
+  shipped source file for any `\r` byte and
+  reports the offending file + offset so a
+  contributor can re-save with LF before pushing.
+
 ### Refactor
 - Consolidate self_improve / grow_project's
   validation-error re-prefix logic into a shared

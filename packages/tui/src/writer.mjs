@@ -102,6 +102,32 @@ function isValidArmedIndexRow(obj) {
         && obj.runId.length > 0;
 }
 
+// Iter 166 — three sites in this file (`readRunIndex`,
+// `aggregateRuns`'s events.jsonl inner loop, and `pruneRuns`)
+// previously duplicated the same line-iteration pattern: split
+// the raw file on `\n`, trim each line, skip empties, JSON.parse
+// inside a try/catch and skip malformed rows. Centralising the
+// pattern in this generator means a future bug found in one
+// site (e.g. handling `\r\n` on Windows-edited files, or
+// rejecting a specific obj shape early) lands in one place
+// instead of being added to two of three sites and forgotten on
+// the third. The generator yields `{ obj, trimmed }` so callers
+// that need the original line bytes (`pruneRuns` rewrites
+// surviving entries verbatim) can opt-in without re-stringifying.
+// Tolerant of non-string input (returns nothing) so a future
+// caller passing `undefined` from a missing-file path doesn't
+// crash — mirrors the existing best-effort error policy.
+function* iterJsonlRows(raw) {
+    if (typeof raw !== "string" || raw.length === 0) return;
+    for (const line of raw.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        let obj;
+        try { obj = JSON.parse(trimmed); } catch { continue; }
+        yield { obj, trimmed };
+    }
+}
+
 /**
  * Build an event writer for a single run.
  *
@@ -256,23 +282,21 @@ export function readRunIndex({ fs = fsDefault, path = pathDefault, os = osDefaul
         if (err && err.code === "ENOENT") return [];
         throw err;
     }
-    const lines = raw.split("\n");
     const out = [];
-    for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        let obj;
-        try {
-            obj = JSON.parse(trimmed);
-        } catch {
-            continue;
-        }
+    for (const { obj } of iterJsonlRows(raw)) {
         if (isValidArmedIndexRow(obj)) out.push(obj);
     }
     return out.reverse();
 }
 
 export { makeRunId };
+
+// Iter 166 — exposed for direct testing of the shared JSONL row
+// iterator. Not part of the public surface (no `export` on the
+// declaration above) so consumers cannot couple to it; the
+// `__test__` bag is the project-wide convention for "tests can
+// reach in but library users should not".
+export const __test__ = { iterJsonlRows };
 
 /**
  * Aggregate stats across all recorded runs. Returns:
@@ -301,11 +325,7 @@ export function aggregateRuns({
         try { raw = fs.readFileSync(evPath, "utf8"); } catch { continue; }
         let terminal = null;
         let lastIter = 0;
-        for (const line of raw.split("\n")) {
-            const t = line.trim();
-            if (!t) continue;
-            let obj;
-            try { obj = JSON.parse(t); } catch { continue; }
+        for (const { obj } of iterJsonlRows(raw)) {
             if (!obj || typeof obj.type !== "string") continue;
             // Reliability: a hand-edited or corrupted events.jsonl row with
             // a huge numeric literal (e.g. `1e500`) parses as Infinity in
@@ -395,11 +415,7 @@ export function pruneRuns({
         if (err && err.code === "ENOENT") return { removed, kept: 0 };
         throw err;
     }
-    for (const line of raw.split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        let obj;
-        try { obj = JSON.parse(trimmed); } catch { continue; }
+    for (const { obj, trimmed } of iterJsonlRows(raw)) {
         if (!isValidArmedIndexRow(obj)) continue;
         // Defence in depth: an index.jsonl row whose `runId` contains a
         // path separator or traversal segment must NEVER reach rmSync —

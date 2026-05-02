@@ -673,3 +673,46 @@ test("pruneRuns: hand-edited ts=-Infinity row does NOT prematurely delete the ru
     assert.equal(result.removed.length, 0, "ts=-Infinity row must NOT be marked for removal — finite-ts guard");
     assert.equal(fs.existsSync(liveRunDir), true, "the legitimate run dir must survive a corrupted-ts row in the index");
 });
+
+import { __test__ as writerInternals } from "../src/writer.mjs";
+
+test("iterJsonlRows: empty / non-string / null / undefined input yields nothing (defensive)", () => {
+    // Iter 166 — the helper centralises the JSONL row iteration
+    // shared by readRunIndex / aggregateRuns / pruneRuns. Pin its
+    // tolerance for non-string input so a future caller passing an
+    // `undefined` from a missing-file branch (or a Buffer instead
+    // of utf8 string) doesn't crash the whole reader.
+    const cases = ["", null, undefined, 0, false, {}, []];
+    for (const input of cases) {
+        const rows = [...writerInternals.iterJsonlRows(input)];
+        assert.equal(rows.length, 0, `non-string input ${JSON.stringify(input)} must yield 0 rows`);
+    }
+});
+
+test("iterJsonlRows: skips empty lines and malformed JSON, yields {obj, trimmed} for parseable rows", () => {
+    // Pin the contract: trim each line, skip empties, JSON.parse with
+    // try/catch skip on failure, yield {obj, trimmed} so callers that
+    // need the original line bytes (pruneRuns survivors) can opt-in
+    // without re-stringifying.
+    const raw = [
+        '{"a":1}',          // valid
+        "",                  // skipped (empty)
+        "  ",                // skipped (whitespace-only)
+        "{not json",         // skipped (parse error)
+        '   {"b":2}   ',     // valid (trimmed)
+        '{"c":3}',           // valid
+    ].join("\n");
+    const rows = [...writerInternals.iterJsonlRows(raw)];
+    assert.equal(rows.length, 3, "exactly 3 valid rows survive");
+    assert.deepEqual(rows[0].obj, { a: 1 });
+    assert.equal(rows[0].trimmed, '{"a":1}');
+    assert.deepEqual(rows[1].obj, { b: 2 });
+    assert.equal(rows[1].trimmed, '{"b":2}', "trimmed must equal the post-trim string, not the raw line");
+    assert.deepEqual(rows[2].obj, { c: 3 });
+});
+
+test("iterJsonlRows: yields nothing when raw contains only whitespace and broken rows (no false positives)", () => {
+    const raw = "\n\n   \nnot json\n{also not\n";
+    const rows = [...writerInternals.iterJsonlRows(raw)];
+    assert.equal(rows.length, 0, "all rows should be filtered — empty + parse-error");
+});

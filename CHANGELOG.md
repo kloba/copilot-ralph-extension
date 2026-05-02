@@ -377,6 +377,30 @@
   `1 character.` and `N characters.`.
 
 ### Refactor
+- Extracted `iterJsonlRows(raw)` generator in
+  `packages/tui/src/writer.mjs` and routed the three
+  formerly-duplicated JSONL line-iteration sites through it:
+  `readRunIndex` (index.jsonl), `aggregateRuns`'s events.jsonl
+  inner loop, and `pruneRuns` (index.jsonl). Each site
+  previously open-coded the same five-step pattern (split
+  on `\n`, trim, skip-empty, JSON.parse with try/catch skip,
+  yield row), and a future hardening pass — e.g. handling
+  `\r\n` on Windows-edited files, or rejecting a specific
+  `obj` shape early — would have to land in three places.
+  Centralising the iterator means a single edit propagates
+  to every reader. The helper yields `{ obj, trimmed }` so
+  `pruneRuns` can rewrite surviving entries verbatim without
+  re-stringifying. Tolerant of non-string input (returns
+  nothing) so a future caller passing `undefined` from a
+  missing-file path doesn't crash, mirroring the file-level
+  best-effort policy. Exposed via the `__test__` bag and
+  pinned with three direct unit tests
+  (`packages/tui/test/writer.test.mjs`) covering empty/
+  non-string input, mixed valid/empty/malformed rows with
+  trim semantics, and all-whitespace-or-broken input.
+  Behaviour preserved — all 674 pre-existing tests stayed
+  green through the refactor; mutation-verified that
+  removing the parse-error try/catch fires 4 failures.
 - Extract `pauseElapsedFromAt(pausedAt, now)` helper in
   `extension/handler.mjs` and route the three formerly-
   duplicated pause-elapsed call sites — `finish()`,

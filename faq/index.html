@@ -268,6 +268,23 @@
   
   
     <li class="md-tabs__item">
+      <a href="../configuration/" class="md-tabs__link">
+        
+  
+    
+  
+  Configuration
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
       <a href="../recipes/" class="md-tabs__link">
         
   
@@ -413,6 +430,26 @@
   
   <span class="md-ellipsis">
     Concepts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuration
   </span>
   
 
@@ -956,7 +993,7 @@
 
 
 <h1 id="faq">FAQ<a class="headerlink" href="#faq" title="Permanent link">&para;</a></h1>
-<p>Short answers to the questions that come up most often when running <code>autopilot</code> in anger. Most of these point at a deeper section in the <a href="https://github.com/kloba/autopilot#readme">README</a> or at <a href="../concepts/"><code>docs/concepts.md</code></a> — keep this page narrow and link out rather than duplicating prose.</p>
+<p>Short answers to the questions that come up most often when running <code>autopilot</code> in anger. Most of these point at a deeper section in <a href="../concepts/"><code>docs/concepts.md</code></a> or <a href="../configuration/"><code>docs/configuration.md</code></a> — keep this page narrow and link out rather than duplicating prose.</p>
 <h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h2>
 <h3 id="i-just-want-to-try-autopilot-with-no-install-does-plain-mode-work-from-a-fresh-checkout">I just want to try autopilot with no install. Does plain mode work from a fresh checkout?<a class="headerlink" href="#i-just-want-to-try-autopilot-with-no-install-does-plain-mode-work-from-a-fresh-checkout" title="Permanent link">&para;</a></h3>
 <p>Yes — the non-render layer (<code>prompts.mjs</code>, <code>runner.mjs</code>, <code>events*.mjs</code>, <code>writer.mjs</code>, <code>tail.mjs</code>, <code>plain.mjs</code>, <code>bin/tui.mjs</code>) is zero-dep. From the repo root:</p>
@@ -980,7 +1017,7 @@
 <p>The in-session Copilot CLI extension was retired in 0.7.0 — see the <a href="../CHANGELOG.md"><code>CHANGELOG.md</code></a> extension-drop entry. The standalone <code>autopilot</code> binary is now the only product, and the legacy <code>extension/</code> directory is gone. If you still have an <code>~/.copilot/extensions/ralph</code> directory from an older install, it is inert (<code>/extensions reload</code> will no longer find a <code>ralph</code> extension); <code>rm -rf ~/.copilot/extensions/ralph</code> and switch to the <code>autopilot</code> CLI as documented in the <a href="../README.md#usage">README</a>.</p>
 <h2 id="running-a-loop">Running a loop<a class="headerlink" href="#running-a-loop" title="Permanent link">&para;</a></h2>
 <h3 id="why-did-my-loop-stop-after-exactly-one-iteration">Why did my loop stop after exactly one iteration?<a class="headerlink" href="#why-did-my-loop-stop-after-exactly-one-iteration" title="Permanent link">&para;</a></h3>
-<p>The most common cause is an early <code>--completion-promise</code> match. Both <code>--completion-promise</code> and <code>--abort-promise</code> use plain substring matching against the assistant's response — if the agent quotes the trigger phrase mid-thought (e.g. <em>"I'll mark this COMPLETE when done"</em>), the loop finishes. Pick a phrase the agent is unlikely to mention casually; <code>RALPH_DONE_42</code> and similar unusual tokens work well. See README → <a href="https://github.com/kloba/autopilot#limitations">Limitations</a>.</p>
+<p>The most common cause is an early <code>--completion-promise</code> match. Both <code>--completion-promise</code> and <code>--abort-promise</code> use plain substring matching against the assistant's response — if the agent quotes the trigger phrase mid-thought (e.g. <em>"I'll mark this COMPLETE when done"</em>), the loop finishes. Pick a phrase the agent is unlikely to mention casually; <code>LOOP_DONE_42</code> and similar unusual tokens work well. See <a href="../configuration/#limitations"><code>configuration.md</code> → Limitations</a>.</p>
 <h3 id="why-does-my-loop-never-finish">Why does my loop never finish?<a class="headerlink" href="#why-does-my-loop-never-finish" title="Permanent link">&para;</a></h3>
 <p>Three frequent causes:</p>
 <ol>
@@ -1015,14 +1052,14 @@
 <p>Reads the run's <code>state.json</code> and renders iter counter, pause/stop flags, and (in <code>--continue</code> mode) the captured Copilot session id.</p>
 <h2 id="commit-attribution">Commit attribution<a class="headerlink" href="#commit-attribution" title="Permanent link">&para;</a></h2>
 <h3 id="how-are-loop-driven-commits-attributed">How are loop-driven commits attributed?<a class="headerlink" href="#how-are-loop-driven-commits-attributed" title="Permanent link">&para;</a></h3>
-<p>Every commit produced inside a loop carries two <code>Co-authored-by:</code> trailers — one for the <code>Copilot</code> GitHub identity, one for the dedicated <code>copilot-ralph</code> bot account. The dual-trailer convention is baked into the SDLC prompts (<code>--self-improve</code>, <code>--grow-project</code>). See README → <a href="https://github.com/kloba/autopilot#commit-attribution">Commit attribution</a>.</p>
+<p>Every commit produced inside a loop carries two <code>Co-authored-by:</code> trailers — one for the <code>Copilot</code> GitHub identity, one for the dedicated <code>copilot-ralph</code> bot account. The dual-trailer convention is baked into the SDLC prompts (<code>--self-improve</code>, <code>--grow-project</code>). See <a href="../configuration/#commit-attribution"><code>configuration.md</code> → Commit attribution</a>.</p>
 <h3 id="how-do-i-opt-out-of-the-second-copilot-ralph-trailer">How do I opt out of the second <code>copilot-ralph</code> trailer?<a class="headerlink" href="#how-do-i-opt-out-of-the-second-copilot-ralph-trailer" title="Permanent link">&para;</a></h3>
 <p>Set <code>AUTOPILOT_NO_ATTRIBUTION=1</code> in the environment before running the loop. The opt-out suppresses <strong>only</strong> the second trailer:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Co-authored-by: copilot-ralph &lt;copilot-ralph@users.noreply.github.com&gt;
 </code></pre></div>
 <p>The first <code>Copilot</code> trailer always ships. The legacy <code>RALPH_NO_ATTRIBUTION=1</code> env var is still recognized for backwards compatibility. The opt-out is honored by the prompt, not enforced by the runtime — if a sub-agent ignores <code>process.env</code>, the trailer can still appear. Audit afterwards with <code>git log -1 --pretty=%B</code> to confirm.</p>
 <h2 id="anything-else">Anything else?<a class="headerlink" href="#anything-else" title="Permanent link">&para;</a></h2>
-<p>If your question isn't answered here, open an issue or skim the <a href="https://github.com/kloba/autopilot#readme">README</a> Limitations section — it covers the long-tail edge cases this page intentionally elides.</p>
+<p>If your question isn't answered here, open an issue or skim <a href="../configuration/#limitations"><code>configuration.md</code> → Limitations</a> — it covers the long-tail edge cases this page intentionally elides.</p>
 
 
 

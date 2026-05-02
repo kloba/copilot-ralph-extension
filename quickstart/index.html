@@ -272,6 +272,23 @@
   
   
     <li class="md-tabs__item">
+      <a href="../configuration/" class="md-tabs__link">
+        
+  
+    
+  
+  Configuration
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
       <a href="../recipes/" class="md-tabs__link">
         
   
@@ -527,6 +544,26 @@
   
   <span class="md-ellipsis">
     Concepts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuration
   </span>
   
 
@@ -806,8 +843,8 @@ still works as a fallback. Run <code>autopilot where</code> to print the resolve
 <li><strong><code>--grow-project</code></strong> plans new work and adds backlog items in the focus area
   given via <code>--focus TEXT</code>. Default <code>--max 100</code>; aborts via
   <code>ABORT_NO_BACKLOG</code> once the planned items are filed.</li>
-<li><strong><code>--prompt TEXT</code></strong> is the classic Ralph mode: your literal prompt is
-  re-fed verbatim every iteration until the agent emits <code>COMPLETE</code> (or your
+<li><strong><code>--prompt TEXT</code></strong> is the raw mode: your literal prompt is re-fed
+  verbatim every iteration until the agent emits <code>COMPLETE</code> (or your
   custom <code>--completion-promise TOKEN</code>). Default <code>--max 100</code>.</li>
 </ul>
 <p><code>--continue</code> vs <code>--fresh</code> is mandatory — there is no default because the

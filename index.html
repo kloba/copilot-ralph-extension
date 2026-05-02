@@ -270,6 +270,23 @@
   
   
     <li class="md-tabs__item">
+      <a href="configuration/" class="md-tabs__link">
+        
+  
+    
+  
+  Configuration
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
       <a href="recipes/" class="md-tabs__link">
         
   
@@ -504,6 +521,26 @@
   
   
     <li class="md-nav__item">
+      <a href="configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuration
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="recipes/" class="md-nav__link">
         
   
@@ -647,8 +684,13 @@
 <p>Running the binary with no arguments is the same as <code>autopilot run --self-improve --fresh</code>. It starts a fresh self-improvement loop on the current repo against the baked prompt — no flags to remember on the happy path.</p>
 </div>
 <h2 id="why-a-loop">Why a loop?<a class="headerlink" href="#why-a-loop" title="Permanent link">&para;</a></h2>
-<p>The technique is the simplest possible form of agentic autonomy: keep re-feeding the same prompt until the agent promises it's done. Each iteration is a brand-new <code>copilot -p</code> subprocess, so context never poisons the next pass. The driver only owns the spawn / capture / decide-to-stop trichotomy — the Copilot agent does the work. This pattern is sometimes called the <strong>Ralph Wiggum</strong> technique after Anthropic's upstream prompt-loop plugin: single-minded, persistent, surprisingly effective.</p>
-<p>Anthropic ships a canonical reference implementation as a Claude Code plugin: see <a href="https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum">anthropics/claude-code → plugins/ralph-wiggum</a>. <code>autopilot</code> adapts the same loop shape for the GitHub Copilot CLI and adds out-of-band control, structured event logs (<code>events.jsonl</code>), CAS-protected run state, completion / abort / stagnation triggers, and an adaptive iteration budget for <code>--self-improve</code>.</p>
+<p><code>autopilot</code> drives a coding agent through three levels of decomposition, then loops:</p>
+<ol>
+<li><strong>Level 1 — find what to do.</strong> Scan the repo (red CI, stale PRs, open issues, SDLC hardening rotation) and pick one concrete work item.</li>
+<li><strong>Level 2 — split into stages.</strong> Break the work item into SDLC stages (orient → critique → baseline → implement → test → commit → push).</li>
+<li><strong>Level 3 — split into tasks.</strong> Break each stage into the smallest executable steps the agent can deliver in one turn.</li>
+</ol>
+<p>Orchestrate the tasks until every stage is delivered, then loop back to <strong>Level 1</strong> for the next work item. Each iteration is a brand-new <code>copilot -p</code> subprocess, so context never poisons the next pass. The driver owns the spawn / capture / decide-to-stop trichotomy plus out-of-band control, structured event logs (<code>events.jsonl</code>), CAS-protected run state, completion / abort / stagnation triggers, and an adaptive iteration budget for <code>--self-improve</code>.</p>
 <h2 id="read-next">Read next<a class="headerlink" href="#read-next" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong><a href="quickstart/">Quickstart</a></strong> — clone, install, drive your first loop in under a minute.</li>

@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://kloba.github.io/autopilot/recipes/">
       
       
-        <link rel="prev" href="../concepts/">
+        <link rel="prev" href="../configuration/">
       
       
         <link rel="next" href="../showcase/">
@@ -268,6 +268,23 @@
         
   
   
+  
+    <li class="md-tabs__item">
+      <a href="../configuration/" class="md-tabs__link">
+        
+  
+    
+  
+  Configuration
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
     
   
   
@@ -415,6 +432,26 @@
   
   <span class="md-ellipsis">
     Concepts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuration
   </span>
   
 
@@ -796,7 +833,7 @@ healthy issue tracker and CI but accumulated drift over time.</p>
   <code>caffeinate -i autopilot run --self-improve --fresh --max 100</code> on macOS so
   idle-sleep doesn't stall the loop, or set <code>AUTOPILOT_CAFFEINATE=1</code> so the
   runner spawns it for you. See README →
-  <a href="https://github.com/kloba/autopilot#keep-system-awake-caffeinate-macos">Keep system awake</a>.</li>
+  <a href="../configuration/#keep-system-awake-caffeinate-macos">Keep system awake</a>.</li>
 <li>Swap <code>--fresh</code> for <code>--continue</code> if you want the agent to remember which
   SDLC categories it already touched (the rotation rule then has cross-iter
   context). Most projects work better with <code>--fresh</code> because each iter's

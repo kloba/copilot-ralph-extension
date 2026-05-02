@@ -2,9 +2,9 @@
 
 ## Reporting a Vulnerability
 
-If you believe you've found a security issue in `copilot-ralph-extension` — such as a prompt-injection vector, a path-traversal in `install.sh`, an unsafe shell construction in a baked prompt, or any other credential / data-exposure risk — please report it **privately** rather than opening a public issue.
+If you believe you've found a security issue in `autopilot` — such as a prompt-injection vector, a path-traversal in `install.sh`, an unsafe shell construction in a baked prompt, or any other credential / data-exposure risk — please report it **privately** rather than opening a public issue.
 
-Use GitHub's [private vulnerability reporting](https://github.com/kloba/copilot-ralph-extension/security/advisories/new) form to file a confidential security advisory. We'll triage and respond as soon as we can. Public-issue reports for credible vulnerabilities will be redacted on request.
+Use GitHub's [private vulnerability reporting](https://github.com/kloba/autopilot/security/advisories/new) form to file a confidential security advisory. We'll triage and respond as soon as we can. Public-issue reports for credible vulnerabilities will be redacted on request.
 
 When reporting, please include:
 
@@ -36,3 +36,7 @@ Out-of-scope:
 
 - Vulnerabilities in upstream `@github/copilot-sdk`, the Copilot CLI itself, Node.js, or `gh`. Please report those to the respective projects.
 - Issues that require an attacker to already have local code-execution on the user's machine (we assume the local environment is trusted).
+
+Legacy `RALPH_*` env-var names are still read for one release with a one-line stderr deprecation notice.
+
+Legacy `~/.copilot/ralph[ -tui]/runs` paths are still read on first run with a one-line stderr migration notice; new runs write to the autopilot* paths.

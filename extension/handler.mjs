@@ -1,4 +1,4 @@
-// Hook/event-driven Ralph Wiggum controller for Copilot CLI.
+// Hook/event-driven autonomous-loop controller for Copilot CLI.
 //
 // Architecture: the ralph_loop tool returns immediately after arming the loop.
 // Iterations are driven by listening to `session.idle` events (the root
@@ -1843,7 +1843,7 @@ export function createRalphController(opts = {}) {
         {
             name: "ralph_loop",
             description:
-                `Run a Ralph Wiggum-style autonomous iterative loop. The tool returns immediately after arming the loop; iterations are driven by reacting to each session.idle (root-agent agentic-loop completion) and re-injecting the prompt as a new user message. Each iteration is a real conversation turn — context is retained, and progress is visible inline. Use ralph_stop to cancel an active loop. Tip: instruct the agent in the prompt to emit the completion_promise (default '${DEFAULTS.completion_promise}') when finished, otherwise the loop only stops at max_iterations. Only one loop runs per session; returns failure if a ralph_loop, self_improve, or grow_project loop is already active. Note: the user-supplied prompt is augmented at arm time with a small commit-attribution rider that adds dual Co-authored-by trailers (Copilot + copilot-ralph) to any git commit produced during the loop; set RALPH_NO_ATTRIBUTION=1 in the environment to suppress the second trailer.`,
+                `Run an autonomous iterative loop. The tool returns immediately after arming the loop; iterations are driven by reacting to each session.idle (root-agent agentic-loop completion) and re-injecting the prompt as a new user message. Each iteration is a real conversation turn — context is retained, and progress is visible inline. Use ralph_stop to cancel an active loop. Tip: instruct the agent in the prompt to emit the completion_promise (default '${DEFAULTS.completion_promise}') when finished, otherwise the loop only stops at max_iterations. Only one loop runs per session; returns failure if a ralph_loop, self_improve, or grow_project loop is already active. Note: the user-supplied prompt is augmented at arm time with a small commit-attribution rider that adds dual Co-authored-by trailers (Copilot + copilot-ralph) to any git commit produced during the loop; set RALPH_NO_ATTRIBUTION=1 in the environment to suppress the second trailer.`,
             parameters: {
                 type: "object",
                 properties: {

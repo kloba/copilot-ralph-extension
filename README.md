@@ -1,6 +1,6 @@
 # copilot-ralph-extension
 
-> Ralph Wiggum-style autonomous iterative loop for **GitHub Copilot CLI**, implemented as an in-session extension.
+> Autonomous iterative loop for **GitHub Copilot CLI**, implemented as an in-session extension.
 
 [![CI](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml)
 [![Inspired by](https://img.shields.io/badge/inspired_by-Anthropic_Ralph_Wiggum-blue)](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)

@@ -95,6 +95,24 @@
   into a `{sha, subject, trailers[]}` triple, capping
   trailers at 8 to match the events.mjs serializer.
 
+### Documentation
+- Refs #49: drop "Ralph Wiggum"-style project-branding prose
+  from package metadata, file headers, mkdocs site description,
+  the `ralph_loop` tool description, README subtitle, and the
+  docs landing page. Also drop `ralph-wiggum` from the root
+  `package.json` and `packages/tui/package.json` `keywords`
+  arrays. Factual external attribution to Anthropic's original
+  Ralph Wiggum Claude Code plugin (README "Inspired by" badge,
+  README "What is Ralph Wiggum?" explainer, `docs/index.md`
+  technique footnote, `docs/ARCHITECTURE.md` factual link)
+  stays — those sentences cite the originator of the technique
+  rather than brand this project as Ralph-style. First slice
+  of the multi-stage rename tracked by issue #49; subsequent
+  slices land the binary, tool-name, env-var, path, and
+  package-name renames as separate commits on the same
+  `feat/rename-autopilot` branch and ship together as a single
+  `feat!:` squash-merge.
+
 ### Features
 - `events.mjs` gains the `stage_plan` / `stage_plan_amend` /
   `task_list` / `task_start` / `task_end` / `commit_observed`

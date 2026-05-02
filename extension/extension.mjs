@@ -1,5 +1,5 @@
 // Extension: ralph
-// Hook/event-driven Ralph Wiggum iterative loop for GitHub Copilot CLI.
+// Hook/event-driven autonomous iterative loop for GitHub Copilot CLI.
 // Inspired by the Stop-hook re-injection pattern.
 
 import { joinSession } from "@github/copilot-sdk/extension";

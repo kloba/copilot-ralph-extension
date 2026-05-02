@@ -8,7 +8,7 @@
 # Deploys via .github/workflows/docs.yml on pushes to main.
 
 site_name: Ralph
-site_description: A Ralph Wiggum-style autonomous loop for the GitHub Copilot CLI.
+site_description: An autonomous iterative loop for the GitHub Copilot CLI.
 site_url: https://kloba.github.io/copilot-ralph-extension/
 repo_url: https://github.com/kloba/copilot-ralph-extension
 repo_name: kloba/copilot-ralph-extension

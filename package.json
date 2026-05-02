@@ -1,7 +1,7 @@
 {
   "name": "copilot-ralph-extension",
   "version": "0.6.0",
-  "description": "Ralph Wiggum-style autonomous iterative loop for GitHub Copilot CLI, implemented as an in-session extension.",
+  "description": "Autonomous iterative loop for GitHub Copilot CLI, implemented as an in-session extension.",
   "type": "module",
   "private": true,
   "author": "Taras Kloba",
@@ -17,7 +17,6 @@
     "github-copilot",
     "copilot-cli",
     "extension",
-    "ralph-wiggum",
     "agent",
     "iterative-loop",
     "autonomous"

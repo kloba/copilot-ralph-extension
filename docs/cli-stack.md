@@ -37,7 +37,7 @@ benefit for an event-stream visualizer is concrete:
   diffs through React's reconciler and only redraws cells that changed.
 * **Layout is declarative.** Flexbox via Yoga (`<Box flexDirection="row"
   borderStyle="round">`) replaces hand-rolled box-drawing math. The
-  `<Timeline>` and `<DetailPane>` panes resize correctly when the user
+  `<Timeline>` and `<LiveOutputPane>` panes resize correctly when the user
   resizes their terminal — no custom resize handlers required.
 * **Testability.** [`ink-testing-library`](https://github.com/vadimdemedes/ink-testing-library)
   renders the Ink tree to a string buffer so we can snapshot the UI

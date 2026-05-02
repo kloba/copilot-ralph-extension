@@ -1,6 +1,6 @@
 {
   "name": "copilot-ralph-extension",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Ralph Wiggum-style autonomous iterative loop for GitHub Copilot CLI, packaged as the ralph-tui standalone TUI app.",
   "type": "module",
   "private": true,

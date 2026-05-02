@@ -9,7 +9,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-let render, React, App, Header, Timeline, DetailPane, Controls, truncateTimeline, formatElapsed;
+let render, React, App, Header, Timeline, LiveOutputPane, Controls, truncateTimeline, formatElapsed;
 let inkAvailable = false;
 try {
     ({ render } = await import("ink-testing-library"));
@@ -21,7 +21,7 @@ try {
     const TimelineMod = await import("../src/components/Timeline.mjs");
     Timeline = TimelineMod.default;
     truncateTimeline = TimelineMod.truncate;
-    DetailPane = (await import("../src/components/DetailPane.mjs")).default;
+    LiveOutputPane = (await import("../src/components/LiveOutputPane.mjs")).default;
     Controls = (await import("../src/components/Controls.mjs")).default;
     inkAvailable = true;
 } catch {
@@ -73,22 +73,57 @@ test("Timeline renders iteration rows with excerpts", { skip }, () => {
     assert.match(out, /second thing/);
 });
 
-test("DetailPane shows tokens, reason, and last excerpt", { skip }, () => {
+test("LiveOutputPane shows 'waiting for session' before sessionId is known (live mode)", { skip }, () => {
+    const snapshot = { sessionId: null, taskInFlight: null };
+    const out = render(React.createElement(LiveOutputPane, {
+        snapshot, lines: [], isLive: true,
+    })).lastFrame();
+    assert.match(out, /Live/);
+    assert.match(out, /waiting for session/);
+});
+
+test("LiveOutputPane shows 'no output yet' when sessionId is known but buffer empty", { skip }, () => {
+    const snapshot = { sessionId: "uuid", taskInFlight: null };
+    const out = render(React.createElement(LiveOutputPane, {
+        snapshot, lines: [], isLive: true,
+    })).lastFrame();
+    assert.match(out, /no output yet/);
+});
+
+test("LiveOutputPane shows replay placeholder in static / replay mode", { skip }, () => {
+    const snapshot = { sessionId: "uuid", taskInFlight: null };
+    const out = render(React.createElement(LiveOutputPane, {
+        snapshot, lines: [], isLive: false,
+    })).lastFrame();
+    assert.match(out, /unavailable for replay/);
+});
+
+test("LiveOutputPane renders the last 10 lines of a populated buffer", { skip }, () => {
+    const lines = Array.from({ length: 25 }, (_, i) => ({
+        kind: "text", line: `line-${i + 1}`,
+    }));
     const snapshot = {
-        tokens: { input: 5, output: 7 },
-        stagnationStreak: 2,
-        reason: "stagnation",
-        status: "aborted",
-        lastExcerpt: "no progress for 2 turns",
+        sessionId: "uuid",
+        taskInFlight: { stage: "IDEATE", sub: 1, desc: "brainstorm", startedAt: 100 },
     };
-    const out = render(React.createElement(DetailPane, { snapshot })).lastFrame();
-    assert.match(out, /tokens/);
-    assert.match(out, /in=5/);
-    assert.match(out, /out=7/);
-    assert.match(out, /streak=2/);
-    assert.match(out, /reason/);
-    assert.match(out, /stagnation/);
-    assert.match(out, /no progress for 2 turns/);
+    const out = render(React.createElement(LiveOutputPane, {
+        snapshot, lines, isLive: true,
+    })).lastFrame();
+    // Only the last 10 (line-16..line-25) should appear.
+    assert.match(out, /line-25/);
+    assert.match(out, /line-16/);
+    assert.doesNotMatch(out, /line-15/);
+    // Sub-header surfaces the active task identity.
+    assert.match(out, /IDEATE/);
+});
+
+test("LiveOutputPane: omits subhead when no task is in flight", { skip }, () => {
+    const snapshot = { sessionId: "uuid", taskInFlight: null };
+    const out = render(React.createElement(LiveOutputPane, {
+        snapshot, lines: [{ kind: "text", line: "foo" }], isLive: true,
+    })).lastFrame();
+    assert.doesNotMatch(out, /task /);
+    assert.match(out, /foo/);
 });
 
 // ─── premiumRequests rendering ───────────────────────────────────
@@ -313,26 +348,6 @@ test("App: forwards appVersion prop through to Header pip", { skip }, () => {
     assert.match(out, /v9\.8\.7/);
 });
 
-test("DetailPane: renders 'premium req N' row when set", { skip }, () => {
-    const snapshot = {
-        tokens: { input: 0, output: 415 },
-        stagnationStreak: 0, status: "running", lastExcerpt: "doing things",
-        premiumRequests: 7,
-    };
-    const out = render(React.createElement(DetailPane, { snapshot })).lastFrame();
-    assert.match(out, /premium req\s+7/);
-});
-
-test("DetailPane: hides 'premium req' row when premiumRequests is null", { skip }, () => {
-    const snapshot = {
-        tokens: { input: 0, output: 0 },
-        stagnationStreak: 0, status: "idle", lastExcerpt: null,
-        premiumRequests: null,
-    };
-    const out = render(React.createElement(DetailPane, { snapshot })).lastFrame();
-    assert.doesNotMatch(out, /premium/);
-});
-
 test("Controls hint row shows live indicator when status is running", { skip }, () => {
     const out = render(React.createElement(Controls, { status: "running" })).lastFrame();
     assert.match(out, /quit/);
@@ -356,7 +371,8 @@ test("App renders all four panes from a static event log", { skip }, () => {
     const out = render(React.createElement(App, { events, runId: "r1" })).lastFrame();
     assert.match(out, /ralph_loop/);
     assert.match(out, /Timeline/);
-    assert.match(out, /Detail/);
+    // Issue #57 — DetailPane was replaced by LiveOutputPane (heading "Live").
+    assert.match(out, /Live/);
     assert.match(out, /quit/);
     assert.match(out, /did some work/);
 });
@@ -637,7 +653,7 @@ test("SubstagesPane caps to maxRows tail for long stages (no overflow)", { skip 
     assert.doesNotMatch(out, /cmd-26\b/);
 });
 
-test("App composes Header, StagesRow, SubstagesPane, Timeline, DetailPane, Controls", { skip }, () => {
+test("App composes Header, StagesRow, SubstagesPane, Timeline, LiveOutputPane, Controls", { skip }, () => {
     const events = [
         { type: "armed", runId: "r1", label: "self_improve", maxIterations: 1000, minIterations: 5, ts: 1 },
         { type: "iteration_start", runId: "r1", iteration: 1, ts: 2 },

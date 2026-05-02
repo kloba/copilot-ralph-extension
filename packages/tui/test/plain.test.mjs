@@ -550,7 +550,7 @@ test("formatEventLine: workitem_end without closesN omits the field (PR / red_ci
 
 // ─── usage_update verb + premium= field ─────────────────────────────
 // `usage_update` is the live mid-iter usage event the runner streams
-// so the TUI Header / DetailPane snapshot updates while an iter is
+// so the TUI Header snapshot updates while an iter is
 // still running. Plain-mode log lines should render its 5-char verb
 // AND the new `premium=N` column so `awk`/`grep` users can extract
 // the same info from a tail.

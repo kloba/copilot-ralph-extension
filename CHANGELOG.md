@@ -28,6 +28,30 @@
   into a single per-run directory.
 
 ### Features
+- Issue #57 — `ralph-tui watch` Live panel streams the agent's
+  output (assistant text, tool calls, tool results) for the
+  currently active L3 task, sourced directly from the Copilot
+  CLI per-session JSONL log. Replaces the old DetailPane
+  (which duplicated counters already rendered in Header and
+  showed only a single static "last excerpt" line) with a
+  fixed-height 10-row buffer that resets on each `task_start`
+  and shows up to 200 lines of scroll-back. Dim prose for
+  assistant text, cyan arrows for tool starts, green / red
+  for tool successes / failures. Three honest empty states:
+  `(waiting for session)` (live, no sessionId yet),
+  `(no output yet)` (live, sessionId, no events), and
+  `(session log unavailable for replay)` (static replay
+  mode — the Copilot CLI rotates these logs and we can't
+  reconstruct them from `events.jsonl`). The runner emits
+  a new `session_attached` event so the TUI knows which
+  session log to follow; the event dedups against a
+  `lastEmittedSessionId` cursor so continue-mode runs fire
+  once and fresh-context runs fire per sessionId rotation.
+  As a regression-mitigation for losing DetailPane, the
+  Header now renders the terminal `reason` inline as a dim
+  parenthetical next to the status badge (`DONE (promise)`,
+  `ABORTED (stagnation)`).
+
 - Issue #59 — TUI Header gains a dim `v<X.Y.Z>` version pip
   pinned to the right edge of the heading row so an
   at-a-glance read of the run pane shows which build is

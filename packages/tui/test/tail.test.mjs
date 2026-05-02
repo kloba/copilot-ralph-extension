@@ -256,3 +256,187 @@ test("splitAndParse: non-string input returns [] (defensive contract)", () => {
     assert.deepEqual(splitAndParse([]), []);
     assert.deepEqual(splitAndParse(true), []);
 });
+
+// ---------------------------------------------------------------------------
+// Issue #57 — generic tailJsonlFile + tailSessionFile.
+// The events tailer above is now a thin wrapper around tailJsonlFile;
+// these tests pin the behaviour the new live-output panel relies on:
+//   - permissive JSON.parse so an upstream schema change lands without
+//     us silently dropping the line,
+//   - no terminal predicate so the iterator runs forever (until signal),
+//   - same rotation / truncation / ENOENT semantics as tailEventsFile.
+// ---------------------------------------------------------------------------
+
+import { tailJsonlFile, tailSessionFile } from "../src/tail.mjs";
+
+test("tailJsonlFile: yields raw JSON objects without event-type validation", async () => {
+    const dir = tmp();
+    const p = join(dir, "session.jsonl");
+    // Lines deliberately use a `kind`-style schema the events parser
+    // would reject — proves we're not running them through parseEventLine.
+    writeFileSync(p,
+        JSON.stringify({ kind: "assistant.message", text: "hello" }) + "\n"
+        + JSON.stringify({ kind: "tool.execution_start", toolName: "bash" }) + "\n",
+    );
+    const ac = new AbortController();
+    const collected = [];
+    for await (const ev of tailJsonlFile(p, { pollMs: 10, signal: ac.signal })) {
+        collected.push(ev);
+        if (collected.length >= 2) {
+            ac.abort();
+            break;
+        }
+    }
+    assert.deepEqual(collected, [
+        { kind: "assistant.message", text: "hello" },
+        { kind: "tool.execution_start", toolName: "bash" },
+    ]);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("tailJsonlFile: drops malformed JSON lines silently (tolerance contract)", async () => {
+    const dir = tmp();
+    const p = join(dir, "session.jsonl");
+    writeFileSync(p,
+        '{"kind":"ok"}\n'
+        + 'this is not JSON\n'
+        + '{"kind":"also-ok"}\n',
+    );
+    const ac = new AbortController();
+    const collected = [];
+    for await (const ev of tailJsonlFile(p, { pollMs: 10, signal: ac.signal })) {
+        collected.push(ev.kind);
+        if (collected.length >= 2) {
+            ac.abort();
+            break;
+        }
+    }
+    assert.deepEqual(collected, ["ok", "also-ok"]);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("tailJsonlFile: caller-supplied isTerminal stops the iterator", async () => {
+    const dir = tmp();
+    const p = join(dir, "session.jsonl");
+    writeFileSync(p,
+        '{"kind":"a"}\n'
+        + '{"kind":"end"}\n'
+        + '{"kind":"never-reached"}\n',
+    );
+    const collected = [];
+    for await (const ev of tailJsonlFile(p, {
+        pollMs: 10,
+        isTerminal: (ev) => ev.kind === "end",
+    })) {
+        collected.push(ev.kind);
+    }
+    // `end` is included (terminal predicate fires AFTER yield) but
+    // `never-reached` is not.
+    assert.deepEqual(collected, ["a", "end"]);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("tailJsonlFile: parseLine returning null drops the line", async () => {
+    const dir = tmp();
+    const p = join(dir, "any.jsonl");
+    writeFileSync(p, "keep me\nDROP\nkeep me too\n");
+    const ac = new AbortController();
+    const collected = [];
+    for await (const ev of tailJsonlFile(p, {
+        pollMs: 10,
+        signal: ac.signal,
+        parseLine: (line) => (line === "DROP" ? null : { line }),
+    })) {
+        collected.push(ev.line);
+        if (collected.length >= 2) {
+            ac.abort();
+            break;
+        }
+    }
+    assert.deepEqual(collected, ["keep me", "keep me too"]);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("tailSessionFile: tails Copilot CLI session log without event-type filtering", async () => {
+    const dir = tmp();
+    const p = join(dir, "session.jsonl");
+    // Realistic session log shape — the Copilot CLI uses dot.namespaced
+    // `type` strings that our events parser doesn't recognise.
+    writeFileSync(p,
+        JSON.stringify({ type: "user.message", data: { content: "go" } }) + "\n"
+        + JSON.stringify({ type: "assistant.message", data: { content: "ok" } }) + "\n"
+        + JSON.stringify({ type: "tool.execution_start", data: { toolName: "view" } }) + "\n",
+    );
+    const ac = new AbortController();
+    const collected = [];
+    for await (const ev of tailSessionFile(p, { pollMs: 10, signal: ac.signal })) {
+        collected.push(ev.type);
+        if (collected.length >= 3) {
+            ac.abort();
+            break;
+        }
+    }
+    assert.deepEqual(collected, [
+        "user.message",
+        "assistant.message",
+        "tool.execution_start",
+    ]);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("tailSessionFile: never auto-stops on `complete` / `abort` (no terminal predicate)", async () => {
+    // The Copilot CLI session log has its own lifecycle — the words
+    // `complete` and `abort` are not terminal markers there. The tail
+    // must keep streaming until the consumer aborts.
+    const dir = tmp();
+    const p = join(dir, "session.jsonl");
+    writeFileSync(p,
+        JSON.stringify({ type: "complete", data: { stage: "draft" } }) + "\n"
+        + JSON.stringify({ type: "assistant.message", data: { content: "post-complete still flows" } }) + "\n",
+    );
+    const ac = new AbortController();
+    const collected = [];
+    for await (const ev of tailSessionFile(p, { pollMs: 10, signal: ac.signal })) {
+        collected.push(ev.type);
+        if (collected.length >= 2) {
+            ac.abort();
+            break;
+        }
+    }
+    assert.deepEqual(collected, ["complete", "assistant.message"]);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("tailSessionFile: ENOENT polls until the session log appears", async () => {
+    const dir = tmp();
+    const p = join(dir, "session.jsonl");
+    // Create the file 50ms in the future to exercise the poll path.
+    setTimeout(() => {
+        try {
+            writeFileSync(p,
+                JSON.stringify({ type: "assistant.message", data: { content: "delayed" } }) + "\n",
+            );
+        } catch { /* ignore */ }
+    }, 50);
+    const ac = new AbortController();
+    const collected = [];
+    for await (const ev of tailSessionFile(p, { pollMs: 10, signal: ac.signal })) {
+        collected.push(ev.type);
+        ac.abort();
+        break;
+    }
+    assert.deepEqual(collected, ["assistant.message"]);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("tailJsonlFile: rejects non-string filePath (input-validation contract)", () => {
+    assert.throws(() => tailJsonlFile(null), TypeError);
+    assert.throws(() => tailJsonlFile(""), TypeError);
+    assert.throws(() => tailJsonlFile(42), TypeError);
+});
+
+test("tailSessionFile: rejects non-string filePath (input-validation contract)", () => {
+    assert.throws(() => tailSessionFile(null), TypeError);
+    assert.throws(() => tailSessionFile(""), TypeError);
+    assert.throws(() => tailSessionFile(42), TypeError);
+});

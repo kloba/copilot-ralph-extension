@@ -113,6 +113,14 @@ export default function Header({ snapshot, now, appVersion }) {
     const premiumRequests = snapshot?.premiumRequests;
     const backlog = snapshot?.backlog ?? null;
     const activeWorkItem = snapshot?.activeWorkItem ?? null;
+    // Issue #57 — surface the terminal `reason` (e.g. `promise` /
+    // `stagnation` / `abort_promise`) inline next to the status badge.
+    // The previous DetailPane carried this; LiveOutputPane (which
+    // replaced it) is busy streaming the agent's output and would
+    // lose the signal in the noise. Showing it here keeps "why did
+    // the run end?" one glance away. Null pre-terminal — the
+    // parenthetical is rendered conditionally below.
+    const reason = snapshot?.reason ?? null;
     const closedByLoop = snapshot?.closedByLoop ?? 0;
 
     const maxLabel = max === RUNAWAY_GUARD_CEILING ? "∞" : String(max);
@@ -142,6 +150,11 @@ export default function Header({ snapshot, now, appVersion }) {
 
     const left = h(Box, { flexDirection: "row" },
         h(Text, { color: STATUS_COLOR[status] ?? "white", bold: true }, STATUS_LABEL[status] ?? String(status).toUpperCase()),
+        // Issue #57 — dim parenthetical reason next to status badge
+        // so DONE / ABORTED carry the "why" inline. Suppressed
+        // pre-terminal (reason is null) so non-terminal layouts are
+        // unchanged.
+        reason ? h(Text, { dimColor: true }, " (" + String(reason) + ")") : null,
         h(Text, null, "  "),
         h(Text, { bold: true }, label),
         h(Text, { dimColor: true }, "  " + runId),
@@ -223,7 +236,7 @@ export default function Header({ snapshot, now, appVersion }) {
 
     // Issue #54 slice 1 — heading "Run" sits as the first child
     // inside the bordered Box, matching the existing inside-border
-    // heading convention used by Timeline / DetailPane / TasksPane.
+    // heading convention used by Timeline / LiveOutputPane / TasksPane.
     // The status badge (RUN / DONE / PAUSE) lives in the topRow
     // right of the heading, so the heading is the user-facing pane
     // label rather than a duplicate of the status.

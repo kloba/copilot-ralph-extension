@@ -8417,3 +8417,115 @@ test(".editorconfig captures project indent + EOL conventions", () => {
     assert.equal(sectionIndent(/\[\*\.\{yml[^\]]*\]/), 2,
         ".yml indent_size must be 2 (matches ci.yml)");
 });
+
+// Iter 98 — pin createEventEmitter's write() behaviour. The module's
+// stated discipline is "swallow every error so the loop keeps running"
+// (issue #22), and the serialize() helper has a 3-tier fallback that
+// nothing currently exercises directly: (1) full JSON; (2) drop
+// excerpt+note when the line exceeds MAX_EVENT_LINE_BYTES (16 KB);
+// (3) return null and silently drop the line when even tier 2 is too
+// large. Cover all three tiers + the `armed` index side-effect via an
+// in-memory fs stub so the loop's on-disk contract with the TUI
+// (packages/tui/src/writer.mjs filters for `type: "armed"`) cannot
+// silently regress.
+import { createEventEmitter as _eeCreate } from "../extension/events-emit.mjs";
+
+function captureEmitter(opts = {}) {
+    const writes = [];
+    const dirsCreated = [];
+    const fs = {
+        mkdirSync: (p) => { dirsCreated.push(String(p)); },
+        appendFileSync: (p, line) => { writes.push({ path: String(p), line: String(line) }); },
+    };
+    const w = _eeCreate({ label: "ralph_loop", startedAt: 1, env: { RALPH_EVENTS_DIR: "/tmp/ralph-iter98" }, fs, ...opts });
+    return { writer: w, writes, dirsCreated };
+}
+
+test("createEventEmitter.write: tier-1 happy path emits the full JSON line", () => {
+    const { writer, writes } = captureEmitter();
+    writer.write({ type: "iteration_start", runId: writer.runId, iteration: 1, ts: 1000 });
+    assert.equal(writes.length, 1);
+    const parsed = JSON.parse(writes[0].line.trimEnd());
+    assert.equal(parsed.type, "iteration_start");
+    assert.equal(parsed.iteration, 1);
+    assert.equal(writes[0].path, writer.eventsPath);
+});
+
+test("createEventEmitter.write: tier-1 clips long excerpt to MAX_EXCERPT_CHARS (500 + ellipsis)", () => {
+    const { writer, writes } = captureEmitter();
+    writer.write({ type: "iteration_end", runId: writer.runId, iteration: 1, excerpt: "x".repeat(2000) });
+    assert.equal(writes.length, 1);
+    const parsed = JSON.parse(writes[0].line.trimEnd());
+    // 499 'x' + '…' = 500 chars exactly.
+    assert.equal(parsed.excerpt.length, 500, "excerpt must clip to 500 chars total");
+    assert.ok(parsed.excerpt.endsWith("…"), "clipped excerpt must end with the ellipsis indicator");
+});
+
+test("createEventEmitter.write: tier-2 drops excerpt+note when full JSON exceeds MAX_EVENT_LINE_BYTES", () => {
+    // Force the tier-2 fallback by passing a NON-string excerpt — clipExcerpt
+    // only clips strings, so a giant object survives tier 1 unclipped. With
+    // the object's serialized form well over 16 KB, tier 1 fails the byte
+    // cap; tier 2 deletes excerpt+note and re-serializes; the remaining
+    // metadata (~50 bytes) easily fits.
+    const { writer, writes } = captureEmitter();
+    const giantPayload = { huge: "y".repeat(20000) };
+    writer.write({
+        type: "iteration_end",
+        runId: writer.runId,
+        iteration: 1,
+        excerpt: giantPayload,
+        note: { also: "y".repeat(20000) },
+        ts: 1000,
+    });
+    assert.equal(writes.length, 1, "tier-2 fallback must still emit one line");
+    const parsed = JSON.parse(writes[0].line.trimEnd());
+    assert.equal(parsed.type, "iteration_end");
+    assert.equal(parsed.iteration, 1);
+    assert.equal(parsed.excerpt, undefined, "tier-2 must strip excerpt");
+    assert.equal(parsed.note, undefined, "tier-2 must strip note");
+});
+
+test("createEventEmitter.write: tier-3 silently drops the line when even tier-2 still exceeds the byte cap", () => {
+    // Force tier-3 by stuffing the bulk into a NON-stripped field
+    // (`runId` here — tier-2 only deletes excerpt+note). Tier-1 fails;
+    // tier-2 deletes excerpt+note but the bulk is still in `runId`, so
+    // the byte cap still trips; tier-3 returns null and write() must
+    // swallow without throwing or appending.
+    const { writer, writes } = captureEmitter();
+    writer.write({
+        type: "iteration_end",
+        runId: "z".repeat(20000),
+        iteration: 1,
+        ts: 1000,
+    });
+    assert.equal(writes.length, 0, "tier-3 must silently drop the line (no append)");
+});
+
+test("createEventEmitter.write: armed event also appends to the index file", () => {
+    // The TUI's readRunIndex (packages/tui/src/writer.mjs) filters for
+    // `type: "armed"` — without the index entry, `ralph-tui list` and
+    // `ralph-tui stats` would skip every run this emitter records.
+    const { writer, writes } = captureEmitter();
+    writer.write({ type: "armed", runId: writer.runId, label: "ralph_loop", startedAt: 1, maxIterations: 100, minIterations: 1 });
+    assert.equal(writes.length, 2, "armed must append to BOTH events.jsonl and index.jsonl");
+    const paths = writes.map((w) => w.path);
+    assert.ok(paths.some((p) => p.endsWith("events.jsonl")), "one write must target events.jsonl");
+    assert.ok(paths.some((p) => p.endsWith("index.jsonl")), "one write must target index.jsonl");
+    const idxLine = writes.find((w) => w.path.endsWith("index.jsonl"));
+    const parsed = JSON.parse(idxLine.line.trimEnd());
+    assert.equal(parsed.type, "armed", "index entry must carry type=armed (TUI filters on this)");
+    assert.equal(parsed.runId, writer.runId);
+    assert.equal(parsed.label, "ralph_loop");
+});
+
+test("createEventEmitter.write: malformed (null/undefined/string/number) event types must not throw", () => {
+    // The contract is `write(ev: object)`. A buggy caller passing the
+    // wrong type must not crash the loop — the file-level "swallow
+    // every error" discipline applies (issue #22). We don't pin the
+    // exact append behaviour for these inputs (some serialize cleanly
+    // as JSON primitives, some don't); we only pin "no throw".
+    const { writer } = captureEmitter();
+    for (const bad of [null, undefined, "string", 42, true]) {
+        assert.doesNotThrow(() => writer.write(bad), `write(${typeof bad}) must not throw`);
+    }
+});

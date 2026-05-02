@@ -39,6 +39,17 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Behavioural coverage for `extension/events-emit.mjs`'s
+  `createEventEmitter.write()` and its 3-tier `serialize()`
+  fallback (issue #22's "swallow every error" contract): tier-1
+  happy path, tier-1 excerpt-clip to MAX_EXCERPT_CHARS, tier-2
+  drop excerpt+note when the full JSON exceeds 16 KB, tier-3
+  silent-drop when even tier-2 still trips the byte cap, plus
+  the `armed` event's index-file side-effect that the TUI's
+  `readRunIndex` filters on. Previously the only coverage was
+  via integration tests that emit events as a side-effect — a
+  regression in the byte-cap fallback could have silently
+  corrupted JSONL output without surfacing in any test.
 - Drift guard: `ci.yml`'s `matrix.node` lowest entry must equal
   `package.json#engines.node`'s floor major. Mirrors the
   existing `.nvmrc` ↔ `engines.node` pin so a future engines

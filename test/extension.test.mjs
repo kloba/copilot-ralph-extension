@@ -7387,3 +7387,53 @@ test("events-emit makeRunId: sanitizes filesystem-unsafe label characters", () =
     assert.equal(makeRunId(null, 1), "ralph_loop-1",
         "null label falls back to the default `ralph_loop`");
 });
+
+// Iter 71 — issue #7: ralph_status's textResultForLlm summary now appends
+// `, tokens X/Y` when max_tokens is configured so an LLM consumer reading
+// only the summary line (not the JSON snapshot) can see budget pressure.
+test("ralph_status: textResultForLlm appends tokens X/Y when max_tokens armed", async () => {
+    const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
+    const { ralph, status, session } = await armStatusable({ git });
+    await ralph.handler({ prompt: "go", max_iterations: 5, max_tokens: 100_000, stagnation_limit: 0 });
+    // Pre-iteration: tokens 0/100000.
+    const before = await status.handler({});
+    assert.match(before.textResultForLlm, /tokens 0\/100000/);
+    // Credit some tokens then re-check the summary reflects them.
+    emitUsage(session, { input: 1234, output: 567 });
+    const after = await status.handler({});
+    assert.match(after.textResultForLlm, /tokens 1801\/100000/,
+        "summary must show cumulative input+output against the cap");
+});
+
+test("ralph_status: textResultForLlm omits tokens segment when no max_tokens", async () => {
+    const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
+    const { ralph, status, session } = await armStatusable({ git });
+    await ralph.handler({ prompt: "go", max_iterations: 5, stagnation_limit: 0 });
+    runTurn(session, "iter 1");
+    emitUsage(session, { input: 5000, output: 2500 });
+    const r = await status.handler({});
+    // Loops without a cap don't get the tokens segment — keeps the
+    // summary uncluttered for users who don't care about budgeting.
+    assert.doesNotMatch(r.textResultForLlm, /\btokens \d+/,
+        "summary must NOT include tokens segment when no max_tokens armed");
+    // But the JSON snapshot still surfaces them so the data is reachable.
+    assert.equal(r.status.tokens.input, 5000);
+    assert.equal(r.status.tokens.output, 2500);
+});
+
+test("ralph_status: paused summary still includes tokens segment when capped", async () => {
+    // Reliability: the PAUSED suffix is concatenated AFTER the tokens
+    // segment so a paused loop with a cap still surfaces both pieces.
+    const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
+    const { ralph, status, controller } = await armStatusable({ git });
+    await ralph.handler({ prompt: "go", max_iterations: 5, max_tokens: 50_000, stagnation_limit: 0 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    await pause.handler({ reason: "review diff" });
+    const r = await status.handler({});
+    assert.match(r.textResultForLlm, /tokens 0\/50000/);
+    assert.match(r.textResultForLlm, /PAUSED — review diff/);
+    // tokens segment must appear before the PAUSED segment in the summary.
+    const idxTokens = r.textResultForLlm.indexOf("tokens 0/50000");
+    const idxPaused = r.textResultForLlm.indexOf("PAUSED");
+    assert.ok(idxTokens < idxPaused, "tokens segment must precede PAUSED suffix");
+});

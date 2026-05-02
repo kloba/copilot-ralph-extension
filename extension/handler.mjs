@@ -2018,8 +2018,17 @@ export function createRalphController(opts = {}) {
                 // textResultForLlm string is a one-line summary so a model
                 // reading the result still gets a useful summary even if it
                 // doesn't introspect the JSON.
+                // Issue #7: when max_tokens is configured, append a
+                // `, tokens X/Y` segment so an LLM consumer reading
+                // only the summary string sees budget pressure climbing
+                // toward the cap. Loops without a cap keep their
+                // summary unchanged so we don't clutter the line for
+                // runs that don't care about token budgeting.
+                const tokenSegment = snapshot.active && snapshot.tokens && snapshot.tokens.max_tokens
+                    ? `, tokens ${snapshot.tokens.total}/${snapshot.tokens.max_tokens}`
+                    : "";
                 const summary = snapshot.active
-                    ? `${snapshot.label}: iteration ${snapshot.iteration}/${snapshot.max_iterations}, elapsed ${snapshot.elapsed_ms}ms${snapshot.paused ? ` (PAUSED${snapshot.pause_reason ? ` — ${snapshot.pause_reason}` : ""}, for ${snapshot.paused_for_ms}ms)` : ""}`
+                    ? `${snapshot.label}: iteration ${snapshot.iteration}/${snapshot.max_iterations}, elapsed ${snapshot.elapsed_ms}ms${tokenSegment}${snapshot.paused ? ` (PAUSED${snapshot.pause_reason ? ` — ${snapshot.pause_reason}` : ""}, for ${snapshot.paused_for_ms}ms)` : ""}`
                     : snapshot.last
                         ? `no active loop; last ${snapshot.last.label} ${snapshot.last.reason} after ${snapshot.last.iterations} iterations`
                         : "no active loop and no prior run in this session";

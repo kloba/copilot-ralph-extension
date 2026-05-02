@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Features
+- `ralph_status.textResultForLlm` (the one-line summary string an
+  LLM consumer reads when it doesn't introspect the JSON snapshot)
+  now appends `, tokens X/Y` when `max_tokens` is armed — e.g.
+  `self_improve: iteration 12/100, elapsed 142318ms, tokens
+  1801/100000`. Loops with no cap keep their summary unchanged so
+  the line stays uncluttered for runs that don't care about token
+  budgeting. Order: tokens segment precedes the optional `(PAUSED
+  …)` suffix so a paused, capped loop still surfaces both pieces.
+  Three tests pin the new format: capped + token-credited, no-cap
+  omission, and paused-while-capped ordering.
+
 ### Tests
 - Pin the lenient-input contracts of `extension/events-emit.mjs`'s
   `makeRunId` and `resolveRunsRoot` helpers. The module's stated

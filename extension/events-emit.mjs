@@ -15,8 +15,16 @@ import { join } from "node:path";
 // truncated to fit so a runaway prompt can't blow up the JSONL file.
 const MAX_EVENT_LINE_BYTES = 16 * 1024;
 // Excerpts are capped at this many characters before serialization;
-// belt-and-braces with the byte cap above. Keep in lockstep with
-// packages/tui/src/events.mjs MAX_EXCERPT_CHARS.
+// belt-and-braces with the byte cap above. The TUI side carries the
+// matching cap inline as the literal `500` argument to two
+// `safeSliceChars(..., 500)` call sites in
+// `packages/tui/src/events.mjs`'s `serializeEvent` (one for `excerpt`,
+// one for `note`). A drift between the two sides would break the
+// JSONL contract — emitter writes longer than reader's expected cap
+// can mean the reader silently re-clips data the emitter believed
+// was already final, or oversize-line guards on either side mis-fire.
+// A drift-guard test in `test/events-emit.test.mjs` reads both sides
+// and asserts they agree.
 const MAX_EXCERPT_CHARS = 500;
 
 /** Resolve the runs root, honoring $RALPH_EVENTS_DIR.

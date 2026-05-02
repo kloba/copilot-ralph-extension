@@ -272,6 +272,24 @@
   time instead of as a misleading green check on `main`.
 
 ### Documentation
+- `extension/events-emit.mjs`'s `MAX_EXCERPT_CHARS`
+  comment no longer references a non-existent
+  `MAX_EXCERPT_CHARS` constant in the TUI side. The
+  TUI inlines the cap as the literal `500` argument to
+  two `safeSliceChars(..., 500)` call sites in
+  `packages/tui/src/events.mjs`'s `serializeEvent`
+  (one for `excerpt`, one for `note`). The updated
+  comment names those exact call sites and explains
+  the failure mode if the two sides drift (reader
+  re-clips data the emitter believed was final, or
+  oversize-line guards fire asymmetrically). A new
+  drift-guard test in `test/events-emit.test.mjs`
+  reads both files and asserts every TUI
+  `safeSliceChars()` call uses the same cap as the
+  emitter's named constant — so a future refactor
+  that bumps either side without bumping the other
+  will fail loudly with a message naming the exact
+  mismatch.
 - `docs/ARCHITECTURE.md`'s "Test architecture" section now
   lists every DI option `createRalphController({...})`
   supports — previously the comma-list enumerated only

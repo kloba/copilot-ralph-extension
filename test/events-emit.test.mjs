@@ -371,3 +371,46 @@ test("createEventEmitter: clipExcerpt does not produce lone high surrogates at t
     assert.ok(parsed.excerpt.length <= 500, `clipped excerpt length must stay ≤ 500 (got ${parsed.excerpt.length})`);
     assert.ok(parsed.excerpt.endsWith("…"), "clipped excerpt must still end with the ellipsis sentinel");
 });
+
+// Iter 122 — drift guard: events-emit.mjs's MAX_EXCERPT_CHARS (500)
+// MUST equal the literal cap the TUI side passes to its surrogate-
+// safe slicer in `packages/tui/src/events.mjs`'s `serializeEvent`.
+// Both sides describe the same JSONL line consumed by both — a
+// drift would break the contract: emitter writes longer than reader
+// expects -> reader re-clips data the emitter believed was final
+// (and the surrogate-safe behavior on the emitter side is silently
+// undone), or oversize-line guards fire on one side but not the
+// other. The two values are intentionally inlined (zero-dep policy
+// keeps `events-emit.mjs` from importing TUI internals; TUI doesn't
+// import from `extension/`), so the only protection is this test.
+test("events-emit MAX_EXCERPT_CHARS lockstep: TUI serializeEvent caps excerpt+note at the same value", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const { dirname, resolve, join } = await import("node:path");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const repoRoot = resolve(here, "..");
+    const emit = readFileSync(join(repoRoot, "extension/events-emit.mjs"), "utf8");
+    const tui = readFileSync(join(repoRoot, "packages/tui/src/events.mjs"), "utf8");
+
+    // Emitter side: pin the named constant.
+    const emitMatch = emit.match(/const MAX_EXCERPT_CHARS = (\d+);/);
+    assert.ok(emitMatch, "events-emit.mjs must declare `const MAX_EXCERPT_CHARS = <N>;`");
+    const emitCap = Number(emitMatch[1]);
+    assert.equal(emitCap, 500, "MAX_EXCERPT_CHARS is the contract value; bump on BOTH sides if you change it");
+
+    // TUI side: scan every safeSliceChars(<expr>, <N>) call and
+    // require BOTH (excerpt + note) to use the same cap as the
+    // emitter. A future refactor that extracts the literal into a
+    // named constant on the TUI side will keep this test passing
+    // because we read the actual call-site argument.
+    const tuiCalls = [...tui.matchAll(/safeSliceChars\([^,]+,\s*(\d+)\s*\)/g)].map((m) => Number(m[1]));
+    assert.ok(tuiCalls.length >= 2, `expected ≥2 safeSliceChars() calls in TUI events.mjs (excerpt+note), found ${tuiCalls.length}`);
+    for (const cap of tuiCalls) {
+        assert.equal(
+            cap,
+            emitCap,
+            `TUI safeSliceChars cap ${cap} differs from events-emit MAX_EXCERPT_CHARS ${emitCap}; ` +
+            "bump BOTH sides in lockstep — see the comment block above MAX_EXCERPT_CHARS in events-emit.mjs.",
+        );
+    }
+});

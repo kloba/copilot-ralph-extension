@@ -4889,6 +4889,37 @@ test("release.yml asset list matches extension/*.mjs on disk", () => {
     );
 });
 
+test("README install Option headings are unique (no duplicate H3 anchors)", () => {
+    // Drift guard for the README "Installation" section. GitHub renders
+    // each heading into an anchor (`#option-c--from-source` etc.) and
+    // when two H3s collide it silently appends `-1` to the second —
+    // which means cross-doc deep links to the wrong heading land on
+    // the wrong content. The previous form had two `### Option C`
+    // sections (Option C — From source AND Option C — Pin a specific
+    // tagged release) which created a real ambiguity. Pin the
+    // headings to be unique so any future reorganisation that drops
+    // an Option (turning D back into C) doesn't quietly reintroduce
+    // a collision.
+    const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf8");
+    const headings = readme
+        .split("\n")
+        .filter((line) => /^### Option [A-Z]/.test(line))
+        .map((line) => line.match(/^### Option ([A-Z])/)[1]);
+    assert.ok(headings.length >= 2, "README must contain at least two `### Option` install headings");
+    const seen = new Set();
+    for (const letter of headings) {
+        assert.ok(!seen.has(letter), `Duplicate \`### Option ${letter}\` heading in README — pick a fresh letter`);
+        seen.add(letter);
+    }
+    // Letters must form a contiguous A,B,C,… run with no gaps so the
+    // user reading the section sees a clean A→B→C→D progression.
+    const letters = [...headings].sort();
+    for (let i = 0; i < letters.length; i++) {
+        const expected = String.fromCharCode("A".charCodeAt(0) + i);
+        assert.equal(letters[i], expected, `Option headings must be contiguous A,B,C,…; expected ${expected} at position ${i} but found ${letters[i]}`);
+    }
+});
+
 test("README `tools: controller.tools` comment lists every controller.tools name in order", () => {
     // Drift guard for the inline tool list in README's "How it works"
     // code block. The previous form (`ralph_loop + ralph_stop +
@@ -4914,7 +4945,7 @@ test("README `tools: controller.tools` comment lists every controller.tools name
 
 test("README + RELEASING install loops list every extension/*.mjs file", () => {
     // Drift guard for the user-facing install snippets. Both README.md
-    // (Option A user-scoped, Option B project-scoped, Option C pinned
+    // (Option A user-scoped, Option B project-scoped, Option D pinned
     // release) and docs/RELEASING.md ship `for f in <list>; do curl …`
     // loops that fetch a hardcoded set of `.mjs` files. Anyone who
     // follows a snippet whose <list> is stale ends up with a partially

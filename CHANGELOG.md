@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Documentation
+- README's Installation section had two `### Option C`
+  H3 headings (Option C — From source AND Option C —
+  Pin a specific tagged release). GitHub renders each
+  heading into an anchor and silently appends `-1` to
+  the second on collision, so cross-doc deep links
+  landed on the wrong content. Renamed the second to
+  `### Option D — Pin a specific tagged release` and
+  added a drift-guard test that asserts every
+  `### Option X` heading uses a unique letter AND
+  the run is contiguous A→B→C→D — a future Option
+  removal that turns D back into C must update both
+  the heading and the test in lockstep.
+
 ### Refactor
 - Consolidate the "no active loop" failure wording for
   ralph_stop / ralph_pause / ralph_resume into a single

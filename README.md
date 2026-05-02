@@ -71,7 +71,7 @@ cd copilot-ralph-extension
 
 > **Windows note:** the runtime extension (`extension.mjs`, `handler.mjs`, and `events-emit.mjs`) is plain ESM and works wherever Copilot CLI runs. The `install.sh` script requires a Bash shell — on Windows use **WSL**, **Git Bash**, or **MSYS2**. As a fallback, follow Option A or B above (the `mkdir -p` + `curl` snippets) inside any POSIX-ish shell, or copy every `.mjs` file from `extension/` manually into `%USERPROFILE%\.copilot\extensions\ralph\`.
 
-### Option C — Pin a specific tagged release
+### Option D — Pin a specific tagged release
 
 The default install snippets curl from `main`, which is rolling-latest. To pin a specific revision (recommended for shared/CI environments), download the assets attached to a [GitHub Release](https://github.com/kloba/copilot-ralph-extension/releases):
 

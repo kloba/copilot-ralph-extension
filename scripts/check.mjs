@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Portable equivalent of the CI "Syntax check" job (.github/workflows/ci.yml).
-// Walks every shipped .mjs under extension/ + packages/tui/src + packages/tui/bin
+// Walks every shipped .mjs under extension/ + packages/tui/src + packages/tui/bin + scripts/
 // and runs `node --check <file>` on each; any non-zero exit propagates as
 // the script's exit code. A minimum-file-count guard catches accidental
 // refactors that empty the search roots (mirrors the CI "Syntax-checked
@@ -18,7 +18,7 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const ROOTS = ["extension", "packages/tui/src", "packages/tui/bin"];
+const ROOTS = ["extension", "packages/tui/src", "packages/tui/bin", "scripts"];
 const MIN_FILES = 10;
 
 function walk(dir, out) {

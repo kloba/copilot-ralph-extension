@@ -5222,7 +5222,7 @@ test("ci.yml: syntax-check step recursively walks shipped .mjs roots", () => {
         const stripped = line.replace(/^\s+/, "");
         return stripped && !stripped.startsWith("#");
     }).join("\n");
-    assert.match(scriptLines, /find extension packages\/tui\/src packages\/tui\/bin -type f -name '\*\.mjs' -print0/, "ci.yml must use `find -type f -name '*.mjs' -print0` over the three search roots");
+    assert.match(scriptLines, /find extension packages\/tui\/src packages\/tui\/bin scripts -type f -name '\*\.mjs' -print0/, "ci.yml must use `find -type f -name '*.mjs' -print0` over the four search roots");
     assert.match(scriptLines, /while IFS= read -r -d ''/, "ci.yml must consume the find output via a NUL-delimited read loop");
     assert.match(scriptLines, /node --check "\$f"/, "ci.yml must invoke `node --check` per file");
     assert.doesNotMatch(scriptLines, /packages\/tui\/src\/components\/\*\.mjs/, "ci.yml must not re-introduce explicit subdir globs (use recursive find instead)");

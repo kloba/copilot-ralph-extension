@@ -78,7 +78,7 @@ jobs:
           while IFS= read -r -d '' f; do
             node --check "$f"
             count=$((count + 1))
-          done < <(find extension packages/tui/src packages/tui/bin -type f -name '*.mjs' -print0)
+          done < <(find extension packages/tui/src packages/tui/bin scripts -type f -name '*.mjs' -print0)
           # Guard against a future refactor that empties the search
           # roots (or moves all .mjs out of them) — we want a loud
           # failure rather than a silent green run.

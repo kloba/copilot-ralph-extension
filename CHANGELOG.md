@@ -468,6 +468,23 @@
   invariant scan.
 
 ### Internal
+- Extended the syntax-check coverage roots in
+  `.github/workflows/ci.yml` and `scripts/check.mjs`
+  (`npm run check`) to include `scripts/`. Pre-iter-170 a
+  syntax error in any `scripts/*.mjs` helper (including
+  `scripts/check.mjs` itself) would silently sail through both
+  the bash "Syntax check" CI step and the portable mirror —
+  the former scoped its `find` to `extension packages/tui/src
+  packages/tui/bin`; the latter pinned the same three roots in
+  its `ROOTS` array. Local file count moves from 14 → 15. The
+  existing iter-62 drift-guard at
+  `test/extension.test.mjs:7066` already pins both surfaces in
+  lockstep, so the iter-170 update touched both together; the
+  matching iter-67 hard-coded `find` regex at
+  `test/extension.test.mjs:5225` was updated to expect the new
+  fourth root. Mutation-verified by reverting either surface
+  individually (1 failure for `scripts/check.mjs`, 2 failures
+  when the CI step also drops `scripts`).
 - Aligned `packages/tui/package.json` metadata with the root
   package: added the missing `repository` (with
   `directory: "packages/tui"` so npm's monorepo subdir hint

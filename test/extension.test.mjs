@@ -8721,3 +8721,57 @@ test("CONTRIBUTING.md handler.mjs LOC mention is within 30% of actual", () => {
         `Update the doc when the figure drifts by more than 30%.`,
     );
 });
+
+// Iter 106 — iter 101 added per-file `[new]` / `[overwrite]` /
+// `[unchanged]` annotations to install.sh's --dry-run output, but
+// the test coverage only pinned `[new]` (empty sandbox HOME) and
+// `[unchanged]` (byte-identical pre-population). The middle case —
+// target file exists but differs from source — was never exercised,
+// so a regression that, say, swapped `cmp -s` for `[[ -f ... ]]`
+// alone (collapsing unchanged + overwrite into one bucket) would
+// have shipped silently. Pre-populate the sandbox with a stub
+// payload that is guaranteed to differ from the real source files
+// and assert each file annotates as `[overwrite]`.
+test("install.sh: --dry-run annotates each file with [overwrite] when target differs from source", async () => {
+    const fs = await import("node:fs");
+    const sandboxHome = mkdtempSync(join(tmpdir(), "ralph-install-status-overwrite-"));
+    try {
+        const targetDir = `${sandboxHome}/.copilot/extensions/ralph`;
+        fs.mkdirSync(targetDir, { recursive: true });
+        const onDisk = readdirSync(resolve(REPO_ROOT, "extension"))
+            .filter((f) => f.endsWith(".mjs"));
+        // Seed each target with a short payload that is guaranteed to
+        // differ from the real source (no real source file is "STALE\n").
+        for (const f of onDisk) {
+            fs.writeFileSync(`${targetDir}/${f}`, "STALE\n");
+        }
+        const r = spawnSync(
+            "bash",
+            [resolve(REPO_ROOT, "install.sh"), "--dry-run"],
+            { encoding: "utf8", env: { ...process.env, HOME: sandboxHome } },
+        );
+        assert.equal(r.status, 0, `--dry-run exited ${r.status}; stderr=${r.stderr}`);
+        for (const f of onDisk) {
+            assert.match(
+                r.stdout,
+                new RegExp(`${f.replace(/\./g, "\\.")} \\(\\d+ bytes\\) \\[overwrite\\]`),
+                `dry-run output must annotate ${f} as [overwrite] when target exists but differs from source`,
+            );
+            // Also confirm `[unchanged]` is NOT used for any file —
+            // would indicate `cmp -s` returned 0 against our stub
+            // payload (logically impossible) or the discriminator
+            // collapsed into a single `existing` bucket.
+            assert.doesNotMatch(
+                r.stdout,
+                new RegExp(`${f.replace(/\./g, "\\.")} \\(\\d+ bytes\\) \\[unchanged\\]`),
+                `dry-run must not annotate ${f} as [unchanged] when target differs from source`,
+            );
+        }
+        const m = r.stdout.match(/^Changes:\s+(\d+) new, (\d+) existing\s*$/m);
+        assert.ok(m, `dry-run stdout must include a "Changes: A new, B existing" line; got:\n${r.stdout}`);
+        assert.equal(Number(m[1]), 0, "Changes new-count must be 0 when every target file already exists");
+        assert.equal(Number(m[2]), onDisk.length, "Changes existing-count must equal extension/*.mjs count when every target pre-existed");
+    } finally {
+        rmSync(sandboxHome, { recursive: true, force: true });
+    }
+});

@@ -78,6 +78,16 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Pin install.sh's `--dry-run` `[overwrite]` annotation
+  branch (target file exists but differs from source). Iter
+  101 shipped per-file new/overwrite/unchanged tags but the
+  test coverage only exercised the `[new]` and `[unchanged]`
+  cases — a regression that collapsed unchanged + overwrite
+  into one bucket would have shipped silently. The new test
+  pre-populates the sandbox HOME with a stub payload
+  (guaranteed to differ from the real source) and asserts
+  every file annotates as `[overwrite]` with `0 new, N
+  existing` in the Changes summary.
 - Drift guard: `release.yml`'s `setup-node` pin (currently
   `node-version: "20"`) must equal `package.json#engines.node`'s
   floor major. Mirrors iter 94's guard for `ci.yml`'s matrix

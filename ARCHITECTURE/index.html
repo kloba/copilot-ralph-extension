@@ -633,23 +633,34 @@
 <p>The previous in-session Copilot CLI extension (<code>ralph_loop</code> / <code>self_improve</code> / <code>grow_project</code> / <code>ralph_status</code> / <code>ralph_pause</code> / <code>ralph_resume</code> / <code>ralph_stop</code> tools) was retired — see <a href="../CHANGELOG.md"><code>CHANGELOG.md</code></a>. All forward work lives in <code>packages/tui/</code>.</p>
 <h2 id="source-layout">Source layout<a class="headerlink" href="#source-layout" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>packages/tui/
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── bin/tui.mjs        # CLI entry — argv parser + dispatcher
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── bin/tui.mjs               # CLI entry — argv parser + dispatcher
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── src/
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│   ├── prompts.mjs    # Baked SDLC prompts (PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT)
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│   ├── runner.mjs     # `autopilot run` driver — spawns each iter, tracks state.json
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│   ├── events.mjs     # Pure event contract (read side)
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│   ├── events-emit.mjs # Zero-dep JSONL emitter (write side)
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│   ├── writer.mjs     # JSONL reader + index aggregator (`list`/`stats`/`prune`)
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│   ├── tail.mjs       # Live tail iterator for `watch`
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│   ├── plain.mjs      # Plain-mode log line formatter
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│   ├── watch.mjs      # Watch dispatcher (TTY → Ink, non-TTY → plain)
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│   ├── run-ui.mjs     # Ink renderer for `run`&#39;s live UI
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│   └── components/    # Ink layout components (Header, Timeline, DetailPane, …)
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>├── test/              # node:test suite
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>└── package.json       # Ink/React/Yoga deps for the renderer
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>scripts/
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>├── check.mjs          # Portable equivalent of CI&#39;s syntax-check job
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>└── ralph-tui-fresh.sh # Optional `git pull --ff-only` wrapper for long runs
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│   ├── components/             # Ink layout components for `run` + `watch`
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│   │   ├── App.mjs             # Top-level Ink tree wiring panes together
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│   │   ├── Controls.mjs        # Footer controls / keybinding hints
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│   │   ├── Header.mjs          # Top bar (run label, version, run-state badge)
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│   │   ├── LastCommit.mjs      # Replay-on-mount excerpt of the latest commit
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│   │   ├── LiveOutputPane.mjs  # Tail of the agent&#39;s live session output
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│   │   ├── StagesRow.mjs       # SDLC stage strip
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│   │   ├── SubstagesPane.mjs   # Per-stage substage progress
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│   │   ├── TasksPane.mjs       # Active iter task / tool-call view
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│   │   └── Timeline.mjs        # Live event-stream excerpt
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│   ├── events-emit.mjs       # Zero-dep JSONL emitter (write side)
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>│   ├── events.mjs            # Pure event contract (read side)
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>│   ├── plain.mjs             # Plain-mode log line formatter
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>│   ├── prompts.mjs           # Baked SDLC prompts (PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT)
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>│   ├── run-ui.mjs            # Ink renderer for `run`&#39;s live UI
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>│   ├── runner.mjs            # `autopilot run` driver — spawns each iter, tracks state.json
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>│   ├── stream-format.mjs     # Live-output formatter for the Copilot session log
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>│   ├── tail.mjs              # Live tail iterator for `watch`
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>│   ├── version.mjs           # Reads packages/tui/package.json for `--version` + Header
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>│   ├── watch.mjs             # Watch dispatcher (TTY → Ink, non-TTY → plain)
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>│   └── writer.mjs            # JSONL reader + index aggregator (`list`/`stats`/`prune`)
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>├── test/                     # node:test suite
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>└── package.json              # Ink/React/Yoga deps for the renderer
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>scripts/
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>├── check.mjs                 # Portable equivalent of CI&#39;s syntax-check job
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>└── ralph-tui-fresh.sh        # Optional `git pull --ff-only` wrapper for long runs
 </code></pre></div>
 <h2 id="autopilot-run-the-driver"><code>autopilot run</code> — the driver<a class="headerlink" href="#autopilot-run-the-driver" title="Permanent link">&para;</a></h2>
 <p><a href="../packages/tui/src/runner.mjs"><code>runner.mjs</code></a> is the heart of the project. Each iteration is a fresh subprocess:</p>

@@ -1140,6 +1140,12 @@ export async function runRalphTui(opts) {
     let lastAssistantContent = "";
     let stopRequested = false;
     let capturedSessionId = null;
+    // Issue #57 — track the most recently-emitted `session_attached`
+    // sessionId so we don't re-emit the same value across multiple
+    // iters in continue-mode (where the Copilot CLI keeps the same
+    // sessionId for the whole run). Each iter's `result.sessionId`
+    // is compared against this; an emit fires only on a change.
+    let lastEmittedSessionId = null;
     // Cumulative-for-the-run usage rolled up across iters so each
     // iteration_end carries run-total values for tokens (output) and
     // Copilot premium-request count. The post-iter reconciler folds
@@ -1632,6 +1638,28 @@ export async function runRalphTui(opts) {
         if (contextMode === "continue" && iter === 1 && reduced.sessionId) {
             capturedSessionId = reduced.sessionId;
             updateState(runId, (s) => { s.sessionId = capturedSessionId; return s; }, env);
+        }
+        // Issue #57 / live-output panel — surface the active iter's
+        // sessionId on the events stream so the TUI can mount a tail
+        // against `~/.copilot/session-state/<sessionId>.jsonl`.
+        // Independent of `--continue`'s capture above (which only
+        // fires for iter 1 in continue-mode runs); this fires on
+        // every iter regardless of contextMode whenever the
+        // sessionId changes, so the panel works for fresh-context
+        // runs too. Suppressed when sessionId is null (the reducer
+        // didn't surface one — old Copilot CLI without session
+        // ids, or a run that bailed before the terminal `result`
+        // event arrived) and when the value is the same as the
+        // previous iter (no-op event spam avoided).
+        if (reduced.sessionId && reduced.sessionId !== lastEmittedSessionId) {
+            emitter.write({
+                type: "session_attached",
+                ts: now(),
+                runId,
+                iteration: iter,
+                sessionId: reduced.sessionId,
+            });
+            lastEmittedSessionId = reduced.sessionId;
         }
         // Iter-close reconciliation: the canonical reducer ran over
         // `result.events` (the iter's full event list) — use it as

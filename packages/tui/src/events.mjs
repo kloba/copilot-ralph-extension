@@ -104,6 +104,10 @@ export const EVENT_TYPES = Object.freeze([
     "task_end",
     "commit_observed",
     "usage_update",
+    // Issue #57 / live-output panel — `runner.mjs` emits this once
+    // a Copilot CLI session id is captured for the active iter, so
+    // the TUI can mount a tail against the per-session log file.
+    "session_attached",
 ]);
 
 /** Recognised L1 work-item kinds — the categorisation used in the
@@ -503,6 +507,25 @@ export function serializeEvent(ev) {
         }
     }
 
+    // Issue #57 / live-output panel — `session_attached` carries the
+    // Copilot CLI session id (an opaque uuid-like string from the
+    // child JSONL stream's terminal `result` event) so the TUI can
+    // mount a tail against ~/.copilot/session-state/<sessionId>.jsonl.
+    // Gated on the event type so other events cannot accidentally
+    // pick up the field. Required on this event type — we throw if
+    // missing, matching the strictness of `runId` / `ts`. Capped at
+    // 64 chars (Copilot CLI session ids are ~36-char uuids; the cap
+    // is a defensive belt-and-suspenders against a malformed
+    // upstream value).
+    if (ev.type === "session_attached") {
+        if (typeof ev.sessionId !== "string" || !ev.sessionId) {
+            throw new TypeError(
+                "serializeEvent: session_attached requires a non-empty sessionId string",
+            );
+        }
+        out.sessionId = safeSliceChars(ev.sessionId, 64);
+    }
+
     const line = JSON.stringify(out);
     if (Buffer.byteLength(line, "utf8") > MAX_EVENT_LINE_BYTES) {
         throw new RangeError(
@@ -608,6 +631,15 @@ export function foldEvents(events) {
         // until a terminal event fires; resets on `armed` for
         // multi-run replays.
         terminalAt: null,
+        // Issue #57 / live-output panel — Copilot CLI session id
+        // captured by `runner.mjs` from the active iter's terminal
+        // `result.sessionId`. Surfaced through a `session_attached`
+        // event. Null until the runner emits one (older runs
+        // without the event, or pre-iter-1 frames). The TUI mounts
+        // tailSessionFile() against
+        // `~/.copilot/session-state/<sessionId>.jsonl` once this
+        // value is known.
+        sessionId: null,
         iterations: [],
         activeStage: null,
         recentStages: [],
@@ -667,6 +699,10 @@ export function foldEvents(events) {
                 snap.lastExcerpt = null;
                 snap.startedAt = ev.ts;
                 snap.terminalAt = null;
+                // Issue #57 — a re-armed run produces a fresh sessionId
+                // (or none yet). Reset so the previous run's value
+                // doesn't bleed into the new one's first frames.
+                snap.sessionId = null;
                 snap.iterations = [];
                 snap.activeStage = null;
                 snap.recentStages = [];
@@ -1015,6 +1051,20 @@ export function foldEvents(events) {
                         : [],
                     ts: ev.ts,
                 };
+                break;
+            }
+            case "session_attached": {
+                // Issue #57 — surface the Copilot CLI session id so
+                // the App can mount tailSessionFile() against the
+                // matching `~/.copilot/session-state/<id>.jsonl`.
+                // Defensive validation mirrors the serializer's
+                // contract (non-empty string, ≤64 chars); a
+                // serializer that ever emits a malformed value
+                // produces a no-op fold rather than poisoning the
+                // snapshot.
+                if (typeof ev.sessionId !== "string" || !ev.sessionId) break;
+                if (ev.sessionId.length > 64) break;
+                snap.sessionId = ev.sessionId;
                 break;
             }
             default:

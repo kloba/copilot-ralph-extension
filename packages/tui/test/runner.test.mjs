@@ -635,12 +635,16 @@ test("runRalphTui: emits armed → iteration_start → iteration_end → termina
     });
     // The skeleton sequence is armed → iteration_start →
     // (any number of usage_update for live tokens / excerpt
-    // streaming, issue #54 slice 2a) → iteration_end → complete.
-    // Drop usage_update before asserting the skeleton so this test
-    // stays focused on the iteration-lifecycle contract and doesn't
-    // regress every time we tweak live-emission cadence.
+    // streaming, issue #54 slice 2a) → session_attached
+    // (issue #57 — fires once the iter's terminal result event
+    // surfaces a sessionId; deduped against the previously-emitted
+    // value so continue-mode runs don't get one per iter) →
+    // iteration_end → complete. Drop usage_update before asserting
+    // the skeleton so this test stays focused on the
+    // iteration-lifecycle contract and doesn't regress every time
+    // we tweak live-emission cadence.
     const skeleton = events.map((e) => e.type).filter((t) => t !== "usage_update");
-    assert.deepEqual(skeleton, ["armed", "iteration_start", "iteration_end", "complete"]);
+    assert.deepEqual(skeleton, ["armed", "iteration_start", "session_attached", "iteration_end", "complete"]);
     // armed event must carry contextMode + mode + maxIterations for ralph-tui list.
     assert.equal(events[0].contextMode, "fresh");
     assert.equal(events[0].mode, "self-improve");
@@ -2259,4 +2263,141 @@ test("runRalphTui smoke: full marker stream surfaces stage_plan + task_list + ta
     // The runner shelled out to git four times: arm-time
     // (rev-parse + log) + iter-1 commit (rev-parse + log).
     assert.equal(gitCalls, 4, "arm-time + iter-1 each compose rev-parse + log");
+});
+
+// ─── Issue #57 — session_attached emission contract ──────────────
+
+test("runRalphTui: emits session_attached with the iter's result.sessionId", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "test-session-attached-1",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const spawn = makeMockSpawn([
+        {
+            stdout: [
+                JSON.stringify({ type: "assistant.message", data: { content: "wrap up COMPLETE" } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "session-uuid-abc" } }),
+            ].join("\n") + "\n",
+            exitCode: 0,
+        },
+    ]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    const sa = events.filter((e) => e.type === "session_attached");
+    assert.equal(sa.length, 1, "exactly one session_attached for a 1-iter run");
+    assert.equal(sa[0].sessionId, "session-uuid-abc");
+    assert.equal(sa[0].iteration, 1);
+});
+
+test("runRalphTui: dedups session_attached when the same sessionId carries across iters (continue mode)", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "test-session-attached-2",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    // Two iters, same sessionId both times — typical of --continue runs.
+    const spawn = makeMockSpawn([
+        {
+            stdout: [
+                JSON.stringify({ type: "assistant.message", data: { content: "iter1" } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "stable-id" } }),
+            ].join("\n") + "\n",
+            exitCode: 0,
+        },
+        {
+            stdout: [
+                JSON.stringify({ type: "assistant.message", data: { content: "iter2 COMPLETE" } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "stable-id" } }),
+            ].join("\n") + "\n",
+            exitCode: 0,
+        },
+    ]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "continue",
+        max: 2,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    const sa = events.filter((e) => e.type === "session_attached");
+    assert.equal(sa.length, 1, "dedup: only iter 1 emits");
+    assert.equal(sa[0].sessionId, "stable-id");
+});
+
+test("runRalphTui: re-emits session_attached when sessionId changes (fresh-context iter rotation)", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "test-session-attached-3",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const spawn = makeMockSpawn([
+        {
+            stdout: [
+                JSON.stringify({ type: "assistant.message", data: { content: "iter1" } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "id-1" } }),
+            ].join("\n") + "\n",
+            exitCode: 0,
+        },
+        {
+            stdout: [
+                JSON.stringify({ type: "assistant.message", data: { content: "iter2 COMPLETE" } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "id-2" } }),
+            ].join("\n") + "\n",
+            exitCode: 0,
+        },
+    ]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 2,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    const sa = events.filter((e) => e.type === "session_attached");
+    assert.equal(sa.length, 2, "re-emits on sessionId change");
+    assert.deepEqual(sa.map((e) => e.sessionId), ["id-1", "id-2"]);
+});
+
+test("runRalphTui: omits session_attached when result.sessionId is missing", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "test-session-attached-4",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const spawn = makeMockSpawn([
+        {
+            stdout: [
+                JSON.stringify({ type: "assistant.message", data: { content: "wrap up COMPLETE" } }),
+                JSON.stringify({ type: "result", success: true, result: {} }),
+            ].join("\n") + "\n",
+            exitCode: 0,
+        },
+    ]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    const sa = events.filter((e) => e.type === "session_attached");
+    assert.equal(sa.length, 0, "no event when reducer didn't surface a sessionId");
 });

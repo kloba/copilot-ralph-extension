@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### CI
+- The `Syntax check` job in `.github/workflows/ci.yml`
+  now recursively walks the shipped `.mjs` roots
+  (`extension`, `packages/tui/src`, `packages/tui/bin`)
+  via `find … -type f -name '*.mjs' -print0` instead of
+  listing `packages/tui/src/*.mjs` and the components
+  subdir explicitly. The previous form silently skipped
+  any new subdirectory under `packages/tui/src/` (e.g.
+  `src/util/`), so a syntax error in such a file would
+  reach `main` undetected. Added a guard that aborts the
+  step with a loud error if fewer than 10 files are
+  scanned, so emptying the search roots can't pass green.
+  The local mirror test (`every shipped .mjs parses
+  cleanly with node --check`) was updated in lockstep
+  with a recursive walker, and a new
+  `ci.yml: syntax-check step recursively walks shipped
+  .mjs roots` drift-guard pins the find-based form so a
+  future "tidy" pass cannot quietly revert to the
+  explicit-subdir loop.
+
 ### Tests
 - Added direct branch-coverage unit tests for
   `evaluateAdaptiveSignals` (the

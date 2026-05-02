@@ -5068,26 +5068,47 @@ test("every shipped .mjs parses cleanly with `node --check`", () => {
     // skip in CI when ink/react aren't installed, so without this
     // guard a typo in `packages/tui/src/components/*.mjs` would slip
     // through CI undetected.
-    const dirs = [
-        "extension",
-        "packages/tui/src",
-        "packages/tui/src/components",
-        "packages/tui/bin",
-    ];
+    //
+    // Recurse the search roots so a future
+    // `packages/tui/src/<subdir>/x.mjs` is auto-covered without
+    // editing this test — the previous explicit-subdir form silently
+    // skipped new directories.
+    const roots = ["extension", "packages/tui/src", "packages/tui/bin"];
     const files = [];
-    for (const dir of dirs) {
-        const abs = resolve(REPO_ROOT, dir);
+    const walk = (abs) => {
         for (const entry of readdirSync(abs, { withFileTypes: true })) {
-            if (entry.isFile() && entry.name.endsWith(".mjs")) {
-                files.push(resolve(abs, entry.name));
-            }
+            const child = resolve(abs, entry.name);
+            if (entry.isDirectory()) walk(child);
+            else if (entry.isFile() && entry.name.endsWith(".mjs")) files.push(child);
         }
-    }
+    };
+    for (const root of roots) walk(resolve(REPO_ROOT, root));
     assert.ok(files.length >= 10, `expected to scan many .mjs files (got ${files.length})`);
     for (const f of files) {
         const r = spawnSync(process.execPath, ["--check", f], { encoding: "utf8" });
         assert.equal(r.status, 0, `node --check failed for ${f}: ${r.stderr || r.stdout}`);
     }
+});
+
+test("ci.yml: syntax-check step recursively walks shipped .mjs roots", () => {
+    // Drift-guard. The CI syntax-check job and the local mirror test
+    // above both previously listed `packages/tui/src/*.mjs` and
+    // `packages/tui/src/components/*.mjs` explicitly, which silently
+    // skipped any new subdirectory. This test pins the recursive form
+    // so a refactor that re-introduces the explicit-subdir loop fails
+    // loudly here. We inspect only non-comment script lines so the
+    // surrounding comment is free to reference the old form
+    // historically without tripping the regex.
+    const ci = readFileSync(resolve(REPO_ROOT, ".github/workflows/ci.yml"), "utf8");
+    const scriptLines = ci.split("\n").filter((line) => {
+        const stripped = line.replace(/^\s+/, "");
+        return stripped && !stripped.startsWith("#");
+    }).join("\n");
+    assert.match(scriptLines, /find extension packages\/tui\/src packages\/tui\/bin -type f -name '\*\.mjs' -print0/, "ci.yml must use `find -type f -name '*.mjs' -print0` over the three search roots");
+    assert.match(scriptLines, /while IFS= read -r -d ''/, "ci.yml must consume the find output via a NUL-delimited read loop");
+    assert.match(scriptLines, /node --check "\$f"/, "ci.yml must invoke `node --check` per file");
+    assert.doesNotMatch(scriptLines, /packages\/tui\/src\/components\/\*\.mjs/, "ci.yml must not re-introduce explicit subdir globs (use recursive find instead)");
+    assert.doesNotMatch(scriptLines, /packages\/tui\/src\/\*\.mjs/, "ci.yml must not re-introduce shallow `src/*.mjs` glob (use recursive find instead)");
 });
 
 // ── token tracking (issue #7) ─────────────────────────────────────────────

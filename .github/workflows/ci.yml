@@ -47,19 +47,32 @@ jobs:
         # every file is parsed. `set -e` propagates any failure as the
         # job's exit code.
         #
+        # `find` recurses so a future `packages/tui/src/<subdir>/x.mjs`
+        # is auto-covered without editing this workflow. The previous
+        # form listed the shallow `src` glob and the components subdir
+        # separately and would have silently skipped any new subdir
+        # (e.g. `src/util/`).
+        #
         # The TUI's component tests dynamically skip in CI when ink /
         # react aren't installed (we don't run `cd packages/tui && npm
-        # install` in this job), so a syntax error in
-        # packages/tui/src/components/*.mjs would otherwise slip
-        # through. Parse-checking is dependency-free and catches it.
+        # install` in this job), so a syntax error under the components
+        # subdir would otherwise slip through. Parse-checking is
+        # dependency-free and catches it.
         run: |
           set -e
-          for f in extension/*.mjs \
-                   packages/tui/src/*.mjs \
-                   packages/tui/src/components/*.mjs \
-                   packages/tui/bin/*.mjs; do
+          count=0
+          while IFS= read -r -d '' f; do
             node --check "$f"
-          done
+            count=$((count + 1))
+          done < <(find extension packages/tui/src packages/tui/bin -type f -name '*.mjs' -print0)
+          # Guard against a future refactor that empties the search
+          # roots (or moves all .mjs out of them) — we want a loud
+          # failure rather than a silent green run.
+          if [ "$count" -lt 10 ]; then
+            echo "Syntax check scanned only $count files; expected ≥10. Did the source layout move?" >&2
+            exit 1
+          fi
+          echo "Syntax-checked $count .mjs files."
 
       - name: Run tests
         run: npm test

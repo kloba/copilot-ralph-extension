@@ -505,6 +505,18 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Pin `formatEventLine`'s `min=N` segment as type-gated to
+  `armed` events in `packages/tui/test/plain.test.mjs`. The
+  defensive `&& ev.type === "armed"` clause in plain.mjs
+  ensures a corrupted events.jsonl row replayed by the TUI
+  tail mode that smuggles in a stray `minIterations` on a
+  non-armed event (e.g. iteration_end / pause / resume /
+  abort) cannot render an extra `min=N` segment and break
+  awk/grep column alignment downstream. Pre-iter-156 only
+  the positive case (armed-with-min) was pinned, so a
+  refactor that dropped the type-gate would have slipped
+  through. New test loops over the seven most-trafficked
+  non-armed event types and asserts `min=` does NOT appear.
 - Pin `describeArgType` and `displayValue` validation helpers
   with direct unit tests in `test/extension.test.mjs`. Both
   helpers feed every "(got X)" tail in the extension's

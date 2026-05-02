@@ -393,3 +393,40 @@ test("formatTimestamp: out-of-range finite ts collapses to ?? sentinel (Invalid 
     assert.notEqual(formatTimestamp(8.64e15), "??:??:??.???",
         "the JS Date upper bound itself must still render — guard must be exact, not over-broad");
 });
+
+test("formatEventLine: min=N segment is type-gated to 'armed' (defensive)", () => {
+    // Iter 156 — `formatEventLine` only renders the `min=N` segment
+    // when `ev.type === "armed"`. Pre-iter-156 only the positive
+    // case (armed-event includes min=) was pinned; the defensive
+    // type-gate had no negative test, so a future "simplify" pass
+    // that dropped the `&& ev.type === "armed"` clause would render
+    // `min=N` on any event carrying a stray `minIterations` field.
+    // The emitter never emits `minIterations` on non-armed events,
+    // but a corrupted events.jsonl row replayed by the TUI tail
+    // mode COULD smuggle one in — the gate is a defence-in-depth
+    // contract worth pinning. Cover the four most-trafficked
+    // non-armed event types so an over-broad regex strip cannot
+    // pass by accident.
+    for (const type of ["iteration_start", "iteration_end", "pause", "resume", "complete", "abort", "stagnation"]) {
+        const line = formatEventLine({
+            type,
+            ts: 0,
+            runId: "r-1",
+            iteration: 1,
+            maxIterations: 5,
+            // Stray minIterations field — must NOT render on non-armed events.
+            minIterations: 2,
+        });
+        assert.doesNotMatch(line, /\bmin=/,
+            `non-armed event (type=${type}) must NOT render min=N even when the event carries minIterations`);
+    }
+    // Sanity check the inverse — armed event with minIterations DOES render.
+    const armed = formatEventLine({
+        type: "armed",
+        ts: 0,
+        runId: "r-1",
+        maxIterations: 5,
+        minIterations: 2,
+    });
+    assert.match(armed, /\bmin=2\b/, "armed event with minIterations must render min=N");
+});

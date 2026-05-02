@@ -6727,3 +6727,24 @@ test("classifyPorcelainLine: unknown status codes fall through to modified (defe
     // U is the unmerged marker; bucket lands in "modified" today.
     assert.deepEqual(classifyPorcelainLine("UU conflict.js"), { kind: "modified", path: "conflict.js" });
 });
+
+test("README pins the corrected durationMs semantics (active runtime, not raw wall-clock)", () => {
+    // Iter 52 changed durationMs to subtract paused time from wall-
+    // clock; iter 56 fixed the README which still claimed "time from
+    // arming". This test prevents the prose from regressing back to
+    // the old (wrong) wording without anyone noticing — a "simplify
+    // the limitations bullets" PR would otherwise be silently lossy.
+    const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf8");
+    // Inline comment on the result-shape example.
+    assert.match(readme, /durationMs: 12345,\s*\/\/ active runtime/);
+    // The full bullet under "Limitations" / Tips section. Use a
+    // cross-line regex so wrapping is tolerated.
+    assert.match(readme, /Iteration timing is loop-arm-relative and pause-deducted/);
+    assert.match(readme, /active time[\s\S]*wall-clock from arming minus `total_paused_ms`/);
+    // Concrete example numbers from the bullet — these illustrate the
+    // contract better than abstract description; pin them too.
+    assert.match(readme, /paused for an hour[\s\S]*five minutes[\s\S]*5 min/);
+    // Negative pin: the old "measure time from arming, not per-turn
+    // latency" wording is gone (it's drift now).
+    assert.doesNotMatch(readme, /the final `durationMs` measure time from arming, not per-turn latency/);
+});

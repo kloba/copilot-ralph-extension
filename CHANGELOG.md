@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Documentation
+- Fix README drift introduced by the iter-52
+  `durationMs` change. The "Limitations" bullet
+  used to claim `durationMs` measures "time
+  from arming, not per-turn latency" — true
+  before the paused-time-deduction fix, wrong
+  after. Now: "active time — wall-clock from
+  arming minus `total_paused_ms`", with a
+  concrete example (paused 60 min + ran 5 min →
+  `durationMs ≈ 5 min`, not `≈ 65 min`). The
+  result-shape example also gains an inline
+  `// active runtime — wall-clock from arming
+  MINUS total paused time (issue #3)` comment
+  on the `durationMs` line so a reader scanning
+  the JSON shape doesn't misread it as raw
+  elapsed. A drift-guard test pins both the new
+  wording and the absence of the old wording so
+  a future "simplify the bullets" PR can't
+  regress the page silently.
+
 ### Tests
 - Direct unit tests for `classifyPorcelainLine`
   pin every branch of the git-status porcelain

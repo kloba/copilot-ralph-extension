@@ -506,6 +506,48 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#ralph_status-one-line-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      ralph_status one-line summary
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ralph_status one-line summary">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#active-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      Active loop
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inactive-prior-run-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Inactive — prior run summary
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inactive-first-call-in-a-fresh-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      Inactive — first call in a fresh session
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -641,6 +683,48 @@
   <a href="#context-window-warnings" class="md-nav__link">
     <span class="md-ellipsis">
       Context-window warnings
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ralph_status-one-line-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      ralph_status one-line summary
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ralph_status one-line summary">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#active-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      Active loop
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inactive-prior-run-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Inactive — prior run summary
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inactive-first-call-in-a-fresh-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      Inactive — first call in a fresh session
     </span>
   </a>
   
@@ -838,6 +922,46 @@ gap without losing iteration progress.</p>
 <code>creditUsage</code> thread together, where the rollups live, and which
 exact lines enforce the two contracts — see the
 <a href="../ARCHITECTURE/">Token tracking section in <code>docs/ARCHITECTURE.md</code></a>.</p>
+<h2 id="ralph_status-one-line-summary"><code>ralph_status</code> one-line summary<a class="headerlink" href="#ralph_status-one-line-summary" title="Permanent link">&para;</a></h2>
+<p>Every <code>ralph_status</code> invocation returns a structured snapshot <strong>plus</strong>
+a single-line <code>textResultForLlm</code> summary so a model that reads only
+the prose result still sees the loop's pulse. The shape is fixed and
+intended to be parsed (or grepped) by tooling.</p>
+<h3 id="active-loop">Active loop<a class="headerlink" href="#active-loop" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>{label}: iteration {N}/{M}, elapsed {ms}ms[, tokens {X}/{Y}][ (PAUSED — {reason}, for {ms}ms)]
+</code></pre></div>
+<p>Slot-by-slot:</p>
+<ul>
+<li><code>{label}</code> — the loop's display name (<code>ralph_loop</code>,
+  <code>self_improve</code>, or <code>grow_project</code>).</li>
+<li><code>iteration {N}/{M}</code> — current iteration count vs. the configured
+  <code>max_iterations</code>. <code>N</code> is the number of completed iterations, so
+  <code>0/{M}</code> means the loop is armed but no iteration has fired yet.</li>
+<li><code>elapsed {ms}ms</code> — milliseconds since arm-time, rounded down.
+  Pause time is <strong>included</strong> here (wall-clock); subtract
+  <code>paused_for_ms</code> from the structured snapshot if you need
+  active-only time.</li>
+<li><code>, tokens {X}/{Y}</code> — appears <strong>only when</strong> <code>max_tokens</code> was armed
+  (issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/7">#7</a>).
+  <code>X</code> is the cumulative input+output total credited so far; <code>Y</code> is
+  the configured cap. Loops without a cap omit this segment so
+  consumers do not see a misleading <code>tokens X/null</code>.</li>
+<li><code>(PAUSED — {reason}, for {ms}ms)</code> — appears only when the loop
+  is currently paused. The em-dash + reason are omitted when no
+  reason was provided, leaving <code>(PAUSED, for {ms}ms)</code>.</li>
+</ul>
+<h3 id="inactive-prior-run-summary">Inactive — prior run summary<a class="headerlink" href="#inactive-prior-run-summary" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>no active loop; last {label} {reason} after {N} iterations
+</code></pre></div>
+<p><code>{reason}</code> is one of the canonical finish reasons (<code>completion_promise</code>,
+<code>max_iterations</code>, <code>abort_promise</code>, <code>aborted</code>, <code>stagnation</code>,
+<code>max_tokens</code>, <code>send_error</code>, <code>user_stopped</code>, <code>detached</code>).</p>
+<h3 id="inactive-first-call-in-a-fresh-session">Inactive — first call in a fresh session<a class="headerlink" href="#inactive-first-call-in-a-fresh-session" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>no active loop and no prior run in this session
+</code></pre></div>
+<p>This is the only case where <code>ralph_status</code> returns neither an
+active snapshot nor a <code>last</code> block. It is safe to call from any
+session, including before any loop has been armed.</p>
 
 
 

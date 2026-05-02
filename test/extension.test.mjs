@@ -8775,3 +8775,32 @@ test("install.sh: --dry-run annotates each file with [overwrite] when target dif
         rmSync(sandboxHome, { recursive: true, force: true });
     }
 });
+
+// Iter 107 — `packages/tui/.gitignore` previously excluded
+// `package-lock.json` ("the package is private and the lock would
+// balloon the diff"). Iter 103 then wired up Dependabot for the
+// `/packages/tui` npm ecosystem — but Dependabot REQUIRES a
+// committed lockfile to compute deterministic version bumps for
+// the npm ecosystem, so the dependabot entry was effectively a
+// no-op. Untrack the gitignore exclusion and commit the lockfile
+// so:
+//   1. CI installs from a known-good resolve.
+//   2. Dependabot can open weekly CVE-patch PRs for ink / react /
+//      commander against a stable baseline.
+//   3. Reproducible local installs across contributors.
+// Drift guards (a) the lockfile is present on disk, (b) the
+// .gitignore does NOT exclude `package-lock.json`, (c) the
+// lockfile is at lockfileVersion ≥ 2 (npm ≥ 7) — older formats
+// would defeat dependabot's deterministic resolve.
+test("packages/tui ships a committed package-lock.json (Dependabot prerequisite)", () => {
+    const lockPath = resolve(REPO_ROOT, "packages/tui/package-lock.json");
+    assert.ok(existsSync(lockPath),
+        "packages/tui/package-lock.json must be committed so Dependabot's npm ecosystem entry (iter 103) can open deterministic version-bump PRs and CI installs from a stable resolve");
+    const ignoreText = readFileSync(resolve(REPO_ROOT, "packages/tui/.gitignore"), "utf8");
+    // Match a standalone `package-lock.json` line (not e.g. a `# package-lock.json` comment).
+    assert.doesNotMatch(ignoreText, /^package-lock\.json\s*$/m,
+        "packages/tui/.gitignore must not exclude package-lock.json — iter 103 dependabot config requires a committed lockfile");
+    const lock = JSON.parse(readFileSync(lockPath, "utf8"));
+    assert.ok(typeof lock.lockfileVersion === "number" && lock.lockfileVersion >= 2,
+        `packages/tui/package-lock.json must be lockfileVersion ≥ 2 (npm ≥ 7) for dependabot's deterministic resolve; got ${lock.lockfileVersion}`);
+});

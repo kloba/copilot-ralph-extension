@@ -54,6 +54,18 @@
   `1 character.` and `N characters.`.
 
 ### Internal
+- Untrack the `package-lock.json` exclusion in
+  `packages/tui/.gitignore` and commit the existing 631-line
+  lockfile. Iter 103 wired up Dependabot for the
+  `/packages/tui` npm ecosystem, but Dependabot's npm
+  scheduler REQUIRES a committed lockfile to compute
+  deterministic CVE-patch PRs — without it the entry was
+  effectively a no-op. The original "the lock would balloon
+  the diff" rationale (commit `8b1c202`) no longer holds
+  now that lockfile-driven Dependabot updates ship as
+  Conventional-Commit `chore(deps)` PRs. Drift-guarded so
+  a future re-introduction of the gitignore exclusion (or a
+  `git rm` of the lockfile) surfaces as a test failure.
 - Replace the stub `.github/dependabot.yml` (`package-ecosystem:
   ""` — an invalid ecosystem string Dependabot silently ignored)
   with two real update streams: `github-actions` at repo root so

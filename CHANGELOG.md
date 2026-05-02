@@ -60,6 +60,28 @@
   `IDEATE_NEXT_FEATURE` step. `PROMPT_GROW_PROJECT` is
   unchanged for now (a follow-up issue can collapse the
   two prompts once #49 lands the unified tool surface).
+- Issue #75 — TUI Header gains a dim `☕ awake` pip in the
+  heading row whenever the `autopilot` process is wrapped by
+  `caffeinate -i …`, providing in-TUI confirmation that the
+  documented sleep-prevention wrapper actually took effect for
+  long self-improve runs (no more `ps`-grepping from another
+  terminal). macOS-only — on Linux / Windows the detection
+  short-circuits via `process.platform !== "darwin"` and the
+  pip never renders, so non-darwin users incur zero detection
+  cost. Detection lives in a new `packages/tui/src/caffeinate.mjs`
+  helper that walks `process.ppid` ancestry once at TUI mount
+  time using `ps -o comm= -p <pid>` (synchronous `spawnSync`,
+  bounded to 8 ancestors and a 200ms-per-call timeout) and
+  caches the result for the process lifetime — no periodic
+  polling, no subprocess at render-time. `<Header>` accepts an
+  optional `caffeinateActive` boolean prop; when falsy / absent,
+  the pip is hidden and the heading row layout matches existing
+  snapshot tests. `<App>` forwards the prop through; `run-ui.mjs`
+  and `watch.mjs` call `detectCaffeinate()` once at mount and
+  pass the result down. When both the version pip (#59) and the
+  caffeinate pip render together they sit in a right-aligned
+  cluster with a two-space gutter between them; the version pip
+  stays at the far edge.
 
 - Issue #57 — `ralph-tui watch` Live panel streams the agent's
   output (assistant text, tool calls, tool results) for the

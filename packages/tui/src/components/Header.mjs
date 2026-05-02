@@ -22,6 +22,15 @@
 // version string from `src/version.mjs`. Hidden when the prop is
 // absent so snapshot tests stay deterministic.
 //
+// Issue #75: optional `caffeinateActive` boolean prop renders a dim
+// `☕ awake` pip alongside the version pip when truthy — at-a-glance
+// confirmation that a `caffeinate -i …` wrapper actually took effect
+// for long self-improve runs. Hidden when falsy / absent so snapshot
+// tests stay deterministic and non-darwin renders incur no row
+// reflow. Detection lives in `src/caffeinate.mjs`; the caller
+// (run-ui.mjs / watch.mjs) owns the one-shot `detectCaffeinate()`
+// call at mount time.
+//
 // Pure presentational component. Uses React.createElement directly so
 // the file loads in plain Node ESM (no JSX/TypeScript build step).
 
@@ -101,7 +110,7 @@ function backlogField(value) {
     return value === null || value === undefined ? "?" : String(value);
 }
 
-export default function Header({ snapshot, now, appVersion }) {
+export default function Header({ snapshot, now, appVersion, caffeinateActive }) {
     const status = snapshot?.status ?? "idle";
     const label = snapshot?.label ?? "(unknown)";
     const runId = snapshot?.runId ?? "(no run)";
@@ -248,14 +257,37 @@ export default function Header({ snapshot, now, appVersion }) {
     // empty prop ⇒ no pip, and the row collapses to a single
     // bold-underline "Run" text node (existing behaviour for
     // pre-issue-59 callers + snapshot tests).
+    //
+    // Issue #75: when `caffeinateActive` is truthy, a dim `☕ awake`
+    // pip joins the right side of the heading row, sitting to the
+    // left of the version pip (so the version stays anchored at the
+    // far right). Both pips are independent — either, both, or
+    // neither can render. When neither is present, the heading
+    // collapses to the original single-text layout for snapshot-
+    // test determinism.
     const versionPip = (typeof appVersion === "string" && appVersion.length > 0)
         ? h(Text, { dimColor: true }, "v" + appVersion)
         : null;
+    const caffeinatePip = caffeinateActive
+        ? h(Text, { dimColor: true }, "☕ awake")
+        : null;
     const headingText = h(Text, { bold: true, underline: true }, "Run");
-    const heading = versionPip
-        ? h(Box, { flexDirection: "row", justifyContent: "space-between" },
-            headingText, versionPip)
-        : headingText;
+    let heading;
+    if (caffeinatePip || versionPip) {
+        // Right-side pip cluster — caffeinate first, version last
+        // so the version stays at the far edge (its established
+        // position from issue #59). A two-space gutter separates
+        // the pips when both render so they don't visually merge.
+        const rightCluster = h(Box, { flexDirection: "row" },
+            caffeinatePip,
+            (caffeinatePip && versionPip) ? h(Text, null, "  ") : null,
+            versionPip,
+        );
+        heading = h(Box, { flexDirection: "row", justifyContent: "space-between" },
+            headingText, rightCluster);
+    } else {
+        heading = headingText;
+    }
 
     return h(Box, {
         borderStyle: "round",

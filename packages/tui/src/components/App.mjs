@@ -70,6 +70,13 @@ function deriveTaskKey(snapshot) {
  *        row (issue #59). Snapshot tests + pre-issue-59 callers omit
  *        the prop, in which case the pip is hidden and the heading
  *        row stays single-text (existing layout).
+ * @param {boolean} [props.caffeinateActive] Optional flag set by the
+ *        caller (run-ui.mjs / watch.mjs) when `detectCaffeinate()`
+ *        returns true at mount time. Forwarded to <Header> so it
+ *        renders a dim `☕ awake` pip in the heading row (issue #75).
+ *        Snapshot tests + non-darwin callers omit / pass false; the
+ *        pip then stays hidden and the heading row layout is
+ *        unchanged.
  * @param {(reason: string) => void} [props.onUserAbort] Optional
  *        callback fired when the user requests to abort via Ctrl-C
  *        or `q`. When provided (issue #48 slice 8 — `ralph-tui run`
@@ -79,7 +86,7 @@ function deriveTaskKey(snapshot) {
  *        TUI tears down. Read-only callers (`ralph-tui watch`)
  *        omit it; the App still exits but no driver action occurs.
  */
-export default function App({ eventStream, events: initial = [], runId, appVersion, onUserAbort }) {
+export default function App({ eventStream, events: initial = [], runId, appVersion, caffeinateActive, onUserAbort }) {
     const [events, setEvents] = useState(initial);
     // `now` is read by <Header> to render the live elapsed clock. We
     // only tick it in live mode (eventStream present) so static-mode
@@ -225,7 +232,7 @@ export default function App({ eventStream, events: initial = [], runId, appVersi
     }, [sessionId]);
 
     return h(Box, { flexDirection: "column" },
-        h(Header, { snapshot, now: isLive ? now : undefined, appVersion }),
+        h(Header, { snapshot, now: isLive ? now : undefined, appVersion, caffeinateActive }),
         h(StagesRow, { snapshot }),
         h(TasksPane, { snapshot }),
         h(SubstagesPane, { snapshot }),

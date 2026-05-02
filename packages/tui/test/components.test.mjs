@@ -348,6 +348,84 @@ test("App: forwards appVersion prop through to Header pip", { skip }, () => {
     assert.match(out, /v9\.8\.7/);
 });
 
+// ─── caffeinateActive pip rendering (issue #75) ──────────────────
+// The Header's heading row renders a dim `☕ awake` pip alongside
+// the version pip when the `caffeinateActive` prop is truthy. Hidden
+// otherwise so non-darwin renders + snapshot tests stay deterministic
+// and the row layout doesn't reflow.
+
+test("Header: renders caffeinate pip when caffeinateActive is true", { skip }, () => {
+    const snapshot = {
+        status: "running",
+        label: "self_improve",
+        runId: "self_improve-1",
+        iteration: 0,
+        maxIterations: 10,
+        tokens: { input: 0, output: 0 },
+    };
+    const out = render(React.createElement(Header, {
+        snapshot, caffeinateActive: true,
+    })).lastFrame();
+    assert.match(out, /awake/);
+});
+
+test("Header: hides caffeinate pip when caffeinateActive is false", { skip }, () => {
+    const snapshot = {
+        status: "running",
+        label: "self_improve",
+        runId: "self_improve-2",
+        iteration: 0,
+        maxIterations: 10,
+        tokens: { input: 0, output: 0 },
+    };
+    const out = render(React.createElement(Header, {
+        snapshot, caffeinateActive: false,
+    })).lastFrame();
+    assert.doesNotMatch(out, /awake/);
+});
+
+test("Header: hides caffeinate pip when caffeinateActive is omitted", { skip }, () => {
+    const snapshot = {
+        status: "idle",
+        label: "ralph_loop",
+        runId: "ralph_loop-3",
+        iteration: 0,
+        maxIterations: 10,
+        tokens: { input: 0, output: 0 },
+    };
+    const out = render(React.createElement(Header, { snapshot })).lastFrame();
+    assert.doesNotMatch(out, /awake/);
+});
+
+test("Header: renders both caffeinate and version pips together", { skip }, () => {
+    // When both pips are active, both must render — the heading row
+    // becomes a flex row with the cluster pinned to the right edge.
+    const snapshot = {
+        status: "running",
+        label: "self_improve",
+        runId: "self_improve-4",
+        iteration: 1,
+        maxIterations: 10,
+        tokens: { input: 0, output: 0 },
+    };
+    const out = render(React.createElement(Header, {
+        snapshot, appVersion: "1.2.3", caffeinateActive: true,
+    })).lastFrame();
+    assert.match(out, /awake/);
+    assert.match(out, /v1\.2\.3/);
+    assert.match(out, /Run/);
+});
+
+test("App: forwards caffeinateActive prop through to Header pip", { skip }, () => {
+    const events = [
+        { type: "armed", runId: "r1", at: 1, label: "ralph_loop", maxIterations: 10 },
+    ];
+    const out = render(React.createElement(App, {
+        events, runId: "r1", caffeinateActive: true,
+    })).lastFrame();
+    assert.match(out, /awake/);
+});
+
 test("Controls hint row shows live indicator when status is running", { skip }, () => {
     const out = render(React.createElement(Controls, { status: "running" })).lastFrame();
     assert.match(out, /quit/);

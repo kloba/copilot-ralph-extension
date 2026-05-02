@@ -77,6 +77,20 @@
   either value is caught at test time.
 
 ### Fixes
+- Removed three install artifacts that were accidentally
+  swept into the repo via `git add -A` in iter 149's first
+  commit (1f4f509): `.github/extensions/ralph/events-emit.mjs`,
+  `.github/extensions/ralph/extension.mjs`,
+  `.github/extensions/ralph/handler.mjs`. These are produced
+  when `install.sh --project` runs from inside this repo (the
+  script writes a working copy under `.github/extensions/ralph/`
+  so tools that auto-load extensions from that path see the
+  repo's own extension while a contributor dogfoods).
+  Committing the working copy creates a SECOND source of
+  truth that would drift from `extension/` on every iter.
+  Added `.github/extensions/ralph/` to `.gitignore` so the
+  next contributor running `./install.sh --project` from
+  inside this repo cannot trip the same wire.
 - `packages/tui/src/writer.mjs`'s `createEventWriter` now
   rejects path-traversal runIds (`"../escape"`, `"a/b"`,
   `"a\\b"`, `"."`, `".."`, `"with\0null"`) with the same

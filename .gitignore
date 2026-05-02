@@ -26,3 +26,12 @@ coverage/
 # the entire generated site into a `git add -A`, polluting the
 # repo with rebuilt artefacts on every commit.
 site/
+
+
+# Output of `./install.sh --project` from inside this repo.
+# The script writes a working copy of the extension under
+# `.github/extensions/ralph/` (so tools that load extensions from
+# `.github/extensions/<name>/` see this repo's own extension while
+# you dogfood), but committing that working copy creates a second
+# source of truth that drifts from `extension/` on every iter.
+.github/extensions/ralph/

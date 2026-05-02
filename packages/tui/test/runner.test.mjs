@@ -632,6 +632,16 @@ test("runRalphTui: emits armed → iteration_start → iteration_end → termina
         env: makeEnv(),
         spawn,
         eventEmitter,
+        // Issue #66 — disable per-iter worktree mode so this skeleton
+        // pin stays focused on the iteration-lifecycle contract. With
+        // `worktree: true` (the self-improve default) the runner's
+        // default `gitExec` would shell out to real `git worktree add`
+        // and emit a `worktree_created` event before `iteration_start`
+        // — clean-state CI passes, but a contributor with a leftover
+        // branch from a prior run sees the worktree add fail silently
+        // and the skeleton match through luck. Opt out so the test is
+        // env-stable.
+        worktree: false,
     });
     // The skeleton sequence is armed → iteration_start →
     // (any number of usage_update for live tokens / excerpt

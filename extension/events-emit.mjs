@@ -8,8 +8,8 @@
 // The TUI only consumes whatever lines do land on disk.
 
 import { homedir } from "node:os";
-import { mkdirSync, appendFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, appendFileSync, readFileSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
 
 // Hard cap on a single serialized event line. Excerpts/tokens are
 // truncated to fit so a runaway prompt can't blow up the JSONL file.
@@ -27,23 +27,86 @@ const MAX_EVENT_LINE_BYTES = 16 * 1024;
 // and asserts they agree.
 const MAX_EXCERPT_CHARS = 500;
 
-/** Resolve the runs root, honoring $RALPH_EVENTS_DIR.
+// Print a one-line stderr deprecation notice the FIRST time a given
+// migration trigger fires, then drop a sentinel line under
+// ~/.copilot/autopilot/ so subsequent runs (in this or any later
+// process) stay silent. The sentinel file accumulates one line per
+// distinct `key`, so an environment that hits both the legacy env
+// var and the legacy default path eventually quiets both. Best-
+// effort: every fs/stderr call is try/caught so a read-only home
+// (CI cache, sandbox, etc.) cannot crash the loop.
+function emitDeprecationOnce({ key, message, sentinelPath, fs, stderr }) {
+    try {
+        const content = fs.readFileSync(sentinelPath, "utf8");
+        if (content.split("\n").some((l) => l === key)) return;
+    } catch { /* sentinel missing or unreadable */ }
+    try {
+        stderr.write(message);
+        fs.mkdirSync(dirname(sentinelPath), { recursive: true });
+        fs.appendFileSync(sentinelPath, key + "\n");
+    } catch { /* best-effort */ }
+}
+
+/** Resolve the runs root, preferring $AUTOPILOT_EVENTS_DIR, falling back to
+ *  $RALPH_EVENTS_DIR (deprecated), then to the new default
+ *  ~/.copilot/autopilot/events. If the new default doesn't exist but the old
+ *  ~/.copilot/ralph/runs does, returns the old path with a one-time stderr
+ *  deprecation notice (sentinel-gated under ~/.copilot/autopilot/).
  *
- * The env-var path is `.trim()`-ed before being returned: shells routinely
- * leak trailing whitespace into env vars (heredoc redirects, copy-pasted
- * lines, `RALPH_EVENTS_DIR="$HOME/runs "` from a Makefile), and a path with
- * stray leading/trailing spaces would silently create a runs root with
- * literal spaces in its name — surprising the user and breaking the matching
- * `ralph-tui list` glob. Trimming makes the override robust to that
- * common-shell-papercut without affecting any legitimate use case (paths
- * with intentional surrounding whitespace are essentially never real).
+ * The env-var path is `.trim()`-ed before being returned (same reasoning
+ * as before: trailing whitespace from shell heredocs, Makefile vars, etc.).
  */
-export function resolveRunsRoot(env = process.env) {
-    const override = env?.RALPH_EVENTS_DIR;
-    if (override && typeof override === "string" && override.trim()) {
-        return override.trim();
+export function resolveRunsRoot({
+    env = process.env,
+    os: osArg = { homedir },
+    path: pathArg = { join, dirname },
+    fs: fsArg = { readFileSync, appendFileSync, mkdirSync, existsSync },
+    stderr: stderrArg = process.stderr,
+    sentinelPath: sentinelPathArg,
+} = {}) {
+    const home = osArg.homedir();
+    const pJoin = pathArg.join ?? join;
+    const sentinelPath = sentinelPathArg ?? pJoin(home, ".copilot", "autopilot", ".migration-notice-shown");
+
+    // Primary: $AUTOPILOT_EVENTS_DIR
+    const newOverride = env?.AUTOPILOT_EVENTS_DIR;
+    if (typeof newOverride === "string" && newOverride.trim()) return newOverride.trim();
+
+    // Legacy fallback: $RALPH_EVENTS_DIR (deprecated)
+    const legacyOverride = env?.RALPH_EVENTS_DIR;
+    if (typeof legacyOverride === "string" && legacyOverride.trim()) {
+        emitDeprecationOnce({
+            key: "env:RALPH_EVENTS_DIR",
+            message: "[autopilot] note: env $RALPH_EVENTS_DIR is deprecated, please use $AUTOPILOT_EVENTS_DIR (still honored)\n",
+            sentinelPath,
+            fs: fsArg,
+            stderr: stderrArg,
+        });
+        return legacyOverride.trim();
     }
-    return join(homedir(), ".copilot", "ralph", "runs");
+
+    // Default paths
+    const newDefault = pJoin(home, ".copilot", "autopilot", "events");
+    const oldDefault = pJoin(home, ".copilot", "ralph", "runs");
+
+    // If new default doesn't exist but old does, fall back with a notice
+    let newExists = false;
+    let oldExists = false;
+    try { newExists = fsArg.existsSync(newDefault); } catch { /* swallow */ }
+    try { oldExists = fsArg.existsSync(oldDefault); } catch { /* swallow */ }
+
+    if (!newExists && oldExists) {
+        emitDeprecationOnce({
+            key: `path:${oldDefault}`,
+            message: `[autopilot] note: reading from legacy ~/.copilot/ralph/runs (default is now ~/.copilot/autopilot/events)\n`,
+            sentinelPath,
+            fs: fsArg,
+            stderr: stderrArg,
+        });
+        return oldDefault;
+    }
+
+    return newDefault;
 }
 
 /** `${label}-${startedAt}` — stable, sortable, file-system safe.
@@ -120,7 +183,7 @@ function serialize(ev) {
 export function createEventEmitter({ label, startedAt, env, fs } = {}) {
     const _mkdir = fs?.mkdirSync ?? mkdirSync;
     const _append = fs?.appendFileSync ?? appendFileSync;
-    const root = resolveRunsRoot(env ?? process.env);
+    const root = resolveRunsRoot({ env: env ?? process.env });
     const runId = makeRunId(label, startedAt);
     const dir = join(root, runId);
     const eventsPath = join(dir, "events.jsonl");

@@ -24,17 +24,83 @@ import osDefault from "node:os";
 
 import { MAX_EVENT_LINE_BYTES, makeRunId, serializeEvent } from "./events.mjs";
 
+// Print a one-line stderr deprecation notice the FIRST time a given
+// migration trigger fires, then drop a sentinel line under
+// ~/.copilot/autopilot/ so subsequent runs (in this or any later
+// process) stay silent. Mirror of the helper in
+// extension/events-emit.mjs — the two surfaces resolve from the same
+// sentinel so a single legacy default-path read silences both.
+function emitDeprecationOnce({ key, message, sentinelPath, fs, stderr }) {
+    try {
+        const content = fs.readFileSync(sentinelPath, "utf8");
+        if (content.split("\n").some((l) => l === key)) return;
+    } catch { /* sentinel missing or unreadable */ }
+    try {
+        stderr.write(message);
+        fs.mkdirSync(pathDefault.dirname(sentinelPath), { recursive: true });
+        fs.appendFileSync(sentinelPath, key + "\n");
+    } catch { /* best-effort */ }
+}
+
 /**
- * Resolve the on-disk root for ralph TUI run metadata.
+ * Resolve the on-disk root for autopilot TUI run metadata.
  *
- *   $RALPH_EVENTS_DIR if set (absolute path expected; surfaced verbatim
+ *   $AUTOPILOT_EVENTS_DIR if set (absolute path expected; surfaced verbatim
  *   so users can pin a tmp dir in CI).
- *   else `${HOME}/.copilot/ralph/runs`.
+ *   else $RALPH_EVENTS_DIR if set (deprecated; one-time stderr notice).
+ *   else `${HOME}/.copilot/autopilot/events` (new default).
+ *   If new default doesn't exist but `${HOME}/.copilot/ralph/runs` does,
+ *   falls back to the old path with a deprecation notice.
  */
-export function resolveRunsRoot({ env = process.env, os = osDefault, path = pathDefault } = {}) {
-    const override = env.RALPH_EVENTS_DIR;
-    if (typeof override === "string" && override.length > 0) return override;
-    return path.join(os.homedir(), ".copilot", "ralph", "runs");
+export function resolveRunsRoot({
+    env = process.env,
+    os = osDefault,
+    path = pathDefault,
+    fs = fsDefault,
+    stderr = process.stderr,
+    sentinelPath: sentinelPathArg,
+} = {}) {
+    const home = os.homedir();
+    const sentinelPath = sentinelPathArg ?? path.join(home, ".copilot", "autopilot", ".migration-notice-shown");
+
+    // Primary: $AUTOPILOT_EVENTS_DIR
+    const newOverride = env.AUTOPILOT_EVENTS_DIR;
+    if (typeof newOverride === "string" && newOverride.length > 0) return newOverride;
+
+    // Legacy fallback: $RALPH_EVENTS_DIR (deprecated)
+    const legacyOverride = env.RALPH_EVENTS_DIR;
+    if (typeof legacyOverride === "string" && legacyOverride.length > 0) {
+        emitDeprecationOnce({
+            key: "env:RALPH_EVENTS_DIR",
+            message: "[autopilot] note: env $RALPH_EVENTS_DIR is deprecated, please use $AUTOPILOT_EVENTS_DIR (still honored)\n",
+            sentinelPath,
+            fs,
+            stderr,
+        });
+        return legacyOverride;
+    }
+
+    // Default paths
+    const newDefault = path.join(home, ".copilot", "autopilot", "events");
+    const oldDefault = path.join(home, ".copilot", "ralph", "runs");
+
+    let newExists = false;
+    let oldExists = false;
+    try { newExists = fs.existsSync(newDefault); } catch { /* swallow */ }
+    try { oldExists = fs.existsSync(oldDefault); } catch { /* swallow */ }
+
+    if (!newExists && oldExists) {
+        emitDeprecationOnce({
+            key: `path:${oldDefault}`,
+            message: `[autopilot] note: reading from legacy ~/.copilot/ralph/runs (default is now ~/.copilot/autopilot/events)\n`,
+            sentinelPath,
+            fs,
+            stderr,
+        });
+        return oldDefault;
+    }
+
+    return newDefault;
 }
 
 /**

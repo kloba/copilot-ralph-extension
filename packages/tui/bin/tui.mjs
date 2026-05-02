@@ -106,11 +106,14 @@ OPTIONS
   --version, -V  Print the ralph-tui package version and exit.
 
 ENV
-  RALPH_EVENTS_DIR  Override the runs root (default ~/.copilot/ralph/runs).
-  RALPH_TUI_RUNS_DIR  Override the run-state root used by
-                    \`ralph-tui run\` (default ~/.copilot/ralph-tui/runs).
-  RALPH_TUI_COPILOT_BIN  Override the \`copilot\` executable used by
+  AUTOPILOT_EVENTS_DIR  Override the runs root (default ~/.copilot/autopilot/events).
+                    Legacy: RALPH_EVENTS_DIR still honored (deprecated).
+  AUTOPILOT_RUNS_DIR  Override the run-state root used by
+                    \`ralph-tui run\` (default ~/.copilot/autopilot/runs).
+                    Legacy: RALPH_TUI_RUNS_DIR still honored (deprecated).
+  AUTOPILOT_COPILOT_BIN  Override the \`copilot\` executable used by
                     \`ralph-tui run\` (default \`copilot\` on $PATH).
+                    Legacy: RALPH_TUI_COPILOT_BIN still honored (deprecated).
 `;
 
 /** Minimal argv parser. Returns { cmd, positional[], flags{} }.
@@ -461,7 +464,7 @@ export function cmdDoctor() {
     if (!healthy) {
         process.stderr.write(
             `ralph-tui doctor: critical problem detected (root=${root}). `
-            + `Check filesystem permissions and RALPH_EVENTS_DIR.\n`,
+            + `Check filesystem permissions and AUTOPILOT_EVENTS_DIR.\n`,
         );
         return 1;
     }

@@ -202,30 +202,33 @@ const VERB_BY_REASON = Object.freeze({
 
 
 // Issue #1: every loop-driven commit ships TWO Co-authored-by trailers
-// (Copilot agent + copilot-ralph bot account, with RALPH_NO_ATTRIBUTION=1
-// suppressing the second). Bake the canonical trailer literals here so a
-// future edit to either prompt that drops the bot-account trailer or
-// inverts the order fails at module-load time, not at the next CI run.
-// The order-pin (Copilot first, copilot-ralph second) matters because
-// GitHub's commit UI surfaces the first co-author more prominently.
+// (Copilot agent + copilot-ralph bot account, with AUTOPILOT_NO_ATTRIBUTION=1
+// — or legacy RALPH_NO_ATTRIBUTION=1 — suppressing the second). Bake the
+// canonical trailer literals here so a future edit to either prompt that
+// drops the bot-account trailer or inverts the order fails at module-load
+// time, not at the next CI run. The order-pin (Copilot first, copilot-ralph
+// second) matters because GitHub's commit UI surfaces the first co-author
+// more prominently.
 //
 // Companion surfaces that must stay in lockstep with these literals:
 //   - README.md "Commit attribution" section (canonical user-facing
 //     disclosure, including the public-repo-only searchability caveat,
-//     the RALPH_NO_ATTRIBUTION=1 opt-out, and the order-of-trailers
-//     example block — pinned by the README test in
+//     the AUTOPILOT_NO_ATTRIBUTION=1 / RALPH_NO_ATTRIBUTION=1 opt-out, and
+//     the order-of-trailers example block — pinned by the README test in
 //     test/extension.test.mjs).
 //   - Both PROMPT_SELF_IMPROVE and PROMPT_GROW_PROJECT bodies (the
 //     load-time loop below validates both contain the literals in the
-//     correct order and document the opt-out env var).
+//     correct order and document both opt-out env vars).
 //   - The __test__ exports (BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER,
-//     BAKED_ATTRIBUTION_OPT_OUT) used by the canonical-source pin test.
+//     BAKED_ATTRIBUTION_OPT_OUT, BAKED_ATTRIBUTION_OPT_OUT_PRIMARY) used
+//     by the canonical-source pin test.
 // Renaming any of these literals (e.g. registering the bot under a
 // different login, swapping the noreply domain) requires updating
 // every surface above.
 const BAKED_COPILOT_TRAILER = "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>";
 const BAKED_RALPH_TRAILER = "Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>";
 const BAKED_ATTRIBUTION_OPT_OUT = "RALPH_NO_ATTRIBUTION=1";
+const BAKED_ATTRIBUTION_OPT_OUT_PRIMARY = "AUTOPILOT_NO_ATTRIBUTION=1";
 
 // Issue #1 (ap_loop parity): unlike self_improve / grow_project which
 // embed the COMMIT stage in their full baked SDLC prompt, ap_loop takes
@@ -242,7 +245,7 @@ const BAKED_RALPH_LOOP_RIDER = `---
 CONTROLLER REQUIREMENT — commit attribution: if this iteration produces any git commit, append BOTH Co-authored-by trailers in this exact order at the end of the commit message (separated from the body by a blank line):
   ${BAKED_COPILOT_TRAILER}
   ${BAKED_RALPH_TRAILER}
-The second trailer attributes loop-driven commits to the dedicated copilot-ralph bot account so they are passively searchable across public GitHub. If the environment variable ${BAKED_ATTRIBUTION_OPT_OUT} is set, omit ONLY the second copilot-ralph trailer; the first Copilot trailer always ships. If this iteration creates no commit, ignore this requirement.`;
+The second trailer attributes loop-driven commits to the dedicated copilot-ralph bot account so they are passively searchable across public GitHub. If the environment variable ${BAKED_ATTRIBUTION_OPT_OUT_PRIMARY} (or legacy ${BAKED_ATTRIBUTION_OPT_OUT}) is set, omit ONLY the second copilot-ralph trailer; the first Copilot trailer always ships. If this iteration creates no commit, ignore this requirement.`;
 
 for (const [label, prompt] of [
     ["PROMPT_SELF_IMPROVE", PROMPT_SELF_IMPROVE],
@@ -259,6 +262,11 @@ for (const [label, prompt] of [
     if (!prompt.includes(BAKED_ATTRIBUTION_OPT_OUT)) {
         throw new Error(
             `handler.mjs: ${label} must document the "${BAKED_ATTRIBUTION_OPT_OUT}" opt-out env var alongside the dual Co-authored-by trailers. Issue #1 attribution invariant.`,
+        );
+    }
+    if (!prompt.includes(BAKED_ATTRIBUTION_OPT_OUT_PRIMARY)) {
+        throw new Error(
+            `handler.mjs: ${label} must document the "${BAKED_ATTRIBUTION_OPT_OUT_PRIMARY}" opt-out env var alongside the dual Co-authored-by trailers. Issue #1 attribution invariant.`,
         );
     }
 }
@@ -1843,7 +1851,7 @@ export function createRalphController(opts = {}) {
         {
             name: "ap_loop",
             description:
-                `Run an autonomous iterative loop. The tool returns immediately after arming the loop; iterations are driven by reacting to each session.idle (root-agent agentic-loop completion) and re-injecting the prompt as a new user message. Each iteration is a real conversation turn — context is retained, and progress is visible inline. Use ap_stop to cancel an active loop. Tip: instruct the agent in the prompt to emit the completion_promise (default '${DEFAULTS.completion_promise}') when finished, otherwise the loop only stops at max_iterations. Only one loop runs per session; returns failure if a ap_loop, self_improve, or grow_project loop is already active. Note: the user-supplied prompt is augmented at arm time with a small commit-attribution rider that adds dual Co-authored-by trailers (Copilot + copilot-ralph) to any git commit produced during the loop; set RALPH_NO_ATTRIBUTION=1 in the environment to suppress the second trailer.`,
+                `Run an autonomous iterative loop. The tool returns immediately after arming the loop; iterations are driven by reacting to each session.idle (root-agent agentic-loop completion) and re-injecting the prompt as a new user message. Each iteration is a real conversation turn — context is retained, and progress is visible inline. Use ap_stop to cancel an active loop. Tip: instruct the agent in the prompt to emit the completion_promise (default '${DEFAULTS.completion_promise}') when finished, otherwise the loop only stops at max_iterations. Only one loop runs per session; returns failure if a ap_loop, self_improve, or grow_project loop is already active. Note: the user-supplied prompt is augmented at arm time with a small commit-attribution rider that adds dual Co-authored-by trailers (Copilot + copilot-ralph) to any git commit produced during the loop; set AUTOPILOT_NO_ATTRIBUTION=1 (or legacy RALPH_NO_ATTRIBUTION=1) in the environment to suppress the second trailer.`,
             parameters: {
                 type: "object",
                 properties: {
@@ -2426,4 +2434,4 @@ export function createRalphController(opts = {}) {
     };
 }
 
-export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, classifyPorcelainLine, parseUserReason, coerceNumberField, VERSION, compareSemver, VERB_BY_REASON, isCaffeinateEnabled, resolveCaffeinateScope, caffeinateFlagsForScope, describeArgType, displayValue, pauseElapsedFromAt };
+export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_ATTRIBUTION_OPT_OUT_PRIMARY, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, classifyPorcelainLine, parseUserReason, coerceNumberField, VERSION, compareSemver, VERB_BY_REASON, isCaffeinateEnabled, resolveCaffeinateScope, caffeinateFlagsForScope, describeArgType, displayValue, pauseElapsedFromAt };

@@ -15,7 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, chmodSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,6 +25,7 @@ import {
     reduceCopilotEvents,
     resolveStateRoot,
     resolveStatePath,
+    resolveCopilotBin,
     readState,
     updateState,
     pauseRun,
@@ -52,9 +53,43 @@ function tmp() {
 
 function makeEnv(extra = {}) {
     return {
-        RALPH_TUI_RUNS_DIR: extra.RALPH_TUI_RUNS_DIR ?? tmp(),
-        RALPH_EVENTS_DIR: extra.RALPH_EVENTS_DIR ?? tmp(),
+        AUTOPILOT_RUNS_DIR: extra.AUTOPILOT_RUNS_DIR ?? tmp(),
+        AUTOPILOT_EVENTS_DIR: extra.AUTOPILOT_EVENTS_DIR ?? tmp(),
         ...extra,
+    };
+}
+
+// Stage 3 (issue #49): resolveStateRoot / resolveCopilotBin now perform
+// sentinel-gated stderr deprecation notices when legacy
+// $RALPH_TUI_RUNS_DIR / $RALPH_TUI_COPILOT_BIN are used. Tests inject
+// a fake fs (no sentinel, accepts mkdir/append silently) and a fake
+// stderr (captures into messages[]). The sentinelPath points at a fake
+// location so deprecation writes never touch the real ~/.copilot.
+function makeFakeFs({ sentinel = "", existingPaths = new Set() } = {}) {
+    let written = "";
+    const fake = {
+        readFileSync: (p) => {
+            if (p === fake._sentinelPath) return sentinel + written;
+            const e = new Error("ENOENT");
+            e.code = "ENOENT";
+            throw e;
+        },
+        appendFileSync: (p, data) => {
+            if (p === fake._sentinelPath) written += data;
+        },
+        mkdirSync: () => {},
+        existsSync: (p) => existingPaths.has(p),
+    };
+    fake._sentinelPath = "/fake/sentinel";
+    fake.writtenSentinel = () => written;
+    return fake;
+}
+
+function makeFakeStderr() {
+    const messages = [];
+    return {
+        write: (m) => { messages.push(String(m)); },
+        messages,
     };
 }
 
@@ -192,17 +227,115 @@ test("reduceCopilotEvents: premiumRequests is null when result is missing or mal
 
 // ───────────── State root + path ─────────────
 
-test("resolveStateRoot: honors $RALPH_TUI_RUNS_DIR", () => {
-    assert.equal(resolveStateRoot({ RALPH_TUI_RUNS_DIR: "/tmp/whatever" }), "/tmp/whatever");
+test("resolveStateRoot: honors $AUTOPILOT_RUNS_DIR (primary)", () => {
+    assert.equal(resolveStateRoot({ env: { AUTOPILOT_RUNS_DIR: "/tmp/whatever" } }), "/tmp/whatever");
 });
 
-test("resolveStateRoot: defaults under ~/.copilot/ralph-tui/runs", () => {
-    const r = resolveStateRoot({});
-    assert.match(r, /\.copilot\/ralph-tui\/runs$/);
+test("resolveStateRoot: honors $RALPH_TUI_RUNS_DIR (legacy, with notice)", () => {
+    const fs = makeFakeFs();
+    const stderr = makeFakeStderr();
+    assert.equal(
+        resolveStateRoot({ env: { RALPH_TUI_RUNS_DIR: "/tmp/x" }, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        "/tmp/x",
+    );
+    assert.equal(stderr.messages.length, 1);
+    assert.match(stderr.messages[0], /RALPH_TUI_RUNS_DIR is deprecated/);
+});
+
+test("resolveStateRoot: defaults under ~/.copilot/autopilot/runs", () => {
+    const fs = makeFakeFs();
+    const stderr = makeFakeStderr();
+    const r = resolveStateRoot({ env: {}, fs, stderr, sentinelPath: "/fake/sentinel" });
+    assert.match(r, /\.copilot\/autopilot\/runs$/);
+    assert.equal(stderr.messages.length, 0);
+});
+
+test("resolveStateRoot: AUTOPILOT primary wins over RALPH_TUI legacy (no notice)", () => {
+    const fs = makeFakeFs();
+    const stderr = makeFakeStderr();
+    assert.equal(
+        resolveStateRoot({
+            env: { AUTOPILOT_RUNS_DIR: "/ap", RALPH_TUI_RUNS_DIR: "/legacy" },
+            fs, stderr, sentinelPath: "/fake/sentinel",
+        }),
+        "/ap",
+    );
+    assert.equal(stderr.messages.length, 0);
+});
+
+test("resolveStateRoot: legacy default path is honoured with deprecation notice", () => {
+    const legacyDefault = join(homedir(), ".copilot", "ralph-tui", "runs");
+    const fs = makeFakeFs({ existingPaths: new Set([legacyDefault]) });
+    const stderr = makeFakeStderr();
+    assert.equal(
+        resolveStateRoot({ env: {}, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        legacyDefault,
+    );
+    assert.equal(stderr.messages.length, 1);
+    assert.match(stderr.messages[0], /reading from legacy/);
+});
+
+test("resolveStateRoot: when both default paths exist, primary wins (no notice)", () => {
+    const newDefault = join(homedir(), ".copilot", "autopilot", "runs");
+    const oldDefault = join(homedir(), ".copilot", "ralph-tui", "runs");
+    const fs = makeFakeFs({ existingPaths: new Set([newDefault, oldDefault]) });
+    const stderr = makeFakeStderr();
+    assert.equal(
+        resolveStateRoot({ env: {}, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        newDefault,
+    );
+    assert.equal(stderr.messages.length, 0);
+});
+
+test("resolveStateRoot: deprecation notice is one-shot per process (sentinel-gated)", () => {
+    const fs = makeFakeFs();
+    const stderr = makeFakeStderr();
+    const sentinelPath = "/fake/sentinel";
+    resolveStateRoot({ env: { RALPH_TUI_RUNS_DIR: "/x" }, fs, stderr, sentinelPath });
+    resolveStateRoot({ env: { RALPH_TUI_RUNS_DIR: "/x" }, fs, stderr, sentinelPath });
+    resolveStateRoot({ env: { RALPH_TUI_RUNS_DIR: "/x" }, fs, stderr, sentinelPath });
+    assert.equal(stderr.messages.length, 1);
+    assert.match(fs.writtenSentinel(), /RALPH_TUI_RUNS_DIR/);
+});
+
+test("resolveStateRoot: pre-existing sentinel suppresses the notice", () => {
+    const fs = makeFakeFs({ sentinel: "env:RALPH_TUI_RUNS_DIR\n" });
+    const stderr = makeFakeStderr();
+    assert.equal(
+        resolveStateRoot({ env: { RALPH_TUI_RUNS_DIR: "/tmp/x" }, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        "/tmp/x",
+    );
+    assert.equal(stderr.messages.length, 0);
+});
+
+// resolveCopilotBin (issue #49) — same DI shape as resolveStateRoot
+test("resolveCopilotBin: defaults to 'copilot'", () => {
+    assert.equal(resolveCopilotBin({ env: {} }), "copilot");
+});
+
+test("resolveCopilotBin: honours $AUTOPILOT_COPILOT_BIN (primary, no notice)", () => {
+    const fs = makeFakeFs();
+    const stderr = makeFakeStderr();
+    assert.equal(
+        resolveCopilotBin({ env: { AUTOPILOT_COPILOT_BIN: "/usr/local/bin/copilot" }, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        "/usr/local/bin/copilot",
+    );
+    assert.equal(stderr.messages.length, 0);
+});
+
+test("resolveCopilotBin: honours $RALPH_TUI_COPILOT_BIN (legacy, with notice)", () => {
+    const fs = makeFakeFs();
+    const stderr = makeFakeStderr();
+    assert.equal(
+        resolveCopilotBin({ env: { RALPH_TUI_COPILOT_BIN: "/usr/local/bin/copilot-old" }, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        "/usr/local/bin/copilot-old",
+    );
+    assert.equal(stderr.messages.length, 1);
+    assert.match(stderr.messages[0], /RALPH_TUI_COPILOT_BIN is deprecated/);
 });
 
 test("resolveStatePath: joins root + runId + state.json", () => {
-    const env = { RALPH_TUI_RUNS_DIR: "/tmp/r" };
+    const env = { AUTOPILOT_RUNS_DIR: "/tmp/r" };
     assert.equal(resolveStatePath("foo-1", env), "/tmp/r/foo-1/state.json");
 });
 
@@ -210,20 +343,20 @@ test("resolveStatePath: joins root + runId + state.json", () => {
 
 test("updateState: throws TypeError when state.json missing", () => {
     const dir = tmp();
-    const env = { RALPH_TUI_RUNS_DIR: dir };
+    const env = { AUTOPILOT_RUNS_DIR: dir };
     assert.throws(() => updateState("nonexistent", (s) => s, env), TypeError);
     rmSync(dir, { recursive: true, force: true });
 });
 
 test("readState: returns null when state.json missing", () => {
     const dir = tmp();
-    assert.equal(readState("nope", { RALPH_TUI_RUNS_DIR: dir }), null);
+    assert.equal(readState("nope", { AUTOPILOT_RUNS_DIR: dir }), null);
     rmSync(dir, { recursive: true, force: true });
 });
 
 test("pauseRun → resumeRun: idempotent + accumulates totalPausedMs", () => {
     const dir = tmp();
-    const env = { RALPH_TUI_RUNS_DIR: dir };
+    const env = { AUTOPILOT_RUNS_DIR: dir };
     // Seed a state file directly.
     const runId = "test-1";
     mkdirSync(join(dir, runId), { recursive: true });
@@ -259,7 +392,7 @@ test("pauseRun → resumeRun: idempotent + accumulates totalPausedMs", () => {
 
 test("stopRun: sets stopRequested + stopReason, idempotent on terminated runs", () => {
     const dir = tmp();
-    const env = { RALPH_TUI_RUNS_DIR: dir };
+    const env = { AUTOPILOT_RUNS_DIR: dir };
     const runId = "test-2";
     mkdirSync(join(dir, runId), { recursive: true });
     writeFileSync(join(dir, runId, "state.json"),
@@ -278,13 +411,13 @@ test("stopRun: sets stopRequested + stopReason, idempotent on terminated runs", 
 
 test("statusRun: throws TypeError on missing", () => {
     const dir = tmp();
-    assert.throws(() => statusRun("missing", { env: { RALPH_TUI_RUNS_DIR: dir } }), TypeError);
+    assert.throws(() => statusRun("missing", { env: { AUTOPILOT_RUNS_DIR: dir } }), TypeError);
     rmSync(dir, { recursive: true, force: true });
 });
 
 test("updateState: increments version monotonically under sequential writes", () => {
     const dir = tmp();
-    const env = { RALPH_TUI_RUNS_DIR: dir };
+    const env = { AUTOPILOT_RUNS_DIR: dir };
     const runId = "v";
     mkdirSync(join(dir, runId), { recursive: true });
     writeFileSync(join(dir, runId, "state.json"), JSON.stringify({ version: 1, runId, n: 0 }));

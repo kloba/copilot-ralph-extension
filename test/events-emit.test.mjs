@@ -16,23 +16,162 @@ import {
     createEventEmitter,
 } from "../extension/events-emit.mjs";
 
-test("resolveRunsRoot: defaults to $HOME/.copilot/ralph/runs", () => {
-    assert.equal(resolveRunsRoot({}), join(homedir(), ".copilot", "ralph", "runs"));
+// Stage 3 (issue #49): resolveRunsRoot now performs sentinel-gated
+// stderr deprecation notices when legacy $RALPH_EVENTS_DIR or the
+// legacy ~/.copilot/ralph/runs default path is used. Tests that don't
+// care about the notice path inject a fake fs (which has no sentinel
+// and accepts mkdir/append silently) and a fake stderr (capturing
+// writes into an array we can inspect). The sentinelPath is pointed
+// at a fake location too so a deprecation write never touches the
+// real ~/.copilot dir.
+function makeFakeFs({ sentinel = "", existingPaths = new Set() } = {}) {
+    let written = "";
+    const fs = {
+        readFileSync: (p) => {
+            if (p === fs._sentinelPath) return sentinel + written;
+            const e = new Error("ENOENT");
+            e.code = "ENOENT";
+            throw e;
+        },
+        appendFileSync: (p, data) => {
+            if (p === fs._sentinelPath) written += data;
+        },
+        mkdirSync: () => {},
+        existsSync: (p) => existingPaths.has(p),
+    };
+    fs._sentinelPath = "/fake/sentinel";
+    fs.writtenSentinel = () => written;
+    return fs;
+}
+
+function makeFakeStderr() {
+    const messages = [];
+    return {
+        write: (m) => { messages.push(String(m)); },
+        messages,
+    };
+}
+
+test("resolveRunsRoot: defaults to $HOME/.copilot/autopilot/events", () => {
+    const fs = makeFakeFs();
+    const stderr = makeFakeStderr();
+    assert.equal(
+        resolveRunsRoot({ env: {}, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        join(homedir(), ".copilot", "autopilot", "events"),
+    );
+    assert.equal(stderr.messages.length, 0, "no notice when env is empty + neither default exists");
 });
 
-test("resolveRunsRoot: honours RALPH_EVENTS_DIR override", () => {
-    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "/tmp/ralph" }), "/tmp/ralph");
+test("resolveRunsRoot: honours RALPH_EVENTS_DIR override (legacy, with notice)", () => {
+    const fs = makeFakeFs();
+    const stderr = makeFakeStderr();
+    assert.equal(
+        resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "/tmp/ralph" }, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        "/tmp/ralph",
+    );
+    assert.equal(stderr.messages.length, 1, "legacy env override emits one notice");
+    assert.match(stderr.messages[0], /RALPH_EVENTS_DIR is deprecated/);
 });
 
 test("resolveRunsRoot: ignores empty / whitespace override and falls back to default", () => {
-    const def = join(homedir(), ".copilot", "ralph", "runs");
-    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "" }), def);
-    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "   " }), def);
+    const fs = makeFakeFs();
+    const stderr = makeFakeStderr();
+    const def = join(homedir(), ".copilot", "autopilot", "events");
+    assert.equal(
+        resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "" }, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        def,
+    );
+    assert.equal(
+        resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "   " }, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        def,
+    );
 });
 
-test("resolveRunsRoot: tolerates missing env arg", () => {
-    // Should not throw even when env is undefined; falls back to homedir-based default.
-    assert.match(resolveRunsRoot(undefined), /\.copilot[/\\]ralph[/\\]runs$/);
+test("resolveRunsRoot: tolerates missing arg bag (env defaults to process.env)", () => {
+    // Should not throw even when called with no args; falls back to
+    // homedir-based default. Real fs/stderr are used; we only assert
+    // the path shape since real env state is not under our control.
+    assert.match(resolveRunsRoot(), /\.copilot[/\\](autopilot[/\\]events|ralph[/\\]runs)$/);
+});
+
+test("resolveRunsRoot: AUTOPILOT_EVENTS_DIR is preferred over RALPH_EVENTS_DIR", () => {
+    const fs = makeFakeFs();
+    const stderr = makeFakeStderr();
+    assert.equal(
+        resolveRunsRoot({
+            env: { AUTOPILOT_EVENTS_DIR: "/tmp/ap", RALPH_EVENTS_DIR: "/tmp/legacy" },
+            fs, stderr, sentinelPath: "/fake/sentinel",
+        }),
+        "/tmp/ap",
+    );
+    assert.equal(stderr.messages.length, 0, "primary env wins, no notice");
+});
+
+test("resolveRunsRoot: AUTOPILOT_EVENTS_DIR alone emits no notice", () => {
+    const fs = makeFakeFs();
+    const stderr = makeFakeStderr();
+    assert.equal(
+        resolveRunsRoot({
+            env: { AUTOPILOT_EVENTS_DIR: "/tmp/ap" },
+            fs, stderr, sentinelPath: "/fake/sentinel",
+        }),
+        "/tmp/ap",
+    );
+    assert.equal(stderr.messages.length, 0);
+});
+
+test("resolveRunsRoot: legacy default path is honoured with deprecation notice", () => {
+    // When AUTOPILOT_EVENTS_DIR is unset and the legacy default
+    // ~/.copilot/ralph/runs already exists on disk, fall back to it
+    // (preserves user data) while emitting a one-shot deprecation
+    // notice.
+    const legacyDefault = join(homedir(), ".copilot", "ralph", "runs");
+    const fs = makeFakeFs({ existingPaths: new Set([legacyDefault]) });
+    const stderr = makeFakeStderr();
+    assert.equal(
+        resolveRunsRoot({ env: {}, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        legacyDefault,
+    );
+    assert.equal(stderr.messages.length, 1);
+    assert.match(stderr.messages[0], /reading from legacy ~\/\.copilot\/ralph\/runs/);
+});
+
+test("resolveRunsRoot: when both default paths exist, primary wins (no notice)", () => {
+    const apDefault = join(homedir(), ".copilot", "autopilot", "events");
+    const legacyDefault = join(homedir(), ".copilot", "ralph", "runs");
+    const fs = makeFakeFs({ existingPaths: new Set([apDefault, legacyDefault]) });
+    const stderr = makeFakeStderr();
+    assert.equal(
+        resolveRunsRoot({ env: {}, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        apDefault,
+    );
+    assert.equal(stderr.messages.length, 0);
+});
+
+test("resolveRunsRoot: deprecation notice is one-shot per process (sentinel-gated)", () => {
+    // After the first notice, the sentinel file records which key was
+    // emitted; subsequent calls with the same trigger stay quiet.
+    const fs = makeFakeFs();
+    const stderr = makeFakeStderr();
+    const sentinelPath = "/fake/sentinel";
+    resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "/x" }, fs, stderr, sentinelPath });
+    resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "/x" }, fs, stderr, sentinelPath });
+    resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "/x" }, fs, stderr, sentinelPath });
+    assert.equal(stderr.messages.length, 1, "only the first call writes a notice");
+    assert.match(fs.writtenSentinel(), /RALPH_EVENTS_DIR/);
+});
+
+test("resolveRunsRoot: pre-existing sentinel suppresses the notice", () => {
+    const fs = makeFakeFs({ sentinel: "env:RALPH_EVENTS_DIR\n" });
+    const stderr = makeFakeStderr();
+    assert.equal(
+        resolveRunsRoot({
+            env: { RALPH_EVENTS_DIR: "/tmp/x" },
+            fs, stderr, sentinelPath: "/fake/sentinel",
+        }),
+        "/tmp/x",
+    );
+    assert.equal(stderr.messages.length, 0, "sentinel already records this key");
 });
 
 test("makeRunId: composes ${label}-${startedAt}", () => {
@@ -302,12 +441,18 @@ test("createEventEmitter: BigInt / circular ref events are dropped, not thrown",
 // resolve time so a future regression cannot reintroduce that
 // papercut.
 test("resolveRunsRoot: trims surrounding whitespace from RALPH_EVENTS_DIR override", () => {
-    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "  /tmp/ralph-runs  " }), "/tmp/ralph-runs");
-    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "/tmp/ralph-runs\n" }), "/tmp/ralph-runs");
-    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "\t/tmp/ralph-runs" }), "/tmp/ralph-runs");
+    const sentinelPath = "/fake/sentinel";
+    const mk = () => ({ fs: makeFakeFs(), stderr: makeFakeStderr() });
+    let { fs, stderr } = mk();
+    assert.equal(resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "  /tmp/ralph-runs  " }, fs, stderr, sentinelPath }), "/tmp/ralph-runs");
+    ({ fs, stderr } = mk());
+    assert.equal(resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "/tmp/ralph-runs\n" }, fs, stderr, sentinelPath }), "/tmp/ralph-runs");
+    ({ fs, stderr } = mk());
+    assert.equal(resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "\t/tmp/ralph-runs" }, fs, stderr, sentinelPath }), "/tmp/ralph-runs");
     // Internal whitespace (paths with literal spaces, like macOS volumes)
     // is preserved — only the SURROUNDING whitespace is stripped.
-    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "  /Volumes/My Drive/runs  " }), "/Volumes/My Drive/runs");
+    ({ fs, stderr } = mk());
+    assert.equal(resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "  /Volumes/My Drive/runs  " }, fs, stderr, sentinelPath }), "/Volumes/My Drive/runs");
 });
 
 // Iter 115 — clipExcerpt's slice boundary must not split a UTF-16

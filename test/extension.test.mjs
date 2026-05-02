@@ -7683,32 +7683,79 @@ test("docs/concepts.md documents the token-tracking model (issues #7 + iters 67/
 // PR cannot silently regress the loop's resilience.
 import { makeRunId, resolveRunsRoot } from "../extension/events-emit.mjs";
 
-test("events-emit resolveRunsRoot: respects $RALPH_EVENTS_DIR override", () => {
-    const r = resolveRunsRoot({ RALPH_EVENTS_DIR: "/tmp/ralph-test-runs" });
+// Stage 3 (issue #49): resolveRunsRoot now performs sentinel-gated
+// stderr deprecation notices when legacy $RALPH_EVENTS_DIR or the
+// legacy ~/.copilot/ralph/runs default path is used. These tests
+// inject a fake fs (no sentinel, accepts mkdir/append silently) and
+// a fake stderr (capturing into messages[]). The sentinelPath
+// points at a fake location so deprecation writes never touch the
+// real ~/.copilot.
+function makeFakeFsForEmit({ sentinel = "", existingPaths = new Set() } = {}) {
+    let written = "";
+    const fake = {
+        readFileSync: (p) => {
+            if (p === fake._sentinelPath) return sentinel + written;
+            const e = new Error("ENOENT");
+            e.code = "ENOENT";
+            throw e;
+        },
+        appendFileSync: (p, data) => {
+            if (p === fake._sentinelPath) written += data;
+        },
+        mkdirSync: () => {},
+        existsSync: (p) => existingPaths.has(p),
+    };
+    fake._sentinelPath = "/fake/sentinel";
+    return fake;
+}
+
+function makeFakeStderrForEmit() {
+    const messages = [];
+    return { write: (m) => { messages.push(String(m)); }, messages };
+}
+
+test("events-emit resolveRunsRoot: respects $AUTOPILOT_EVENTS_DIR override", () => {
+    const r = resolveRunsRoot({ env: { AUTOPILOT_EVENTS_DIR: "/tmp/ap-events" } });
+    assert.equal(r, "/tmp/ap-events");
+});
+
+test("events-emit resolveRunsRoot: respects $RALPH_EVENTS_DIR (legacy, with notice)", () => {
+    const fs = makeFakeFsForEmit();
+    const stderr = makeFakeStderrForEmit();
+    const r = resolveRunsRoot({
+        env: { RALPH_EVENTS_DIR: "/tmp/ralph-test-runs" },
+        fs, stderr, sentinelPath: "/fake/sentinel",
+    });
     assert.equal(r, "/tmp/ralph-test-runs");
+    assert.equal(stderr.messages.length, 1);
+    assert.match(stderr.messages[0], /RALPH_EVENTS_DIR is deprecated/);
 });
 
 test("events-emit resolveRunsRoot: falls back when env override is empty / whitespace / missing", () => {
-    // Default: ~/.copilot/ralph/runs — assert the segment shape so the
+    // Default: ~/.copilot/autopilot/events — assert the segment shape so the
     // test stays platform-portable across CI runners + dev machines.
-    const fallbackPattern = /\.copilot[\\/]ralph[\\/]runs$/;
-    assert.match(resolveRunsRoot({}), fallbackPattern,
+    const fallbackPattern = /\.copilot[\\/]autopilot[\\/]events$/;
+    const mk = () => ({ fs: makeFakeFsForEmit(), stderr: makeFakeStderrForEmit(), sentinelPath: "/fake/sentinel" });
+    assert.match(resolveRunsRoot({ env: {}, ...mk() }), fallbackPattern,
         "missing override → default fallback");
-    assert.match(resolveRunsRoot({ RALPH_EVENTS_DIR: "" }), fallbackPattern,
+    assert.match(resolveRunsRoot({ env: { AUTOPILOT_EVENTS_DIR: "" }, ...mk() }), fallbackPattern,
         "empty-string override → default fallback (not literal empty path)");
-    assert.match(resolveRunsRoot({ RALPH_EVENTS_DIR: "   " }), fallbackPattern,
+    assert.match(resolveRunsRoot({ env: { AUTOPILOT_EVENTS_DIR: "   " }, ...mk() }), fallbackPattern,
         "whitespace-only override → default fallback (trim() rejects it)");
-    assert.match(resolveRunsRoot(undefined), fallbackPattern,
+    // No env-bag at all → defaults to process.env. Real fs/stderr are
+    // used here; we only assert the path shape (autopilot or legacy).
+    assert.match(resolveRunsRoot(undefined), /\.copilot[\\/](autopilot[\\/]events|ralph[\\/]runs)$/,
         "undefined env arg → default fallback (env arg defaults to process.env)");
 });
 
 test("events-emit resolveRunsRoot: ignores non-string env override types", () => {
     // Defensive: a programmer error that injects non-string into
-    // RALPH_EVENTS_DIR should not crash makeRunId / createEventEmitter.
-    const fallbackPattern = /\.copilot[\\/]ralph[\\/]runs$/;
-    assert.match(resolveRunsRoot({ RALPH_EVENTS_DIR: 12345 }), fallbackPattern,
+    // AUTOPILOT_EVENTS_DIR should not crash makeRunId / createEventEmitter.
+    const fallbackPattern = /\.copilot[\\/]autopilot[\\/]events$/;
+    const mk = () => ({ fs: makeFakeFsForEmit(), stderr: makeFakeStderrForEmit(), sentinelPath: "/fake/sentinel" });
+    assert.match(resolveRunsRoot({ env: { AUTOPILOT_EVENTS_DIR: 12345 }, ...mk() }), fallbackPattern,
         "numeric override rejected → default fallback");
-    assert.match(resolveRunsRoot({ RALPH_EVENTS_DIR: null }), fallbackPattern,
+    assert.match(resolveRunsRoot({ env: { AUTOPILOT_EVENTS_DIR: null }, ...mk() }), fallbackPattern,
         "null override rejected → default fallback");
 });
 

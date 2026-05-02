@@ -38,8 +38,8 @@
 
 import { spawn as nodeSpawn, spawnSync as nodeSpawnSync } from "node:child_process";
 import { homedir } from "node:os";
-import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, rmSync, appendFileSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import {
@@ -94,18 +94,105 @@ const MAX_LOCK_RETRIES = 200; // 5s worst-case
 
 // ─── State-file CAS ────────────────────────────────────────────────
 
-/** Resolve the state-files root, honoring $RALPH_TUI_RUNS_DIR. */
-export function resolveStateRoot(env = process.env) {
-    const override = env?.RALPH_TUI_RUNS_DIR;
-    if (override && typeof override === "string" && override.trim()) {
-        return override.trim();
+// Print a one-line stderr deprecation notice the FIRST time a given
+// migration trigger fires, then drop a sentinel line under
+// ~/.copilot/autopilot/. Mirror of the helpers in
+// extension/events-emit.mjs and packages/tui/src/writer.mjs — the
+// three surfaces share a sentinel so a user only sees each notice
+// once across all three call sites.
+function emitDeprecationOnce({ key, message, sentinelPath, fs, stderr }) {
+    try {
+        const content = fs.readFileSync(sentinelPath, "utf8");
+        if (content.split("\n").some((l) => l === key)) return;
+    } catch { /* sentinel missing or unreadable */ }
+    try {
+        stderr.write(message);
+        fs.mkdirSync(dirname(sentinelPath), { recursive: true });
+        fs.appendFileSync(sentinelPath, key + "\n");
+    } catch { /* best-effort */ }
+}
+
+/** Resolve the state-files root, preferring $AUTOPILOT_RUNS_DIR, falling back
+ *  to $RALPH_TUI_RUNS_DIR (deprecated), then to ~/.copilot/autopilot/runs. */
+export function resolveStateRoot({
+    env = process.env,
+    fs: fsArg = { readFileSync, existsSync, mkdirSync, appendFileSync },
+    stderr: stderrArg = process.stderr,
+    sentinelPath: sentinelPathArg,
+} = {}) {
+    const sentinelPath = sentinelPathArg ?? join(homedir(), ".copilot", "autopilot", ".migration-notice-shown");
+
+    // Primary: $AUTOPILOT_RUNS_DIR
+    const newOverride = env?.AUTOPILOT_RUNS_DIR;
+    if (typeof newOverride === "string" && newOverride.trim()) return newOverride.trim();
+
+    // Legacy fallback: $RALPH_TUI_RUNS_DIR (deprecated)
+    const legacyOverride = env?.RALPH_TUI_RUNS_DIR;
+    if (typeof legacyOverride === "string" && legacyOverride.trim()) {
+        emitDeprecationOnce({
+            key: "env:RALPH_TUI_RUNS_DIR",
+            message: "[autopilot] note: env $RALPH_TUI_RUNS_DIR is deprecated, please use $AUTOPILOT_RUNS_DIR (still honored)\n",
+            sentinelPath,
+            fs: fsArg,
+            stderr: stderrArg,
+        });
+        return legacyOverride.trim();
     }
-    return join(homedir(), ".copilot", "ralph-tui", "runs");
+
+    // Default paths
+    const newDefault = join(homedir(), ".copilot", "autopilot", "runs");
+    const oldDefault = join(homedir(), ".copilot", "ralph-tui", "runs");
+
+    let newExists = false;
+    let oldExists = false;
+    try { newExists = fsArg.existsSync(newDefault); } catch { /* swallow */ }
+    try { oldExists = fsArg.existsSync(oldDefault); } catch { /* swallow */ }
+
+    if (!newExists && oldExists) {
+        emitDeprecationOnce({
+            key: `path:${oldDefault}`,
+            message: `[autopilot] note: reading from legacy ~/.copilot/ralph-tui/runs (default is now ~/.copilot/autopilot/runs)\n`,
+            sentinelPath,
+            fs: fsArg,
+            stderr: stderrArg,
+        });
+        return oldDefault;
+    }
+
+    return newDefault;
+}
+
+/** Resolve the copilot binary path, preferring $AUTOPILOT_COPILOT_BIN, falling
+ *  back to $RALPH_TUI_COPILOT_BIN (deprecated), then "copilot". */
+export function resolveCopilotBin({
+    env = process.env,
+    fs: fsArg = { readFileSync, existsSync, mkdirSync, appendFileSync },
+    stderr: stderrArg = process.stderr,
+    sentinelPath: sentinelPathArg,
+} = {}) {
+    const sentinelPath = sentinelPathArg ?? join(homedir(), ".copilot", "autopilot", ".migration-notice-shown");
+
+    const newOverride = env?.AUTOPILOT_COPILOT_BIN;
+    if (typeof newOverride === "string" && newOverride.trim()) return newOverride.trim();
+
+    const legacyOverride = env?.RALPH_TUI_COPILOT_BIN;
+    if (typeof legacyOverride === "string" && legacyOverride.trim()) {
+        emitDeprecationOnce({
+            key: "env:RALPH_TUI_COPILOT_BIN",
+            message: "[autopilot] note: env $RALPH_TUI_COPILOT_BIN is deprecated, please use $AUTOPILOT_COPILOT_BIN (still honored)\n",
+            sentinelPath,
+            fs: fsArg,
+            stderr: stderrArg,
+        });
+        return legacyOverride.trim();
+    }
+
+    return "copilot";
 }
 
 /** Path to a run's state.json. */
 export function resolveStatePath(runId, env = process.env) {
-    return join(resolveStateRoot(env), runId, "state.json");
+    return join(resolveStateRoot({ env }), runId, "state.json");
 }
 
 /** Acquire a directory-based lock for the state file, retrying on EEXIST.
@@ -174,7 +261,7 @@ export function updateState(runId, mutator, env = process.env) {
 /** Initial state-file write; creates the run directory.  */
 function initState(runId, initial, env = process.env) {
     const statePath = resolveStatePath(runId, env);
-    const dir = join(resolveStateRoot(env), runId);
+    const dir = join(resolveStateRoot({ env }), runId);
     mkdirSync(dir, { recursive: true });
     const lockPath = acquireLock(statePath);
     try {
@@ -926,7 +1013,7 @@ export function runOneIteration({
     extraArgs = [],
     onLine, // optional callback per parsed event (for live feedback)
 }) {
-    const bin = copilotBin ?? env.RALPH_TUI_COPILOT_BIN ?? "copilot";
+    const bin = copilotBin ?? resolveCopilotBin({ env });
     const args = ["-p", prompt, "--allow-all-tools", "--output-format", "json"];
     if (resumeSessionId) args.push(`--resume=${resumeSessionId}`);
     else if (sessionName) args.push("-n", sessionName);
@@ -1018,7 +1105,8 @@ export function runOneIteration({
  *   abortPromise        Default = abort token of the chosen mode.
  *   spawn               Inject for tests.
  *   copilotBin          Inject for tests. Falls back to
- *                       $RALPH_TUI_COPILOT_BIN, then "copilot".
+ *                       $AUTOPILOT_COPILOT_BIN, then $RALPH_TUI_COPILOT_BIN
+ *                       (legacy), then "copilot".
  *   env, fs, now        Inject for tests.
  *   eventEmitter        Inject for tests; otherwise createEventEmitter
  *                       is invoked.

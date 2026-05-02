@@ -51,6 +51,10 @@ import {
 } from "../../../extension/prompts.mjs";
 
 import { createEventEmitter } from "../../../extension/events-emit.mjs";
+import {
+    SDLC_STAGES_SELF_IMPROVE,
+    SDLC_STAGES_GROW_PROJECT,
+} from "./events.mjs";
 
 // Public re-export so the CLI can build the prompt text without
 // re-importing extension/prompts.mjs (single import surface for the
@@ -257,6 +261,51 @@ function labelForMode(mode) {
     if (mode === "grow-project") return "ralph-tui-grow-project";
     if (mode === "prompt") return "ralph-tui-prompt";
     throw new TypeError(`labelForMode: unknown mode "${mode}"`);
+}
+
+/** Mode → canonical SDLC stage list, or null for `prompt` mode (no
+ *  fixed stage list — the user's custom prompt drives the loop and
+ *  the runner has no way to know which stages it defines). The
+ *  per-mode stage lists are imported from `events.mjs` so a drift
+ *  between the prompt body, the runner parser, and the renderer is
+ *  impossible (parity guards in
+ *  `packages/tui/test/events.test.mjs`). */
+export function stagesForMode(mode) {
+    if (mode === "self-improve") return SDLC_STAGES_SELF_IMPROVE;
+    if (mode === "grow-project") return SDLC_STAGES_GROW_PROJECT;
+    return null;
+}
+
+/** Scan an assistant-response string for `[STAGE: NAME]` markers
+ *  emitted on their own line by the agent (per the STAGE MARKERS
+ *  preamble baked into PROMPT_SELF_IMPROVE / PROMPT_GROW_PROJECT).
+ *
+ *  Returns an ordered array of `{ name, stage, indexInText }`, where
+ *  `stage` is the 1-based ordinal in the canonical stage list. Markers
+ *  whose name is NOT in `allowedStages` are silently dropped — this
+ *  is the safety net for a hallucinated marker (e.g.
+ *  `[STAGE: REVIEW]`) so a typo never poisons the event stream.
+ *
+ *  The match is anchored to a line start (with optional leading
+ *  whitespace) and the line end (with optional trailing whitespace)
+ *  so an inline mention of `[STAGE: ORIENT]` in prose doesn't fire.
+ *  This mirrors the prompt instruction: "emit on a line by itself".
+ *
+ *  Pure / no I/O — exported so the test suite can exercise it
+ *  independently of subprocess plumbing. */
+export function extractStageMarkers(text, allowedStages) {
+    if (typeof text !== "string" || !text) return [];
+    if (!Array.isArray(allowedStages) || allowedStages.length === 0) return [];
+    const allowSet = new Set(allowedStages);
+    const out = [];
+    const re = /^[ \t]*\[STAGE:[ \t]*([A-Z_][A-Z0-9_]*)[ \t]*\][ \t]*$/gm;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+        const name = m[1];
+        if (!allowSet.has(name)) continue;
+        out.push({ name, stage: allowedStages.indexOf(name) + 1, indexInText: m.index });
+    }
+    return out;
 }
 
 /** Default abort token per mode. */
@@ -571,6 +620,54 @@ export async function runRalphTui(opts) {
         if (contextMode === "continue" && iter === 1 && reduced.sessionId) {
             capturedSessionId = reduced.sessionId;
             updateState(runId, (s) => { s.sessionId = capturedSessionId; return s; }, env);
+        }
+
+        // Issue #48 slice 4: parse `[STAGE: NAME]` markers from the
+        // agent's response and emit stage_start / stage_end events
+        // BEFORE iteration_end so the renderer's per-iter stage row
+        // and the event log both attribute stages to the correct
+        // iteration. Markers outside the canonical stage list (a
+        // typo or hallucination) are silently dropped by
+        // extractStageMarkers — emitting an unknown stage would
+        // confuse the renderer.
+        const allowedStages = stagesForMode(mode);
+        if (allowedStages) {
+            const markers = extractStageMarkers(reduced.assistantContent, allowedStages);
+            let activeMarker = null;
+            for (const mk of markers) {
+                if (activeMarker) {
+                    emitter.write({
+                        type: "stage_end",
+                        ts: now(),
+                        runId,
+                        label,
+                        iteration: iter,
+                        stage: activeMarker.stage,
+                        stageName: activeMarker.name,
+                    });
+                }
+                emitter.write({
+                    type: "stage_start",
+                    ts: now(),
+                    runId,
+                    label,
+                    iteration: iter,
+                    stage: mk.stage,
+                    stageName: mk.name,
+                });
+                activeMarker = mk;
+            }
+            if (activeMarker) {
+                emitter.write({
+                    type: "stage_end",
+                    ts: now(),
+                    runId,
+                    label,
+                    iteration: iter,
+                    stage: activeMarker.stage,
+                    stageName: activeMarker.name,
+                });
+            }
         }
 
         const excerpt = lastAssistantContent.slice(0, 500);

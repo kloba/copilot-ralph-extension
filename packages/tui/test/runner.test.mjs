@@ -613,3 +613,177 @@ test("runRalphTui: emits abort (NOT 'aborted') for early-terminate", async () =>
     const last = events[events.length - 1];
     assert.equal(last.type, "abort", "terminal event must be 'abort' not 'aborted'");
 });
+
+// ─── Issue #48 slice 4: stage marker parser + runner integration ─────
+
+import { extractStageMarkers, stagesForMode } from "../src/runner.mjs";
+import { SDLC_STAGES_SELF_IMPROVE, SDLC_STAGES_GROW_PROJECT } from "../src/events.mjs";
+
+test("stagesForMode: maps modes to canonical lists", () => {
+    assert.equal(stagesForMode("self-improve"), SDLC_STAGES_SELF_IMPROVE);
+    assert.equal(stagesForMode("grow-project"), SDLC_STAGES_GROW_PROJECT);
+    assert.equal(stagesForMode("prompt"), null,
+        "prompt mode has no canonical stage list — the user supplies the prompt");
+    assert.equal(stagesForMode("future-mode"), null);
+});
+
+test("extractStageMarkers: empty / non-string input returns []", () => {
+    assert.deepEqual(extractStageMarkers("", SDLC_STAGES_SELF_IMPROVE), []);
+    assert.deepEqual(extractStageMarkers(null, SDLC_STAGES_SELF_IMPROVE), []);
+    assert.deepEqual(extractStageMarkers(undefined, SDLC_STAGES_SELF_IMPROVE), []);
+    assert.deepEqual(extractStageMarkers(123, SDLC_STAGES_SELF_IMPROVE), []);
+});
+
+test("extractStageMarkers: empty / missing allowedStages returns []", () => {
+    assert.deepEqual(extractStageMarkers("[STAGE: ORIENT]\n", []), []);
+    assert.deepEqual(extractStageMarkers("[STAGE: ORIENT]\n", null), []);
+    assert.deepEqual(extractStageMarkers("[STAGE: ORIENT]\n", undefined), []);
+});
+
+test("extractStageMarkers: anchored markers return name + 1-based stage ordinal", () => {
+    const text = "preamble\n[STAGE: ORIENT]\nlooked at the tree\n[STAGE: IDEATE]\nthought about it\n";
+    const got = extractStageMarkers(text, SDLC_STAGES_SELF_IMPROVE);
+    assert.equal(got.length, 2);
+    assert.equal(got[0].name, "ORIENT");
+    assert.equal(got[0].stage, 1, "ORIENT is the 1st stage in SDLC_STAGES_SELF_IMPROVE");
+    assert.equal(got[1].name, "IDEATE");
+    assert.equal(got[1].stage, 2);
+});
+
+test("extractStageMarkers: silently drops markers whose name is not in allowedStages", () => {
+    // A hallucinated marker (typo or invented stage) must NOT poison
+    // the stream. Emitting an unknown stage would confuse the
+    // renderer; the safety net is to drop it at parse time.
+    const text = "[STAGE: ORIENT]\n[STAGE: REVIEW]\n[STAGE: IDEATE]\n";
+    const got = extractStageMarkers(text, SDLC_STAGES_SELF_IMPROVE);
+    assert.equal(got.length, 2, "REVIEW is not a self-improve stage; it must be dropped");
+    assert.deepEqual(got.map((m) => m.name), ["ORIENT", "IDEATE"]);
+});
+
+test("extractStageMarkers: only matches markers on a line by themselves (anchor enforcement)", () => {
+    // The prompt instructs the agent to emit the marker on a line by
+    // itself. An inline mention of `[STAGE: ORIENT]` in narrative
+    // prose must NOT fire — otherwise the agent describing what it
+    // already did ("after [STAGE: ORIENT] I looked at …") would
+    // double-emit a stage marker.
+    const text = "After completing [STAGE: ORIENT] earlier, I started the next phase.\n";
+    assert.deepEqual(extractStageMarkers(text, SDLC_STAGES_SELF_IMPROVE), []);
+});
+
+test("extractStageMarkers: tolerates leading/trailing whitespace on the marker line", () => {
+    // A stray space or tab on either side must not break the match —
+    // the agent's terminal renderer or copy-paste might insert one.
+    const text = "  [STAGE: ORIENT]   \n\t[STAGE: IDEATE]\t\n";
+    const got = extractStageMarkers(text, SDLC_STAGES_SELF_IMPROVE);
+    assert.equal(got.length, 2);
+    assert.deepEqual(got.map((m) => m.name), ["ORIENT", "IDEATE"]);
+});
+
+test("extractStageMarkers: handles every grow_project stage, including SELECT and CLOSE", () => {
+    const text = SDLC_STAGES_GROW_PROJECT.map((s) => `[STAGE: ${s}]`).join("\n") + "\n";
+    const got = extractStageMarkers(text, SDLC_STAGES_GROW_PROJECT);
+    assert.equal(got.length, SDLC_STAGES_GROW_PROJECT.length);
+    assert.deepEqual(got.map((m) => m.name), [...SDLC_STAGES_GROW_PROJECT]);
+    assert.deepEqual(got.map((m) => m.stage), SDLC_STAGES_GROW_PROJECT.map((_, i) => i + 1));
+});
+
+test("runRalphTui: parses [STAGE: NAME] markers from agent stdout and emits stage_start/stage_end pairs in order", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "stage-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    // Agent emits two stage markers then COMPLETE.
+    const stdout = [
+        JSON.stringify({ type: "assistant.message", data: { content: "[STAGE: ORIENT]\nlooked at tree\n[STAGE: IDEATE]\npicked target\nCOMPLETE" } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    // Filter to stage events; must be: start ORIENT, end ORIENT,
+    // start IDEATE, end IDEATE — emitted between iteration_start and
+    // iteration_end of iter 1.
+    const stageEvents = events.filter((e) => e.type === "stage_start" || e.type === "stage_end");
+    assert.equal(stageEvents.length, 4, `expected 4 stage events (start/end x2); got ${stageEvents.length}`);
+    assert.deepEqual(stageEvents.map((e) => `${e.type}:${e.stageName}`),
+        ["stage_start:ORIENT", "stage_end:ORIENT", "stage_start:IDEATE", "stage_end:IDEATE"]);
+    // Every stage event must carry the iteration number for fold().
+    for (const ev of stageEvents) {
+        assert.equal(ev.iteration, 1);
+        assert.ok(Number.isInteger(ev.stage), "stage ordinal must be integer");
+    }
+    // Stage events must sit between iteration_start and iteration_end.
+    const iterStartIdx = events.findIndex((e) => e.type === "iteration_start");
+    const iterEndIdx = events.findIndex((e) => e.type === "iteration_end");
+    const firstStageIdx = events.findIndex((e) => e.type === "stage_start");
+    const lastStageIdx = events.map((e) => e.type).lastIndexOf("stage_end");
+    assert.ok(iterStartIdx < firstStageIdx, "stage events must come AFTER iteration_start");
+    assert.ok(lastStageIdx < iterEndIdx, "stage events must come BEFORE iteration_end so the iter scope is right");
+});
+
+test("runRalphTui: hallucinated [STAGE: REVIEW] marker is silently dropped (no event emitted)", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "stage-bad",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const stdout = [
+        JSON.stringify({ type: "assistant.message", data: { content: "[STAGE: REVIEW]\nmade up\n[STAGE: ORIENT]\nreal\nCOMPLETE" } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    const stageEvents = events.filter((e) => e.type === "stage_start" || e.type === "stage_end");
+    // Only ORIENT (canonical) survives.
+    assert.equal(stageEvents.length, 2);
+    assert.deepEqual(stageEvents.map((e) => `${e.type}:${e.stageName}`),
+        ["stage_start:ORIENT", "stage_end:ORIENT"]);
+});
+
+test("runRalphTui: --prompt mode emits no stage events (no canonical stage list)", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "stage-prompt",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const stdout = [
+        // Even if the user's prompt instructs the agent to emit stage
+        // markers, the runner has no canonical list to validate them
+        // against — so no events are emitted. (A future extension could
+        // accept a `--stages a,b,c` flag for prompt mode.)
+        JSON.stringify({ type: "assistant.message", data: { content: "[STAGE: STEP_ONE]\n[STAGE: STEP_TWO]\nCOMPLETE" } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    await runRalphTui({
+        mode: "prompt",
+        contextMode: "fresh",
+        prompt: "drive the loop yourself",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    const stageEvents = events.filter((e) => e.type === "stage_start" || e.type === "stage_end");
+    assert.equal(stageEvents.length, 0, "prompt mode has no canonical stage list, so no stage events");
+});

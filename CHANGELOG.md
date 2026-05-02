@@ -3,6 +3,19 @@
 ## Unreleased
 
 ### Features
+- `ralph-tui run` now parses `[STAGE: NAME]` markers from the
+  agent's response stream and emits `stage_start` / `stage_end`
+  events for the renderer's per-iter stage row (issue #48 slice
+  4). Markers are validated against the canonical per-mode stage
+  list (`SDLC_STAGES_SELF_IMPROVE` / `SDLC_STAGES_GROW_PROJECT`):
+  a hallucinated marker like `[STAGE: REVIEW]` is silently
+  dropped at parse time so a typo can never poison the event
+  stream. Markers must appear on a line by themselves (anchored
+  match) so an inline mention in narrative prose doesn't fire.
+  `--prompt` mode emits no stage events (no canonical list).
+  New exported helpers: `extractStageMarkers(text, allowedStages)`
+  (pure) and `stagesForMode(mode)`.
+
 - `ralph-tui run --self-improve` no longer caps at 100 iterations
   by default. The default `--max` for `--self-improve` mode is now
   the runaway-guard ceiling (`MAX_ALLOWED_ITERATIONS = 1000`),

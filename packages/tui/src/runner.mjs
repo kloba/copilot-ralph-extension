@@ -36,7 +36,7 @@
 // it to finish naturally before honoring pause/stop. This matches the
 // in-extension contract ("don't kill in-flight iters").
 
-import { spawn as nodeSpawn } from "node:child_process";
+import { spawn as nodeSpawn, spawnSync as nodeSpawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -54,7 +54,13 @@ import { createEventEmitter } from "../../../extension/events-emit.mjs";
 import {
     SDLC_STAGES_SELF_IMPROVE,
     SDLC_STAGES_GROW_PROJECT,
+    PINNED_TAIL_STAGES,
+    WORKITEM_KINDS,
+    TASK_OUTCOMES,
 } from "./events.mjs";
+
+const WORKITEM_KIND_SET = new Set(WORKITEM_KINDS);
+const TASK_OUTCOME_SET = new Set(TASK_OUTCOMES);
 
 // Public re-export so the CLI can build the prompt text without
 // re-importing extension/prompts.mjs (single import surface for the
@@ -308,6 +314,136 @@ export function extractStageMarkers(text, allowedStages) {
     return out;
 }
 
+/** Recognised structured marker keys (issue #48 slice 9). The agent
+ *  emits one of these per line as it walks through its work, with a
+ *  one-line JSON payload between the colon and the closing bracket.
+ *  The runner extracts them, validates the shape, and turns them into
+ *  `stage_plan` / `task_*` / `workitem_*` events.
+ *
+ *  Pinned at module scope so the test suite can introspect the
+ *  supported keys without parsing the prompt body. The set is closed:
+ *  an unrecognised key (typo, hallucinated marker) is silently
+ *  dropped — a typo cannot poison the event stream. */
+export const STRUCTURED_MARKER_KEYS = Object.freeze([
+    "WORKITEM_START",
+    "WORKITEM_END",
+    "STAGE_PLAN",
+    "STAGE_PLAN_AMEND",
+    "TASK_LIST",
+    "TASK_START",
+    "TASK_END",
+]);
+
+const STRUCTURED_MARKER_KEY_SET = new Set(STRUCTURED_MARKER_KEYS);
+
+// Per-line marker shape: `^\s*[KEY: {…}]\s*$`. We split content on
+// `\n` and match line-by-line so a stray `]` inside prose on the
+// same line as a marker can't terminate the regex early — the line
+// boundary is the unambiguous end. Whole-line-only matching is the
+// hard contract: a marker mentioned inline ("the agent emits
+// `[STAGE_PLAN: {…}]` like so") never fires.
+const STRUCTURED_MARKER_LINE_RE = /^[ \t]*\[([A-Z_][A-Z0-9_]*):[ \t]*(\{.*\})[ \t]*\][ \t]*$/;
+
+/** Parse an `assistant.message` content string for the slice-9
+ *  structured markers (`[WORKITEM_START: {…}]`, `[STAGE_PLAN: {…}]`,
+ *  etc). Returns an ordered array of
+ *  `{ key, payload, lineIndex }` items. Items are silently
+ *  dropped when the key is unrecognised, the JSON body fails to
+ *  parse, or the parsed payload is not an object — the runner must
+ *  tolerate marker fumbles without crashing the event stream
+ *  (a malformed marker is the agent's bug, not the runner's).
+ *
+ *  Markers MUST occupy their own line (no prose before/after on the
+ *  same line). Implementation splits on `\n` and matches each line
+ *  separately, which makes the "whole-line-only" contract a hard
+ *  property of the parser instead of a soft hint to the regex.
+ *
+ *  Pure / no I/O — exported so the test suite can pin the parser
+ *  independent of the runner's emit path. */
+export function extractStructuredMarkers(text) {
+    if (typeof text !== "string" || !text) return [];
+    const out = [];
+    const lines = text.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const m = STRUCTURED_MARKER_LINE_RE.exec(line);
+        if (!m) continue;
+        const key = m[1];
+        if (!STRUCTURED_MARKER_KEY_SET.has(key)) continue;
+        let payload;
+        try { payload = JSON.parse(m[2]); }
+        catch { continue; } // malformed JSON — skip silently
+        if (!payload || typeof payload !== "object" || Array.isArray(payload)) continue;
+        out.push({ key, payload, lineIndex: i });
+    }
+    return out;
+}
+
+/** Compute the sequence of `stage_plan_amend` ops needed to transform
+ *  the agent's raw stage plan into the pinned-tail-enforced plan.
+ *  Returns one amendment per discrete change, in the order the
+ *  runner should emit them — applying them in order via foldEvents'
+ *  eager-apply path produces the enforced plan exactly.
+ *
+ *  Why not just emit a "corrected" stage_plan? Because foldEvents
+ *  records the raw plan first and then applies amendments
+ *  incrementally; a renderer that surfaces the amendment history
+ *  (`+ added` badges, "moved to tail" reasons) needs the discrete
+ *  ops, not a final-state diff.
+ *
+ *  Why not just `add: "COMMIT"` etc.? Because the agent may have
+ *  emitted a misplaced pinned stage (e.g. raw =
+ *  `["REPRO","COMMIT","TEST"]`); merely appending COMMIT at the end
+ *  would yield two COMMIT entries. We emit a paired
+ *  `{remove: "COMMIT"}` then `{add: "COMMIT", after: "TEST"}` so
+ *  the resulting plan has each pinned stage exactly once at the tail.
+ *
+ *  Each amendment carries the canonical reason string
+ *  `"pinned-tail-enforcement"` so replay tooling can group them as
+ *  runner-side repairs (vs agent-emitted amendments which carry the
+ *  agent's own reason).
+ *
+ *  Pure / no I/O — exported for testing. */
+export function computePinnedTailAmendments(rawStages, pinnedTail) {
+    if (!Array.isArray(rawStages)) return [];
+    if (!Array.isArray(pinnedTail) || pinnedTail.length === 0) return [];
+    const pinnedSet = new Set(pinnedTail);
+    const out = [];
+    // Step 1: any pinned stage that appears in raw at a non-tail
+    // position needs to be removed first so we don't end up with
+    // duplicates. We treat "appears anywhere except in canonical
+    // tail position" as misplaced; this matches enforcePinnedTail's
+    // strip-and-re-append semantics.
+    const head = rawStages.filter((s) => typeof s === "string" && s && !pinnedSet.has(s));
+    for (const stage of rawStages) {
+        if (typeof stage !== "string" || !stage) continue;
+        if (pinnedSet.has(stage)) {
+            out.push({
+                remove: stage,
+                add: null,
+                after: null,
+                reason: "pinned-tail-enforcement",
+            });
+        }
+    }
+    // Step 2: append each pinned stage in canonical order, anchored
+    // after the previous tail entry (or after the last head entry
+    // for the first pinned stage). The `after:` field gives
+    // foldEvents a stable insertion point so the renderer can show
+    // a clean before/after.
+    let after = head.length > 0 ? head[head.length - 1] : null;
+    for (const pinned of pinnedTail) {
+        out.push({
+            remove: null,
+            add: pinned,
+            after,
+            reason: "pinned-tail-enforcement",
+        });
+        after = pinned;
+    }
+    return out;
+}
+
 /** Parse an ISO-8601 timestamp string to ms since epoch. Returns NaN
  *  on missing / unparseable input so callers can fall back to wall
  *  clock when a synthetic test fixture omits timestamps. */
@@ -352,6 +488,127 @@ export function summarizeToolArgs(verb, args) {
         if (typeof args[k] === "string") return truncate(args[k]);
     }
     return "";
+}
+
+/** Heuristic: does this raw bash command run `git commit` (or
+ *  `gh pr create`, etc — but for now just `git commit`)? Used by the
+ *  runner-side commit_observed detector to decide whether to shell
+ *  out to `git rev-parse + git log` after the substage completes.
+ *
+ *  We accept several common shapes:
+ *    - `git commit -m "msg"`
+ *    - `git commit -F /tmp/x` (subject in file)
+ *    - `git -c user.name=foo commit …` (configured prefix)
+ *    - `cd subdir && git commit …` (chained)
+ *    - leading whitespace, multiline (only the first line that looks
+ *      like a `git commit` invocation matters)
+ *
+ *  We REJECT shapes that aren't actually committing:
+ *    - `git --help commit`
+ *    - `git commit --dry-run` (still produces a commit? technically
+ *      no — `--dry-run` only shows what would happen). We accept
+ *      `--dry-run` as a commit-ish anyway, then the runner-side
+ *      `git rev-parse` will simply re-emit the prior HEAD which we
+ *      dedup against. Conservative is fine.
+ *    - `echo git commit` (a literal string in another command's args)
+ *
+ *  Pure / exported for testing. */
+export function looksLikeGitCommit(command) {
+    if (typeof command !== "string" || !command) return false;
+    // Strip a leading `cd <dir> && ` chain, then strip any
+    // `git -c key=val ` config flags so the bare verb is the first
+    // token we test.
+    for (const line of command.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        // Walk through chain operators. The first token that starts
+        // with `git ` (or `git\t`) and has `commit` as the first
+        // arg-position word counts.
+        for (const segment of trimmed.split(/&&|;|\|\|/)) {
+            const seg = segment.trim();
+            if (!seg) continue;
+            // Skip leading subshell prefixes that don't change the
+            // verb shape: `(`, `cd somewhere`, `env VAR=val`.
+            const m = /^\(?\s*(?:env(?:\s+\S+=\S+)*\s+)?(?:cd\s+\S+\s+&&\s+)?git\b(.*)$/.exec(seg);
+            if (!m) continue;
+            const rest = m[1].trim();
+            // Strip `-c key=val` config flags (one or more).
+            const withoutConfig = rest.replace(/^(?:-c\s+\S+\s+)+/, "").trim();
+            // First word must be `commit` (not `--help`, not
+            // `commit-tree`).
+            if (/^commit(\s|$)/.test(withoutConfig)) return true;
+        }
+    }
+    return false;
+}
+
+/** Default `gitExec` implementation — runs a git subcommand
+ *  synchronously via `child_process.spawnSync` and returns the
+ *  stdout (UTF-8) on success, or `null` on any error / non-zero
+ *  exit. Synchronous because the surrounding live emit loop is
+ *  already synchronous; the cost is bounded (50-100ms per
+ *  invocation) and runs at most once per observed `git commit`.
+ *
+ *  Tests inject their own `gitExec` to stub repo state without
+ *  shelling out — see `runRalphTui({ gitExec, … })`. */
+function defaultGitExec({ args, cwd, env }) {
+    try {
+        const r = nodeSpawnSync("git", args, {
+            cwd,
+            env,
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"],
+        });
+        if (r.status !== 0) return null;
+        return typeof r.stdout === "string" ? r.stdout : null;
+    } catch {
+        return null;
+    }
+}
+
+/** Run `git rev-parse --short HEAD` + `git log -1
+ *  --pretty=…` against `cwd` and return a
+ *  `{ sha, subject, trailers }` triple. Returns `null` when git
+ *  isn't available, the cwd isn't a repo, or HEAD is detached on a
+ *  pre-commit state.
+ *
+ *  Trailers are extracted from the trailers footer (one trailer per
+ *  line, format `Key: value`). Capped at 8 entries (matches the
+ *  events.mjs serializer's per-event trailer cap).
+ *
+ *  Pure-ish: invokes `gitExec` (injectable) to actually shell out;
+ *  exported for testing.
+ *
+ *  @param {object} opts
+ *  @param {(req: {args: string[], cwd: string, env: object}) => string|null} opts.gitExec
+ *  @param {string} opts.cwd
+ *  @param {object} [opts.env]
+ *  @returns {{sha: string, subject: string, trailers: string[]}|null}
+ */
+export function readHeadCommit({ gitExec, cwd, env }) {
+    if (typeof gitExec !== "function") return null;
+    const sha = (gitExec({ args: ["rev-parse", "--short", "HEAD"], cwd, env }) ?? "").trim();
+    if (!/^[0-9a-f]{7,40}$/i.test(sha)) return null;
+    // %s = subject, then a literal NUL separator we control,
+    // then %(trailers:only=true,unfold=true) = each trailer on
+    // its own line.
+    const NUL = "\u0000";
+    const fmt = `%s${NUL}%(trailers:only=true,unfold=true)`;
+    const raw = gitExec({ args: ["log", "-1", `--pretty=format:${fmt}`], cwd, env });
+    if (typeof raw !== "string") return null;
+    const sepIdx = raw.indexOf(NUL);
+    if (sepIdx < 0) return { sha, subject: raw.trim(), trailers: [] };
+    const subject = raw.slice(0, sepIdx).trim();
+    const trailerBlock = raw.slice(sepIdx + 1);
+    const trailers = [];
+    for (const rawLine of trailerBlock.split("\n")) {
+        const line = rawLine.replace(/\r$/, "").trim();
+        if (!line) continue;
+        if (!/.+:.+/.test(line)) continue; // trailers always have a `: ` separator
+        trailers.push(line);
+        if (trailers.length >= 8) break;
+    }
+    return { sha, subject, trailers };
 }
 
 /** Parse the line count from `gh ... list` text output. The agent's
@@ -443,6 +700,44 @@ export function extractBacklogFromEvents(events) {
  *  ignored — only the root agent's stage markers count.
  *
  *  Pure / no I/O — exported for testing. */
+/** Walk a copilot JSONL event array and produce an ordered timeline of
+ *  stage markers, structured slice-9 markers, and tool-completion
+ *  records, preserving the natural interleaving from the agent's
+ *  response stream. Used by the runner loop to emit stage_start /
+ *  stage_end / substage / stage_plan / task_* / workitem_* events in
+ *  the right order so foldEvents attributes each item to its
+ *  containing context (substages reset on each stage_start;
+ *  task_start lookup needs the active stage already known).
+ *
+ *  Each timeline item is tagged with a `kind`:
+ *    - `{kind: "stage_marker", name, stage, ts}` — one per
+ *      `[STAGE: NAME]` line found in a (root-agent) `assistant.message`
+ *      event's content; only canonical-list names are emitted.
+ *    - `{kind: "tool_complete", verb, argsSummary, outcome,
+ *      durationMs, ts, args}` — one per `tool.execution_complete` event,
+ *      paired with the matching `tool.execution_start` (by
+ *      `toolCallId`) for verb / args / startTs. `args` is the raw
+ *      arguments object so the runner-side commit_observed detector
+ *      can re-inspect bash command shapes without re-implementing
+ *      argument distillation.
+ *    - `{kind, payload, ts}` for each slice-9 structured marker — one
+ *      per `[WORKITEM_START: {…}]` / `[WORKITEM_END: {…}]` /
+ *      `[STAGE_PLAN: {…}]` / `[STAGE_PLAN_AMEND: {…}]` /
+ *      `[TASK_LIST: {…}]` / `[TASK_START: {…}]` / `[TASK_END: {…}]`
+ *      line found in a (root-agent) `assistant.message` content. The
+ *      `kind` mirrors the marker key in lower-snake_case
+ *      (`workitem_start`, `stage_plan`, `task_end`, …) so it lines up
+ *      with the corresponding event type. Sub-agent `assistant.message`
+ *      events (those carrying an `agentId`) are ignored for both
+ *      stage and structured markers — only the root agent drives
+ *      the loop's narration.
+ *
+ *  `ts` is parsed from the JSONL `timestamp` field; if missing or
+ *  unparseable (e.g. synthetic test fixtures), `ts` is NaN and the
+ *  loop falls back to wall clock at emit time. `durationMs` is
+ *  null when either timestamp is missing.
+ *
+ *  Pure / no I/O — exported for testing. */
 export function extractAgentTimeline(events, allowedStages) {
     const out = [];
     if (!Array.isArray(events)) return out;
@@ -456,17 +751,33 @@ export function extractAgentTimeline(events, allowedStages) {
         const tsMs = parseAgentTsMs(ev.timestamp);
 
         if (ev.type === "assistant.message" && !ev.agentId
-            && ev.data && typeof ev.data.content === "string"
-            && allowSet) {
-            stageMarkerRe.lastIndex = 0;
-            let m;
-            while ((m = stageMarkerRe.exec(ev.data.content)) !== null) {
-                const name = m[1];
-                if (!allowSet.has(name)) continue;
+            && ev.data && typeof ev.data.content === "string") {
+            // Stage-marker pass: same per-event regex sweep we always
+            // had — only canonical-list names fire. Skipped entirely
+            // when `allowedStages` is empty (custom-prompt mode).
+            if (allowSet) {
+                stageMarkerRe.lastIndex = 0;
+                let m;
+                while ((m = stageMarkerRe.exec(ev.data.content)) !== null) {
+                    const name = m[1];
+                    if (!allowSet.has(name)) continue;
+                    out.push({
+                        kind: "stage_marker",
+                        name,
+                        stage: allowedStages.indexOf(name) + 1,
+                        ts: tsMs,
+                    });
+                }
+            }
+            // Structured-marker pass (issue #48 slice 9). Each marker
+            // key maps to a lower-snake-case kind that matches the
+            // corresponding event type, so the runner's emit closure
+            // can switch on `kind` without a key→type translation
+            // table.
+            for (const marker of extractStructuredMarkers(ev.data.content)) {
                 out.push({
-                    kind: "stage_marker",
-                    name,
-                    stage: allowedStages.indexOf(name) + 1,
+                    kind: marker.key.toLowerCase(),
+                    payload: marker.payload,
                     ts: tsMs,
                 });
             }
@@ -498,6 +809,8 @@ export function extractAgentTimeline(events, allowedStages) {
                 outcome,
                 durationMs,
                 ts: tsMs,
+                args: start?.arguments,
+                toolCallId: ev.data.toolCallId,
             });
         }
     }
@@ -695,6 +1008,14 @@ export async function runRalphTui(opts) {
         onIteration,
         stdout = process.stdout,
         stderr = process.stderr,
+        // Issue #48 slice 9: injectable git shell-out for the
+        // commit_observed path. Tests pass a stub that returns
+        // canned stdout per command shape; production uses
+        // `defaultGitExec` (synchronous spawnSync against the run's
+        // cwd). When omitted, commit_observed is silently disabled —
+        // a runtime without git installed (or a non-repo cwd) falls
+        // back to no commit narration.
+        gitExec = defaultGitExec,
     } = opts;
 
     if (mode !== "self-improve" && mode !== "grow-project" && mode !== "prompt") {
@@ -825,6 +1146,38 @@ export async function runRalphTui(opts) {
         let emittedItemsCount = 0;
         let liveActiveMarker = null;
         let liveSubstageIdx = 0;
+        // Issue #48 slice 9 — track which `tool.execution_complete`
+        // toolCallIds we've already turned into a `commit_observed`
+        // event so the post-iter suffix replay (the safety net for
+        // dropped onLine deliveries) doesn't double-emit. Critique
+        // explicitly called this out: per-call idempotence beats
+        // post-hoc range scans for happy-path simplicity.
+        const commitObservedToolCallIds = new Set();
+        // Active workitem reference carried across iters so a
+        // `[WORKITEM_END: {…}]` without an explicit ref/title can
+        // backfill from the in-flight item rather than fail
+        // serialization.
+        let activeWorkItemRef = null;
+        const emitCommitObservedFromHead = (itemTs) => {
+            // Best-effort: shell out to git for the SHA + subject +
+            // trailers of HEAD. If the runner has no gitExec (or
+            // the repo isn't there), silently skip — the LastCommit
+            // pane just doesn't update for this iter.
+            const head = readHeadCommit({ gitExec, cwd, env });
+            if (!head) return;
+            try {
+                emitter.write({
+                    type: "commit_observed",
+                    ts: itemTs,
+                    runId,
+                    label,
+                    iteration: iter,
+                    sha: head.sha,
+                    subject: head.subject,
+                    trailers: head.trailers,
+                });
+            } catch { /* serialization rejection — skip */ }
+        };
         const emitTimelineSuffix = (sourceEvents, fallbackTs) => {
             const timeline = extractAgentTimeline(sourceEvents, allowedStages);
             for (let i = emittedItemsCount; i < timeline.length; i++) {
@@ -867,6 +1220,166 @@ export async function runRalphTui(opts) {
                         outcome: item.outcome,
                         durationMs: item.durationMs,
                     });
+                    // Issue #48 slice 9 — runner-side commit_observed.
+                    // Trigger when a `bash` tool just succeeded with
+                    // a `git commit` invocation. We inspect the RAW
+                    // arguments object (item.args.command), not the
+                    // truncated argsSummary, so a multi-line bash
+                    // script with the commit on a non-first line
+                    // still fires. Idempotent per toolCallId so the
+                    // post-iter replay path can't double-emit.
+                    if (
+                        item.outcome === "ok"
+                        && item.verb === "bash"
+                        && item.args
+                        && typeof item.args.command === "string"
+                        && looksLikeGitCommit(item.args.command)
+                        && typeof item.toolCallId === "string"
+                        && !commitObservedToolCallIds.has(item.toolCallId)
+                    ) {
+                        commitObservedToolCallIds.add(item.toolCallId);
+                        emitCommitObservedFromHead(itemTs);
+                    }
+                } else if (item.kind === "workitem_start") {
+                    const p = item.payload || {};
+                    const kind = typeof p.kind === "string" ? p.kind : null;
+                    if (!WORKITEM_KIND_SET.has(kind)) continue;
+                    activeWorkItemRef = Number.isFinite(p.ref) ? p.ref : null;
+                    try {
+                        emitter.write({
+                            type: "workitem_start",
+                            ts: itemTs,
+                            runId,
+                            label,
+                            iteration: iter,
+                            kind,
+                            ref: activeWorkItemRef ?? undefined,
+                            title: typeof p.title === "string" ? p.title : undefined,
+                        });
+                    } catch { /* serializer rejection — skip */ }
+                } else if (item.kind === "workitem_end") {
+                    const p = item.payload || {};
+                    const kind = typeof p.kind === "string" ? p.kind : null;
+                    if (!WORKITEM_KIND_SET.has(kind)) continue;
+                    try {
+                        emitter.write({
+                            type: "workitem_end",
+                            ts: itemTs,
+                            runId,
+                            label,
+                            iteration: iter,
+                            kind,
+                            ref: Number.isFinite(p.ref) ? p.ref : (activeWorkItemRef ?? undefined),
+                            closesN: Number.isFinite(p.closesN) ? p.closesN : undefined,
+                        });
+                    } catch { /* serializer rejection — skip */ }
+                    activeWorkItemRef = null;
+                } else if (item.kind === "stage_plan") {
+                    const p = item.payload || {};
+                    if (!Array.isArray(p.stages) || p.stages.length === 0) continue;
+                    const rawStages = p.stages
+                        .filter((s) => typeof s === "string" && s)
+                        .slice(0, 64);
+                    if (rawStages.length === 0) continue;
+                    // Emit the agent's RAW stages first so replay shows
+                    // exactly what the agent said. The runner-side
+                    // pinned-tail repair (next step) is surfaced as a
+                    // sequence of `stage_plan_amend` events with the
+                    // canonical reason string, NOT as a "corrected"
+                    // stage_plan that erases the agent's intent.
+                    try {
+                        emitter.write({
+                            type: "stage_plan",
+                            ts: itemTs,
+                            runId,
+                            label,
+                            iteration: iter,
+                            stages: rawStages,
+                        });
+                    } catch { continue; }
+                    const amends = computePinnedTailAmendments(rawStages, PINNED_TAIL_STAGES);
+                    for (const a of amends) {
+                        const ev = {
+                            type: "stage_plan_amend",
+                            ts: itemTs,
+                            runId,
+                            label,
+                            iteration: iter,
+                            reason: a.reason,
+                        };
+                        if (a.add) ev.add = a.add;
+                        if (a.remove) ev.remove = a.remove;
+                        if (a.after) ev.after = a.after;
+                        try { emitter.write(ev); } catch { /* skip */ }
+                    }
+                } else if (item.kind === "stage_plan_amend") {
+                    const p = item.payload || {};
+                    const hasAdd = typeof p.add === "string" && p.add;
+                    const hasRemove = typeof p.remove === "string" && p.remove;
+                    if (!hasAdd && !hasRemove) continue;
+                    const reason = typeof p.reason === "string" && p.reason
+                        ? p.reason : "agent-amendment";
+                    const ev = {
+                        type: "stage_plan_amend",
+                        ts: itemTs,
+                        runId,
+                        label,
+                        iteration: iter,
+                        reason,
+                    };
+                    if (hasAdd) ev.add = p.add;
+                    if (hasRemove) ev.remove = p.remove;
+                    if (typeof p.after === "string" && p.after) ev.after = p.after;
+                    try { emitter.write(ev); } catch { /* skip */ }
+                } else if (item.kind === "task_list") {
+                    const p = item.payload || {};
+                    if (typeof p.stage !== "string" || !p.stage) continue;
+                    if (!Array.isArray(p.items)) continue;
+                    try {
+                        emitter.write({
+                            type: "task_list",
+                            ts: itemTs,
+                            runId,
+                            label,
+                            iteration: iter,
+                            stage: p.stage,
+                            items: p.items.filter((s) => typeof s === "string" && s),
+                        });
+                    } catch { /* skip */ }
+                } else if (item.kind === "task_start") {
+                    const p = item.payload || {};
+                    if (typeof p.stage !== "string" || !p.stage) continue;
+                    if (!Number.isFinite(p.sub) || p.sub < 1) continue;
+                    if (typeof p.desc !== "string" || !p.desc) continue;
+                    try {
+                        emitter.write({
+                            type: "task_start",
+                            ts: itemTs,
+                            runId,
+                            label,
+                            iteration: iter,
+                            stage: p.stage,
+                            sub: p.sub,
+                            desc: p.desc,
+                        });
+                    } catch { /* skip */ }
+                } else if (item.kind === "task_end") {
+                    const p = item.payload || {};
+                    if (typeof p.stage !== "string" || !p.stage) continue;
+                    if (!Number.isFinite(p.sub) || p.sub < 1) continue;
+                    if (!TASK_OUTCOME_SET.has(p.outcome)) continue;
+                    const ev = {
+                        type: "task_end",
+                        ts: itemTs,
+                        runId,
+                        label,
+                        iteration: iter,
+                        stage: p.stage,
+                        sub: p.sub,
+                        outcome: p.outcome,
+                    };
+                    if (Number.isFinite(p.durationMs)) ev.durationMs = p.durationMs;
+                    try { emitter.write(ev); } catch { /* skip */ }
                 }
             }
             emittedItemsCount = timeline.length;

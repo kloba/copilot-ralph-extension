@@ -3,6 +3,60 @@
 ## Unreleased
 
 ### Features
+- `ralph-tui run` (`packages/tui/src/runner.mjs`) now turns the
+  agent's `[STAGE_PLAN: …]` / `[STAGE_PLAN_AMEND: …]` /
+  `[TASK_LIST: …]` / `[TASK_START: …]` / `[TASK_END: …]` /
+  `[WORKITEM_START: …]` / `[WORKITEM_END: …]` markers from
+  `assistant.message` content into the matching events.jsonl
+  events (slice 9 of issue #48), so the TUI's flex stage plan
+  + per-stage task list + work-item header all populate live
+  during an iter. `extractStructuredMarkers` (line-by-line
+  whole-line parser, exported for tests) accepts only markers
+  that occupy a line by themselves — inline mentions in prose
+  (e.g. `"I will emit [STAGE_PLAN: …] later"`) do NOT fire;
+  malformed JSON, non-object payloads, and unknown keys are
+  silently skipped so a typo in the agent's narration never
+  breaks the run. The seven supported keys are pinned by a
+  single exported `STRUCTURED_MARKER_KEYS` array. The runner-
+  side pinned-tail repair surfaces as a sequence of
+  `stage_plan_amend` events with `reason:
+  "pinned-tail-enforcement"` (computed by the new exported
+  `computePinnedTailAmendments` diff helper) — the agent's
+  RAW stages list is emitted first as `stage_plan` so the
+  timeline preserves the agent's intent before the runner
+  normalizes COMMIT/PUSH/END to the canonical tail.
+  Sub-agent (`explore` etc.) `assistant.message` content is
+  ignored for marker extraction the same way it's ignored
+  for `[STAGE: NAME]` markers — the root-agent gate is the
+  single source of truth.
+
+- `ralph-tui run` now emits a `commit_observed` event after
+  every successful `bash` `git commit` invocation by the
+  agent, so the TUI's LastCommit footer picks up the SHA +
+  subject + co-author trailer count without the agent having
+  to self-report. Detection is heuristic-based on the raw
+  `arguments.command` (the truncated `argsSummary` is too
+  lossy — a multi-line bash script with the commit on a
+  non-first line still fires) via the new exported
+  `looksLikeGitCommit` helper, which accepts the common
+  shapes (`git commit -m`, `git commit -F`,
+  `git -c user.name=… commit`, `cd subdir && git commit`,
+  multi-line bash scripts) and rejects look-alikes
+  (`git --help commit`, `git commit-tree`,
+  `echo 'git commit'`). Idempotent per `toolCallId` so the
+  post-iter suffix-replay safety net cannot double-emit.
+  Failed commits (non-zero exit) and non-bash tools whose
+  args happen to contain "git commit" do not fire. The
+  shell-out itself goes through a new injectable
+  `gitExec({args, cwd, env})` opt arg on `runRalphTui`
+  (default: `child_process.spawnSync`) so tests stub repo
+  state without touching disk. The new exported
+  `readHeadCommit` helper composes `git rev-parse --short
+  HEAD` + `git log -1 --pretty=format:%s\\0%(trailers:…)`
+  into a `{sha, subject, trailers[]}` triple, capping
+  trailers at 8 to match the events.mjs serializer.
+
+### Features
 - `events.mjs` gains the `stage_plan` / `stage_plan_amend` /
   `task_list` / `task_start` / `task_end` / `commit_observed`
   event vocabulary so the agent-emitted flex stage plan +

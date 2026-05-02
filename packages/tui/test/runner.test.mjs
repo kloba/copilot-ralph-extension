@@ -1177,6 +1177,487 @@ test("runRalphTui: substage sub-counter resets to 1 on each new stage_start", as
     assert.equal(subs[1].sub, 1, "first substage of IDEATE is also sub=1 (counter reset)");
 });
 
+// ─── Issue #48 slice 9: structured markers + commit_observed ────────
+
+import {
+    extractStructuredMarkers,
+    STRUCTURED_MARKER_KEYS,
+    computePinnedTailAmendments,
+    looksLikeGitCommit,
+    readHeadCommit,
+} from "../src/runner.mjs";
+import { PINNED_TAIL_STAGES } from "../src/events.mjs";
+
+test("STRUCTURED_MARKER_KEYS exports the 7 documented marker keys (pinned)", () => {
+    assert.deepEqual([...STRUCTURED_MARKER_KEYS].sort(), [
+        "STAGE_PLAN",
+        "STAGE_PLAN_AMEND",
+        "TASK_END",
+        "TASK_LIST",
+        "TASK_START",
+        "WORKITEM_END",
+        "WORKITEM_START",
+    ]);
+});
+
+test("extractStructuredMarkers: empty / non-string input → []", () => {
+    assert.deepEqual(extractStructuredMarkers(null), []);
+    assert.deepEqual(extractStructuredMarkers(undefined), []);
+    assert.deepEqual(extractStructuredMarkers(42), []);
+    assert.deepEqual(extractStructuredMarkers(""), []);
+});
+
+test("extractStructuredMarkers: parses each documented marker on its own line", () => {
+    const text = [
+        '[WORKITEM_START: {"kind":"issue","ref":42,"title":"x"}]',
+        '[STAGE_PLAN: {"stages":["REPRO","FIX","TEST"]}]',
+        '[TASK_LIST: {"stage":"FIX","items":["a","b"]}]',
+        '[TASK_START: {"stage":"FIX","sub":1,"desc":"a"}]',
+        '[TASK_END: {"stage":"FIX","sub":1,"outcome":"ok","durationMs":120}]',
+        '[STAGE_PLAN_AMEND: {"add":"DOCS","after":"TEST","reason":"add"}]',
+        '[WORKITEM_END: {"kind":"issue","ref":42,"closesN":1}]',
+    ].join("\n");
+    const out = extractStructuredMarkers(text);
+    assert.deepEqual(out.map((m) => m.key), [
+        "WORKITEM_START", "STAGE_PLAN", "TASK_LIST", "TASK_START",
+        "TASK_END", "STAGE_PLAN_AMEND", "WORKITEM_END",
+    ]);
+    assert.deepEqual(out[1].payload, { stages: ["REPRO", "FIX", "TEST"] });
+    assert.equal(out[3].payload.sub, 1);
+    assert.equal(out[4].payload.outcome, "ok");
+});
+
+test("extractStructuredMarkers: malformed JSON, non-object payload, unknown key → silently skipped", () => {
+    const text = [
+        "[STAGE_PLAN: not json at all]",
+        '[STAGE_PLAN: ["array","payload"]]',     // valid JSON, not object
+        '[STAGE_PLAN: "plain string"]',          // valid JSON, not object
+        '[BOGUS_KEY: {"x":1}]',                   // unknown key
+        '[STAGE_PLAN: {"stages":["A"]}]',         // good — should pass
+    ].join("\n");
+    const out = extractStructuredMarkers(text);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].key, "STAGE_PLAN");
+});
+
+test("extractStructuredMarkers: whole-line-only — inline mention in prose does NOT fire", () => {
+    const text = [
+        'I will emit [STAGE_PLAN: {"stages":["X"]}] later',  // inline — must NOT match
+        'Now: [STAGE_PLAN: {"stages":["Y"]}]',                // inline (preceded by "Now:") — must NOT match
+        '[STAGE_PLAN: {"stages":["Z"]}]',                     // own line — MUST match
+    ].join("\n");
+    const out = extractStructuredMarkers(text);
+    assert.equal(out.length, 1);
+    assert.deepEqual(out[0].payload.stages, ["Z"]);
+});
+
+test("extractStructuredMarkers: tolerates leading/trailing whitespace on the marker line", () => {
+    const text = '   [STAGE_PLAN: {"stages":["A"]}]   \n\t[TASK_END: {"stage":"A","sub":1,"outcome":"ok"}]\t';
+    const out = extractStructuredMarkers(text);
+    assert.equal(out.length, 2);
+    assert.equal(out[0].key, "STAGE_PLAN");
+    assert.equal(out[1].key, "TASK_END");
+});
+
+test("computePinnedTailAmendments: empty raw → 3 add ops in canonical order", () => {
+    const out = computePinnedTailAmendments([], PINNED_TAIL_STAGES);
+    assert.equal(out.length, 3);
+    assert.deepEqual(out.map((a) => a.add), [...PINNED_TAIL_STAGES]);
+    // First add anchors after... nothing (empty raw); subsequent adds
+    // chain after the previously-appended pinned stage.
+    assert.equal(out[1].after, PINNED_TAIL_STAGES[0]);
+    assert.equal(out[2].after, PINNED_TAIL_STAGES[1]);
+    for (const a of out) assert.equal(a.reason, "pinned-tail-enforcement");
+});
+
+test("computePinnedTailAmendments: raw has all 3 pinned correctly placed at tail → 3 remove + 3 add (symmetric)", () => {
+    const raw = ["A", "B", ...PINNED_TAIL_STAGES];
+    const out = computePinnedTailAmendments(raw, PINNED_TAIL_STAGES);
+    const removes = out.filter((a) => a.remove);
+    const adds = out.filter((a) => a.add);
+    assert.equal(removes.length, 3, "each pinned stage in raw is removed first");
+    assert.equal(adds.length, 3, "then each is re-added in canonical order");
+    assert.deepEqual(removes.map((a) => a.remove).sort(),
+        [...PINNED_TAIL_STAGES].sort());
+    assert.deepEqual(adds.map((a) => a.add), [...PINNED_TAIL_STAGES]);
+    // First add anchors after the last head stage.
+    assert.equal(adds[0].after, "B");
+});
+
+test("computePinnedTailAmendments: misplaced pinned mid-list → remove + chained adds at tail", () => {
+    const raw = ["REPRO", "COMMIT", "TEST"];  // COMMIT in the middle
+    const out = computePinnedTailAmendments(raw, PINNED_TAIL_STAGES);
+    // Must remove COMMIT (the only pinned in raw), then add COMMIT,
+    // PUSH, END at tail anchored after TEST → COMMIT → PUSH.
+    const removes = out.filter((a) => a.remove).map((a) => a.remove);
+    assert.deepEqual(removes, ["COMMIT"]);
+    const adds = out.filter((a) => a.add).map((a) => `${a.add}@${a.after ?? ""}`);
+    assert.deepEqual(adds, ["COMMIT@TEST", "PUSH@COMMIT", "END@PUSH"]);
+});
+
+test("computePinnedTailAmendments: empty pinnedTail → []", () => {
+    assert.deepEqual(computePinnedTailAmendments(["A", "B"], []), []);
+    assert.deepEqual(computePinnedTailAmendments(["A"], null), []);
+});
+
+test("looksLikeGitCommit: positive cases", () => {
+    assert.ok(looksLikeGitCommit("git commit -m 'msg'"));
+    assert.ok(looksLikeGitCommit("git commit -F /tmp/msg"));
+    assert.ok(looksLikeGitCommit("git -c user.name=foo commit -m 'x'"));
+    assert.ok(looksLikeGitCommit("git -c user.name=foo -c user.email=bar commit -F /tmp/m"));
+    assert.ok(looksLikeGitCommit("cd subdir && git commit -m 'x'"));
+    assert.ok(looksLikeGitCommit("  git commit --amend --no-edit  "));
+    assert.ok(looksLikeGitCommit("git status\ngit commit -m 'multi'\ngit push"));
+    assert.ok(looksLikeGitCommit("git commit"));
+});
+
+test("looksLikeGitCommit: negative cases", () => {
+    assert.ok(!looksLikeGitCommit("echo 'git commit me'"));
+    assert.ok(!looksLikeGitCommit("git status"));
+    assert.ok(!looksLikeGitCommit("git --help commit"));
+    assert.ok(!looksLikeGitCommit("git commit-tree HEAD^{tree}"));
+    assert.ok(!looksLikeGitCommit("ls /repo"));
+    assert.ok(!looksLikeGitCommit(""));
+    assert.ok(!looksLikeGitCommit(null));
+    assert.ok(!looksLikeGitCommit(42));
+});
+
+test("readHeadCommit: returns sha + subject + trailers from injected gitExec", () => {
+    const NUL = "\u0000";
+    const gitExec = ({ args }) => {
+        if (args[0] === "rev-parse" && args[1] === "--short") return "abc1234\n";
+        if (args[0] === "log") {
+            return `feat(x): subject${NUL}Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>\nCo-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>`;
+        }
+        return null;
+    };
+    const out = readHeadCommit({ gitExec, cwd: "/repo", env: {} });
+    assert.equal(out.sha, "abc1234");
+    assert.equal(out.subject, "feat(x): subject");
+    assert.equal(out.trailers.length, 2);
+    assert.match(out.trailers[0], /^Co-authored-by: Copilot/);
+});
+
+test("readHeadCommit: gitExec returning null for rev-parse → null (not a repo)", () => {
+    const gitExec = () => null;
+    assert.equal(readHeadCommit({ gitExec, cwd: "/repo", env: {} }), null);
+});
+
+test("readHeadCommit: rev-parse non-sha output → null (defensive)", () => {
+    const gitExec = ({ args }) => {
+        if (args[0] === "rev-parse") return "fatal: not a git repository\n";
+        return null;
+    };
+    assert.equal(readHeadCommit({ gitExec, cwd: "/repo", env: {} }), null);
+});
+
+test("readHeadCommit: log without trailer block → empty trailers array", () => {
+    const NUL = "\u0000";
+    const gitExec = ({ args }) => {
+        if (args[0] === "rev-parse") return "abc1234\n";
+        if (args[0] === "log") return `subject only${NUL}`;
+        return null;
+    };
+    const out = readHeadCommit({ gitExec, cwd: "/repo", env: {} });
+    assert.equal(out.subject, "subject only");
+    assert.deepEqual(out.trailers, []);
+});
+
+test("extractAgentTimeline: tool_complete now carries toolCallId + raw args (slice 9)", () => {
+    const events = [
+        { type: "tool.execution_start", timestamp: "2026-01-01T00:00:00.000Z",
+          data: { toolCallId: "tc-1", toolName: "bash",
+                  arguments: { command: "git commit -m 'x'", working_dir: "/repo" } } },
+        { type: "tool.execution_complete", timestamp: "2026-01-01T00:00:00.500Z",
+          data: { toolCallId: "tc-1", success: true } },
+    ];
+    const tl = extractAgentTimeline(events, []);
+    assert.equal(tl.length, 1);
+    assert.equal(tl[0].toolCallId, "tc-1");
+    assert.equal(tl[0].args?.command, "git commit -m 'x'");
+});
+
+test("extractAgentTimeline: structured markers from root-agent assistant.message surface as timeline items", () => {
+    const events = [
+        { type: "assistant.message", timestamp: "2026-01-01T00:00:00.000Z",
+          data: { content: '[STAGE_PLAN: {"stages":["A","B"]}]' } },
+        { type: "assistant.message", timestamp: "2026-01-01T00:00:01.000Z",
+          data: { content: '[TASK_LIST: {"stage":"A","items":["t1"]}]\n[TASK_START: {"stage":"A","sub":1,"desc":"t1"}]' } },
+    ];
+    const tl = extractAgentTimeline(events, []);
+    const kinds = tl.map((it) => it.kind);
+    assert.deepEqual(kinds, ["stage_plan", "task_list", "task_start"]);
+    assert.deepEqual(tl[0].payload.stages, ["A", "B"]);
+    assert.equal(tl[1].payload.stage, "A");
+    assert.equal(tl[2].payload.sub, 1);
+});
+
+test("extractAgentTimeline: structured markers from sub-agents (agentId set) are ignored", () => {
+    const events = [
+        { type: "assistant.message", timestamp: "2026-01-01T00:00:00.000Z",
+          agentId: "explore",
+          data: { content: '[STAGE_PLAN: {"stages":["A"]}]' } },
+        { type: "assistant.message", timestamp: "2026-01-01T00:00:01.000Z",
+          data: { content: '[STAGE_PLAN: {"stages":["B"]}]' } },
+    ];
+    const tl = extractAgentTimeline(events, []);
+    assert.equal(tl.length, 1, "only root-agent's marker fires");
+    assert.deepEqual(tl[0].payload.stages, ["B"]);
+});
+
+test("runRalphTui: STAGE_PLAN marker → emits stage_plan event followed by pinned-tail amendments", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "stage-plan-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const stdout = [
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:00.000Z",
+            data: { content: '[STAGE_PLAN: {"stages":["REPRO","FIX","TEST"]}]' } }),
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:01.000Z",
+            data: { content: "COMPLETE" } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    const planEvents = events.filter((e) => e.type === "stage_plan");
+    assert.equal(planEvents.length, 1, "raw stage_plan emitted once");
+    assert.deepEqual(planEvents[0].stages, ["REPRO", "FIX", "TEST"]);
+    const amends = events.filter((e) => e.type === "stage_plan_amend");
+    assert.equal(amends.length, 3, "three amend ops to pin COMMIT/PUSH/END at tail");
+    assert.deepEqual(amends.map((a) => a.add), [...PINNED_TAIL_STAGES]);
+    for (const a of amends) assert.equal(a.reason, "pinned-tail-enforcement");
+    // Ordering: stage_plan must precede all amends so foldEvents sees
+    // the raw plan first then transforms it.
+    const planIdx = events.findIndex((e) => e.type === "stage_plan");
+    const firstAmendIdx = events.findIndex((e) => e.type === "stage_plan_amend");
+    assert.ok(planIdx >= 0 && planIdx < firstAmendIdx, "stage_plan precedes amends");
+});
+
+test("runRalphTui: bash 'git commit' substage → emits commit_observed with sha+subject+trailers", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "commit-observed-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const NUL = "\u0000";
+    const gitExec = ({ args }) => {
+        if (args[0] === "rev-parse" && args[1] === "--short") return "abc1234\n";
+        if (args[0] === "log") return `feat(x): test commit${NUL}Co-authored-by: Copilot <copilot@users.noreply.github.com>`;
+        return null;
+    };
+    const stdout = [
+        JSON.stringify({ type: "tool.execution_start", timestamp: "2026-01-01T00:00:00.000Z",
+            data: { toolCallId: "tc-commit", toolName: "bash", arguments: { command: "git commit -m 'feat(x): test commit'" } } }),
+        JSON.stringify({ type: "tool.execution_complete", timestamp: "2026-01-01T00:00:00.300Z",
+            data: { toolCallId: "tc-commit", success: true } }),
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:01.000Z",
+            data: { content: "COMPLETE" } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+        gitExec,
+    });
+    const cos = events.filter((e) => e.type === "commit_observed");
+    assert.equal(cos.length, 1, "exactly one commit_observed for one git commit substage");
+    assert.equal(cos[0].sha, "abc1234");
+    assert.equal(cos[0].subject, "feat(x): test commit");
+    assert.equal(cos[0].trailers.length, 1);
+});
+
+test("runRalphTui: failed git commit substage does NOT trigger commit_observed", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "commit-fail-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    let gitExecCalls = 0;
+    const gitExec = () => { gitExecCalls += 1; return null; };
+    const stdout = [
+        JSON.stringify({ type: "tool.execution_start", timestamp: "2026-01-01T00:00:00.000Z",
+            data: { toolCallId: "tc-fail", toolName: "bash", arguments: { command: "git commit -m 'x'" } } }),
+        JSON.stringify({ type: "tool.execution_complete", timestamp: "2026-01-01T00:00:00.300Z",
+            data: { toolCallId: "tc-fail", success: false, error: { code: "exit-1" } } }),
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:01.000Z",
+            data: { content: "COMPLETE" } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+        gitExec,
+    });
+    assert.equal(events.filter((e) => e.type === "commit_observed").length, 0);
+    assert.equal(gitExecCalls, 0, "gitExec never called for a failed commit");
+});
+
+test("runRalphTui: non-bash tool with 'git commit' in argsSummary does NOT fire commit_observed", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "non-bash-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const gitExec = () => null;
+    const stdout = [
+        // grep tool with pattern matching 'git commit' should NOT trigger.
+        JSON.stringify({ type: "tool.execution_start", timestamp: "2026-01-01T00:00:00.000Z",
+            data: { toolCallId: "g1", toolName: "grep", arguments: { pattern: "git commit -m" } } }),
+        JSON.stringify({ type: "tool.execution_complete", timestamp: "2026-01-01T00:00:00.100Z",
+            data: { toolCallId: "g1", success: true } }),
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:01.000Z",
+            data: { content: "COMPLETE" } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+        gitExec,
+    });
+    assert.equal(events.filter((e) => e.type === "commit_observed").length, 0);
+});
+
+test("runRalphTui: WORKITEM_START + WORKITEM_END markers emit workitem events", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "wi-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const stdout = [
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:00.000Z",
+            data: { content: '[WORKITEM_START: {"kind":"issue","ref":48,"title":"3-level renderer"}]' } }),
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:01.000Z",
+            data: { content: '[WORKITEM_END: {"kind":"issue","ref":48,"closesN":1}]' } }),
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:02.000Z",
+            data: { content: "COMPLETE" } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    const start = events.find((e) => e.type === "workitem_start");
+    const end = events.find((e) => e.type === "workitem_end");
+    assert.ok(start, "workitem_start emitted");
+    assert.equal(start.kind, "issue");
+    assert.equal(start.ref, 48);
+    assert.equal(start.title, "3-level renderer");
+    assert.ok(end, "workitem_end emitted");
+    assert.equal(end.closesN, 1);
+});
+
+test("runRalphTui: TASK_LIST + TASK_START + TASK_END markers emit task events", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "task-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const stdout = [
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:00.000Z",
+            data: { content: '[TASK_LIST: {"stage":"FIX","items":["a","b"]}]' } }),
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:01.000Z",
+            data: { content: '[TASK_START: {"stage":"FIX","sub":1,"desc":"a"}]' } }),
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:02.000Z",
+            data: { content: '[TASK_END: {"stage":"FIX","sub":1,"outcome":"ok","durationMs":500}]' } }),
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:03.000Z",
+            data: { content: "COMPLETE" } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    const list = events.find((e) => e.type === "task_list");
+    const start = events.find((e) => e.type === "task_start");
+    const end = events.find((e) => e.type === "task_end");
+    assert.ok(list && start && end);
+    assert.deepEqual(list.items, ["a", "b"]);
+    assert.equal(start.stage, "FIX");
+    assert.equal(start.sub, 1);
+    assert.equal(end.outcome, "ok");
+    assert.equal(end.durationMs, 500);
+});
+
+test("runRalphTui: malformed marker payload (missing required field) is silently dropped", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "bad-marker-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const stdout = [
+        // missing "kind" → should be dropped at the runner layer
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:00.000Z",
+            data: { content: '[WORKITEM_START: {"ref":1,"title":"x"}]' } }),
+        // bogus "kind" → should also be dropped
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:01.000Z",
+            data: { content: '[WORKITEM_START: {"kind":"feature_request","ref":1}]' } }),
+        // missing "stage" on task_list → dropped
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:02.000Z",
+            data: { content: '[TASK_LIST: {"items":["a"]}]' } }),
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:03.000Z",
+            data: { content: "COMPLETE" } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    assert.equal(events.filter((e) => e.type === "workitem_start").length, 0);
+    assert.equal(events.filter((e) => e.type === "task_list").length, 0);
+});
+
 // ─── Issue #48 slice 6: backlog snapshot from agent gh probes ────────
 
 import { parseGhListCount, extractBacklogFromEvents } from "../src/runner.mjs";

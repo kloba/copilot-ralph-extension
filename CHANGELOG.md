@@ -623,6 +623,17 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Pinned the cmdWatch half of the iter-167 traversal-runId
+  catch via the supported `main(["watch", "../etc/passwd",
+  "--plain"])` entry point. Pre-iter-168 only `cmdReplay`'s
+  catch was directly exercised; without this companion test a
+  future "simplify" refactor could quietly drop the catch on
+  one entry point while leaving the other intact, and CI
+  would not notice. The new test stubs `process.exit` and
+  `process.stderr.write`, asserts a clean `watch:` prefix on
+  the stderr line, and asserts no raw stack frames leak —
+  mutation-verified by reverting cmdWatch to the bare
+  `resolveRunEventsPath(target)` call (1 failure).
 - Pinned the second-pass salvage branch in
   `extension/events-emit.mjs`'s `serialize()` — the path that
   strips `excerpt` + `note` and re-serializes when the first

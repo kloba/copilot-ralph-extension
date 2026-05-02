@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
-import { parseArgv, cmdReplay } from "../bin/tui.mjs";
+import { parseArgv, cmdReplay, main as tuiMain } from "../bin/tui.mjs";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = resolve(REPO_ROOT, "bin", "tui.mjs");
@@ -615,6 +615,46 @@ test("cmdReplay: NUL-byte runId is also rejected via fail() (defence-in-depth on
         assert.equal(result, 2);
         assert.equal(exitCode, 2);
         assert.match(captured, /replay:/);
+    } finally {
+        process.exit = realExit;
+        process.stderr.write = realStderrWrite;
+    }
+});
+
+test("cmdWatch (via main): path-traversal runId routes through fail() with clean error (no raw TypeError stack)", async () => {
+    // Iter 168 — symmetric to the iter-167 cmdReplay test. cmdWatch
+    // is not directly exported, so we drive it through the supported
+    // public entry `main(["watch", <runId>])`. Pre-iter-167 the bare
+    // `resolveRunEventsPath(target)` call inside cmdWatch leaked a
+    // raw TypeError stack to the user; iter 167 added a catch that
+    // routes through `fail()`. This test pins the cmdWatch half of
+    // that fix so a future "simplify" refactor can't quietly drop
+    // the catch on one entry point while keeping it on the other.
+    const realExit = process.exit;
+    const realStderrWrite = process.stderr.write.bind(process.stderr);
+    let exitCode = null;
+    let captured = "";
+    process.exit = (code) => { exitCode = code; };
+    process.stderr.write = (chunk) => { captured += String(chunk); return true; };
+    try {
+        let result;
+        await assert.doesNotReject(
+            (async () => { result = await tuiMain(["watch", "../etc/passwd", "--plain"]); })(),
+            "cmdWatch must catch TypeError from resolveRunEventsPath and return cleanly via main()",
+        );
+        assert.equal(result, 2, "main() must propagate cmdWatch's exit code 2 for traversal runId");
+        assert.equal(exitCode, 2, "fail() must request exit code 2");
+        assert.match(captured, /watch:/, "stderr line must be prefixed with the subcommand name");
+        assert.match(
+            captured,
+            /path separators or traversal segments/,
+            "stderr must surface the traversal-rejection message from resolveRunEventsPath",
+        );
+        assert.doesNotMatch(
+            captured,
+            /at assertSafeRunId|at resolveRunEventsPath/,
+            "stderr must NOT contain a raw stack frame — that's the bug we're pinning closed",
+        );
     } finally {
         process.exit = realExit;
         process.stderr.write = realStderrWrite;

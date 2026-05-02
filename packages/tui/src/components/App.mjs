@@ -25,13 +25,46 @@ const h = React.createElement;
  *        snapshot tests.
  * @param {object[]} [props.events]   Initial / static event list.
  * @param {string} [props.runId]      Display label for the header.
+ * @param {(reason: string) => void} [props.onUserAbort] Optional
+ *        callback fired when the user requests to abort via Ctrl-C
+ *        or `q`. When provided (issue #48 slice 8 — `ralph-tui run`
+ *        TUI mount), the caller can hook this to call
+ *        `runner.stopRun(runId, …)` so the driver gets a graceful
+ *        stop request instead of being orphaned mid-iter when the
+ *        TUI tears down. Read-only callers (`ralph-tui watch`)
+ *        omit it; the App still exits but no driver action occurs.
  */
-export default function App({ eventStream, events: initial = [], runId }) {
+export default function App({ eventStream, events: initial = [], runId, onUserAbort }) {
     const [events, setEvents] = useState(initial);
     const { exit } = useApp();
 
-    useInput((input) => {
-        if (input === "q" || input === "Q") exit();
+    useInput((input, key) => {
+        // Ctrl-C: in Ink raw mode the tty does NOT auto-generate
+        // SIGINT, and `exitOnCtrlC: false` (set by run-ui.mjs)
+        // disables Ink's own ctrl-c handling. So bin/tui.mjs's
+        // `process.on("SIGINT", ...)` handler never fires while
+        // the TUI owns the terminal — we must catch ctrl-c
+        // explicitly and tell the runner to stop. Reason strings
+        // mirror the conventional `signal_*` naming used by
+        // bin/tui.mjs's signal handler so log scrubbers don't
+        // need a special case.
+        if (key && key.ctrl && input === "c") {
+            if (onUserAbort) {
+                try { onUserAbort("signal_SIGINT"); } catch { /* swallow */ }
+            }
+            exit();
+            return;
+        }
+        if (input === "q" || input === "Q") {
+            // `q` in run mode means "abort the run AND tear down
+            // the UI" — the user pressing q while a long-running
+            // self-improve loop chews up tokens almost certainly
+            // wants the loop to stop, not to detach silently.
+            if (onUserAbort) {
+                try { onUserAbort("user_quit"); } catch { /* swallow */ }
+            }
+            exit();
+        }
     });
 
     useEffect(() => {

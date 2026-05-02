@@ -724,3 +724,43 @@ test("defaultMaxIterationsFor: unknown mode → DEFAULT_MAX_ITERATIONS (safe fal
     assert.equal(defaultMaxIterationsFor(undefined, __runner), __runner.DEFAULT_MAX_ITERATIONS);
     assert.equal(defaultMaxIterationsFor("", __runner), __runner.DEFAULT_MAX_ITERATIONS);
 });
+
+test("parseArgv: --headless flag (issue #48 slice 8 — daemon / nohup escape hatch)", () => {
+    const r = parseArgv(["run", "--self-improve", "--fresh", "--headless"]);
+    assert.equal(r.cmd, "run");
+    assert.equal(r.flags["self-improve"], true);
+    assert.equal(r.flags.fresh, true);
+    assert.equal(r.flags.headless, true);
+});
+
+test("parseArgv: --headless coexists with --plain without conflict", () => {
+    // Both force text output; combining them is harmless. cmdRun
+    // OR's the two flags so either alone is sufficient.
+    const r = parseArgv(["run", "--self-improve", "--fresh", "--headless", "--plain"]);
+    assert.equal(r.flags.headless, true);
+    assert.equal(r.flags.plain, true);
+});
+
+test("USAGE documents --headless option for run", () => {
+    const r = runBin(["--help"]);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /--headless/);
+    assert.match(r.stdout, /run/);
+});
+
+test("USAGE shows --headless in the run signature", () => {
+    const r = runBin(["--help"]);
+    assert.equal(r.status, 0);
+    // Signature line should expose --headless / --plain alongside --max.
+    assert.match(r.stdout, /\[--headless \| --plain\]/);
+});
+
+test("run-ui module is importable and exports mountRunUi (no top-level Ink import)", async () => {
+    // The module must NOT eagerly import `ink` — that would crash
+    // on a fresh checkout without `npm install` and break the
+    // headless fallback bin/tui.mjs relies on (slice 8). Importing
+    // the file should succeed unconditionally; only mountRunUi()
+    // pulls in Ink at call time.
+    const mod = await import("../src/run-ui.mjs");
+    assert.equal(typeof mod.mountRunUi, "function");
+});

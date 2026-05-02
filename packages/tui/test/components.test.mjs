@@ -418,3 +418,56 @@ test("App composes Header, StagesRow, SubstagesPane, Timeline, DetailPane, Contr
     assert.match(out, /AGENTS\.md/);
     assert.match(out, /view/);
 });
+
+test("App.onUserAbort fires on q with 'user_quit' reason (issue #48 slice 8)", { skip }, async () => {
+    const calls = [];
+    const onUserAbort = (reason) => { calls.push(reason); };
+    const inst = render(React.createElement(App, {
+        events: [{ type: "armed", runId: "r1", label: "self_improve", maxIterations: 1000, ts: 1 }],
+        runId: "r1",
+        onUserAbort,
+    }));
+    // useInput's effect installs the listener on the next microtask;
+    // wait for that AND for setRawMode's setImmediate gating before
+    // writing input or it'll be dropped.
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    inst.stdin.write("q");
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual(calls, ["user_quit"]);
+    inst.unmount();
+});
+
+test("App.onUserAbort fires on Ctrl-C with 'signal_SIGINT' reason (issue #48 slice 8)", { skip }, async () => {
+    // In Ink raw mode, Ctrl-C does NOT produce SIGINT; it arrives as
+    // the byte \x03 (ETX). Without an explicit useInput handler the
+    // `process.on("SIGINT", …)` registered by bin/tui.mjs would never
+    // fire while the TUI owns the tty, leaving the runner orphaned.
+    const calls = [];
+    const onUserAbort = (reason) => { calls.push(reason); };
+    const inst = render(React.createElement(App, {
+        events: [{ type: "armed", runId: "r1", label: "self_improve", maxIterations: 1000, ts: 1 }],
+        runId: "r1",
+        onUserAbort,
+    }));
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    inst.stdin.write("\x03");
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual(calls, ["signal_SIGINT"]);
+    inst.unmount();
+});
+
+test("App without onUserAbort still exits on q (read-only watch mode)", { skip }, async () => {
+    // ralph-tui watch supplies no onUserAbort — the App must still
+    // tear down cleanly without throwing on the missing callback.
+    const inst = render(React.createElement(App, {
+        events: [{ type: "armed", runId: "r1", label: "ralph_loop", maxIterations: 100, ts: 1 }],
+        runId: "r1",
+    }));
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    inst.stdin.write("q");
+    await new Promise((r) => setImmediate(r));
+    inst.unmount();
+});

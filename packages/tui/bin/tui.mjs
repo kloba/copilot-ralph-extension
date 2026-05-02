@@ -65,7 +65,7 @@ USAGE
   ralph-tui where
   ralph-tui run (--self-improve | --grow-project | --prompt TEXT)
                 (--continue | --fresh)
-                [--max N] [--focus TEXT]
+                [--max N] [--focus TEXT] [--headless | --plain]
                 [--completion-promise TOKEN] [--abort-promise TOKEN]
   ralph-tui run --pause <runId>
   ralph-tui run --resume <runId>
@@ -76,6 +76,8 @@ USAGE
 OPTIONS
   --plain     Emit log lines instead of an interactive UI (auto-enabled
               when stdout is not a TTY, e.g. piped to a file or in CI).
+  --headless  For \`run\`: same as --plain — force text output even on a
+              TTY (handy for daemon / nohup / asciinema).
   --json      For \`list\`: emit the run index as a JSON array (one
               object per run, newest first) for scripting/dashboards.
   --older-than DURATION  For \`prune\`: only remove runs older than
@@ -88,7 +90,9 @@ OPTIONS
               (in-extension parity; context grows monotonically).
   --fresh     For \`run\`: every iter starts a brand-new Copilot session
               (clean context per iter).
-  --max N     For \`run\`: iteration cap (default 100, max 1000).
+  --max N     For \`run\`: iteration cap (default 100; default 1000 —
+              effectively unbounded — for --self-improve since the
+              loop is scope-driven, not iter-driven; max 1000).
   --focus TEXT  For \`run\`: focus suffix appended to the SDLC prompt
               (max 2000 chars). Ignored when --prompt is set.
   --completion-promise TOKEN  For \`run\`: substring whose presence in
@@ -531,7 +535,27 @@ export async function cmdRun(flags) {
         return () => process.off(sig, handler);
     };
 
+    // Issue #48 slice 8: when stdout is a TTY and the user didn't ask
+    // for headless output, mount the Ink renderer alongside the
+    // running driver so they see live iter -> stage -> substage
+    // progress + backlog pressure. Falls back to plain text mode when
+    // (a) flags.headless or flags.plain is set, (b) stdout isn't a
+    // TTY (CI / pipe / asciinema), or (c) Ink isn't installed
+    // (ERR_MODULE_NOT_FOUND).
+    const runUiEnabled = isTTY() && !flags.headless && !flags.plain;
+    let runUiMod = null;
+    if (runUiEnabled) {
+        try {
+            runUiMod = await import("../src/run-ui.mjs");
+        } catch (err) {
+            if (err && err.code !== "ERR_MODULE_NOT_FOUND") throw err;
+            // Fall through to plain mode.
+        }
+    }
+
     let currentRunId = null;
+    let runUiInstance = null;
+    let runUiMountPromise = null;
     const offInt = installSignal("SIGINT");
     const offTerm = installSignal("SIGTERM");
     try {
@@ -543,12 +567,73 @@ export async function cmdRun(flags) {
             max,
             completionPromise,
             abortPromise: abortPromise ?? undefined,
-            onRunId: (id) => { currentRunId = id; },
+            // When the TUI is mounted, Ink owns the terminal — any
+            // `runRalphTui` writes to stdout (e.g. the `# iter N/M`
+            // banner) interleave with Ink's frames and corrupt the
+            // render. Pipe runner stdout to a no-op sink in TUI
+            // mode; stderr stays attached so unrecoverable errors
+            // still surface above the TUI on tear-down.
+            stdout: runUiMod ? { write: () => {} } : undefined,
+            onRunId: (id) => {
+                currentRunId = id;
+                if (runUiMod) {
+                    // Mount the TUI as soon as we know the runId so
+                    // the user sees `armed` + iter 1 land in real
+                    // time. Async — kick it off and capture the
+                    // promise so the finally block can wait for
+                    // unmount cleanup. mountRunUi failures (rare:
+                    // events.jsonl unreadable, terminal too small,
+                    // etc.) degrade silently — the runner keeps
+                    // running and the user gets a final summary
+                    // line on exit.
+                    const eventsPath = safeResolveEventsPath("run", id);
+                    if (eventsPath) {
+                        runUiMountPromise = runUiMod.mountRunUi({
+                            runId: id,
+                            eventsPath,
+                            // ctrl-c / q from within the TUI
+                            // routes here so the driver gets a
+                            // graceful stop request instead of
+                            // being orphaned mid-iter when Ink
+                            // tears down. Match the reason
+                            // strings bin/tui.mjs's signal
+                            // handler uses so log scrubbers
+                            // don't need a special case.
+                            onUserAbort: (reason) => {
+                                try { runner.stopRun(id, { reason }); }
+                                catch { /* swallow */ }
+                            },
+                        })
+                            .then((inst) => { runUiInstance = inst; })
+                            .catch((err) => {
+                                process.stderr.write(`ralph-tui run: TUI mount failed (${err?.message ?? err}); continuing in headless mode.\n`);
+                            });
+                    }
+                }
+            },
             onIteration: ({ iter }) => {
                 // eslint-disable-next-line no-unused-vars
                 void iter;
             },
         });
+        // Wait for the mount promise to settle (so we don't tear down
+        // a half-mounted TUI in the finally block). Then actively
+        // unmount the App rather than relying on its auto-exit-on-
+        // complete logic — the auto-exit only fires when the
+        // `complete` / `abort` event is seen via the live stream,
+        // and on a fast run the TUI may not mount until AFTER the
+        // runner has already written `complete` to disk (in which
+        // case the event lands in the initial `readEventsFile` seed,
+        // not the stream, and the App would hang forever waiting for
+        // a terminal stream event that never arrives). Active
+        // unmount sidesteps that race entirely.
+        if (runUiMountPromise) {
+            try { await runUiMountPromise; } catch { /* already logged */ }
+        }
+        if (runUiInstance) {
+            try { runUiInstance.unmount(); } catch { /* swallow */ }
+            try { await runUiInstance.waitUntilExit(); } catch { /* swallow */ }
+        }
         process.stdout.write(`# done — runId=${result.runId} reason=${result.terminationReason}`
             + (result.terminationNote ? ` note=${result.terminationNote}` : "")
             + (result.sessionId ? ` sessionId=${result.sessionId}` : "")
@@ -558,6 +643,9 @@ export async function cmdRun(flags) {
             ? 0 : 1;
     } finally {
         offInt(); offTerm();
+        if (runUiInstance) {
+            try { runUiInstance.unmount(); } catch { /* swallow */ }
+        }
     }
 }
 

@@ -1,43 +1,43 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-         <loc>https://kloba.github.io/copilot-ralph-extension/</loc>
+         <loc>https://kloba.github.io/autopilot/</loc>
          <lastmod>2026-05-02</lastmod>
     </url>
     <url>
-         <loc>https://kloba.github.io/copilot-ralph-extension/ARCHITECTURE/</loc>
+         <loc>https://kloba.github.io/autopilot/ARCHITECTURE/</loc>
          <lastmod>2026-05-02</lastmod>
     </url>
     <url>
-         <loc>https://kloba.github.io/copilot-ralph-extension/CONTRIBUTING/</loc>
+         <loc>https://kloba.github.io/autopilot/CONTRIBUTING/</loc>
          <lastmod>2026-05-02</lastmod>
     </url>
     <url>
-         <loc>https://kloba.github.io/copilot-ralph-extension/RELEASING/</loc>
+         <loc>https://kloba.github.io/autopilot/RELEASING/</loc>
          <lastmod>2026-05-02</lastmod>
     </url>
     <url>
-         <loc>https://kloba.github.io/copilot-ralph-extension/cli-stack/</loc>
+         <loc>https://kloba.github.io/autopilot/cli-stack/</loc>
          <lastmod>2026-05-02</lastmod>
     </url>
     <url>
-         <loc>https://kloba.github.io/copilot-ralph-extension/concepts/</loc>
+         <loc>https://kloba.github.io/autopilot/concepts/</loc>
          <lastmod>2026-05-02</lastmod>
     </url>
     <url>
-         <loc>https://kloba.github.io/copilot-ralph-extension/faq/</loc>
+         <loc>https://kloba.github.io/autopilot/faq/</loc>
          <lastmod>2026-05-02</lastmod>
     </url>
     <url>
-         <loc>https://kloba.github.io/copilot-ralph-extension/quickstart/</loc>
+         <loc>https://kloba.github.io/autopilot/quickstart/</loc>
          <lastmod>2026-05-02</lastmod>
     </url>
     <url>
-         <loc>https://kloba.github.io/copilot-ralph-extension/recipes/</loc>
+         <loc>https://kloba.github.io/autopilot/recipes/</loc>
          <lastmod>2026-05-02</lastmod>
     </url>
     <url>
-         <loc>https://kloba.github.io/copilot-ralph-extension/showcase/</loc>
+         <loc>https://kloba.github.io/autopilot/showcase/</loc>
          <lastmod>2026-05-02</lastmod>
     </url>
 </urlset>

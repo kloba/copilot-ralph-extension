@@ -6,11 +6,11 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A Ralph Wiggum-style autonomous loop for the GitHub Copilot CLI.">
+        <meta name="description" content="Autonomous iterative loop for the GitHub Copilot CLI.">
       
       
       
-        <link rel="canonical" href="https://kloba.github.io/copilot-ralph-extension/concepts/">
+        <link rel="canonical" href="https://kloba.github.io/autopilot/concepts/">
       
       
         <link rel="prev" href="../quickstart/">
@@ -24,7 +24,7 @@
     
     
       
-        <title>Concepts - Ralph</title>
+        <title>Concepts - autopilot</title>
       
     
     
@@ -90,7 +90,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href=".." title="Ralph" class="md-header__button md-logo" aria-label="Ralph" data-md-component="logo">
+    <a href=".." title="autopilot" class="md-header__button md-logo" aria-label="autopilot" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -104,7 +104,7 @@
       <div class="md-header__ellipsis">
         <div class="md-header__topic">
           <span class="md-ellipsis">
-            Ralph
+            autopilot
           </span>
         </div>
         <div class="md-header__topic" data-md-component="header-topic">
@@ -340,13 +340,13 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href=".." title="Ralph" class="md-nav__button md-logo" aria-label="Ralph" data-md-component="logo">
+    <a href=".." title="autopilot" class="md-nav__button md-logo" aria-label="autopilot" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
 
     </a>
-    Ralph
+    autopilot
   </label>
   
     <div class="md-nav__source">
@@ -454,6 +454,153 @@
       Table of contents
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-autopilot-models-a-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      How autopilot models a loop
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How autopilot models a loop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#arming" class="md-nav__link">
+    <span class="md-ellipsis">
+      Arming
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subprocess-per-iter" class="md-nav__link">
+    <span class="md-ellipsis">
+      Subprocess-per-iter
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-subprocess-per-iter" class="md-nav__link">
+    <span class="md-ellipsis">
+      Why subprocess-per-iter
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markers-the-driver-scans-for" class="md-nav__link">
+    <span class="md-ellipsis">
+      Markers the driver scans for
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#event-vocabulary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Event vocabulary
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Event vocabulary">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#armed" class="md-nav__link">
+    <span class="md-ellipsis">
+      armed
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#iteration_start" class="md-nav__link">
+    <span class="md-ellipsis">
+      iteration_start
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-stage_plan-commit_observed" class="md-nav__link">
+    <span class="md-ellipsis">
+      task / stage_plan / commit_observed
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#result-iteration_end" class="md-nav__link">
+    <span class="md-ellipsis">
+      result / iteration_end
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#finalize" class="md-nav__link">
+    <span class="md-ellipsis">
+      finalize
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#abort" class="md-nav__link">
+    <span class="md-ellipsis">
+      abort
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#complete-done" class="md-nav__link">
+    <span class="md-ellipsis">
+      complete / done
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#other-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      Other events
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-run-state-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      Per-run state file
+    </span>
+  </a>
+  
+</li>
       
         <li class="md-nav__item">
   <a href="#pause-resume-semantics" class="md-nav__link">
@@ -586,6 +733,153 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#how-autopilot-models-a-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      How autopilot models a loop
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How autopilot models a loop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#arming" class="md-nav__link">
+    <span class="md-ellipsis">
+      Arming
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subprocess-per-iter" class="md-nav__link">
+    <span class="md-ellipsis">
+      Subprocess-per-iter
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-subprocess-per-iter" class="md-nav__link">
+    <span class="md-ellipsis">
+      Why subprocess-per-iter
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markers-the-driver-scans-for" class="md-nav__link">
+    <span class="md-ellipsis">
+      Markers the driver scans for
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#event-vocabulary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Event vocabulary
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Event vocabulary">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#armed" class="md-nav__link">
+    <span class="md-ellipsis">
+      armed
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#iteration_start" class="md-nav__link">
+    <span class="md-ellipsis">
+      iteration_start
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-stage_plan-commit_observed" class="md-nav__link">
+    <span class="md-ellipsis">
+      task / stage_plan / commit_observed
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#result-iteration_end" class="md-nav__link">
+    <span class="md-ellipsis">
+      result / iteration_end
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#finalize" class="md-nav__link">
+    <span class="md-ellipsis">
+      finalize
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#abort" class="md-nav__link">
+    <span class="md-ellipsis">
+      abort
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#complete-done" class="md-nav__link">
+    <span class="md-ellipsis">
+      complete / done
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#other-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      Other events
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-run-state-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      Per-run state file
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pause-resume-semantics" class="md-nav__link">
     <span class="md-ellipsis">
       Pause / resume semantics
@@ -640,32 +934,119 @@
 
 
 <h1 id="concepts">Concepts<a class="headerlink" href="#concepts" title="Permanent link">&para;</a></h1>
-<div class="admonition note">
-<p class="admonition-title">Stub page (issue #2)</p>
-<p>Scaffold only — to be expanded in follow-ups. See the <a href="https://github.com/kloba/autopilot#readme">README</a> until this page is filled in.</p>
-</div>
-<p>Topics planned:</p>
+<p>This page covers the runtime model <code>autopilot</code> uses to drive a loop, the JSONL event vocabulary it emits, and the per-run state file. The later sections (pause / resume, completion / abort triggers, stagnation, adaptive iteration budget) document the protocol contracts the agent and the driver share.</p>
+<h2 id="how-autopilot-models-a-loop">How autopilot models a loop<a class="headerlink" href="#how-autopilot-models-a-loop" title="Permanent link">&para;</a></h2>
+<p><code>autopilot run</code> is an <strong>arming → subprocess-per-iter</strong> driver. The driver process itself is small and largely stateless: every meaningful piece of run state lives on disk, in two files per run (<code>state.json</code> and <code>events.jsonl</code>).</p>
+<p>The full lifecycle of a single run is:</p>
+<ol>
+<li><strong>Arm.</strong> Resolve flags, compute the runId, write the seed <code>state.json</code>, emit <code>armed</code>, mount the TUI.</li>
+<li><strong>Spawn iter N.</strong> Read <code>state.json</code>, honor pause/stop, emit <code>iteration_start</code>, fork <code>copilot -p</code>.</li>
+<li><strong>Stream the iter.</strong> Reduce stdout JSONL into the in-process iter reducer; re-emit structured agent markers as typed events.</li>
+<li><strong>Close iter N.</strong> Subprocess exits; the driver folds the reducer's output into an <code>iteration_end</code> event, evaluates completion / abort / stagnation triggers, and either continues to iter N+1 or terminates.</li>
+<li><strong>Terminate.</strong> Emit either <code>complete</code> or <code>abort</code> with a structured <code>reason</code>, set <code>terminated = true</code> on <code>state.json</code>, return.</li>
+</ol>
+<h3 id="arming">Arming<a class="headerlink" href="#arming" title="Permanent link">&para;</a></h3>
+<p>When you invoke <code>autopilot run</code> (e.g. <code>autopilot run --self-improve --fresh</code> or just bare <code>autopilot</code>, which expands to <code>--self-improve --fresh</code>), the driver:</p>
+<ol>
+<li>Computes a stable <code>runId</code> (<code>&lt;label&gt;-&lt;startedAtEpochMs&gt;</code>) and creates the per-run directory at <code>&lt;runs-root&gt;/&lt;runId&gt;/</code>.</li>
+<li>Writes the initial <code>state.json</code> (iter counter at 0, <code>paused</code> and <code>stopRequested</code> both false, no captured <code>sessionId</code> yet).</li>
+<li>Emits the <code>armed</code> event to <code>events.jsonl</code> and appends a row to <code>&lt;runs-root&gt;/index.jsonl</code> so <code>autopilot list</code> / <code>autopilot stats</code> can enumerate the run without scanning every per-run dir.</li>
+<li>Mounts the TUI (or skips it under <code>--plain</code>).</li>
+</ol>
+<p>The runs root resolves from <code>$AUTOPILOT_RUNS_DIR</code>, falling back to the legacy <code>$RALPH_TUI_RUNS_DIR</code>, falling back to <code>~/.copilot/autopilot/runs</code>. The Copilot CLI binary resolves from <code>$AUTOPILOT_COPILOT_BIN</code>, falling back to legacy <code>$RALPH_TUI_COPILOT_BIN</code>, falling back to <code>copilot</code> on <code>$PATH</code>.</p>
+<h3 id="subprocess-per-iter">Subprocess-per-iter<a class="headerlink" href="#subprocess-per-iter" title="Permanent link">&para;</a></h3>
+<p>Once armed, the driver enters a <code>for iter in 1..max</code> loop. <strong>Each iteration spawns a fresh <code>copilot -p "..." --allow-all-tools ...</code> subprocess</strong> and pipes its stdout JSONL into the driver. The driver:</p>
 <ul>
-<li>The arming → subprocess-per-iter model used by <code>autopilot run</code></li>
-<li>Completion / abort / stagnation finish reasons</li>
-<li>Pause / resume semantics</li>
-<li>Adaptive iteration budget</li>
+<li>Re-reads <code>state.json</code> at every iter boundary to honor <code>paused</code> / <code>stopRequested</code> flips.</li>
+<li>Streams the iter's stdout JSONL into a small reducer that captures the root assistant's content, the terminal <code>result.sessionId</code>, and per-message token / premium-request deltas.</li>
+<li>Re-emits structured agent markers (stage starts, task starts/ends, commit observations) as events on <code>events.jsonl</code> so the TUI and any replay tool can reconstruct the run end-to-end without re-running anything.</li>
+<li>Waits for the subprocess to exit naturally — the in-flight Copilot child is <strong>never killed mid-iter</strong>.</li>
 </ul>
+<p>Whatever the iter's response was, it is stored verbatim in the iter's <code>iteration_end</code> event excerpt (truncated to 500 surrogate-safe characters). The full session JSONL stays in Copilot CLI's own log at <code>~/.copilot/session-state/&lt;sessionId&gt;.jsonl</code>; once the driver captures the sessionId it emits a <code>session_attached</code> event so the TUI can mount a tail against that file for the live-output panel.</p>
+<h3 id="why-subprocess-per-iter">Why subprocess-per-iter<a class="headerlink" href="#why-subprocess-per-iter" title="Permanent link">&para;</a></h3>
+<p>This shape buys two properties the driver depends on:</p>
+<ul>
+<li><strong>Hermeticity per iteration.</strong> Context modes are simple flags fed to the next subprocess: <code>--continue</code> reuses the captured <code>result.sessionId</code> from iter 1 (passed to Copilot as <code>--resume &lt;sessionId&gt;</code>), and <code>--fresh</code> starts a brand-new session every iter. A crash, hang, or OOM in one iter doesn't poison subsequent iters — the driver just spawns a new subprocess for iter N+1.</li>
+<li><strong>Statelessness in the driver.</strong> The driver itself holds nothing across iters except <code>state.json</code> and the <code>events.jsonl</code> log. Restarting or re-attaching from another terminal is trivial: read <code>state.json</code>, replay <code>events.jsonl</code>, render.</li>
+</ul>
+<h3 id="markers-the-driver-scans-for">Markers the driver scans for<a class="headerlink" href="#markers-the-driver-scans-for" title="Permanent link">&para;</a></h3>
+<p>In each iter's stdout JSONL the driver looks for two things:</p>
+<ul>
+<li>The <strong>root assistant's <code>assistant.message.data.content</code></strong> — sub-agent content (Copilot CLI subagents) is filtered out — for the configured completion / abort substrings, and for the byte-identical-response stagnation detector. Subagent filtering matters: an SDLC-style baked prompt can spawn a critique subagent that legitimately quotes the literal completion token while reasoning about it, and the driver must not terminate on that quote.</li>
+<li>The <strong>terminal <code>result</code> event with <code>result.sessionId</code></strong> — captured at iter 1 in <code>--continue</code> mode and reused as <code>--resume &lt;sessionId&gt;</code> for iter 2+. In <code>--fresh</code> mode the sessionId is captured but discarded (each iter starts a new session).</li>
+</ul>
+<p>Beyond those two, the parser also surfaces structured <code>[STAGE: …]</code> / <code>[STAGE_PLAN: …]</code> / <code>[TASK_START: …]</code> / <code>[TASK_END: …]</code> markers the agent emits inline in its response, plus <code>git commit</code> substages observed via tool-call results. Each of those is re-emitted as a typed event on <code>events.jsonl</code> so a replayer never has to re-parse the agent's prose.</p>
+<h2 id="event-vocabulary">Event vocabulary<a class="headerlink" href="#event-vocabulary" title="Permanent link">&para;</a></h2>
+<p>The driver writes one JSON object per line to <code>&lt;runs-root&gt;/&lt;runId&gt;/events.jsonl</code>. The schema, the serializer, and the read-side <code>parseEventLine</code> / <code>foldEvents</code> helpers all live in <a href="https://github.com/kloba/autopilot/blob/main/packages/tui/src/events.mjs"><code>packages/tui/src/events.mjs</code></a>. Every event has at minimum a <code>type</code>, a <code>ts</code> (epoch milliseconds), and the run's stable <code>runId</code>.</p>
+<h3 id="armed"><code>armed</code><a class="headerlink" href="#armed" title="Permanent link">&para;</a></h3>
+<p>Emitted once, before iter 1, when the driver has finished arming the run. Also written to <code>&lt;runs-root&gt;/index.jsonl</code> so list / stats commands can enumerate runs cheaply. The <code>label</code> (<code>self_improve</code> / <code>grow_project</code> / <code>ralph_loop</code>) determines which baked prompt and SDLC stage list applies.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="s2">&quot;armed&quot;</span><span class="p">,</span><span class="nt">&quot;ts&quot;</span><span class="p">:</span><span class="mi">1714600000000</span><span class="p">,</span><span class="nt">&quot;runId&quot;</span><span class="p">:</span><span class="s2">&quot;self_improve-1714600000000&quot;</span><span class="p">,</span><span class="nt">&quot;label&quot;</span><span class="p">:</span><span class="s2">&quot;self_improve&quot;</span><span class="p">,</span><span class="nt">&quot;maxIterations&quot;</span><span class="p">:</span><span class="mi">50</span><span class="p">,</span><span class="nt">&quot;minIterations&quot;</span><span class="p">:</span><span class="mi">1</span><span class="p">}</span>
+</code></pre></div>
+<h3 id="iteration_start"><code>iteration_start</code><a class="headerlink" href="#iteration_start" title="Permanent link">&para;</a></h3>
+<p>Emitted just before the driver spawns the iter's <code>copilot -p</code> subprocess. Carries the 1-indexed iter counter. The matching <code>iteration_end</code> is what closes the iter; an <code>iteration_start</code> without a paired <code>iteration_end</code> indicates an interrupted run (driver crashed mid-iter or external SIGKILL).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="s2">&quot;iteration_start&quot;</span><span class="p">,</span><span class="nt">&quot;ts&quot;</span><span class="p">:</span><span class="mi">1714600005000</span><span class="p">,</span><span class="nt">&quot;runId&quot;</span><span class="p">:</span><span class="s2">&quot;self_improve-1714600000000&quot;</span><span class="p">,</span><span class="nt">&quot;iteration&quot;</span><span class="p">:</span><span class="mi">1</span><span class="p">}</span>
+</code></pre></div>
+<h3 id="task-stage_plan-commit_observed"><code>task</code> / <code>stage_plan</code> / <code>commit_observed</code><a class="headerlink" href="#task-stage_plan-commit_observed" title="Permanent link">&para;</a></h3>
+<p>Mid-iter progress markers. The agent emits structured <code>[STAGE: …]</code> / <code>[TASK_START: …]</code> / <code>[STAGE_PLAN: …]</code> markers in its assistant content; the driver's parser re-emits each as a typed event so the TUI can render the live three-level hierarchy (work item → stage → task) and the LastCommit footer without re-deriving anything. <code>commit_observed</code> events are sourced from the runner's <code>git commit</code> substage detector rather than from agent prose, so a run that <code>git reset</code>s after the fact still has accurate commit history in <code>events.jsonl</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="s2">&quot;stage_plan&quot;</span><span class="p">,</span><span class="nt">&quot;ts&quot;</span><span class="p">:</span><span class="mi">1714600006500</span><span class="p">,</span><span class="nt">&quot;runId&quot;</span><span class="p">:</span><span class="s2">&quot;self_improve-1714600000000&quot;</span><span class="p">,</span><span class="nt">&quot;iteration&quot;</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span><span class="nt">&quot;stages&quot;</span><span class="p">:[</span><span class="s2">&quot;ORIENT&quot;</span><span class="p">,</span><span class="s2">&quot;IDEATE&quot;</span><span class="p">,</span><span class="s2">&quot;CRITIQUE&quot;</span><span class="p">,</span><span class="s2">&quot;BASELINE&quot;</span><span class="p">,</span><span class="s2">&quot;IMPLEMENT&quot;</span><span class="p">,</span><span class="s2">&quot;TEST&quot;</span><span class="p">,</span><span class="s2">&quot;COMMIT&quot;</span><span class="p">,</span><span class="s2">&quot;PUSH&quot;</span><span class="p">,</span><span class="s2">&quot;END&quot;</span><span class="p">]}</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="s2">&quot;task_start&quot;</span><span class="p">,</span><span class="nt">&quot;ts&quot;</span><span class="p">:</span><span class="mi">1714600007200</span><span class="p">,</span><span class="nt">&quot;runId&quot;</span><span class="p">:</span><span class="s2">&quot;self_improve-1714600000000&quot;</span><span class="p">,</span><span class="nt">&quot;iteration&quot;</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span><span class="nt">&quot;stage&quot;</span><span class="p">:</span><span class="s2">&quot;IMPLEMENT&quot;</span><span class="p">,</span><span class="nt">&quot;sub&quot;</span><span class="p">:</span><span class="mi">3</span><span class="p">,</span><span class="nt">&quot;desc&quot;</span><span class="p">:</span><span class="s2">&quot;add safeSliceChars unit test&quot;</span><span class="p">}</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="s2">&quot;commit_observed&quot;</span><span class="p">,</span><span class="nt">&quot;ts&quot;</span><span class="p">:</span><span class="mi">1714600009000</span><span class="p">,</span><span class="nt">&quot;runId&quot;</span><span class="p">:</span><span class="s2">&quot;self_improve-1714600000000&quot;</span><span class="p">,</span><span class="nt">&quot;iteration&quot;</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span><span class="nt">&quot;sha&quot;</span><span class="p">:</span><span class="s2">&quot;a1b2c3d&quot;</span><span class="p">,</span><span class="nt">&quot;subject&quot;</span><span class="p">:</span><span class="s2">&quot;test: surrogate-safe truncation&quot;</span><span class="p">,</span><span class="nt">&quot;trailers&quot;</span><span class="p">:[</span><span class="s2">&quot;Co-authored-by: Copilot &lt;noreply@github.com&gt;&quot;</span><span class="p">]}</span>
+</code></pre></div>
+<h3 id="result-iteration_end"><code>result</code> / <code>iteration_end</code><a class="headerlink" href="#result-iteration_end" title="Permanent link">&para;</a></h3>
+<p>Terminal event from the in-flight <code>copilot -p</code> subprocess; the driver folds it into <code>iteration_end</code>, which carries the iter's response excerpt, cumulative tokens, and (when present) the Copilot premium-request count. The subprocess's terminal <code>result.sessionId</code> lives only in the in-process reducer's local state — it is surfaced to consumers via <code>session_attached</code> and stored on <code>state.json</code>, never on the iter's <code>iteration_end</code> event payload itself.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="s2">&quot;iteration_end&quot;</span><span class="p">,</span><span class="nt">&quot;ts&quot;</span><span class="p">:</span><span class="mi">1714600060000</span><span class="p">,</span><span class="nt">&quot;runId&quot;</span><span class="p">:</span><span class="s2">&quot;self_improve-1714600000000&quot;</span><span class="p">,</span><span class="nt">&quot;iteration&quot;</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span><span class="nt">&quot;excerpt&quot;</span><span class="p">:</span><span class="s2">&quot;Implemented safeSliceChars test; commit pushed.&quot;</span><span class="p">,</span><span class="nt">&quot;tokens&quot;</span><span class="p">:{</span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="mi">12000</span><span class="p">,</span><span class="nt">&quot;output&quot;</span><span class="p">:</span><span class="mi">850</span><span class="p">},</span><span class="nt">&quot;premiumRequests&quot;</span><span class="p">:</span><span class="mi">1</span><span class="p">}</span>
+</code></pre></div>
+<h3 id="finalize"><code>finalize</code><a class="headerlink" href="#finalize" title="Permanent link">&para;</a></h3>
+<p>Iter N concluded. In the canonical schema the iter close is the <code>iteration_end</code> event above; downstream tooling that prefers a separate "finalize" name reads the same <code>iteration_end</code> line.</p>
+<h3 id="abort"><code>abort</code><a class="headerlink" href="#abort" title="Permanent link">&para;</a></h3>
+<p>Emitted exactly once when the loop ends via <code>--stop</code>, completion-promise, abort-promise, stagnation, send error, or hitting <code>--max</code>. Carries a structured <code>reason</code> so downstream tooling can branch on the cause without parsing a free-form <code>note</code>. Reason vocabulary includes <code>user_stopped</code>, <code>abort_promise</code>, <code>stagnation</code>, <code>max_iterations</code>, and <code>send_error</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="s2">&quot;abort&quot;</span><span class="p">,</span><span class="nt">&quot;ts&quot;</span><span class="p">:</span><span class="mi">1714600300000</span><span class="p">,</span><span class="nt">&quot;runId&quot;</span><span class="p">:</span><span class="s2">&quot;self_improve-1714600000000&quot;</span><span class="p">,</span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="s2">&quot;abort_promise&quot;</span><span class="p">}</span>
+</code></pre></div>
+<h3 id="complete-done"><code>complete</code> / <code>done</code><a class="headerlink" href="#complete-done" title="Permanent link">&para;</a></h3>
+<p>Terminal event when the completion-promise (default <code>COMPLETE</code>) was observed. Drivers fire either <code>complete</code> or <code>abort</code> — never both — at the end of every run, so a consumer can rely on a single closing event per <code>runId</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="s2">&quot;complete&quot;</span><span class="p">,</span><span class="nt">&quot;ts&quot;</span><span class="p">:</span><span class="mi">1714600200000</span><span class="p">,</span><span class="nt">&quot;runId&quot;</span><span class="p">:</span><span class="s2">&quot;self_improve-1714600000000&quot;</span><span class="p">,</span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="s2">&quot;completion_promise&quot;</span><span class="p">}</span>
+</code></pre></div>
+<p>The <code>terminalAt</code> timestamp on either <code>complete</code> or <code>abort</code> is what <code>autopilot stats</code> and the TUI's elapsed-clock display freeze on, so a late event landing on the file after termination cannot push the elapsed counter forward.</p>
+<h3 id="other-events">Other events<a class="headerlink" href="#other-events" title="Permanent link">&para;</a></h3>
+<p><code>pause</code> / <code>resume</code>, <code>stagnation</code>, <code>stage_start</code> / <code>stage_end</code>, <code>substage</code>, <code>task_list</code> / <code>task_end</code>, <code>stage_plan_amend</code>, <code>workitem_start</code> / <code>workitem_end</code>, <code>backlog_snapshot</code>, <code>usage_update</code>, and <code>session_attached</code> round out the schema. See <a href="https://github.com/kloba/autopilot/blob/main/packages/tui/src/events.mjs"><code>events.mjs</code></a> for the complete contract.</p>
+<p>The schema is <strong>strictly additive</strong>: new event types append to the <code>EVENT_TYPES</code> list and never reorder or remove existing entries, so a months-old <code>events.jsonl</code> written by an older driver still folds cleanly through the latest reader. Lines longer than 16 KiB are rejected at serialize time and excerpts / notes are surrogate-safely truncated at 500 characters, so a runaway prompt cannot bloat the file.</p>
+<p>The reader-side <code>foldEvents(events)</code> helper reduces the linear stream into a structured snapshot (<code>status</code>, <code>iteration</code>, <code>tokens</code>, <code>activeStage</code>, <code>currentPlan</code>, <code>lastCommit</code>, …) used by the TUI render path and by every replay tool — so any consumer can re-derive the run's state without re-implementing the protocol.</p>
+<h2 id="per-run-state-file">Per-run state file<a class="headerlink" href="#per-run-state-file" title="Permanent link">&para;</a></h2>
+<p><code>~/.copilot/autopilot/runs/&lt;runId&gt;/state.json</code> is the run's only mutable on-disk state. It holds:</p>
+<ul>
+<li><code>runId</code>, <code>mode</code>, <code>contextMode</code>, <code>startedAt</code>, <code>max</code> — run identity.</li>
+<li><code>iter</code> — the 1-indexed iteration counter, advanced at every iter boundary.</li>
+<li><code>paused</code> / <code>pausedAt</code> / <code>totalPausedMs</code> — pause flags + clock so <code>--resume</code> can compute how long a pause lasted.</li>
+<li><code>stopRequested</code> / <code>stopReason</code> — flipped by sibling <code>autopilot run --stop &lt;runId&gt;</code> invocations.</li>
+<li><code>sessionId</code> — captured Copilot CLI session id (in <code>--continue</code> mode); null otherwise.</li>
+<li><code>terminated</code> / <code>terminationReason</code> / <code>terminationNote</code> — set on the run's final exit.</li>
+<li><code>version</code> — monotonic counter incremented on every CAS write.</li>
+</ul>
+<p>The resolved completion / abort tokens themselves are baked at arm-time and held on the driver's runtime closure rather than on <code>state.json</code>, so a config change between the arm and the next iter cannot retroactively change the run's termination criteria.</p>
+<p>State writes are CAS-protected via a per-run lockfile (<code>&lt;statePath&gt;.lock</code>, a directory created via <code>mkdirSync</code> for atomicity) so a concurrent <code>--pause</code> + <code>--stop</code> from two separate terminals do not lose updates. Each writer reads the current state under the lock, mutates, bumps <code>version</code>, and renames a temp file into place.</p>
+<p><code>autopilot run --status &lt;runId&gt;</code> is a thin reader over the same file: it parses <code>state.json</code>, optionally tails the run's recent <code>events.jsonl</code> lines, and prints a one-screen summary. Because <code>state.json</code> is the single source of truth, <code>--status</code> works whether the driver is currently mid-iter, paused, or already terminated — the lock is held only during writes, so reads never block.</p>
+<p>The companion <code>&lt;runs-root&gt;/index.jsonl</code> aggregates one row per run (the <code>armed</code> event re-emitted to a global file) so <code>autopilot list</code> and <code>autopilot stats</code> enumerate runs in a single sequential read instead of globbing every per-run directory. Runs that no longer have a per-run dir on disk (pruned, manually deleted) still surface in the index until a sweep removes them.</p>
 <h2 id="pause-resume-semantics">Pause / resume semantics<a class="headerlink" href="#pause-resume-semantics" title="Permanent link">&para;</a></h2>
 <p><code>autopilot run --pause &lt;runId&gt;</code> and <code>autopilot run --resume &lt;runId&gt;</code> let you stop the next iteration from firing without losing the iteration counter or the captured Copilot session id (in <code>--continue</code> mode). The currently-running <code>copilot -p</code> subprocess is <strong>never killed mid-iter</strong> — the driver waits for it to finish naturally before honoring the pause flag at the next iter boundary.</p>
 <p>State writes are CAS-protected via a per-run lockfile so a concurrent <code>--pause</code> + <code>--stop</code> from two terminals do not lose updates.</p>
-<p><code>--resume</code> flips <code>pauseRequested</code> back to <code>false</code>. <code>--stop</code> sets <code>stopRequested</code> and the driver emits a terminal <code>abort</code> event with <code>reason: "user_stopped"</code> after the in-flight iter exits.</p>
+<p><code>--resume</code> flips <code>paused</code> back to <code>false</code> and rolls forward <code>totalPausedMs</code>. <code>--stop</code> sets <code>stopRequested</code> and the driver emits a terminal <code>abort</code> event with <code>reason: "user_stopped"</code> after the in-flight iter exits.</p>
+<p><code>SIGINT</code> / <code>SIGTERM</code> at the driver process maps onto <code>--stop</code> via the same lock-protected CAS path: the signal handler flips <code>stopRequested = true</code> on <code>state.json</code> and lets the in-flight iter exit before the driver returns. That keeps Ctrl-C in the foreground terminal and a sibling <code>autopilot run --stop &lt;runId&gt;</code> from another terminal indistinguishable from each other to a downstream consumer of <code>events.jsonl</code>.</p>
 <h2 id="completion-abort-triggers">Completion / abort triggers<a class="headerlink" href="#completion-abort-triggers" title="Permanent link">&para;</a></h2>
 <p>The driver scans each iter's response (root <code>assistant.message.data.content</code> — sub-agent content is filtered out) for two configurable substrings:</p>
 <ul>
 <li><strong><code>--completion-promise</code></strong> (default <code>COMPLETE</code>) — terminates with <code>reason: "completion_promise"</code>.</li>
 <li><strong><code>--abort-promise</code></strong> — terminates with <code>reason: "abort_promise"</code>. Defaults to the baked prompt's abort token in <code>--self-improve</code> mode (<code>ABORT_NO_IMPROVEMENTS</code>) and <code>--grow-project</code> mode (<code>ABORT_NO_BACKLOG</code>); no default in <code>--prompt</code> mode.</li>
 </ul>
-<p>Both triggers are <strong>only honored after <code>min_iterations</code></strong> to avoid premature termination from the agent merely describing the protocol on iter 1.</p>
+<p>Both triggers are <strong>only honored after <code>min_iterations</code></strong> to avoid premature termination from the agent merely describing the protocol on iter 1. The substring match is naive <code>.includes()</code> against the filtered root content — that's deliberate, since baked prompts pin both the exact spelling of the token and the surrounding markdown context, so false positives in normal agent prose are vanishingly rare.</p>
 <h2 id="stagnation-detection">Stagnation detection<a class="headerlink" href="#stagnation-detection" title="Permanent link">&para;</a></h2>
 <p>The driver tracks the last few iter responses and aborts with <code>reason: "stagnation"</code> when N consecutive responses are byte-identical (default N=3; <code>--stagnation-limit 0</code> disables). Stagnation overrides <code>min_iterations</code> as a safety floor — a genuinely stuck loop should not run to <code>max_iterations</code> just because <code>min</code> hadn't been reached.</p>
+<p>The comparison is on the filtered root-assistant content — the same string used for completion / abort substring scans — so subagent chatter that happens to vary across iters (different tool-call IDs, different timestamps in tool output) does not mask a stuck root agent. A <code>stagnation</code> event with a non-zero <code>streak</code> is also emitted at the boundary that crosses the threshold, so the TUI can surface "2 of 3 identical" warnings before the run actually aborts.</p>
 <h2 id="adaptive-iteration-budget">Adaptive iteration budget<a class="headerlink" href="#adaptive-iteration-budget" title="Permanent link">&para;</a></h2>
-<p>When <code>--self-improve</code> reaches <code>--max</code> and progress signals are positive (the working tree shows uncommitted changes, or the last few iters are not byte-identical), the runner grants <code>adaptive_extension</code> more iterations up to <code>adaptive_max_total</code> rather than aborting useful work. See <a href="../packages/tui/src/runner.mjs"><code>packages/tui/src/runner.mjs</code></a> for the signal evaluation and ceiling rules.</p>
+<p>When <code>--self-improve</code> reaches <code>--max</code> and progress signals are positive (the working tree shows uncommitted changes, or the last few iters are not byte-identical), the runner grants <code>adaptive_extension</code> more iterations up to <code>adaptive_max_total</code> rather than aborting useful work. The reverse is also true: if every progress signal is negative (no commits, byte-identical tail), the runner respects the user-supplied ceiling and does not extend.</p>
+<p>The extension applies only to the <code>--self-improve</code> mode where "useful work in flight" is well-defined; <code>--grow-project</code> and <code>--prompt</code> runs honor <code>--max</code> exactly as configured. See <a href="https://github.com/kloba/autopilot/blob/main/packages/tui/src/runner.mjs"><code>packages/tui/src/runner.mjs</code></a> for the signal evaluation and ceiling rules.</p>
+<p>The signals are deliberately conservative — uncommitted changes count, but a noisy file-watcher artifact does not — so the extension never fires speculatively. If the run does extend, the TUI shows the new ceiling and the reason in the header; the matching <code>iteration_start</code> events keep the same <code>runId</code> so a replay still folds into one timeline.</p>
 
 
 

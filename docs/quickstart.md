@@ -24,7 +24,7 @@ cd packages/tui && npm install
 node packages/tui/bin/tui.mjs run --self-improve --fresh --max 50
 
 # Grow the project backlog with a focus area.
-node packages/tui/bin/tui.mjs run --grow-project --fresh --focus "ralph-tui replay UX"
+node packages/tui/bin/tui.mjs run --grow-project --fresh --focus "autopilot replay UX"
 
 # Custom prompt mode — re-fed verbatim every iter until COMPLETE.
 node packages/tui/bin/tui.mjs run \

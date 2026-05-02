@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Fixes
+- `extractUsage` now rejects negative usage values from
+  `assistant.message` events. The previous filter
+  (`input > 0 || output > 0`) would happily admit
+  `{ input_tokens: -500, output_tokens: 50 }` because the OR was
+  satisfied by the positive peer; `creditUsage` would then apply
+  `a.tokens.input += -500`, *decreasing* the loop's cumulative
+  budget. That silently masks a configured `max_tokens` cap (the
+  loop never trips it because the running total deflates) and
+  drives the context-window pct calculation negative. Both
+  the nested `data.usage` and flat `data.usage_input_tokens`
+  paths now require both peers to be `>= 0` AND at least one
+  positive — events with any negative peer are treated as "no
+  usage" so the upstream bug surfaces (no credit, no
+  byIteration entry) instead of being absorbed into
+  bookkeeping. Two tests pin both forms.
+
 ### CI
 - `.github/workflows/ci.yml` now runs `npm run check` (the portable
   `scripts/check.mjs` syntax checker added in iter 58) alongside the

@@ -1361,13 +1361,23 @@ export function createRalphController(opts = {}) {
             const input = Number(u.input_tokens ?? u.inputTokens ?? 0);
             const output = Number(u.output_tokens ?? u.outputTokens ?? 0);
             const model = typeof u.model === "string" ? u.model : (typeof d.model === "string" ? d.model : null);
-            if (Number.isFinite(input) && Number.isFinite(output) && (input > 0 || output > 0)) {
+            // Reliability: reject negative usage values. They are non-
+            // physical (no real provider emits them) and crediting a
+            // negative input via `a.tokens.input += -N` would *decrease*
+            // the loop's cumulative budget — silently masking a
+            // configured `max_tokens` cap and pushing the context-window
+            // pct calculation negative. Treating malformed events as
+            // "no usage" surfaces the upstream bug rather than absorbing
+            // it into bookkeeping.
+            if (Number.isFinite(input) && Number.isFinite(output) &&
+                input >= 0 && output >= 0 && (input > 0 || output > 0)) {
                 return { input, output, model };
             }
         }
         const flatIn = Number(d.usage_input_tokens ?? d.usageInputTokens ?? 0);
         const flatOut = Number(d.usage_output_tokens ?? d.usageOutputTokens ?? 0);
-        if (Number.isFinite(flatIn) && Number.isFinite(flatOut) && (flatIn > 0 || flatOut > 0)) {
+        if (Number.isFinite(flatIn) && Number.isFinite(flatOut) &&
+            flatIn >= 0 && flatOut >= 0 && (flatIn > 0 || flatOut > 0)) {
             const model = typeof d.usage_model === "string" ? d.usage_model
                 : typeof d.usageModel === "string" ? d.usageModel
                 : typeof d.model === "string" ? d.model : null;

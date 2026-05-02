@@ -7014,3 +7014,73 @@ test("ci.yml runs `npm run check` so the portable script is exercised in CI", ()
     const ci = readFileSync(resolve(REPO_ROOT, ".github/workflows/ci.yml"), "utf8");
     assert.match(ci, /run: npm run check/);
 });
+
+test("extractUsage rejects negative usage values (nested form)", async () => {
+    // Reliability: negative usage tokens are non-physical (no real
+    // provider emits them). If extractUsage accepts them and
+    // creditUsage applies `a.tokens.input += -N`, the loop's
+    // cumulative budget DECREASES — silently masking a configured
+    // `max_tokens` cap and pushing the context-window pct negative.
+    // Treat malformed events as "no usage" so the upstream bug
+    // surfaces (no credit, no byIteration entry) rather than being
+    // absorbed into bookkeeping.
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const a = controller.state.active;
+    // Establish a positive baseline first.
+    emitUsage(session, { input: 100, output: 20, content: "iter 1 ok" });
+    const before = { input: a.tokens.input, output: a.tokens.output, len: a.tokens.byIteration.length };
+    // Negative input — the existing `input > 0 || output > 0` filter
+    // would have passed because output is positive. Must be rejected.
+    session.emit("assistant.message", {
+        data: {
+            content: "iter 2 ok",
+            usage: { input_tokens: -500, output_tokens: 50, model: "claude-opus-4.7" },
+        },
+    });
+    assert.equal(a.tokens.input, before.input,
+        "negative input_tokens must NOT be credited");
+    assert.equal(a.tokens.output, before.output,
+        "no token credit when one peer is negative");
+    assert.equal(a.tokens.byIteration.length, before.len,
+        "rejected events must NOT add a byIteration entry");
+    // Negative output, positive input — same rejection.
+    session.emit("assistant.message", {
+        data: {
+            content: "iter 3 ok",
+            usage: { input_tokens: 200, output_tokens: -10, model: "claude-opus-4.7" },
+        },
+    });
+    assert.equal(a.tokens.input, before.input);
+    assert.equal(a.tokens.output, before.output);
+    assert.equal(a.tokens.byIteration.length, before.len);
+});
+
+test("extractUsage rejects negative usage values (flat form)", async () => {
+    // Same hardening for the flat usage_input_tokens / usage_output_tokens
+    // path used by the SDK's events table. Both paths share the
+    // negative-rejection contract.
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const a = controller.state.active;
+    session.emit("assistant.message", {
+        data: {
+            content: "iter 1 flat ok",
+            usage_input_tokens: 100,
+            usage_output_tokens: 20,
+            usage_model: "claude-opus-4.7",
+        },
+    });
+    const before = { input: a.tokens.input, output: a.tokens.output, len: a.tokens.byIteration.length };
+    assert.equal(before.input, 100, "positive flat usage must credit normally");
+    // Negative output_tokens via flat form — must be rejected.
+    session.emit("assistant.message", {
+        data: {
+            content: "iter 2 flat malformed",
+            usage_input_tokens: 50,
+            usage_output_tokens: -5,
+            usage_model: "claude-opus-4.7",
+        },
+    });
+    assert.equal(a.tokens.input, before.input);
+    assert.equal(a.tokens.output, before.output);
+    assert.equal(a.tokens.byIteration.length, before.len);
+});

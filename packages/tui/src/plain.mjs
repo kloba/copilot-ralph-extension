@@ -66,7 +66,24 @@ export function formatEventLine(ev) {
     }
     if (Number.isFinite(ev.streak)) parts.push(`streak=${ev.streak}`);
     if (Number.isFinite(ev.pausedForMs)) parts.push(`pausedForMs=${ev.pausedForMs}`);
-    if (typeof ev.reason === "string" && ev.reason) parts.push(`reason=${ev.reason}`);
+    if (typeof ev.reason === "string" && ev.reason) {
+        // JSON.stringify the reason iff it contains whitespace, so a
+        // user-supplied multi-word reason from ralph_pause / ralph_stop
+        // (e.g. "user requested" or a flattened multi-line paste) stays
+        // a single awk-parseable token in the rendered log line. Baked
+        // single-token reasons (completion_promise, abort_promise,
+        // stagnation, max_iterations, send_error, …) keep their
+        // historical unquoted form so existing log scrapers don't
+        // suddenly see `reason="completion_promise"` instead of
+        // `reason=completion_promise`. Mirrors the per-field
+        // single-line guarantee `note` already gets via JSON.stringify
+        // — the asymmetry was a pre-iter-137 papercut: a `pause` event
+        // emitted with `reason: "going to lunch"` rendered as
+        // `pause <runId> iter=N/M reason=going to lunch` so an
+        // awk-like consumer counted four extra tokens after `reason=`
+        // and silently mis-aligned every column to its right.
+        parts.push(/\s/.test(ev.reason) ? `reason=${JSON.stringify(ev.reason)}` : `reason=${ev.reason}`);
+    }
     if (typeof ev.note === "string" && ev.note) parts.push(`note=${JSON.stringify(ev.note)}`);
     if (typeof ev.excerpt === "string" && ev.excerpt) {
         // Collapse whitespace so the excerpt stays single-line. Cap at 80

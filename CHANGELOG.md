@@ -77,6 +77,31 @@
   either value is caught at test time.
 
 ### Fixes
+- `packages/tui/src/plain.mjs`'s `formatEventLine` now
+  JSON-stringifies the `reason=` field iff the reason
+  contains whitespace, so a user-supplied multi-word
+  reason from `ralph_pause` / `ralph_stop` (e.g. "lunch
+  break", "context window pressure", a flattened
+  multi-line paste) renders as a single
+  awk-/grep-parseable token. Pre-iter-137 these reasons
+  emitted unquoted, so a `pause` event with
+  `reason: "going to lunch"` rendered as
+  `pause <runId> iter=N/M reason=going to lunch`,
+  collapsing four extra tokens after `reason=` and
+  silently mis-aligning every column to its right for
+  scrapers that splat on whitespace. Mirrors the
+  long-standing JSON.stringify treatment of the `note`
+  field. Baked single-token reasons (
+  `completion_promise`, `abort_promise`, `stagnation`,
+  `max_iterations`, `send_error`, …) keep their
+  historical UNquoted form so existing log scrapers don't
+  suddenly see a quoted form on new runs. Pinned by a
+  drift-guard test that exercises both branches plus the
+  cross-property "exactly one whitespace-separated token
+  starts with `reason=`" invariant on multi-word reasons,
+  and also pins tab-bearing reasons (the `\s` regex
+  catches `\t`, not just literal space).
+
 - `install.sh --dry-run`'s "Installed:" line now distinguishes
   `(none)` (target `handler.mjs` is missing — legitimate fresh
   install) from `(unknown)` (target `handler.mjs` exists but

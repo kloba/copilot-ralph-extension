@@ -110,7 +110,10 @@ test("formatEventLine: pause renders verb=pause + iteration + reason", () => {
     });
     assert.match(line, /^01:02:03\.456\s+pause\s+ralph_loop-7/);
     assert.match(line, /iter=4/);
-    assert.match(line, /reason=user requested/);
+    // Multi-word user reasons are JSON-quoted so a `tail -f` consumer
+    // (awk / grep -o columns) sees one token after `reason=` instead
+    // of three. Iter 137 fix.
+    assert.match(line, /reason="user requested"/);
 });
 
 test("formatEventLine: pause with null reason omits the reason segment", () => {
@@ -306,4 +309,66 @@ test("formatEventLine: abort with abort_promise reason renders cleanly", () => {
     assert.match(line, /\babort\s+ralph_loop-1\b/);
     assert.match(line, /reason=abort_promise/);
     assert.doesNotMatch(line, /note=/, "absent note must not render an empty segment");
+});
+
+test("formatEventLine: reason= field quotes whitespace-bearing user reasons but not baked tokens", () => {
+    // Iter 137 fix: pause/stop events with a user-supplied reason
+    // (via ralph_pause / ralph_stop) routinely contain spaces — the
+    // user types "lunch break", "context-window pressure", or
+    // similar. Pre-iter-137 the renderer emitted them unquoted, so
+    // the line collapsed multiple tokens after `reason=` and
+    // misaligned every column to its right for awk-/grep-based
+    // consumers (the same hazard the `note` field already escaped via
+    // JSON.stringify for years). Pin both branches:
+    //   (a) baked single-token reasons — UNCHANGED, unquoted, so a
+    //       log scraper that already parses `reason=completion_promise`
+    //       across thousands of historical lines doesn't suddenly see
+    //       a quoted form on new runs.
+    //   (b) user-text reasons — JSON-stringified, one token after
+    //       `reason=`, so awk's $4-style column lookups work.
+    //
+    // Cross-property check: a hostile reason value (multi-word) MUST
+    // not change the count of whitespace-separated tokens on the
+    // rendered line beyond exactly one (the quoted reason itself).
+    const baked = formatEventLine({
+        type: "abort",
+        ts: 1_000_000,
+        runId: "ralph_loop-baked",
+        iterations: 3,
+        reason: "completion_promise",
+    });
+    assert.match(baked, /reason=completion_promise(?:$|\s)/,
+        `baked single-token reasons must remain unquoted; got: ${baked}`);
+    assert.doesNotMatch(baked, /reason="completion_promise"/,
+        `baked single-token reasons must NOT gain JSON quotes (would break existing log scrapers); got: ${baked}`);
+
+    const userText = formatEventLine({
+        type: "pause",
+        ts: 1_000_000,
+        runId: "ralph_loop-user",
+        iteration: 7,
+        reason: "context window pressure",
+    });
+    assert.match(userText, /reason="context window pressure"/,
+        `multi-word user reasons must be JSON-stringified so the line stays awk-parseable; got: ${userText}`);
+    // Token count check: split on whitespace, find the index of the
+    // `reason=...` token, assert it is exactly one token (not three).
+    const tokens = userText.split(/\s+/).filter(Boolean);
+    const reasonTokens = tokens.filter((t) => t.startsWith("reason="));
+    assert.equal(reasonTokens.length, 1,
+        `multi-word reason must collapse to exactly one whitespace-separated token after reason=; got ${reasonTokens.length} reason-prefixed tokens in: ${userText}`);
+
+    // Tab / CRLF / mixed whitespace classes are also caught by the
+    // `\s` regex — pin so a future "optimisation" that switches to
+    // ` ` (literal space) doesn't silently regress on tab-bearing
+    // reasons (e.g. a flattened reason with embedded tabs).
+    const tabbed = formatEventLine({
+        type: "pause",
+        ts: 1_000_000,
+        runId: "ralph_loop-tab",
+        iteration: 1,
+        reason: "lunch\tbreak",
+    });
+    assert.match(tabbed, /reason="lunch\\tbreak"/,
+        `reasons containing tabs must also be JSON-stringified (\\s regex catches \\t); got: ${tabbed}`);
 });

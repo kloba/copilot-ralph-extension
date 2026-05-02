@@ -130,13 +130,18 @@ window pressure climb in real time.
 
 The loop makes two promises about what it credits:
 
-1. **Negative / NaN / Infinity rejection.** `extractUsage` discards
-   any `assistant.message` whose `usage.input_tokens` or
-   `usage.output_tokens` is negative, NaN, Infinity, or non-numeric.
-   A flaky upstream usage payload cannot push `tokens.input` below
-   zero (which would silently mask a `max_tokens` cap by inflating
-   remaining budget) or generate an `Infinity` total that breaks
-   the context-window threshold maths.
+1. **Negative / NaN / Infinity / zero-zero rejection.**
+   `extractUsage` discards any `assistant.message` whose
+   `usage.input_tokens` or `usage.output_tokens` is negative, NaN,
+   Infinity, or non-numeric. It also discards a `{input: 0,
+   output: 0}` pair — a zero/zero event carries no information and
+   would pollute the per-iteration breakdown with empty rows. The
+   contract is therefore: both peers finite and `>= 0`, and at
+   least one of them strictly positive. A flaky upstream usage
+   payload cannot push `tokens.input` below zero (which would
+   silently mask a `max_tokens` cap by inflating remaining budget)
+   or generate an `Infinity` total that breaks the context-window
+   threshold maths.
 2. **Pause-time isolation.** While the loop is paused, no
    `assistant.message` is credited to the running totals, no
    per-iteration entry is appended, and no context-window warning

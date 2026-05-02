@@ -690,6 +690,21 @@
   fails loudly.
 
 ### Documentation
+- `docs/concepts.md`'s "Two safety contracts" bullet on
+  token-credit rejection drifted from the actual
+  `isCreditableTokenPair` contract in `extension/handler.mjs`.
+  Pre-iter-153 the doc listed only "negative / NaN / Infinity"
+  rejection, missing the `(input > 0 || output > 0)` clause:
+  `{input: 0, output: 0}` events ARE silently dropped. A
+  maintainer reading concepts.md alone could implement an
+  event-source shim that emitted `{0, 0}` after a no-op turn
+  and be confused when those events never landed in the per-
+  iteration breakdown. ARCHITECTURE.md's section already had
+  the correct "at least one positive" wording — concepts.md
+  is now consistent. A drift-guard test in
+  `test/extension.test.mjs` re-reads the bullet and pins both
+  the zero/zero phrase AND the at-least-one-positive clause
+  so the wording cannot regress without flipping the test.
 - `.github/copilot-instructions.md`'s CHANGELOG section-order
   summary drifted away from `AGENTS.md`'s canonical chain on
   TWO points: it placed `Documentation` BEFORE `Internal`

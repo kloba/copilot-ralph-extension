@@ -10143,3 +10143,33 @@ test("displayValue quotes strings + stringifies non-strings (direct)", () => {
     assert.equal(displayValue(Infinity), "Infinity", "Infinity must NOT render as null (JSON.stringify(Infinity) === 'null')");
     assert.equal(displayValue(-Infinity), "-Infinity");
 });
+
+test("docs/concepts.md mentions zero/zero pair rejection in token-credit contract", () => {
+    // Iter 153 — `isCreditableTokenPair` (handler.mjs) requires not just
+    // finite + non-negative inputs but also that AT LEAST ONE peer is
+    // strictly positive: `{input: 0, output: 0}` events are rejected.
+    // ARCHITECTURE.md captures this ("at least one positive"); pre-iter-
+    // 153 docs/concepts.md only listed "negative / NaN / Infinity"
+    // rejection and missed the zero/zero clause, so a maintainer
+    // reading concepts.md alone could misimplement an event-source
+    // shim that emitted {0,0} after a no-op turn and be surprised
+    // when those events were silently dropped. Pin the addition so
+    // a future doc-trim cannot accidentally remove the zero/zero
+    // wording without flipping the test.
+    const fileUrl = import.meta.url;
+    const here = dirname(fileURLToPath(fileUrl));
+    const repoRoot = resolve(here, "..");
+    const concepts = readFileSync(join(repoRoot, "docs/concepts.md"), "utf8");
+    // Find the "Two safety contracts" section and slice through the
+    // first numbered item — that's the credit-rejection bullet.
+    const i = concepts.indexOf("Two safety contracts");
+    assert.ok(i >= 0, "concepts.md must keep the 'Two safety contracts' section header");
+    const slice = concepts.slice(i, i + 1500);
+    // The first bullet must mention BOTH the zero-pair and the
+    // "at least one positive" clause (different words OK; pin the
+    // semantic, not the prose).
+    assert.match(slice, /zero[\s\/-]?zero|zero\/zero|\{input: 0, output: 0\}/i,
+        "concepts.md credit-rejection bullet must mention the zero/zero pair");
+    assert.match(slice, /at least one|strictly positive|one (?:peer|of them)/i,
+        "concepts.md credit-rejection bullet must mention the at-least-one-positive clause");
+});

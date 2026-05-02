@@ -1254,7 +1254,7 @@ test("slice9: formatEventLine renders commit_observed with short sha + subject +
 // ─── usage_update / premiumRequests round-trip + fold ───────────────
 // The runner emits `usage_update` mid-iter (per assistant.message
 // outputTokens delta + per result.usage.premiumRequests) so the
-// TUI Header / DetailPane snapshot updates while the agent is
+// TUI Header snapshot updates while the agent is
 // still working — pre-fix, `tokens 0` / no premium counter were
 // stuck for the entire iter because `iteration_end` was the only
 // event carrying usage.

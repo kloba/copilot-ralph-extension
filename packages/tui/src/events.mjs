@@ -759,7 +759,7 @@ export function foldEvents(events) {
             // a root-agent `assistant.message` (per-message
             // outputTokens delta) or terminal `result` (premiumRequests
             // for that iter) lands. Carries cumulative-for-the-run
-            // totals so the TUI Header / DetailPane snapshot updates
+            // totals so the TUI Header snapshot updates
             // within seconds of agent output rather than waiting for
             // `iteration_end` at iter close.
             case "usage_update": {

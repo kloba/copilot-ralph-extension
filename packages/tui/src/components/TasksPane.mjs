@@ -122,7 +122,7 @@ const STATE_COLOR = {
 
 export default function TasksPane({ snapshot }) {
     // Issue #54 slice 1 — heading "Tasks" matches the inside-border
-    // convention used by Timeline / DetailPane / LastCommit.
+    // convention used by Timeline / LiveOutputPane / LastCommit.
     const heading = h(Text, { bold: true, underline: true }, "Tasks");
     const rows = computeTaskRows(snapshot);
     if (rows.length === 0) {

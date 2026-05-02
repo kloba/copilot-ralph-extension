@@ -38,7 +38,7 @@ export default function SubstagesPane({ snapshot, maxRows = 12 }) {
     // Issue #54 slice 1 — heading "Activity" decouples the pane
     // title from the `▸ STAGE_NAME` line, which now sits as the
     // first body row. Matches the inside-border heading convention
-    // used by Timeline / DetailPane / TasksPane.
+    // used by Timeline / LiveOutputPane / TasksPane.
     const heading = h(Text, { bold: true, underline: true }, "Activity");
 
     const stageRowText = active

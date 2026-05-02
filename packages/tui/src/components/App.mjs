@@ -6,18 +6,55 @@
 
 import React, { useEffect, useState } from "react";
 import { Box, useApp, useInput } from "ink";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 import { foldEvents } from "../events.mjs";
+import { tailSessionFile } from "../tail.mjs";
+import { formatSessionEvent } from "../stream-format.mjs";
 import Header from "./Header.mjs";
 import StagesRow from "./StagesRow.mjs";
 import TasksPane from "./TasksPane.mjs";
 import SubstagesPane from "./SubstagesPane.mjs";
 import Timeline from "./Timeline.mjs";
-import DetailPane from "./DetailPane.mjs";
+import LiveOutputPane from "./LiveOutputPane.mjs";
 import LastCommit from "./LastCommit.mjs";
 import Controls from "./Controls.mjs";
 
 const h = React.createElement;
+
+// Issue #57 / live-output panel — ring-buffer cap. 200 lines is large
+// enough that any reasonable scroll-back use-case has room to breathe
+// (the user can `ralph-tui replay` for the full transcript). Small
+// enough that we never burn tens of MB on a long-running self_improve
+// session.
+const LIVE_BUFFER_MAX = 200;
+
+/**
+ * Compute the path to the Copilot CLI's session log for a given
+ * sessionId. The CLI itself writes here; this path is owned by the
+ * Copilot CLI and is independent of our own events.jsonl path
+ * (which lives under `RALPH_TUI_RUNS_DIR` per issue #50).
+ *
+ * @param {string} sessionId
+ * @returns {string}
+ */
+function sessionStateLogPath(sessionId) {
+    return join(homedir(), ".copilot", "session-state", `${sessionId}.jsonl`);
+}
+
+/**
+ * Derive a stable identity key for the active L3 task. Returns null
+ * when no task is in flight (between task_end and the next task_start).
+ * Including `startedAt` ensures a re-run of the same `(stage, sub)`
+ * pair gets a fresh key — useful for stages that retry a task without
+ * ending the parent stage.
+ */
+function deriveTaskKey(snapshot) {
+    const t = snapshot?.taskInFlight;
+    if (!t) return null;
+    return `${t.stage}:${t.sub}:${t.startedAt ?? 0}`;
+}
 
 /**
  * @param {Object} props
@@ -51,6 +88,12 @@ export default function App({ eventStream, events: initial = [], runId, appVersi
     // the loop reaches a terminal status — at that point <Header>
     // freezes elapsed at `snapshot.terminalAt` anyway.
     const [now, setNow] = useState(() => Date.now());
+    // Issue #57 — live-output ring buffer fed by the tailSessionFile()
+    // effect below and rendered by <LiveOutputPane>. `taskKey` tracks
+    // the active L3 task so we know when to clear `lines` (each
+    // task_start gets a fresh buffer); between tasks the buffer keeps
+    // appending so inter-task agent commentary still surfaces.
+    const [liveOutput, setLiveOutput] = useState({ taskKey: null, lines: [] });
     const { exit } = useApp();
 
     useInput((input, key) => {
@@ -121,13 +164,77 @@ export default function App({ eventStream, events: initial = [], runId, appVersi
         return () => clearInterval(id);
     }, [tickActive]);
 
+    // Issue #57 — reset the live buffer on each task_start. We compute
+    // the task key from `snapshot.taskInFlight` (set by task_start,
+    // cleared by task_end). Going from null → non-null OR transitioning
+    // to a different task identity resets the buffer; null → null and
+    // task_end → null deliberately leave the buffer intact so the
+    // previous task's tail is still visible while the agent decides
+    // what to do next.
+    const taskKey = deriveTaskKey(snapshot);
+    useEffect(() => {
+        if (taskKey === null) return;
+        setLiveOutput((prev) =>
+            prev.taskKey === taskKey ? prev : { taskKey, lines: [] },
+        );
+    }, [taskKey]);
+
+    // Issue #57 — mount the Copilot CLI session-log tail when (a)
+    // we're in live mode (eventStream present — replay/static mode
+    // skips this whole path so the panel renders the
+    // "session log unavailable for replay" placeholder) and (b) the
+    // runner has surfaced a sessionId via session_attached. A
+    // re-armed loop produces a new sessionId, so the dep array's
+    // value comparison naturally tears down the old reader and
+    // mounts a new one.
+    const sessionId = isLive ? snapshot.sessionId : null;
+    useEffect(() => {
+        if (!sessionId) return undefined;
+        const ac = new AbortController();
+        const logPath = sessionStateLogPath(sessionId);
+        (async () => {
+            try {
+                for await (const sessionEv of tailSessionFile(logPath, { signal: ac.signal })) {
+                    if (ac.signal.aborted) break;
+                    const formatted = formatSessionEvent(sessionEv);
+                    if (!formatted.length) continue;
+                    setLiveOutput((prev) => {
+                        const next = prev.lines.concat(formatted);
+                        const trimmed = next.length > LIVE_BUFFER_MAX
+                            ? next.slice(-LIVE_BUFFER_MAX)
+                            : next;
+                        return { taskKey: prev.taskKey, lines: trimmed };
+                    });
+                }
+            } catch (err) {
+                if (ac.signal.aborted) return;
+                // A tail error is not fatal — the rest of the TUI is
+                // still useful (header / stages / tasks). Surface a
+                // single in-band line so the user knows the live
+                // panel is degraded rather than silently empty.
+                setLiveOutput((prev) => ({
+                    taskKey: prev.taskKey,
+                    lines: prev.lines.concat([{
+                        kind: "tool_fail",
+                        line: `← TAIL ERROR: ${err?.message ?? err}`,
+                    }]),
+                }));
+            }
+        })();
+        return () => { ac.abort(); };
+    }, [sessionId]);
+
     return h(Box, { flexDirection: "column" },
         h(Header, { snapshot, now: isLive ? now : undefined, appVersion }),
         h(StagesRow, { snapshot }),
         h(TasksPane, { snapshot }),
         h(SubstagesPane, { snapshot }),
         h(Timeline, { snapshot }),
-        h(DetailPane, { snapshot }),
+        h(LiveOutputPane, {
+            snapshot,
+            lines: liveOutput.lines,
+            isLive,
+        }),
         h(LastCommit, { snapshot }),
         h(Controls, { status: snapshot.status }),
     );

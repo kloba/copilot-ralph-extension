@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Tests
+- Add direct unit tests for `parseUserReason` — the shared
+  normaliser for the optional `reason` argument on `ralph_pause`
+  and `ralph_stop`. Previously only covered indirectly via
+  integration tests on the two tools; a refactor that swapped
+  `boundedNoteForLog` for a stricter trim could have silently
+  changed behaviour for both surfaces. Five new tests pin: (1)
+  non-string inputs (number / boolean / object / array / function)
+  → `null`; (2) empty / whitespace-only strings → `null` so the
+  success message can't render a stray ` ()` suffix; (3) normal
+  strings pass through bounded + whitespace-flattened (newlines
+  and tabs collapse to single spaces); (4) strings longer than
+  `PREVIEW_CHARS` truncate to the cap; (5) idempotency — feeding
+  the output back through the helper is a no-op, so re-normalising
+  on resume / re-render can't double-truncate or lose data.
+  Exports `parseUserReason` from the handler's `__test__` block.
+
 ### Documentation
 - README "session.log markers" bullet now matches the iter 72
   `VERB_BY_REASON` runtime contract: `abort_promise` and

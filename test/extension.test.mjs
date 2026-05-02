@@ -7,7 +7,7 @@ import { dirname, resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
-const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines } = __test__;
+const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, parseUserReason } = __test__;
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -7517,5 +7517,86 @@ test("README closing-line verb sentence matches VERB_BY_REASON contract", async 
     for (const reason of ["abort_promise", "stagnation"]) {
         assert.doesNotMatch(stoppedSentence[0], new RegExp(`\`${reason}\``),
             `README ⏹ *stopped* sentence must NOT list ${reason} (it is ⚠️ ended)`);
+    }
+});
+
+// Iter 74 — parseUserReason direct unit tests. The helper is the
+// shared normaliser for the optional `reason` argument of ralph_pause
+// and ralph_stop. It's only covered by integration tests today; pin
+// the documented contract directly so a future refactor (e.g.
+// inlining the helper, or swapping boundedNoteForLog for a stricter
+// trim) can't silently change behaviour for either tool.
+test("parseUserReason: non-string inputs collapse to null", () => {
+    // Documented contract: typeof raw !== 'string' → null. Covers the
+    // SDK's "reason was omitted" path AND defensive coercion of any
+    // junk a buggy caller might pass.
+    assert.equal(parseUserReason(undefined), null);
+    assert.equal(parseUserReason(null), null);
+    assert.equal(parseUserReason(0), null);
+    assert.equal(parseUserReason(42), null);
+    assert.equal(parseUserReason(true), null);
+    assert.equal(parseUserReason(false), null);
+    assert.equal(parseUserReason({}), null);
+    assert.equal(parseUserReason([]), null);
+    assert.equal(parseUserReason(["nested"]), null);
+    assert.equal(parseUserReason(() => "x"), null);
+});
+
+test("parseUserReason: empty / whitespace-only strings collapse to null", () => {
+    // boundedNoteForLog flattens whitespace + trims, so a string that
+    // is non-empty but contains only whitespace must round-trip to ""
+    // and parseUserReason converts that to null. This prevents the
+    // user-facing success message from rendering a stray ' ()' suffix
+    // ("paused (reason: )" with no reason content).
+    assert.equal(parseUserReason(""), null);
+    assert.equal(parseUserReason("   "), null);
+    assert.equal(parseUserReason("\t\t"), null);
+    assert.equal(parseUserReason("\n\n\n"), null);
+    assert.equal(parseUserReason("  \t \n  "), null);
+});
+
+test("parseUserReason: normal strings pass through bounded + flattened", () => {
+    // Multi-line collapses to single-line, leading/trailing whitespace
+    // trimmed, single-spaced runs preserved. Pin the exact output so
+    // a tab-or-newline-preservation refactor must update this test.
+    assert.equal(parseUserReason("ok"), "ok");
+    assert.equal(parseUserReason("  ok  "), "ok");
+    assert.equal(parseUserReason("first\nsecond"), "first second");
+    assert.equal(parseUserReason("a\tb\tc"), "a b c");
+    assert.equal(parseUserReason("a   b   c"), "a b c");
+    assert.equal(parseUserReason("line1\n\n\nline2"), "line1 line2");
+});
+
+test("parseUserReason: long string is truncated at PREVIEW_CHARS", () => {
+    // truncateNote enforces the PREVIEW_CHARS cap surrogate-safely.
+    // A reason longer than the cap must be truncated so log markers
+    // (`paused ralph_loop (reason: …)`) cannot be flooded by a
+    // pathological payload from a buggy automation caller.
+    const long = "x".repeat(PREVIEW_CHARS + 50);
+    const out = parseUserReason(long);
+    assert.equal(typeof out, "string");
+    assert.ok(out.length <= PREVIEW_CHARS,
+        `expected ≤ ${PREVIEW_CHARS} chars, got ${out.length}`);
+    // Output is just the truncation prefix (collapseNote leaves "x"s
+    // untouched since there's no whitespace to flatten).
+    assert.match(out, /^x+$/);
+});
+
+test("parseUserReason: idempotent — running twice yields the same string", () => {
+    // The output of parseUserReason is itself a valid input. A
+    // subsequent normalisation pass MUST be a no-op so callers that
+    // re-normalise (e.g. on resume after pause) don't accidentally
+    // double-truncate or lose data.
+    const cases = [
+        "simple",
+        "with\nnewline",
+        "  trim me  ",
+        "x".repeat(PREVIEW_CHARS + 5),
+    ];
+    for (const c of cases) {
+        const once = parseUserReason(c);
+        const twice = parseUserReason(once);
+        assert.equal(twice, once,
+            `parseUserReason must be idempotent for input ${JSON.stringify(c.slice(0, 40))}`);
     }
 });

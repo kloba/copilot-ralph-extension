@@ -277,6 +277,24 @@
   `1 character.` and `N characters.`.
 
 ### Refactor
+- `packages/tui/src/writer.mjs`'s two throw-on-traversal call
+  sites (`resolveRunEventsPath` and `createEventWriter`) now
+  route through a shared `assertSafeRunId(fnName, runId)`
+  helper instead of each open-coding the same `if
+  (isPathTraversalRunId(runId)) throw new TypeError(...)` two
+  lines. Behaviour preserved (same `TypeError`, same
+  `<fnName>: runId "<runId>" contains path separators or
+  traversal segments` message format, same fail-before-fs
+  guarantee), but the consolidation removes the drift hazard
+  that would let one site update its message wording while the
+  other quietly keeps the old form. `pruneRuns` continues to
+  call `isPathTraversalRunId` directly because its policy is
+  "silently skip the row, keep the survivor in the index"
+  rather than "throw". A new test in
+  `packages/tui/test/writer.test.mjs` pins the contract that
+  every caller prefixes its own function name in the
+  `TypeError` message so a stack-truncated error log still
+  identifies which surface rejected the runId.
 - `packages/tui/src/components/Timeline.mjs`'s private
   `truncate` helper is now wired through the shared
   `safeSliceChars` utility (already used by `plain.mjs` and

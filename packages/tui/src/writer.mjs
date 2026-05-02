@@ -44,9 +44,7 @@ export function resolveRunEventsPath(runId, deps = {}) {
     if (typeof runId !== "string" || !runId) {
         throw new TypeError("resolveRunEventsPath: runId must be a non-empty string");
     }
-    if (isPathTraversalRunId(runId)) {
-        throw new TypeError(`resolveRunEventsPath: runId ${JSON.stringify(runId)} contains path separators or traversal segments`);
-    }
+    assertSafeRunId("resolveRunEventsPath", runId);
     const path = deps.path ?? pathDefault;
     return path.join(resolveRunsRoot(deps), runId, "events.jsonl");
 }
@@ -57,7 +55,9 @@ export function resolveRunEventsPath(runId, deps = {}) {
 // resolved runs directory. Legitimately emitted runIds are produced by
 // `makeRunId` and only contain `[A-Za-z0-9_-]`, so this is purely a
 // safety net for caller-supplied input. Shared between
-// `resolveRunEventsPath` (read path) and `pruneRuns` (delete path).
+// `resolveRunEventsPath` (read path), `createEventWriter` (write
+// path) via `assertSafeRunId`, and `pruneRuns` (delete path, which
+// silently skips traversal rows rather than throwing).
 function isPathTraversalRunId(runId) {
     return runId.includes("/")
         || runId.includes("\\")
@@ -65,6 +65,22 @@ function isPathTraversalRunId(runId) {
         || runId === "."
         || runId === ".."
         || runId.includes("..");
+}
+
+// Throwing twin of `isPathTraversalRunId`. Two write/read surfaces
+// (`resolveRunEventsPath`, `createEventWriter`) need the SAME guard
+// with the SAME TypeError message format — extracting this helper
+// prevents the two sites from drifting apart on future edits (e.g.
+// one of them gets a more helpful message; the other keeps the old
+// one). `pruneRuns` does NOT use this helper because its policy is
+// "silently skip traversal rows so the index keeps the survivor"
+// rather than "throw".
+function assertSafeRunId(fnName, runId) {
+    if (isPathTraversalRunId(runId)) {
+        throw new TypeError(
+            `${fnName}: runId ${JSON.stringify(runId)} contains path separators or traversal segments`,
+        );
+    }
 }
 
 /**
@@ -109,9 +125,7 @@ export function createEventWriter({
     // here would let a future caller (or hostile test fixture) escape
     // the runs sandbox via `path.join(root, runId, …)`. Guarding here
     // keeps the read + write + delete paths in lockstep.
-    if (isPathTraversalRunId(runId)) {
-        throw new TypeError(`createEventWriter: runId ${JSON.stringify(runId)} contains path separators or traversal segments`);
-    }
+    assertSafeRunId("createEventWriter", runId);
 
     const root = resolveRunsRoot({ env, os, path });
     const runDir = path.join(root, runId);

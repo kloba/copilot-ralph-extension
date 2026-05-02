@@ -486,3 +486,30 @@ test("createEventWriter: rejects path-traversal runIds (sandbox-escape guard)", 
         fs.rmSync(tmp, { recursive: true, force: true });
     }
 });
+
+test("traversal-guard error message prefixes the calling function name (assertSafeRunId)", () => {
+    // Iter 148 — both `resolveRunEventsPath` and `createEventWriter`
+    // route their traversal guard through a shared `assertSafeRunId`
+    // helper (extracted to prevent the two call sites from drifting
+    // apart on future edits, e.g. one of them updates the message and
+    // the other doesn't). The contract `assertSafeRunId` provides is:
+    // every caller prefixes its OWN function name in the TypeError
+    // message so a stack-truncated error log still tells the operator
+    // which surface rejected the runId. Pin that contract here so a
+    // future regression that hardcodes a single name (or drops the
+    // prefix entirely) fails loudly.
+    assert.throws(
+        () => resolveRunEventsPath("../etc"),
+        (err) => err instanceof TypeError
+            && err.message.startsWith("resolveRunEventsPath:")
+            && /path separators or traversal segments/.test(err.message),
+        "resolveRunEventsPath must prefix its own name in the traversal-guard TypeError",
+    );
+    assert.throws(
+        () => createEventWriter({ runId: "../etc", env: { RALPH_EVENTS_DIR: "/tmp/ralph-test-traversal-prefix" } }),
+        (err) => err instanceof TypeError
+            && err.message.startsWith("createEventWriter:")
+            && /path separators or traversal segments/.test(err.message),
+        "createEventWriter must prefix its own name (NOT resolveRunEventsPath's) in the traversal-guard TypeError",
+    );
+});

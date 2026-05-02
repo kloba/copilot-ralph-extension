@@ -3,6 +3,23 @@
 ## Unreleased
 
 ### Features
+- `ralph-tui run` now emits a `backlog_snapshot` event after each
+  iteration when the agent's ORIENT-stage `gh` probes ran (issue
+  #48 slice 6). The runner walks the iter's `tool.execution_*`
+  events for the three baked probes
+  (`gh run list --status failure`, `gh pr list --state open`,
+  `gh issue list --state open`), parses each `gh list` output's
+  tab-delimited row count, and emits one snapshot per iter
+  carrying `redCi` / `openPrs` / `openIssues`. Fields the agent
+  did not probe stay `null` — the renderer (slice 7) shows `?`
+  for those. No extra `gh` calls from the runner: the snapshot
+  is free when the agent ran the probes (per the baked SDLC
+  prompt) and silently absent otherwise. Failed bash tool
+  results (e.g. unauthenticated `gh`) are ignored so a partial
+  stdout never poisons the snapshot. New exported helpers in
+  `packages/tui/src/runner.mjs`: `parseGhListCount(stdout)` and
+  `extractBacklogFromEvents(events)`, both pure / no I/O.
+
 - `ralph-tui run` now emits `substage` events from each
   `tool.execution_complete` JSONL frame in the agent's response
   stream (issue #48 slice 5). Each substage carries the verb

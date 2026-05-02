@@ -1008,3 +1008,220 @@ test("runRalphTui: substage sub-counter resets to 1 on each new stage_start", as
     assert.equal(subs[0].sub, 1, "first substage of ORIENT is sub=1");
     assert.equal(subs[1].sub, 1, "first substage of IDEATE is also sub=1 (counter reset)");
 });
+
+// ─── Issue #48 slice 6: backlog snapshot from agent gh probes ────────
+
+import { parseGhListCount, extractBacklogFromEvents } from "../src/runner.mjs";
+
+test("parseGhListCount: counts tab-delimited rows in gh list output", () => {
+    // Realistic gh issue list shape (header line is also tab-delimited
+    // when present, but in the agent's `2>/dev/null || true` invocation
+    // there is no header — just data rows). Each data row has at least
+    // one tab.
+    const stdout = [
+        "12345\tFix the thing\tbug,priority\t\tabout 1 hour ago",
+        "12346\tAnother bug\t\t\tabout 2 hours ago",
+        "12347\tTest issue\tlabel1\tassignee\t1 day ago",
+    ].join("\n") + "\n";
+    assert.equal(parseGhListCount(stdout), 3);
+});
+
+test("parseGhListCount: empty stdout → 0", () => {
+    assert.equal(parseGhListCount(""), 0);
+    assert.equal(parseGhListCount("\n"), 0);
+    assert.equal(parseGhListCount("   \n  \n"), 0,
+        "whitespace-only lines without tabs don't count as rows");
+});
+
+test("parseGhListCount: lines without tabs are not counted", () => {
+    // A banner like "no open issues match your search" has no tabs.
+    const stdout = "no open issues match your search\n";
+    assert.equal(parseGhListCount(stdout), 0);
+});
+
+test("parseGhListCount: non-string input → null", () => {
+    assert.equal(parseGhListCount(null), null);
+    assert.equal(parseGhListCount(undefined), null);
+    assert.equal(parseGhListCount(42), null);
+});
+
+test("parseGhListCount: handles \\r\\n line endings", () => {
+    const stdout = "12345\tA\r\n12346\tB\r\n";
+    assert.equal(parseGhListCount(stdout), 2);
+});
+
+test("extractBacklogFromEvents: captures all three probes when the agent runs them", () => {
+    const events = [
+        { type: "tool.execution_start",
+          data: { toolCallId: "c1", toolName: "bash",
+            arguments: { command: "gh run list --status failure --limit 10 2>/dev/null || true" } } },
+        { type: "tool.execution_complete",
+          data: { toolCallId: "c1", success: true,
+            result: { content: "X\tfailure\tBuild\tmain\tpush\t1m\nX\tfailure\tCI\tmain\tpush\t2m\n" } } },
+        { type: "tool.execution_start",
+          data: { toolCallId: "c2", toolName: "bash",
+            arguments: { command: "gh pr list --state open --limit 20 2>/dev/null || true" } } },
+        { type: "tool.execution_complete",
+          data: { toolCallId: "c2", success: true,
+            result: { content: "42\tFix\tcopilot\topen\t1d\n43\tDocs\tuser\topen\t2d\n44\tWIP\tbot\topen\t3d\n" } } },
+        { type: "tool.execution_start",
+          data: { toolCallId: "c3", toolName: "bash",
+            arguments: { command: "gh issue list --state open --limit 30 2>/dev/null || true" } } },
+        { type: "tool.execution_complete",
+          data: { toolCallId: "c3", success: true,
+            result: { content: "100\tA\t\t\t1h\n101\tB\t\t\t2h\n102\tC\t\t\t3h\n103\tD\t\t\t4h\n104\tE\t\t\t5h\n" } } },
+    ];
+    const got = extractBacklogFromEvents(events);
+    assert.deepEqual(got, { redCi: 2, openPrs: 3, openIssues: 5 });
+});
+
+test("extractBacklogFromEvents: missing probes leave fields null", () => {
+    // Only the issue probe ran — the renderer shows ? for the other two.
+    const events = [
+        { type: "tool.execution_start",
+          data: { toolCallId: "c1", toolName: "bash",
+            arguments: { command: "gh issue list --state open" } } },
+        { type: "tool.execution_complete",
+          data: { toolCallId: "c1", success: true,
+            result: { content: "1\ta\n2\tb\n" } } },
+    ];
+    const got = extractBacklogFromEvents(events);
+    assert.deepEqual(got, { redCi: null, openPrs: null, openIssues: 2 });
+});
+
+test("extractBacklogFromEvents: no probes ran → returns null (no event emitted)", () => {
+    const events = [
+        { type: "tool.execution_start",
+          data: { toolCallId: "c1", toolName: "bash",
+            arguments: { command: "git status" } } },
+        { type: "tool.execution_complete",
+          data: { toolCallId: "c1", success: true,
+            result: { content: "clean" } } },
+    ];
+    assert.equal(extractBacklogFromEvents(events), null);
+});
+
+test("extractBacklogFromEvents: failed probe (success=false) ignored", () => {
+    // gh might be missing or unauthenticated → tool.execution_complete
+    // arrives with success=false. The agent's `|| true` swallows the
+    // error at command level, but if the bash tool itself reports
+    // failure, we don't trust the partial stdout.
+    const events = [
+        { type: "tool.execution_start",
+          data: { toolCallId: "c1", toolName: "bash",
+            arguments: { command: "gh issue list --state open" } } },
+        { type: "tool.execution_complete",
+          data: { toolCallId: "c1", success: false,
+            error: { code: "denied", message: "..." },
+            result: { content: "1\tspurious\n" } } },
+    ];
+    assert.equal(extractBacklogFromEvents(events), null,
+        "a failed bash tool result must not poison the snapshot");
+});
+
+test("extractBacklogFromEvents: regex anchors prevent grow_project's labelled probe from counting as the open-issue probe", () => {
+    // grow_project's ORIENT runs `gh issue list --label grow-project
+    // --state open` which only lists feature backlog. We DO want to
+    // count that as open issues (it has --state open) — but this
+    // test pins that even with the extra --label flag, the match
+    // still fires. (If a future iteration of the prompt drops
+    // --state open, the field stays null, which the renderer
+    // gracefully handles.)
+    const events = [
+        { type: "tool.execution_start",
+          data: { toolCallId: "c1", toolName: "bash",
+            arguments: { command: "gh issue list --label grow-project --state open" } } },
+        { type: "tool.execution_complete",
+          data: { toolCallId: "c1", success: true,
+            result: { content: "200\tFeature1\tgrow-project\t\t1d\n201\tFeature2\tgrow-project\t\t2d\n" } } },
+    ];
+    const got = extractBacklogFromEvents(events);
+    assert.deepEqual(got, { redCi: null, openPrs: null, openIssues: 2 });
+});
+
+test("extractBacklogFromEvents: non-array input → null", () => {
+    assert.equal(extractBacklogFromEvents(null), null);
+    assert.equal(extractBacklogFromEvents(undefined), null);
+    assert.equal(extractBacklogFromEvents("not events"), null);
+});
+
+test("runRalphTui: emits backlog_snapshot when the agent runs gh probes during ORIENT", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "backlog-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const stdout = [
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:00.000Z",
+            data: { content: "[STAGE: ORIENT]" } }),
+        JSON.stringify({ type: "tool.execution_start", timestamp: "2026-01-01T00:00:01.000Z",
+            data: { toolCallId: "c1", toolName: "bash",
+                arguments: { command: "gh run list --status failure --limit 10 2>/dev/null || true" } } }),
+        JSON.stringify({ type: "tool.execution_complete", timestamp: "2026-01-01T00:00:01.500Z",
+            data: { toolCallId: "c1", success: true, result: { content: "" } } }),
+        JSON.stringify({ type: "tool.execution_start", timestamp: "2026-01-01T00:00:02.000Z",
+            data: { toolCallId: "c2", toolName: "bash",
+                arguments: { command: "gh pr list --state open --limit 20 2>/dev/null || true" } } }),
+        JSON.stringify({ type: "tool.execution_complete", timestamp: "2026-01-01T00:00:02.500Z",
+            data: { toolCallId: "c2", success: true,
+                result: { content: "42\tFix\tcopilot\topen\t1d\n" } } }),
+        JSON.stringify({ type: "tool.execution_start", timestamp: "2026-01-01T00:00:03.000Z",
+            data: { toolCallId: "c3", toolName: "bash",
+                arguments: { command: "gh issue list --state open --limit 30 2>/dev/null || true" } } }),
+        JSON.stringify({ type: "tool.execution_complete", timestamp: "2026-01-01T00:00:03.500Z",
+            data: { toolCallId: "c3", success: true,
+                result: { content: "1\tA\n2\tB\n3\tC\n" } } }),
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:04.000Z",
+            data: { content: "COMPLETE" } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    const snapEvents = events.filter((e) => e.type === "backlog_snapshot");
+    assert.equal(snapEvents.length, 1, "exactly one backlog_snapshot per iter when probes run");
+    assert.equal(snapEvents[0].redCi, 0, "no failure rows → 0");
+    assert.equal(snapEvents[0].openPrs, 1);
+    assert.equal(snapEvents[0].openIssues, 3);
+    assert.equal(snapEvents[0].iteration, 1);
+    // Snapshot must come before iteration_end so the renderer's per-iter
+    // backlog row matches that iter.
+    const snapIdx = events.findIndex((e) => e.type === "backlog_snapshot");
+    const iterEndIdx = events.findIndex((e) => e.type === "iteration_end");
+    assert.ok(snapIdx < iterEndIdx, "backlog_snapshot must precede iteration_end");
+});
+
+test("runRalphTui: no backlog_snapshot when the agent ran no gh probes (e.g. --prompt mode)", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "no-backlog-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const stdout = [
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:00.000Z",
+            data: { content: "did the work\nCOMPLETE" } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    await runRalphTui({
+        mode: "prompt",
+        contextMode: "fresh",
+        prompt: "do something",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    assert.equal(events.filter((e) => e.type === "backlog_snapshot").length, 0,
+        "no probes ran → no backlog_snapshot event (renderer shows ?)");
+});

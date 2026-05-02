@@ -354,6 +354,71 @@ export function summarizeToolArgs(verb, args) {
     return "";
 }
 
+/** Parse the line count from `gh ... list` text output. The agent's
+ *  ORIENT-stage backlog probes (`gh run list --status failure`,
+ *  `gh pr list --state open`, `gh issue list --state open`) all use
+ *  the default human-readable, tab-delimited format. Each list row
+ *  has at least one tab; "no rows" outputs (empty stdout, or a
+ *  banner like "no open issues matching your search") have none.
+ *  Returns the integer count, or null when the input is not a
+ *  string. Pure / no I/O. */
+export function parseGhListCount(stdout) {
+    if (typeof stdout !== "string") return null;
+    let count = 0;
+    for (const rawLine of stdout.split("\n")) {
+        const line = rawLine.replace(/\r$/, "");
+        if (!line) continue;
+        if (line.includes("\t")) count++;
+    }
+    return count;
+}
+
+/** Walk a copilot JSONL event array for `gh` backlog probes and
+ *  return `{ redCi, openPrs, openIssues }` with each field set when
+ *  the matching `tool.execution_complete` (with `success === true`)
+ *  carries the probe's stdout in `result.content`. Each probe is
+ *  matched by the leading `gh <subcommand> list ...` of the
+ *  recorded `tool.execution_start.arguments.command`. Fields stay
+ *  null when the agent did not run the corresponding probe (e.g.
+ *  `grow_project` only runs the labelled issue probe), and the
+ *  function returns null when no probe matched at all — in which
+ *  case the loop skips the `backlog_snapshot` emit. Pure / no I/O. */
+export function extractBacklogFromEvents(events) {
+    if (!Array.isArray(events)) return null;
+    const startsByCallId = new Map();
+    let redCi = null;
+    let openPrs = null;
+    let openIssues = null;
+    for (const ev of events) {
+        if (!ev || typeof ev !== "object") continue;
+        if (ev.type === "tool.execution_start" && ev.data && typeof ev.data.toolCallId === "string") {
+            const cmd = ev.data.arguments && typeof ev.data.arguments.command === "string"
+                ? ev.data.arguments.command : "";
+            startsByCallId.set(ev.data.toolCallId, { command: cmd });
+        }
+        if (ev.type === "tool.execution_complete"
+            && ev.data && typeof ev.data.toolCallId === "string"
+            && ev.data.success === true) {
+            const start = startsByCallId.get(ev.data.toolCallId);
+            const cmd = start?.command ?? "";
+            const stdout = (ev.data.result && typeof ev.data.result.content === "string")
+                ? ev.data.result.content : "";
+            if (/^\s*gh\s+run\s+list\b/.test(cmd) && /--status\s+failure\b/.test(cmd)) {
+                const n = parseGhListCount(stdout);
+                if (Number.isInteger(n)) redCi = n;
+            } else if (/^\s*gh\s+pr\s+list\b/.test(cmd) && /--state\s+open\b/.test(cmd)) {
+                const n = parseGhListCount(stdout);
+                if (Number.isInteger(n)) openPrs = n;
+            } else if (/^\s*gh\s+issue\s+list\b/.test(cmd) && /--state\s+open\b/.test(cmd)) {
+                const n = parseGhListCount(stdout);
+                if (Number.isInteger(n)) openIssues = n;
+            }
+        }
+    }
+    if (redCi === null && openPrs === null && openIssues === null) return null;
+    return { redCi, openPrs, openIssues };
+}
+
 /** Walk a copilot JSONL event array and produce an ordered timeline of
  *  stage markers and tool-completion records, preserving the natural
  *  interleaving from the agent's response stream. Used by the runner
@@ -822,6 +887,29 @@ export async function runRalphTui(opts) {
                 iteration: iter,
                 stage: activeMarker.stage,
                 stageName: activeMarker.name,
+            });
+        }
+
+        // Issue #48 slice 6: capture backlog state from the agent's
+        // own `gh` probes during ORIENT and emit a `backlog_snapshot`
+        // event so the renderer's header (`X open issues / Y open PRs
+        // / Z red CI runs`) updates after every iter. We piggy-back
+        // on the agent's stdout — no extra `gh` calls from the runner
+        // — so the snapshot is free when the agent runs the probes
+        // (per the baked SDLC prompt) and silently absent otherwise.
+        // Fields the agent did not probe stay null; the renderer
+        // shows "?" for null fields.
+        const backlog = extractBacklogFromEvents(result.events);
+        if (backlog) {
+            emitter.write({
+                type: "backlog_snapshot",
+                ts: now(),
+                runId,
+                label,
+                iteration: iter,
+                redCi: backlog.redCi,
+                openPrs: backlog.openPrs,
+                openIssues: backlog.openIssues,
             });
         }
 

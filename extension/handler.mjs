@@ -1810,6 +1810,20 @@ export function createRalphController(opts = {}) {
             paused_at: a.paused && a.pausedAt > 0 ? new Date(a.pausedAt).toISOString() : null,
             paused_for_ms: a.paused && a.pausedAt > 0 ? Math.max(0, now - a.pausedAt) : 0,
             total_paused_ms: a.totalPausedMs ?? 0,
+            // Issue #7: live token usage so the user can monitor budget
+            // consumption against `max_tokens` mid-run without waiting
+            // for the terminal result. Always present for predictable
+            // consumer parsing — input/output start at 0; max_tokens is
+            // null when no cap was armed. byIteration / byModel are
+            // omitted here (they're already on the terminal result and
+            // would bloat the live snapshot) — callers wanting per-iter
+            // detail should consume the iteration_end events stream.
+            tokens: {
+                input: a.tokens.input,
+                output: a.tokens.output,
+                total: a.tokens.input + a.tokens.output,
+                max_tokens: a.maxTokens ?? null,
+            },
             last_response_excerpt: previewOf(state.lastAssistantContent),
         };
         // Git block — best effort. Whole block is omitted when not in a repo.
@@ -1976,7 +1990,7 @@ export function createRalphController(opts = {}) {
         {
             name: "ralph_status",
             description:
-                "Return a structured live snapshot of the active ralph_loop / self_improve / grow_project (iteration count, elapsed time, configured promises, pause state, last response excerpt, files changed since arm-time). Read-only — never mutates loop state. When no loop is active, returns { active: false } plus the previous run's summary if available. Cheap (<10ms typically); safe to call repeatedly.",
+                "Return a structured live snapshot of the active ralph_loop / self_improve / grow_project (iteration count, elapsed time, configured promises, pause state, live token usage, last response excerpt, files changed since arm-time). Read-only — never mutates loop state. When no loop is active, returns { active: false } plus the previous run's summary if available. Cheap (<10ms typically); safe to call repeatedly.",
             parameters: {
                 type: "object",
                 properties: {},

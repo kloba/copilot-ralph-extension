@@ -7202,3 +7202,36 @@ test("release.yml runs `npm run check` so a release tag cannot ship a broken TUI
     assert.match(release, /run: npm run check/,
         "release.yml must run `npm run check` to syntax-validate shipped .mjs");
 });
+
+// Iter 67 — issue #7: ralph_status surfaces live token usage so the user can
+// monitor budget consumption against `max_tokens` mid-run.
+test("ralph_status: includes tokens block with input/output/total/max_tokens", async () => {
+    const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
+    const { ralph, status, session } = await armStatusable({ git });
+    await ralph.handler({ prompt: "go", max_iterations: 5, max_tokens: 999_999, stagnation_limit: 0 });
+    // Pre-iteration: tokens block present, all-zero, max_tokens echoed.
+    const before = await status.handler({});
+    assert.equal(before.status.tokens.input, 0);
+    assert.equal(before.status.tokens.output, 0);
+    assert.equal(before.status.tokens.total, 0);
+    assert.equal(before.status.tokens.max_tokens, 999_999);
+    // Credit some tokens via a real assistant.message + idle pair.
+    emitUsage(session, { input: 1234, output: 567 });
+    const after = await status.handler({});
+    assert.equal(after.status.tokens.input, 1234);
+    assert.equal(after.status.tokens.output, 567);
+    assert.equal(after.status.tokens.total, 1801);
+    assert.equal(after.status.tokens.max_tokens, 999_999);
+});
+
+test("ralph_status: tokens.max_tokens is null when no cap was armed", async () => {
+    const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
+    const { ralph, status } = await armStatusable({ git });
+    await ralph.handler({ prompt: "go", max_iterations: 3, stagnation_limit: 0 });
+    const r = await status.handler({});
+    assert.equal(r.status.tokens.max_tokens, null,
+        "max_tokens must be explicitly null (not undefined) when no cap was armed");
+    assert.equal(r.status.tokens.input, 0);
+    assert.equal(r.status.tokens.output, 0);
+    assert.equal(r.status.tokens.total, 0);
+});

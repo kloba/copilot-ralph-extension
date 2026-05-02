@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Features
+- `ralph_status` now surfaces a `tokens` block on the live snapshot
+  (`{ input, output, total, max_tokens }`) so the user can monitor
+  token-budget consumption against `max_tokens` mid-run without waiting
+  for the terminal result. The block is always present on the active
+  snapshot for predictable consumer parsing — counts start at 0 and
+  accumulate from every `assistant.message` event credited during the
+  loop; `max_tokens` echoes the configured cap or `null` when no cap
+  was armed. Pause/resume isolation still applies: tokens are not
+  credited while the loop is paused. Per-iteration and per-model
+  detail remain on the terminal `result.tokens` (and the
+  `iteration_end` events stream) — surfacing them on every status
+  call would bloat the snapshot. README sample payload and tool
+  description updated; two tests pin the new field shape including
+  the `max_tokens: null` (not `undefined`) contract when no cap was
+  configured.
+
 ### CI
 - `.github/workflows/release.yml` now runs `npm run check` after
   `npm test` so a release tag cannot ship a syntactically broken

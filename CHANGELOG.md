@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Tests
+- Pin pause-during-pendingFire contract: an early
+  `ralph_pause` (before iter 1 has fired) must NOT
+  consume the `pendingFire` flag nor advance the
+  iteration counter, and `ralph_resume` followed by
+  the next `session.idle` must fire iter 1 cleanly.
+  Closes a coverage gap on the transient pre-iter-1
+  window — paired with the existing tests that pin
+  pause-during-running (post iter 1) and pause-while-
+  detached.
+
 ### Refactor
 - Extract `parseUserReason(raw)` helper for the
   optional `reason` argument shared by `ralph_pause`

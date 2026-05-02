@@ -5916,6 +5916,38 @@ test("ralph_stop: whitespace-only reason resolves to undefined (no empty parens)
     assert.doesNotMatch(r.textResultForLlm, /\(\)/, "user-facing text must not render an empty `()` suffix");
 });
 
+test("ralph_pause before iter 1 fires keeps pendingFire true; resume then idle fires iter 1", async () => {
+    // Reliability: pause/resume during the transient pre-iter-1 window.
+    // After arm, `pendingFire` is true and i=0; the FIRST session.idle
+    // is what fires iter 1. If a user pauses before that idle lands, the
+    // pause must NOT consume pendingFire — otherwise resume would drop
+    // iter 1 entirely (next idle would fire iter 2 against an empty
+    // first-iteration response). This test pins the contract on both
+    // sides of the resume so the loop survives an early pause cleanly.
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const a = controller.state.active;
+    assert.equal(a.pendingFire, true, "armed loop starts with pendingFire=true");
+    assert.equal(a.i, 0);
+    const sentBeforePause = session.sent.length;
+    await pause.handler({ reason: "early pause" });
+    // Idle while paused must NOT fire iter 1 nor consume pendingFire.
+    session.emit("session.idle", { data: {} });
+    assert.equal(controller.state.active.paused, true);
+    assert.equal(controller.state.active.pendingFire, true, "paused idle must NOT consume pendingFire");
+    assert.equal(controller.state.active.i, 0, "paused idle must NOT advance the iteration counter");
+    assert.equal(session.sent.length, sentBeforePause, "paused idle must NOT send the prompt");
+    // Resume re-arms; the next idle now fires iter 1 normally.
+    await resume.handler({});
+    assert.equal(controller.state.active.paused, false);
+    assert.equal(controller.state.active.pendingFire, true, "resume preserves pendingFire when iter 1 hasn't fired");
+    session.emit("session.idle", { data: {} });
+    assert.equal(controller.state.active.i, 1, "post-resume idle must fire iter 1");
+    assert.equal(controller.state.active.pendingFire, false, "iter 1 fire consumes pendingFire");
+    assert.equal(session.sent.length, sentBeforePause + 1, "exactly one prompt queued after resume + idle");
+});
+
 test("ralph_stop while paused still works and tears the loop down", async () => {
     const { session, controller } = await arm({ max_iterations: 5 });
     const pause = controller.tools.find((t) => t.name === "ralph_pause");

@@ -900,6 +900,17 @@
   fails loudly.
 
 ### Documentation
+- The JSDoc block above `VALUE_FLAGS` in `packages/tui/bin/tui.mjs`
+  said `(currently: --older-than)` even though the set has held
+  `["older-than", "limit"]` since iter 152 (when issue #32 added
+  `--limit N` to `ralph-tui list`). Drift-only fix — the parser
+  always knew about `--limit`, but the comment misled future
+  contributors reading the file. Pinned with a new test
+  (`packages/tui/test/bin.test.mjs`) that reads `bin/tui.mjs` as
+  text, extracts every flag from the `VALUE_FLAGS` Set literal,
+  and asserts each appears in the JSDoc block — so the next
+  value-flag addition (e.g. `--since`, `--tool` from issues
+  #37/#40) cannot regress the comment without breaking CI.
 - `docs/ARCHITECTURE.md`'s "Token tracking" section listed
   only **one** of the four clauses that
   `isCreditableTokenPair` actually enforces: the negative-peer

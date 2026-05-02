@@ -660,3 +660,36 @@ test("cmdWatch (via main): path-traversal runId routes through fail() with clean
         process.stderr.write = realStderrWrite;
     }
 });
+
+test("VALUE_FLAGS JSDoc comment lists every flag actually in the set (drift guard)", async () => {
+    // Iter 169 — the JSDoc block immediately above the `VALUE_FLAGS`
+    // declaration in `bin/tui.mjs` documents which flags require a
+    // following value (i.e. are parsed via `--flag value` instead of
+    // `--flag` alone). Pre-iter-169 the comment said
+    // `(currently: --older-than)` even though `VALUE_FLAGS` was
+    // `["older-than", "limit"]` — drift from the iter-152 addition of
+    // `--limit N`. A future contributor adding (e.g.) `--since` or
+    // `--tool` would update the set, ship the feature, and leave the
+    // comment further out of sync. Pin the comment must mention every
+    // member of VALUE_FLAGS so the next drift breaks CI loudly.
+    const fs = await import("node:fs");
+    const src = fs.readFileSync(BIN, "utf8");
+
+    const setMatch = src.match(/const VALUE_FLAGS = new Set\(\[([^\]]+)\]\);/);
+    assert.ok(setMatch, "could not locate the VALUE_FLAGS declaration in tui.mjs");
+    const flags = [...setMatch[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    assert.ok(flags.length >= 1, "VALUE_FLAGS must contain at least one entry");
+
+    // The JSDoc block sits immediately before the declaration — match
+    // a `/** … */` block that ends just before `const VALUE_FLAGS =`.
+    const jsdocMatch = src.match(/\/\*\*([\s\S]+?)\*\/\s*const VALUE_FLAGS = new Set/);
+    assert.ok(jsdocMatch, "could not locate the JSDoc block above VALUE_FLAGS");
+    const jsdoc = jsdocMatch[1];
+    for (const flag of flags) {
+        assert.match(
+            jsdoc,
+            new RegExp(`--${flag}\\b`),
+            `VALUE_FLAGS JSDoc must mention --${flag} (drifted from the set)`,
+        );
+    }
+});

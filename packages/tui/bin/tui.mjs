@@ -69,8 +69,12 @@ ENV
 `;
 
 /** Minimal argv parser. Returns { cmd, positional[], flags{} }.
- *  Supports `--flag`, `--flag=value`, and `--flag value` for a known
- *  set of value-taking flags (currently: --older-than). */
+ *  Supports `--flag`, `--flag=value`, and `--flag value` for the
+ *  known value-taking flags listed in `VALUE_FLAGS` below
+ *  (currently: --older-than for `prune`, --limit for `list`). When
+ *  adding a new value flag, append it to `VALUE_FLAGS` AND update
+ *  the USAGE block above so `ralph-tui --help` keeps matching the
+ *  parser. */
 const VALUE_FLAGS = new Set(["older-than", "limit"]);
 export function parseArgv(argv) {
     const out = { cmd: null, positional: [], flags: {} };

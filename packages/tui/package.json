@@ -1,9 +1,9 @@
 {
-  "name": "@copilot-ralph-extension/tui",
+  "name": "@autopilot/tui",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Terminal UI for visualizing live ralph_loop / self_improve / grow_project runs (issue #22).",
+  "description": "Terminal UI for visualizing live ap_loop / self_improve / grow_project runs (issue #22).",
   "author": "Taras Kloba",
   "keywords": [
     "github-copilot",
@@ -15,15 +15,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kloba/copilot-ralph-extension.git",
+    "url": "git+https://github.com/kloba/autopilot.git",
     "directory": "packages/tui"
   },
   "bugs": {
-    "url": "https://github.com/kloba/copilot-ralph-extension/issues"
+    "url": "https://github.com/kloba/autopilot/issues"
   },
-  "homepage": "https://github.com/kloba/copilot-ralph-extension#readme",
+  "homepage": "https://github.com/kloba/autopilot#readme",
   "bin": {
-    "ralph-tui": "./bin/tui.mjs"
+    "autopilot": "./bin/tui.mjs"
   },
   "main": "./src/events.mjs",
   "exports": {

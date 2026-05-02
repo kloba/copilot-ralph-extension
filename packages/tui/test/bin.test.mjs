@@ -525,8 +525,8 @@ test("packages/tui/package.json carries repository/bugs/author metadata aligned 
     assert.equal(tuiPkg.repository.type, "git", "repository.type must be 'git'");
     assert.ok(
         typeof tuiPkg.repository.url === "string"
-            && tuiPkg.repository.url.includes("kloba/copilot-ralph-extension"),
-        "TUI repository.url must reference the canonical kloba/copilot-ralph-extension repo",
+            && tuiPkg.repository.url.includes("kloba/autopilot"),
+        "TUI repository.url must reference the canonical kloba/autopilot repo",
     );
     assert.equal(
         tuiPkg.repository.directory,

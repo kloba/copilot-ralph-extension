@@ -1,5 +1,5 @@
 {
-  "name": "copilot-ralph-extension",
+  "name": "autopilot",
   "version": "0.6.0",
   "description": "Autonomous iterative loop for GitHub Copilot CLI, implemented as an in-session extension.",
   "type": "module",
@@ -23,10 +23,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kloba/copilot-ralph-extension.git"
+    "url": "git+https://github.com/kloba/autopilot.git"
   },
   "bugs": {
-    "url": "https://github.com/kloba/copilot-ralph-extension/issues"
+    "url": "https://github.com/kloba/autopilot/issues"
   },
-  "homepage": "https://github.com/kloba/copilot-ralph-extension#readme"
+  "homepage": "https://github.com/kloba/autopilot#readme"
 }

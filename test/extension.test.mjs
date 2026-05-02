@@ -6414,3 +6414,65 @@ test("activeLoopGuard: paused beats pendingFire when both flags are set", async 
     assert.match(r.textResultForLlm, /is already paused/);
     assert.doesNotMatch(r.textResultForLlm, /armed.*pending/);
 });
+
+// -----------------------------------------------------------------------------
+// install.sh --project flag handling. The --project arm computes the install
+// target as $(git rev-parse --show-toplevel)/.github/extensions/ralph; if no
+// git repo is in scope, the script must refuse instead of silently writing
+// somewhere unexpected (e.g. a stale TARGET_DIR from a previous run, or worse,
+// failing partway through after mkdir clobbered something). Pin both the
+// error path and the happy path so a future "simplify" pass can't drop the
+// guard.
+// -----------------------------------------------------------------------------
+
+test("install.sh: --project outside a git repo refuses with a friendly error", () => {
+    // mkdtempSync creates a fresh dir under $TMPDIR that is NOT a git repo
+    // (mkdtemp does not invoke `git init`). On macOS $TMPDIR may itself sit
+    // inside a Time Machine snapshot but never inside a git checkout, so
+    // `git rev-parse --show-toplevel` is guaranteed to fail there.
+    const sandbox = mkdtempSync(join(tmpdir(), "ralph-install-noproject-"));
+    try {
+        const r = spawnSync(
+            "bash",
+            [resolve(REPO_ROOT, "install.sh"), "--project", "--dry-run"],
+            { encoding: "utf8", cwd: sandbox },
+        );
+        assert.notEqual(r.status, 0, "must exit non-zero outside a git repo");
+        assert.match(
+            r.stderr,
+            /--project requires being inside a git repo/,
+            "stderr must explain why --project failed",
+        );
+        // No accidental DRY-RUN side-effect printed before the error: the
+        // script must short-circuit before composing the dry-run report.
+        assert.doesNotMatch(r.stdout, /DRY RUN/);
+    } finally {
+        rmSync(sandbox, { recursive: true, force: true });
+    }
+});
+
+test("install.sh: --project --dry-run reports $GIT_ROOT/.github/extensions/ralph as target", () => {
+    // Happy path: when run from the repo root (the natural working dir for
+    // a contributor running ./install.sh --project), the target must land
+    // under .github/extensions/ralph rooted at the git toplevel — NOT
+    // under $HOME, and NOT under $PWD. cmp these against the actual
+    // git rev-parse output so the test still passes when REPO_ROOT is a
+    // symlinked path.
+    const root = spawnSync("git", ["-C", REPO_ROOT, "rev-parse", "--show-toplevel"], {
+        encoding: "utf8",
+    }).stdout.trim();
+    assert.ok(root, "git rev-parse must produce a path for the test repo");
+    const r = spawnSync(
+        "bash",
+        [resolve(REPO_ROOT, "install.sh"), "--project", "--dry-run"],
+        { encoding: "utf8", cwd: REPO_ROOT },
+    );
+    assert.equal(r.status, 0, `install.sh --project --dry-run must succeed; stderr=${r.stderr}`);
+    assert.match(r.stdout, /DRY RUN — no files will be written\./);
+    assert.ok(
+        r.stdout.includes(`Target:    ${root}/.github/extensions/ralph/`),
+        `dry-run output must report git-root-relative target dir; got:\n${r.stdout}`,
+    );
+    // Sanity: must NOT be the user-scoped path.
+    assert.doesNotMatch(r.stdout, /\.copilot\/extensions\/ralph/);
+});

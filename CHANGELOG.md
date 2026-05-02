@@ -48,6 +48,23 @@
   silently invalidate the prose.
 
 ### Tests
+- Pin install.sh `--project` flag handling. The
+  --project arm computes the install target as
+  `$(git rev-parse --show-toplevel)/.github/extensions/ralph`;
+  if no git repo is in scope, the script must
+  refuse with a clear error instead of silently
+  writing somewhere unexpected. Two new tests
+  cover (a) the error path — running with cwd in
+  a fresh `mkdtempSync` dir (no git repo) exits
+  non-zero with `--project requires being inside
+  a git repo` on stderr and emits no DRY RUN
+  banner on stdout; (b) the happy path — running
+  with cwd at the repo root reports
+  `Target:    $GIT_ROOT/.github/extensions/ralph/`
+  and explicitly NOT the user-scoped
+  `~/.copilot/extensions/ralph` path. Locks down
+  the install entry point that production users
+  actually invoke from contributor checkouts.
 - Pin gitAheadBehind / gitUncommittedLines edge
   cases — the two helpers that feed ralph_status's
   "git" snapshot block. Cover: non-zero exit (no

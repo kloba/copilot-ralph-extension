@@ -800,7 +800,14 @@ loop also <strong>isolates</strong> its bookkeeping from the pause-time chat:</p
   explicitly if you want to honor it.</li>
 </ul>
 <p><code>ralph_pause</code> is idempotent: calling it on an already-paused loop is
-a no-op and returns success. The two failure modes are:</p>
+a no-op and returns success. <strong>First reason wins</strong> — a redundant
+<code>ralph_pause({reason: "newer"})</code> against an already-paused loop
+returns the FIRST committed reason in both the success payload's
+<code>reason</code> field and the rendered <code>textResultForLlm</code> (<code>&lt;label&gt;
+already paused at i/max (firstReason).</code>). Automation polling pause
+state to confirm it has stuck will not see its own input echoed
+back rather than the original committed reason. The two failure
+modes are:</p>
 <ol>
 <li>No loop is currently active (<code>{ active: false }</code>).</li>
 <li>The <code>reason</code> argument exceeds 500 chars (validation rejection).</li>

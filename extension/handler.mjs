@@ -1353,6 +1353,19 @@ export function createRalphController(opts = {}) {
         }
     };
 
+    // Shared validation contract for token-pair shapes (nested {usage:
+    // {input_tokens, output_tokens}} and flat {usage_input_tokens,
+    // usage_output_tokens}). A pair is creditable iff both numbers are
+    // finite, both non-negative (negative usage is non-physical and
+    // would silently masquerade a `max_tokens` cap by *decreasing* the
+    // cumulative budget), and at least one is non-zero (a zero/zero
+    // event carries no information). Centralising the four clauses
+    // ensures any future shape variant inherits the full contract
+    // instead of reimplementing three of the four.
+    const isCreditableTokenPair = (input, output) =>
+        Number.isFinite(input) && Number.isFinite(output) &&
+        input >= 0 && output >= 0 && (input > 0 || output > 0);
+
     // Issue #7: extract usage from an event payload. Defensive against
     // multiple possible shapes — different SDK versions may expose
     // usage as data.usage = {input_tokens, output_tokens, model} OR
@@ -1366,23 +1379,13 @@ export function createRalphController(opts = {}) {
             const input = Number(u.input_tokens ?? u.inputTokens ?? 0);
             const output = Number(u.output_tokens ?? u.outputTokens ?? 0);
             const model = typeof u.model === "string" ? u.model : (typeof d.model === "string" ? d.model : null);
-            // Reliability: reject negative usage values. They are non-
-            // physical (no real provider emits them) and crediting a
-            // negative input via `a.tokens.input += -N` would *decrease*
-            // the loop's cumulative budget — silently masking a
-            // configured `max_tokens` cap and pushing the context-window
-            // pct calculation negative. Treating malformed events as
-            // "no usage" surfaces the upstream bug rather than absorbing
-            // it into bookkeeping.
-            if (Number.isFinite(input) && Number.isFinite(output) &&
-                input >= 0 && output >= 0 && (input > 0 || output > 0)) {
+            if (isCreditableTokenPair(input, output)) {
                 return { input, output, model };
             }
         }
         const flatIn = Number(d.usage_input_tokens ?? d.usageInputTokens ?? 0);
         const flatOut = Number(d.usage_output_tokens ?? d.usageOutputTokens ?? 0);
-        if (Number.isFinite(flatIn) && Number.isFinite(flatOut) &&
-            flatIn >= 0 && flatOut >= 0 && (flatIn > 0 || flatOut > 0)) {
+        if (isCreditableTokenPair(flatIn, flatOut)) {
             const model = typeof d.usage_model === "string" ? d.usage_model
                 : typeof d.usageModel === "string" ? d.usageModel
                 : typeof d.model === "string" ? d.model : null;

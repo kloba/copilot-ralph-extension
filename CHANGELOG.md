@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Refactor
+- Extract `isCreditableTokenPair(input, output)` helper inside the
+  ralph controller closure to dedupe the four-clause validation
+  contract (`isFinite × 2`, `>= 0 × 2`, `(input > 0 || output > 0)`)
+  that previously lived inline in both branches of `extractUsage`.
+  A future SDK shape variant (e.g. flat `data.tokens_in` /
+  `data.tokens_out`) can now reuse the helper instead of
+  reimplementing three of the four clauses and silently weakening
+  the contract. Behaviour is unchanged — all 31 existing
+  extractUsage / token-credit tests remain green.
+
 ### Tests
 - Add direct unit tests for `parseUserReason` — the shared
   normaliser for the optional `reason` argument on `ralph_pause`

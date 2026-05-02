@@ -60,6 +60,22 @@
   either value is caught at test time.
 
 ### Fixes
+- `install.sh --dry-run`'s "Installed:" line now distinguishes
+  `(none)` (target `handler.mjs` is missing — legitimate fresh
+  install) from `(unknown)` (target `handler.mjs` exists but
+  `extract_handler_version` returns no parseable
+  `export const VERSION = "X.Y.Z";` line — corrupt or
+  partially-installed). Pre-iter-133 both states collapsed to
+  `(none)`, which silently misled a user whose previous
+  install was interrupted by ^C between the per-file `cp`
+  calls (leaving a half-written `handler.mjs`) into thinking
+  the dry-run reported "fresh install" when in fact the
+  existing copy was corrupt. Distinct labels surface the
+  recovery path (`(unknown)` → investigate before reinstall;
+  `(none)` → just run `install.sh`). Pinned by a sandbox
+  test that seeds a malformed handler.mjs with no VERSION
+  declaration and asserts the new label renders verbatim
+  while the regression to `(none)` is explicitly forbidden.
 - `install.sh --project` now surfaces a distinct error when
   the `git` binary is missing from `PATH`, instead of
   conflating that case with "not inside a git repo". A

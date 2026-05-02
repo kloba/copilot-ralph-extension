@@ -184,15 +184,26 @@ if [[ "$DRY_RUN" == "1" ]]; then
   # an upgrade, a downgrade, or a no-op reinstall — without having to
   # cd into TARGET_DIR and grep handler.mjs themselves. The same awk
   # extractor used at the top of this script is run against the target
-  # dir's handler.mjs; missing target / unparseable VERSION renders as
-  # "(none)" so the dry-run output stays informative even when the
-  # extension was never installed before. Emitted before the "Version:"
-  # line so the upgrade direction (old → new) reads top-to-bottom.
+  # dir's handler.mjs; the rendered label distinguishes three states:
+  #   - target handler.mjs missing → "(none)" (legitimate fresh install)
+  #   - target exists but VERSION line not parseable → "(unknown)"
+  #     (corrupt or partial install: the FILES copy from a prior run
+  #     was interrupted, OR a future schema change renamed the
+  #     VERSION declaration shape)
+  #   - target exists with a parseable VERSION → "vX.Y.Z"
+  # Conflating the first two as "(none)" was misleading — a user
+  # whose previous install was interrupted by ^C would see "fresh
+  # install" semantics when in fact the existing handler.mjs is
+  # half-written. Distinct labels let the user know to investigate.
+  # Emitted before the "Version:" line so the upgrade direction
+  # (old → new) reads top-to-bottom.
   installed_version="(none)"
   if [[ -f "$TARGET_DIR/handler.mjs" ]]; then
     installed_extracted="$(extract_handler_version "$TARGET_DIR/handler.mjs" 2>/dev/null || true)"
     if [[ -n "$installed_extracted" ]]; then
       installed_version="v$installed_extracted"
+    else
+      installed_version="(unknown)"
     fi
   fi
   echo "Installed: $installed_version"

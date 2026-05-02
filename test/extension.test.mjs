@@ -9543,3 +9543,60 @@ test("install.sh: VERSION-from-handler awk pattern lives in exactly one helper",
         `expected ≥2 callers of extract_handler_version (source-tree + target-tree); found ${callerMatches.length}`,
     );
 });
+
+test("install.sh --dry-run: distinguishes (none) from (unknown) when target handler.mjs is malformed", async () => {
+    // Iter 133 — pre-iter the dry-run "Installed:" line collapsed
+    // two distinct states into "(none)":
+    //   (a) target handler.mjs missing  → fresh install
+    //   (b) target handler.mjs present but no parseable VERSION
+    //       → corrupt / partially-installed (e.g. a prior install
+    //       interrupted by ^C between the per-file `cp` calls left
+    //       a half-written handler.mjs; or a future schema change
+    //       renamed `export const VERSION` and a contributor's
+    //       development checkout has the new shape while the script
+    //       still runs the old regex). Reporting both as "(none)"
+    //       was misleading: a user about to upgrade their corrupt
+    //       install would see "fresh install" semantics and not
+    //       know to investigate.
+    // The fix renders state (b) as "(unknown)" so the user has a
+    // distinct, actionable signal.
+    const sandboxHome = mkdtempSync(join(tmpdir(), "ralph-install-malformed-"));
+    try {
+        const targetDir = `${sandboxHome}/.copilot/extensions/ralph`;
+        const fs = await import("node:fs");
+        fs.mkdirSync(targetDir, { recursive: true });
+        // Seed a handler.mjs that EXISTS but has no parseable
+        // `export const VERSION = "X";` declaration. The awk extractor
+        // returns an empty string; the install.sh else-branch must
+        // render "(unknown)".
+        fs.writeFileSync(
+            join(targetDir, "handler.mjs"),
+            `// partial copy from interrupted install\n// (no VERSION line — extract_handler_version returns "")\n`,
+        );
+        const malformedRun = spawnSync(
+            "bash",
+            [resolve(REPO_ROOT, "install.sh"), "--dry-run"],
+            { encoding: "utf8", env: { ...process.env, HOME: sandboxHome } },
+        );
+        assert.equal(malformedRun.status, 0, `--dry-run exited ${malformedRun.status}; stderr=${malformedRun.stderr}`);
+        // Must NOT collapse to "(none)" — that's reserved for missing
+        // file. A regression to the pre-iter-133 behaviour would print
+        // "(none)" here and silently mislead the user.
+        assert.doesNotMatch(
+            malformedRun.stdout,
+            /^Installed: \(none\)$/m,
+            `--dry-run with malformed handler.mjs must NOT print "Installed: (none)" (regression to iter-127 behaviour); got: ${malformedRun.stdout}`,
+        );
+        assert.match(
+            malformedRun.stdout,
+            /^Installed: \(unknown\)$/m,
+            `--dry-run with malformed handler.mjs must print "Installed: (unknown)"; got: ${malformedRun.stdout}`,
+        );
+        // The "Version:" (new) line is still present so the dry-run
+        // remains informative (user can see what they'd upgrade TO
+        // even if they don't know what they're upgrading FROM).
+        assert.match(malformedRun.stdout, /^Version:\s+v\d+\.\d+\.\d+/m);
+    } finally {
+        rmSync(sandboxHome, { recursive: true, force: true });
+    }
+});

@@ -139,6 +139,26 @@
   now carry both the legacy `contextMode` (continue/fresh/workitem)
   and the new `resetOn` field so back-compat consumers
   (`autopilot list / stats`) keep working.
+- Issue #83 — Two new top-level subcommands `autopilot copilot`
+  and `autopilot claude` start a self-improve / fresh loop in the
+  cwd against the chosen backend; both default to fully-permissive
+  ("yolo") mode (`--allow-all-tools` for Copilot,
+  `--dangerously-skip-permissions` for Claude). Drop-in replacements
+  for `autopilot run` with the agent pinned: bare invocation
+  (`autopilot copilot` / `autopilot claude` with no further args)
+  inherits the bare-`autopilot` self-improve / fresh default per
+  #65; explicit `--self-improve` / `--grow-project` / `--prompt`,
+  `--continue` / `--fresh`, `--max`, etc. flags pass through to
+  `cmdRun` with the agent locked. A pre-mount stderr banner
+  (`autopilot: starting <mode> loop with <agent> (--<ctx>, yolo).
+  Press q to stop.`) confirms the chosen backend before the loop
+  arms. New per-agent env-var overrides `AUTOPILOT_COPILOT_BIN` /
+  `AUTOPILOT_CLAUDE_BIN` replace the legacy `RALPH_TUI_COPILOT_BIN`;
+  the legacy name still works for one release with a one-shot
+  stderr deprecation notice the first time it's read. The Claude
+  adapter's `extractUsage` collapses `premiumRequests` to `null`
+  (Claude Code does not expose this counter; Header already hides
+  the pip when the value is null per `Header.mjs:163`).
 - Issue #57 — `ralph-tui watch` Live panel streams the agent's
   output (assistant text, tool calls, tool results) for the
   currently active L3 task, sourced directly from the Copilot
@@ -367,6 +387,34 @@
   the first `result` event lands, and the TUI hides both
   surfaces while null so users don't see a confident
   "premium 0" pre-iter-1.
+
+### Internal
+- Issue #83 — Extracted backend-adapter interface
+  (`spawnArgs(prompt, opts) → { args, env }` /
+  `parseStream(stdoutLines) → events[]` /
+  `extractUsage(events) → { input, output, premiumRequests }`,
+  plus `name` / `defaultBin` / `binEnvVar` /
+  `resolveBin({ override, env, stderr })` metadata) under
+  `packages/tui/src/agents/`. The historical hardcoded Copilot
+  invocation (`copilot -p ... --allow-all-tools --output-format
+  json`) in `runner.mjs:runOneIteration` now flows through the
+  copilot adapter; `runRalphTui` accepts an `agent` parameter and
+  defaults to the Copilot adapter when omitted (back-compat with
+  every existing call site). The Claude adapter (`agents/claude.mjs`)
+  is the second adapter shipping in this release. A future Cursor /
+  Aider / gemini-cli backend is one new file plus one entry in
+  `bin/tui.mjs`'s `AGENT_REGISTRY` away.
+
+### Documentation
+- Issue #83 — README + `packages/tui/README.md` document both new
+  subcommands, the bare-invocation default, the yolo-by-default
+  product story, and the env-var rename
+  (`AUTOPILOT_COPILOT_BIN` / `AUTOPILOT_CLAUDE_BIN`, with the
+  legacy `RALPH_TUI_COPILOT_BIN` working for one release with a
+  one-shot deprecation notice). `docs/cli-stack.md` gains a
+  Backend Abstraction section sketching the three-function
+  adapter surface so a contributor adding the next backend has
+  a one-page reference.
 
 ### Fixes
 - `self_improve` loop no longer terminates one stage short of

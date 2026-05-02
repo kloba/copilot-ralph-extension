@@ -55,6 +55,13 @@ import {
     WORKITEM_KINDS,
     TASK_OUTCOMES,
 } from "./events.mjs";
+// Issue #83 — backend adapter abstraction. The runner is agent-
+// agnostic; it asks the chosen adapter to build the spawn argv and
+// resolve the binary, then parses the JSONL stream the same way
+// regardless of backend. The Copilot adapter is the back-compat
+// default when no `agent` is passed in (so existing callers keep
+// working unchanged).
+import * as copilotAgent from "./agents/copilot.mjs";
 
 const WORKITEM_KIND_SET = new Set(WORKITEM_KINDS);
 const TASK_OUTCOME_SET = new Set(TASK_OUTCOMES);
@@ -1182,12 +1189,21 @@ export function reduceCopilotEvents(events) {
 
 // ─── Single-iter subprocess driver ─────────────────────────────────
 
-/** Spawn `copilot -p ...` and collect the JSONL stream. Resolves with
- *  { events, stderr, exitCode } once the child exits.
+/** Spawn the chosen agent backend's CLI and collect its JSONL stream.
+ *  Resolves with `{ events, stderr, exitCode }` once the child exits.
+ *
+ *  Issue #83 — the historical Copilot-only path was extracted into
+ *  the `agents/copilot.mjs` adapter; this function is now agent-
+ *  agnostic and delegates the binary + argv decision to the chosen
+ *  adapter's `resolveBin` + `spawnArgs` helpers. When no `agent` is
+ *  passed in, the Copilot adapter is the default so existing callers
+ *  keep working with the same behaviour.
  *
  *  Tests inject `spawn` (a child_process.spawn-shaped function) +
  *  `copilotBin` to substitute a shim binary that emits scripted
- *  JSONL.
+ *  JSONL. `copilotBin` is preserved as the override hook so existing
+ *  tests don't churn — under the hood it now flows through the
+ *  Copilot adapter's `resolveBin` precedence chain.
  */
 export function runOneIteration({
     prompt,
@@ -1195,24 +1211,29 @@ export function runOneIteration({
     sessionName,
     spawn = nodeSpawn,
     copilotBin,
+    agent = copilotAgent,
     cwd,
     env = process.env,
     extraArgs = [],
     onLine, // optional callback per parsed event (for live feedback)
 }) {
-    const bin = copilotBin ?? env.RALPH_TUI_COPILOT_BIN ?? "copilot";
-    const args = ["-p", prompt, "--allow-all-tools", "--output-format", "json"];
-    if (resumeSessionId) args.push(`--resume=${resumeSessionId}`);
-    else if (sessionName) args.push("-n", sessionName);
-    for (const a of extraArgs) args.push(a);
+    const bin = (agent.resolveBin
+        ? agent.resolveBin({ override: copilotBin, env })
+        : (copilotBin ?? env[agent.binEnvVar] ?? agent.defaultBin));
+    const { args: agentArgs, env: agentEnv } = agent.spawnArgs(prompt, {
+        resumeSessionId,
+        sessionName,
+        extraArgs,
+    });
+    const spawnEnv = agentEnv ? { ...env, ...agentEnv } : env;
 
     return new Promise((resolve, reject) => {
         let child;
         try {
-            child = spawn(bin, args, {
+            child = spawn(bin, agentArgs, {
                 stdio: ["ignore", "pipe", "pipe"],
                 cwd,
-                env,
+                env: spawnEnv,
             });
         } catch (err) {
             reject(err);
@@ -1315,8 +1336,14 @@ export { RESET_ON_VALUES };
  *   completionPromise   Default COMPLETION_PROMISE ("COMPLETE").
  *   abortPromise        Default = abort token of the chosen mode.
  *   spawn               Inject for tests.
- *   copilotBin          Inject for tests. Falls back to
- *                       $RALPH_TUI_COPILOT_BIN, then "copilot".
+ *   copilotBin          Inject for tests. Falls back to the chosen
+ *                       agent's `binEnvVar` and `defaultBin` (issue
+ *                       #83 — preserved as the override hook so
+ *                       existing test fixtures keep working).
+ *   agent               Backend adapter (issue #83). Defaults to the
+ *                       Copilot adapter for back-compat. Pass the
+ *                       Claude adapter (`agents/claude.mjs`) for the
+ *                       Claude Code backend.
  *   env, fs, now        Inject for tests.
  *   eventEmitter        Inject for tests; otherwise createEventEmitter
  *                       is invoked.
@@ -1340,6 +1367,7 @@ export async function runRalphTui(opts) {
         abortPromise = defaultAbortPromise(mode),
         spawn = nodeSpawn,
         copilotBin,
+        agent = copilotAgent,
         env = process.env,
         now = () => Date.now(),
         cwd = process.cwd(),
@@ -2054,6 +2082,7 @@ export async function runRalphTui(opts) {
                 sessionName: sessionNameForIter,
                 spawn,
                 copilotBin,
+                agent,
                 // Issue #66 — when worktree mode is on and we
                 // successfully created a sandbox for this iter, run
                 // the copilot subprocess inside it. Otherwise the

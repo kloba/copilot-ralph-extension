@@ -128,6 +128,38 @@ paid only by users who run the interactive Ink-rendered UI. Plain-mode
 subcommands (`list`, `replay`, `watch --plain`, `run --headless`) work
 straight from a fresh source checkout with no `npm install`.
 
+## Backend abstraction (issue #83)
+
+`autopilot run` is backend-agnostic: each iter's subprocess is built
+by an adapter under `packages/tui/src/agents/`, not hardcoded to a
+single CLI. The current shipping adapters are:
+
+| Subcommand | Adapter | Backend CLI | Yolo flag | Output format |
+| ---------- | ------- | ----------- | --------- | ------------- |
+| `autopilot copilot` | `agents/copilot.mjs` | GitHub Copilot CLI | `--allow-all-tools` | `--output-format json` |
+| `autopilot claude`  | `agents/claude.mjs`  | Claude Code        | `--dangerously-skip-permissions` | `--output-format stream-json` |
+
+Each adapter exports a tiny three-function surface so adding a future
+backend (Cursor, Aider, gemini-cli, …) is one new file plus one line
+in `bin/tui.mjs`'s `AGENT_REGISTRY`:
+
+```js
+export const name = "claude";
+export const defaultBin = "claude";
+export const binEnvVar = "AUTOPILOT_CLAUDE_BIN";
+
+export function spawnArgs(prompt, { resumeSessionId, sessionName }) { /* ... */ }
+export function parseStream(stdoutLines) { /* ... */ }
+export function extractUsage(events) { /* { input, output, premiumRequests } */ }
+```
+
+Both subcommands default to fully-permissive ("yolo") mode so the
+loop can run unattended; both inherit the bare-`autopilot` no-arg
+default of `run --self-improve --fresh`. The legacy
+`RALPH_TUI_COPILOT_BIN` env var still works for one release with a
+one-shot stderr deprecation notice — migrate to
+`AUTOPILOT_COPILOT_BIN` (or `AUTOPILOT_CLAUDE_BIN`) to silence it.
+
 ## See also
 
 * [packages/tui/README.md](../packages/tui/README.md) — user-facing
@@ -136,3 +168,5 @@ straight from a fresh source checkout with no `npm install`.
   pinned versions.
 * [Issue #22](https://github.com/kloba/autopilot/issues/22) —
   TUI design discussion.
+* [Issue #83](https://github.com/kloba/autopilot/issues/83) —
+  agent-backend subcommands + adapter abstraction.

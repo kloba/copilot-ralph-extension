@@ -12,6 +12,15 @@ in-session Copilot CLI extension was retired — see CHANGELOG.
 ## Subcommands
 
 ```text
+autopilot                            (bare — defaults to `run --self-improve --fresh`).
+autopilot copilot [run flags]        Drive each iter with the GitHub Copilot CLI
+                                     (`copilot -p ... --allow-all-tools
+                                     --output-format json`). Bare invocation =
+                                     self-improve / fresh / yolo (issue #83).
+autopilot claude  [run flags]        Drive each iter with the Claude Code CLI
+                                     (`claude -p ... --dangerously-skip-permissions
+                                     --output-format stream-json`). Bare
+                                     invocation = self-improve / fresh / yolo.
 autopilot list [--json] [--limit N]  Show recorded runs (newest first).
                                      `--json` emits the index as a JSON
                                      array for scripting/dashboards;
@@ -41,6 +50,31 @@ autopilot run …                      Drive an autonomous Copilot loop.
 autopilot --help     | -h            Show usage.
 autopilot --version  | -V            Print the autopilot package version.
 ```
+
+### Yolo by default (issue #83)
+
+Both `copilot` and `claude` subcommands default to the backend's
+fully-permissive ("yolo") mode so the loop can run unattended:
+
+* `autopilot copilot` → `copilot -p ... --allow-all-tools ...`
+* `autopilot claude`  → `claude -p ... --dangerously-skip-permissions ...`
+
+A `--no-yolo` escape hatch is out of scope for v1 — open an issue if
+you need it. An autopilot loop that prompts for permissions every
+tool call is not really an autopilot.
+
+### Backend env-var overrides
+
+Each backend has its own binary-path env var:
+
+| Subcommand | Env var | Default |
+| ---------- | ------- | ------- |
+| `autopilot copilot` / `autopilot run` | `AUTOPILOT_COPILOT_BIN` | `copilot` |
+| `autopilot claude`                    | `AUTOPILOT_CLAUDE_BIN`  | `claude`  |
+
+The legacy `RALPH_TUI_COPILOT_BIN` continues to work for one release
+with a one-shot stderr deprecation notice the first time it's read.
+Migrate to `AUTOPILOT_COPILOT_BIN` to silence the warning.
 
 `--plain` is **auto-enabled when stdout is not a TTY** so CI logs and
 `asciinema rec` outputs stay grep-friendly and ANSI-free. The

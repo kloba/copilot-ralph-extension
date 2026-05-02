@@ -5,6 +5,16 @@
 // Subcommands (keep in sync with the USAGE constant below — pinned by
 // `tui.mjs header comment lists every USAGE subcommand` in
 // packages/tui/test/bin-tui.test.mjs so a drift here surfaces in CI):
+//   copilot                    — drive an iter loop with the GitHub
+//                                Copilot CLI backend (issue #83).
+//                                Bare invocation = self-improve /
+//                                fresh / yolo (`--allow-all-tools`).
+//                                Accepts the same flags as `run` for
+//                                explicit overrides.
+//   claude                     — same shape as `copilot`, but drives
+//                                iters with Claude Code's CLI
+//                                (`claude -p ... --dangerously-skip-permissions
+//                                --output-format stream-json`).
 //   list                       — show recorded runs (newest first;
 //                                 `--json` for scripting/dashboards;
 //                                 `--limit N` to cap the table).
@@ -64,6 +74,16 @@ const USAGE = `\
 autopilot — terminal visualizer for ralph_loop runs (issue #22).
 
 USAGE
+  autopilot                                        (bare — defaults to
+                                                    \`run --self-improve --fresh\`)
+  autopilot copilot [run flags]                    (drive iters with
+                                                    GitHub Copilot CLI;
+                                                    bare = self-improve / fresh /
+                                                    yolo, see ENV below)
+  autopilot claude  [run flags]                    (drive iters with
+                                                    Claude Code CLI;
+                                                    bare = self-improve / fresh /
+                                                    yolo, see ENV below)
   autopilot list [--json] [--limit N]
   autopilot replay <runId>
   autopilot watch [runId] [--plain]
@@ -95,7 +115,7 @@ OPTIONS
   --grow-project  For \`run\`: drive the baked grow_project SDLC prompt.
   --prompt TEXT   For \`run\`: drive a ralph_loop-style custom prompt.
   --reset-on={workitem|iter|never}
-              For \`run\`: when to start a fresh Copilot session.
+              For \`run\`: when to start a fresh agent session.
               Default \`workitem\` — new session at each
               \`[WORKITEM_END]\` (or iter exit). \`iter\` resets every
               iter; \`never\` keeps one session for the whole run.
@@ -123,12 +143,27 @@ OPTIONS
   --help, -h  Show this help.
   --version, -V  Print the autopilot package version and exit.
 
+YOLO BY DEFAULT (issue #83)
+  The \`copilot\` and \`claude\` subcommands BOTH default to fully
+  permissive ("yolo") mode so the loop can run unattended:
+    copilot → \`copilot ... --allow-all-tools\`
+    claude  → \`claude ... --dangerously-skip-permissions\`
+  An autopilot loop that prompts for permissions every tool call is
+  not really an autopilot.
+
 ENV
   RALPH_TUI_RUNS_DIR  Override the runs root (default
                     ~/.copilot/ralph-tui/runs). Holds events.jsonl,
                     index.jsonl, and per-run state.json.
-  RALPH_TUI_COPILOT_BIN  Override the \`copilot\` executable used by
-                    \`autopilot run\` (default \`copilot\` on $PATH).
+  AUTOPILOT_COPILOT_BIN  Override the \`copilot\` executable used by
+                    \`autopilot copilot\` / \`autopilot run\` (default
+                    \`copilot\` on $PATH). Replaces the legacy
+                    RALPH_TUI_COPILOT_BIN — the old name still works
+                    for one release with a deprecation notice.
+  AUTOPILOT_CLAUDE_BIN   Override the \`claude\` executable used by
+                    \`autopilot claude\` (default \`claude\` on $PATH).
+  RALPH_TUI_COPILOT_BIN  Deprecated alias for AUTOPILOT_COPILOT_BIN.
+                    Read with a one-shot stderr deprecation notice.
 `;
 
 /** Minimal argv parser. Returns { cmd, positional[], flags{} }.
@@ -566,6 +601,87 @@ export function cmdWhere() {
     return 0;
 }
 
+// Issue #83 — registry mapping subcommand-name → adapter-module-path
+// so `cmdAgentSubcommand` (and `cmdRun`'s `agent:` flag handling) can
+// resolve a CLI-string into the matching adapter. Stays a tiny string
+// table so adding the next backend (Cursor / Aider / gemini-cli) is
+// one line plus a new file under `src/agents/`.
+export const AGENT_REGISTRY = {
+    copilot: "../src/agents/copilot.mjs",
+    claude: "../src/agents/claude.mjs",
+};
+
+/** Resolve an agent-name string to its loaded adapter module, or `null`
+ *  if the name is unknown (after writing a stderr error so the caller
+ *  can just propagate the `null` and bail). Lazy-imports the adapter
+ *  on first use so non-`run` paths (e.g. `autopilot list`) pay no
+ *  agent-init cost. */
+export async function loadAgentByName(name) {
+    const path = AGENT_REGISTRY[name];
+    if (!path) {
+        fail(`unknown agent backend: ${name} (expected one of: ${Object.keys(AGENT_REGISTRY).join(", ")})`);
+        return null;
+    }
+    return await import(path);
+}
+
+// Sibling-command flags from `autopilot run`. Operating on an
+// existing run's state.json (read or write) — distinct from the
+// driver flags that launch a new loop. Centralised here so
+// `cmdAgentSubcommand` and `cmdRun` share the same set.
+const SIBLING_FLAGS = ["pause", "resume", "stop", "status"];
+
+/** Pretty mode-label for the driver flag the user picked, falling
+ *  back to "self-improve" (the default `cmdAgentSubcommand` fills
+ *  in for bare invocations). Pure / no I/O so it's banner-friendly
+ *  without needing the runner module loaded. */
+function modeLabelFromFlags(flags) {
+    if (flags["self-improve"]) return "self-improve";
+    if (flags["grow-project"]) return "grow-project";
+    if (flags.prompt !== undefined) return "prompt";
+    return "self-improve";
+}
+
+/** Issue #83 — bare `autopilot copilot` / `autopilot claude` defaults
+ *  to `run --self-improve --fresh` with the agent pinned. Explicit
+ *  `run` flags (`--self-improve` / `--grow-project` / `--prompt`,
+ *  `--continue` / `--fresh`, `--max`, etc.) are forwarded as-is so
+ *  the subcommand is a drop-in replacement for `autopilot run` with
+ *  the agent locked.
+ *
+ *  Pre-mount stderr banner mirrors the bare-`autopilot` startup line
+ *  (see `main()` below) so the user has a one-line confirmation of
+ *  which backend is about to drive the loop. The yolo callout is
+ *  load-bearing: a user who didn't realise `--allow-all-tools` /
+ *  `--dangerously-skip-permissions` is the default would have been
+ *  surprised by tool calls landing without a confirm prompt.
+ */
+export async function cmdAgentSubcommand(agentName, flags) {
+    const merged = { ...flags, agent: agentName };
+    const hasSiblingFlag = SIBLING_FLAGS.some((k) => merged[k] !== undefined);
+    const hasDriverFlag = merged["self-improve"]
+        || merged["grow-project"]
+        || merged.prompt !== undefined;
+    // Bare invocation (no driver flag, no sibling flag) → default to
+    // self-improve / fresh.
+    if (!hasDriverFlag && !hasSiblingFlag) {
+        merged["self-improve"] = true;
+        // Don't override an explicit --continue.
+        if (!merged.continue && !merged.fresh) merged.fresh = true;
+    }
+    // Banner only fires for loop-launch invocations — sibling
+    // commands skip it because they're read/write operations on
+    // existing run state, not loop launches.
+    if (!hasSiblingFlag) {
+        const ctxLabel = merged.continue ? "--continue" : "--fresh";
+        const modeLabel = modeLabelFromFlags(merged);
+        process.stderr.write(
+            `autopilot: starting ${modeLabel} loop with ${agentName} (${ctxLabel}, yolo). Press q to stop.\n`,
+        );
+    }
+    return await cmdRun(merged);
+}
+
 // `autopilot run` dispatcher. Splits into:
 //   sibling sub-commands: --pause / --resume / --stop / --status <runId>
 //                         (mutate or read state.json of an existing run)
@@ -573,15 +689,26 @@ export function cmdWhere() {
 //                         (start a new loop; runs to completion in this
 //                          process, with SIGINT/SIGTERM mapped to a
 //                          graceful stop request)
+//
+// Issue #83 — `flags.agent` (when set) selects the backend adapter
+// the runner should drive each iter with. Accepted values:
+//   `"copilot"` (default — preserves pre-issue-83 behaviour) /
+//   `"claude"` (Claude Code backend). The value is mapped to the
+//   adapter module via `loadAgentByName`; an unknown value bails
+//   with exit code 2 before any subprocess work fires.
 export async function cmdRun(flags) {
     // Lazy-imported so a `autopilot list` invocation doesn't pay the
     // child_process / runner-module init cost.
     const runner = await import("../src/runner.mjs");
+    const agent = flags.agent ? await loadAgentByName(flags.agent) : null;
+    if (flags.agent && !agent) {
+        // loadAgentByName already wrote the error to stderr.
+        return 2;
+    }
 
     // Sibling commands first — they require a runId argument and are
     // mutually exclusive with the driver flags.
-    const siblingFlags = ["pause", "resume", "stop", "status"];
-    const sibling = siblingFlags.find((k) => flags[k] !== undefined);
+    const sibling = SIBLING_FLAGS.find((k) => flags[k] !== undefined);
     if (sibling) {
         const runId = flags[sibling];
         if (!runId || runId === true) {
@@ -798,6 +925,10 @@ export async function cmdRun(flags) {
             completionPromise,
             abortPromise: abortPromise ?? undefined,
             worktree,
+            // Issue #83 — when set, route each iter's spawn through
+            // the chosen agent adapter. Omitted = the runner falls
+            // back to the Copilot adapter (back-compat default).
+            agent: agent ?? undefined,
             // When the TUI is mounted, Ink owns the terminal — any
             // `runRalphTui` writes to stdout (e.g. the `# iter N/M`
             // banner) interleave with Ink's frames and corrupt the
@@ -924,6 +1055,12 @@ export async function main(argv = process.argv.slice(2)) {
         case "stats": return cmdStats();
         case "where": return cmdWhere();
         case "run": return await cmdRun(flags);
+        // Issue #83 — agent-backend subcommands. Bare invocation
+        // mirrors the bare-`autopilot` self-improve / fresh / yolo
+        // default with the agent pinned; explicit run flags pass
+        // through to `cmdRun` unchanged.
+        case "copilot": return await cmdAgentSubcommand("copilot", flags);
+        case "claude": return await cmdAgentSubcommand("claude", flags);
         default:
             fail(`unknown command: ${cmd}\n${USAGE}`);
             return 2;

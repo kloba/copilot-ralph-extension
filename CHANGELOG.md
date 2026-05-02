@@ -853,6 +853,24 @@
   fails loudly.
 
 ### Documentation
+- `docs/ARCHITECTURE.md`'s "Token tracking" section listed
+  only **one** of the four clauses that
+  `isCreditableTokenPair` actually enforces: the negative-peer
+  case. The helper at `extension/handler.mjs:1488-1490`
+  rejects (1) any non-finite peer (NaN / Infinity / coerced
+  `undefined → NaN` from a missing field), (2) any negative
+  peer, AND (3) the all-zero `{input: 0, output: 0}` shape.
+  Concepts.md already documented the full contract; the
+  ARCHITECTURE drift meant a contributor reading only the
+  contributor-facing doc would believe NaN / Infinity / 0/0
+  events were credited. Renamed the bullet to "Creditable-
+  pair rejection" and enumerated all four clauses inline,
+  noting the shared gate covers both the nested-`usage` and
+  flat-`usage_*` extractor branches. Pinned with assertions
+  in `test/extension.test.mjs`'s ARCHITECTURE drift guard
+  (`isCreditableTokenPair`, `Number.isFinite`, `NaN`,
+  `Infinity`, `zero/zero` literals) so a future trim cannot
+  silently degrade the contract back to a partial description.
 - `packages/tui/README.md`'s `## Subcommands` block drifted
   significantly from the actual CLI surface in
   `packages/tui/bin/tui.mjs`. Pre-iter-161 it listed only

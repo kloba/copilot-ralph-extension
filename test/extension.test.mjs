@@ -7185,8 +7185,18 @@ test("docs/ARCHITECTURE.md documents the token-tracking model (issue #7)", () =>
     assert.match(arch, /byIteration/);
     assert.match(arch, /byModel/);
     // Two safety contracts must be named explicitly.
-    assert.match(arch, /Negative-rejection/);
+    assert.match(arch, /Creditable-pair rejection/);
     assert.match(arch, /Pause-time isolation/);
+    // Iter 165 — the "creditable pair" gate has FOUR clauses (Number
+    // .isFinite both, both >= 0, at least one > 0). ARCHITECTURE.md
+    // previously listed only the negative-rejection clause; pin every
+    // clause so a future re-trim cannot silently degrade the contract
+    // back to a partial description.
+    assert.match(arch, /isCreditableTokenPair/);
+    assert.match(arch, /Number\.isFinite/);
+    assert.match(arch, /NaN/);
+    assert.match(arch, /Infinity/);
+    assert.match(arch, /zero\/zero/);
     // Threshold model must be documented.
     assert.match(arch, /MODEL_CONTEXT_WINDOWS/);
     assert.match(arch, /warn_at_pct/);

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Internal
+- `.gitignore` now excludes `site/`, the default mkdocs build
+  output directory. A contributor running `mkdocs build` to
+  preview the docs site locally would previously have swept
+  hundreds of generated HTML/CSS/JS files into the next
+  `git add -A`. A drift-guard test parses `mkdocs.yml` for an
+  explicit `site_dir:` override (or falls back to the mkdocs
+  default `site/`) and asserts the matching directory is listed
+  in `.gitignore` as a whole line; if a future refactor moves
+  the build output without updating the ignore list, the
+  assertion fires before merge and tells the contributor
+  exactly which directory to add.
+
 ### Tests
 - New drift guard asserts `install.sh`'s `FILES=(...)` array
   matches `extension/*.mjs` as a set. The script's existing

@@ -19,3 +19,10 @@ coverage/
 # Output of `npm pack` / `npm publish --dry-run` so a packed tarball
 # left in the repo root is not accidentally committed.
 *.tgz
+
+# mkdocs build output. `mkdocs build` writes the rendered static
+# site here by default (see mkdocs.yml — no `site_dir` override).
+# A contributor previewing the docs locally would otherwise sweep
+# the entire generated site into a `git add -A`, polluting the
+# repo with rebuilt artefacts on every commit.
+site/

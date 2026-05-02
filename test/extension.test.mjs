@@ -7947,3 +7947,37 @@ test("install.sh FILES list is in sync with extension/*.mjs (drift guard)", asyn
         `If you added a new module, also add it to install.sh; if you removed one, also remove it.`,
     );
 });
+
+test(".gitignore covers mkdocs build output (site/)", async () => {
+    // mkdocs.yml ships at the repo root and `mkdocs build` writes
+    // its rendered static site to `site/` by default (no
+    // `site_dir:` override is configured). Without `.gitignore`
+    // coverage, a contributor running `mkdocs build` to preview
+    // the docs locally would silently sweep ~hundreds of generated
+    // HTML/CSS/JS files into the next `git add -A`. Iter 85 added
+    // the entry; this drift guard pins the contract — if a future
+    // refactor removes the line (or moves the build output via
+    // `site_dir:` without updating .gitignore), the assertion
+    // tells the contributor exactly what's missing.
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const url = await import("node:url");
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const repoRoot = path.join(here, "..");
+
+    const gitignore = await fs.readFile(path.join(repoRoot, ".gitignore"), "utf8");
+    const mkdocs = await fs.readFile(path.join(repoRoot, "mkdocs.yml"), "utf8");
+
+    // Determine the configured site_dir (or the mkdocs default).
+    const m = /^site_dir:\s*(\S+)/m.exec(mkdocs);
+    const siteDir = m ? m[1].replace(/\/?$/, "/") : "site/";
+
+    // Match the entry as a whole line so a substring like
+    // `mysite/` doesn't accidentally satisfy a search for `site/`.
+    const lineRe = new RegExp(`^${siteDir.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\s*$`, "m");
+    assert.match(
+        gitignore,
+        lineRe,
+        `.gitignore must contain a line matching the mkdocs site_dir (${siteDir}) so 'mkdocs build' artefacts are not accidentally committed`,
+    );
+});

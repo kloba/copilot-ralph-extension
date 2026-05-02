@@ -5139,6 +5139,22 @@ test("install.sh: rejects duplicate flags and unknown arguments", () => {
     assert.notEqual(dup.status, 0, "duplicate --dry-run must exit non-zero");
     assert.match(dup.stderr, /more than once/);
 
+    // Iter 149 — also pin --project --project. The reject_duplicate
+    // helper takes the sentinel name as a runtime parameter, so a
+    // future refactor that accidentally drops the SEEN_PROJECT path
+    // (e.g. inlining only the --dry-run sentinel and leaving the
+    // --project arm unguarded) would silently accept the duplicate
+    // and only fail for --dry-run. This sibling assertion ensures
+    // both reject_duplicate call sites stay covered.
+    const dupProject = spawnSync(
+        "bash",
+        [resolve(REPO_ROOT, "install.sh"), "--project", "--project"],
+        { encoding: "utf8" },
+    );
+    assert.notEqual(dupProject.status, 0, "duplicate --project must exit non-zero");
+    assert.match(dupProject.stderr, /--project specified more than once/,
+        "duplicate --project rejection must name the offending flag in stderr so the user can fix the typo without re-reading install.sh");
+
     const unknown = spawnSync(
         "bash",
         [resolve(REPO_ROOT, "install.sh"), "--definitely-not-a-flag"],

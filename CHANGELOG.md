@@ -448,6 +448,21 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Pin `install.sh`'s `reject_duplicate --project` arm with a
+  sibling assertion to the existing `--dry-run --dry-run`
+  test in `test/extension.test.mjs`. The reject_duplicate
+  helper takes the sentinel name as a runtime parameter and
+  is invoked from BOTH the `--dry-run` and `--project` arms,
+  but pre-iter-149 only the `--dry-run` half had a regression
+  test. A future "simplify" pass that accidentally inlined
+  the guard for one flag and dropped it for the other would
+  have shipped a silently asymmetric duplicate-flag
+  rejection. The new assertion exercises `--project --project`
+  end-to-end and pins the stderr wording (`--project
+  specified more than once`) so the offending flag is named
+  in the error — without that, a copy-paste typo turns into
+  a confusing "more than once" with no hint which flag
+  doubled up.
 - Pin the three caffeinate env-parser helpers
   (`isCaffeinateEnabled`, `resolveCaffeinateScope`,
   `caffeinateFlagsForScope` in `extension/handler.mjs`) with

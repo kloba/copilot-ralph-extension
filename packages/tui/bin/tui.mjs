@@ -21,6 +21,18 @@
 //                                durations, top SDLC tools).
 //   where                      — print the resolved runs root path so
 //                                a contributor can `cd` into it.
+//   run                        — drive a ralph_loop / self_improve /
+//                                grow_project loop OUT-OF-SESSION by
+//                                spawning each iter as a fresh
+//                                `copilot -p ...` subprocess. Choose
+//                                exactly one prompt mode
+//                                (`--self-improve` / `--grow-project`
+//                                / `--prompt`) AND one context mode
+//                                (`--continue` / `--fresh`). Sibling
+//                                `--pause <runId>` / `--resume <runId>`
+//                                / `--stop <runId>` / `--status
+//                                <runId>` operate on the run state file
+//                                of an in-flight loop.
 //
 // `--plain` is implied when stdout is not a TTY so CI logs and asciinema
 // recordings produce stable, ANSI-free output.
@@ -51,6 +63,14 @@ USAGE
   ralph-tui prune [--older-than 30d] [--dry-run]
   ralph-tui stats
   ralph-tui where
+  ralph-tui run (--self-improve | --grow-project | --prompt TEXT)
+                (--continue | --fresh)
+                [--max N] [--focus TEXT]
+                [--completion-promise TOKEN] [--abort-promise TOKEN]
+  ralph-tui run --pause <runId>
+  ralph-tui run --resume <runId>
+  ralph-tui run --stop <runId>
+  ralph-tui run --status <runId>
   ralph-tui --help | -h
 
 OPTIONS
@@ -61,21 +81,43 @@ OPTIONS
   --older-than DURATION  For \`prune\`: only remove runs older than
               DURATION (e.g. 30d, 12h, 5m). Default 30d.
   --dry-run   For \`prune\`: list what would be removed; delete nothing.
+  --self-improve  For \`run\`: drive the baked self_improve SDLC prompt.
+  --grow-project  For \`run\`: drive the baked grow_project SDLC prompt.
+  --prompt TEXT   For \`run\`: drive a ralph_loop-style custom prompt.
+  --continue  For \`run\`: every iter resumes the same Copilot session
+              (in-extension parity; context grows monotonically).
+  --fresh     For \`run\`: every iter starts a brand-new Copilot session
+              (clean context per iter).
+  --max N     For \`run\`: iteration cap (default 100, max 1000).
+  --focus TEXT  For \`run\`: focus suffix appended to the SDLC prompt
+              (max 2000 chars). Ignored when --prompt is set.
+  --completion-promise TOKEN  For \`run\`: substring whose presence in
+              an iter's response signals completion. Default
+              \`COMPLETE\`.
+  --abort-promise TOKEN  For \`run\`: substring whose presence signals
+              an early abort. Defaults to the baked abort token of the
+              chosen prompt mode (or none for --prompt).
   --help, -h  Show this help.
   --version, -V  Print the ralph-tui package version and exit.
 
 ENV
   RALPH_EVENTS_DIR  Override the runs root (default ~/.copilot/ralph/runs).
+  RALPH_TUI_RUNS_DIR  Override the run-state root used by
+                    \`ralph-tui run\` (default ~/.copilot/ralph-tui/runs).
+  RALPH_TUI_COPILOT_BIN  Override the \`copilot\` executable used by
+                    \`ralph-tui run\` (default \`copilot\` on $PATH).
 `;
 
 /** Minimal argv parser. Returns { cmd, positional[], flags{} }.
  *  Supports `--flag`, `--flag=value`, and `--flag value` for the
  *  known value-taking flags listed in `VALUE_FLAGS` below
- *  (currently: --older-than for `prune`, --limit for `list`). When
- *  adding a new value flag, append it to `VALUE_FLAGS` AND update
- *  the USAGE block above so `ralph-tui --help` keeps matching the
- *  parser. */
-const VALUE_FLAGS = new Set(["older-than", "limit"]);
+ *  (currently: --older-than for `prune`, --limit for `list`, plus
+ *  the `run` subcommand's --max, --focus, --prompt,
+ *  --completion-promise, --abort-promise, --pause, --resume, --stop,
+ *  --status). When adding a new value flag, append it to
+ *  `VALUE_FLAGS` AND update the USAGE block above so
+ *  `ralph-tui --help` keeps matching the parser. */
+const VALUE_FLAGS = new Set(["older-than", "limit", "max", "focus", "prompt", "completion-promise", "abort-promise", "pause", "resume", "stop", "status"]);
 export function parseArgv(argv) {
     const out = { cmd: null, positional: [], flags: {} };
     const args = [...argv];
@@ -350,6 +392,153 @@ export function cmdWhere() {
     return 0;
 }
 
+// `ralph-tui run` dispatcher. Splits into:
+//   sibling sub-commands: --pause / --resume / --stop / --status <runId>
+//                         (mutate or read state.json of an existing run)
+//   driver:               --self-improve / --grow-project / --prompt
+//                         (start a new loop; runs to completion in this
+//                          process, with SIGINT/SIGTERM mapped to a
+//                          graceful stop request)
+export async function cmdRun(flags) {
+    // Lazy-imported so a `ralph-tui list` invocation doesn't pay the
+    // child_process / runner-module init cost.
+    const runner = await import("../src/runner.mjs");
+
+    // Sibling commands first — they require a runId argument and are
+    // mutually exclusive with the driver flags.
+    const siblingFlags = ["pause", "resume", "stop", "status"];
+    const sibling = siblingFlags.find((k) => flags[k] !== undefined);
+    if (sibling) {
+        const runId = flags[sibling];
+        if (!runId || runId === true) {
+            fail(`run --${sibling}: <runId> is required (e.g. --${sibling} ralph-tui-self-improve-1700000000000)`);
+            return 2;
+        }
+        try {
+            const before = runner.statusRun(runId);
+            let after;
+            if (sibling === "status") after = before;
+            else if (sibling === "pause") after = runner.pauseRun(runId);
+            else if (sibling === "resume") after = runner.resumeRun(runId);
+            else if (sibling === "stop") after = runner.stopRun(runId);
+            const summary = `runId=${after.runId} mode=${after.mode} ctx=${after.contextMode} iter=${after.iter}/${after.max}`
+                + ` paused=${after.paused ? "yes" : "no"}`
+                + ` stopRequested=${after.stopRequested ? "yes" : "no"}`
+                + (after.terminated ? ` terminated=${after.terminationReason}` : "")
+                + (after.sessionId ? ` sessionId=${after.sessionId}` : "");
+            process.stdout.write(summary + "\n");
+            return 0;
+        } catch (err) {
+            if (err instanceof TypeError) {
+                fail(`run --${sibling}: ${err.message}`);
+                return 2;
+            }
+            throw err;
+        }
+    }
+
+    // Driver path — exactly one of --self-improve / --grow-project /
+    // --prompt and exactly one of --continue / --fresh.
+    let mode = null;
+    if (flags["self-improve"]) mode = "self-improve";
+    if (flags["grow-project"]) {
+        if (mode) { fail(`run: choose exactly one of --self-improve / --grow-project / --prompt`); return 2; }
+        mode = "grow-project";
+    }
+    if (flags.prompt !== undefined) {
+        if (mode) { fail(`run: choose exactly one of --self-improve / --grow-project / --prompt`); return 2; }
+        mode = "prompt";
+    }
+    if (!mode) {
+        fail(`run: choose one of --self-improve / --grow-project / --prompt TEXT`);
+        return 2;
+    }
+    if (mode === "prompt" && (flags.prompt === true || typeof flags.prompt !== "string" || !flags.prompt.trim())) {
+        fail(`run --prompt: requires a non-empty string`);
+        return 2;
+    }
+
+    let contextMode = null;
+    if (flags.continue) contextMode = "continue";
+    if (flags.fresh) {
+        if (contextMode) { fail(`run: choose exactly one of --continue / --fresh`); return 2; }
+        contextMode = "fresh";
+    }
+    if (!contextMode) {
+        fail(`run: choose one of --continue / --fresh (no default — context behaviour is too consequential to guess)`);
+        return 2;
+    }
+
+    let max = runner.DEFAULT_MAX_ITERATIONS;
+    if (flags.max !== undefined) {
+        if (flags.max === true) { fail(`run --max: requires an integer value`); return 2; }
+        const n = Number(String(flags.max).trim());
+        if (!Number.isInteger(n) || n < 1 || n > runner.MAX_ALLOWED_ITERATIONS) {
+            fail(`run --max: expected integer in [1, ${runner.MAX_ALLOWED_ITERATIONS}], got '${flags.max}'`);
+            return 2;
+        }
+        max = n;
+    }
+
+    const focus = flags.focus !== undefined && flags.focus !== true ? String(flags.focus) : undefined;
+    const promptText = mode === "prompt" ? flags.prompt : undefined;
+    const completionPromise = (typeof flags["completion-promise"] === "string" && flags["completion-promise"].trim())
+        ? flags["completion-promise"] : runner.COMPLETION_PROMISE;
+    const abortPromise = (typeof flags["abort-promise"] === "string" && flags["abort-promise"].trim())
+        ? flags["abort-promise"] : undefined; // undefined → runner picks per-mode default
+
+    let stopOnce = false;
+    const installSignal = (sig) => {
+        const handler = () => {
+            if (stopOnce) {
+                process.stderr.write(`\nralph-tui run: second ${sig} — aborting hard.\n`);
+                process.exit(130);
+            }
+            stopOnce = true;
+            process.stderr.write(`\nralph-tui run: ${sig} received — finishing current iteration, then stopping. Hit ${sig} again to abort hard.\n`);
+            // We don't yet know the runId until runRalphTui has emitted
+            // it; the runner reads state.json each iter so flipping the
+            // file is sufficient. We resolve the runId via the running
+            // promise's bookkeeping below.
+            if (currentRunId) {
+                try { runner.stopRun(currentRunId, { reason: `signal_${sig}` }); }
+                catch { /* swallow */ }
+            }
+        };
+        process.on(sig, handler);
+        return () => process.off(sig, handler);
+    };
+
+    let currentRunId = null;
+    const offInt = installSignal("SIGINT");
+    const offTerm = installSignal("SIGTERM");
+    try {
+        const result = await runner.runRalphTui({
+            mode,
+            contextMode,
+            prompt: promptText,
+            focus,
+            max,
+            completionPromise,
+            abortPromise: abortPromise ?? undefined,
+            onRunId: (id) => { currentRunId = id; },
+            onIteration: ({ iter }) => {
+                // eslint-disable-next-line no-unused-vars
+                void iter;
+            },
+        });
+        process.stdout.write(`# done — runId=${result.runId} reason=${result.terminationReason}`
+            + (result.terminationNote ? ` note=${result.terminationNote}` : "")
+            + (result.sessionId ? ` sessionId=${result.sessionId}` : "")
+            + "\n");
+        return result.terminationReason === "complete" || result.terminationReason === "stopped"
+            || result.terminationReason === "abort" || result.terminationReason === "max_iterations"
+            ? 0 : 1;
+    } finally {
+        offInt(); offTerm();
+    }
+}
+
 export async function main(argv = process.argv.slice(2)) {
     const { cmd, positional, flags } = parseArgv(argv);
     if (flags.version) {
@@ -368,6 +557,7 @@ export async function main(argv = process.argv.slice(2)) {
         case "prune": return cmdPrune(flags);
         case "stats": return cmdStats();
         case "where": return cmdWhere();
+        case "run": return await cmdRun(flags);
         default:
             fail(`unknown command: ${cmd}\n${USAGE}`);
             return 2;

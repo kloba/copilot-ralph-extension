@@ -3,6 +3,48 @@
 ## Unreleased
 
 ### Features
+- `ralph-tui run` — new subcommand that drives a
+  `ralph_loop` / `self_improve` / `grow_project` loop
+  OUT-OF-SESSION by spawning each iteration as a fresh
+  `copilot -p "<prompt>" --allow-all-tools --output-format
+  json` subprocess. The user MUST pick exactly one prompt
+  mode (`--self-improve` / `--grow-project` / `--prompt
+  "..."`) AND exactly one context mode (`--continue` /
+  `--fresh`). `--continue` names the session on iter 1
+  (`-n ralph-tui-<runId>`), captures the terminal
+  `result.sessionId` from the JSONL stream, and resumes via
+  `--resume=<sessionId>` on iter 2+ so the conversation
+  history grows across iterations. `--fresh` re-spawns
+  without `-n` or `--resume` each iter so every iteration
+  starts from a clean context — the mode the in-session
+  `ralph_loop` tool cannot offer because the Copilot SDK
+  exposes no session-history reset to extension code.
+  `--max N` caps total iterations (default 100). `--focus
+  "..."` is supported for `--self-improve` /
+  `--grow-project` and is appended verbatim as
+  `Focus this run on: <focus>` (≤2000 chars; rejected at
+  parse time otherwise). Sibling `--pause <runId>` /
+  `--resume <runId>` / `--stop <runId>` / `--status
+  <runId>` operate on the run's state file
+  (`~/.copilot/ralph-tui/runs/<runId>/state.json`) via a
+  versioned read-modify-write under a lockfile so a `pause`
+  racing the driver's iter-end write cannot lose updates.
+  SIGINT/SIGTERM at the driver process sets
+  `stopRequested=true` in the state file and lets the
+  current child exit naturally before emitting the terminal
+  `abort` event with `reason: "user_stopped"`. Events are
+  emitted to the same JSONL stream
+  (`~/.copilot/ralph-tui/runs/<runId>/events.jsonl`) the
+  in-session runner uses, so `ralph-tui watch / replay /
+  list / stats` work unchanged for both
+  in-session and out-of-session runs. Reuses
+  `extension/prompts.mjs` and
+  `extension/events-emit.mjs` rather than duplicating the
+  baked SDLC prompts or the writer wiring. Pinned by 36 new
+  tests in `packages/tui/test/runner.test.mjs` plus drift
+  guards covering the USAGE block, `VALUE_FLAGS` set, and
+  the header `// Subcommands` comment.
+
 - `self_improve` and `grow_project` baked SDLC prompts
   reframed around the per-iteration cost model and a clean
   division of labor. **`self_improve`** is now a backlog-DRAIN

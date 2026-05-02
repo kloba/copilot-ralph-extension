@@ -33,6 +33,71 @@ const moduleRequire = createRequire(import.meta.url);
 // during reinstall.
 export const VERSION = "0.6.0";
 
+// Pure SemVer 2.0.0 comparator. Returns:
+//   -1 if a < b
+//    0 if a === b (semver-equal) or either input is malformed
+//    1 if a > b
+//
+// Handles `MAJOR.MINOR.PATCH` plus an optional `-prerelease` suffix
+// (per SemVer 2.0.0 §11). Within prereleases we compare segments
+// dot-by-dot, treating numeric segments numerically and falling back
+// to ASCII order for non-numeric ones; a release > the same X.Y.Z
+// with a prerelease suffix.
+//
+// Malformed input deliberately resolves to 0 so the future
+// "version check on extension load" feature (issue #25) cannot
+// falsely recommend an update on a parse failure — silent degrade
+// over false positive.
+//
+// Build metadata (`+...`) is intentionally NOT supported here; per
+// SemVer 2.0.0 §10 build metadata MUST be ignored when determining
+// version precedence, and our release pipeline does not emit it.
+export function compareSemver(a, b) {
+    const re = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
+    const ma = re.exec(typeof a === "string" ? a : "");
+    const mb = re.exec(typeof b === "string" ? b : "");
+    if (!ma || !mb) return 0;
+    for (let i = 1; i <= 3; i++) {
+        const ai = Number.parseInt(ma[i], 10);
+        const bi = Number.parseInt(mb[i], 10);
+        if (ai !== bi) return ai < bi ? -1 : 1;
+    }
+    const pa = ma[4];
+    const pb = mb[4];
+    if (pa === undefined && pb === undefined) return 0;
+    // Release > prerelease (SemVer §11.3): "A pre-release version has
+    // lower precedence than a normal version". Absence of a prerelease
+    // string therefore wins.
+    if (pa === undefined) return 1;
+    if (pb === undefined) return -1;
+    const sa = pa.split(".");
+    const sb = pb.split(".");
+    const len = Math.max(sa.length, sb.length);
+    for (let i = 0; i < len; i++) {
+        const xa = sa[i];
+        const xb = sb[i];
+        // §11.4.4: a larger set of pre-release fields has higher
+        // precedence than a smaller set, when all preceding
+        // identifiers are equal.
+        if (xa === undefined) return -1;
+        if (xb === undefined) return 1;
+        const na = /^\d+$/.test(xa);
+        const nb = /^\d+$/.test(xb);
+        // §11.4.3: numeric identifiers always have lower precedence
+        // than alphanumeric identifiers.
+        if (na && !nb) return -1;
+        if (!na && nb) return 1;
+        if (na && nb) {
+            const ia = Number.parseInt(xa, 10);
+            const ib = Number.parseInt(xb, 10);
+            if (ia !== ib) return ia < ib ? -1 : 1;
+        } else if (xa !== xb) {
+            return xa < xb ? -1 : 1;
+        }
+    }
+    return 0;
+}
+
 const DEFAULTS = Object.freeze({
     max_iterations: 20,
     min_iterations: 1,
@@ -2462,4 +2527,4 @@ export function createRalphController(opts = {}) {
     };
 }
 
-export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, classifyPorcelainLine, parseUserReason, coerceNumberField, VERSION };
+export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, classifyPorcelainLine, parseUserReason, coerceNumberField, VERSION, compareSemver };

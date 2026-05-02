@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Features
+- New `compareSemver(a, b)` pure helper (extension/handler.mjs)
+  returning `-1 | 0 | 1`. Handles `MAJOR.MINOR.PATCH` plus an
+  optional `-prerelease` suffix per SemVer 2.0.0 §11 (release >
+  prerelease, dot-segment compare with numeric < alphanumeric,
+  longer set wins). Malformed input deliberately resolves to 0
+  so the future "version check on extension load" feature
+  (issue [#25](https://github.com/kloba/copilot-ralph-extension/issues/25))
+  cannot falsely recommend an upgrade on a parse failure. Build
+  metadata (`+...`) is intentionally ignored per §10. Six unit
+  tests pin the contract: equality, major/minor/patch ordering,
+  release-vs-prerelease, prerelease §11.4 ordering, malformed
+  inputs (non-string, leading-v, extra segments), and the full
+  SemVer §11 example chain (alpha < alpha.1 < … < rc.1 < 1.0.0)
+  verified end-to-end with strict monotonicity.
+
 ### Internal
 - Bake an exported `VERSION` constant in `extension/handler.mjs`
   matching `package.json#version`. This is the precursor to

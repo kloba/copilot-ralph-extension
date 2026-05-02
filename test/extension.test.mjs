@@ -7772,3 +7772,91 @@ test("VERSION matches package.json#version (sync guard)", async () => {
     assert.match(VERSION, /^\d+\.\d+\.\d+(?:-[\w.]+)?$/, "VERSION must look like SemVer 2.0.0");
     assert.equal(VERSION, pkg.version, `VERSION (${VERSION}) must match package.json#version (${pkg.version}) — bump both together in release PR`);
 });
+
+test("compareSemver: equal versions return 0", () => {
+    const { compareSemver } = __test__;
+    assert.equal(compareSemver("0.6.0", "0.6.0"), 0);
+    assert.equal(compareSemver("1.2.3", "1.2.3"), 0);
+    assert.equal(compareSemver("0.0.0", "0.0.0"), 0);
+    assert.equal(compareSemver("10.20.30", "10.20.30"), 0);
+});
+
+test("compareSemver: major / minor / patch ordering", () => {
+    const { compareSemver } = __test__;
+    // major
+    assert.equal(compareSemver("0.6.0", "1.0.0"), -1);
+    assert.equal(compareSemver("2.0.0", "1.99.99"), 1);
+    // minor
+    assert.equal(compareSemver("0.5.0", "0.6.0"), -1);
+    assert.equal(compareSemver("0.7.0", "0.6.99"), 1);
+    // patch
+    assert.equal(compareSemver("0.6.0", "0.6.1"), -1);
+    assert.equal(compareSemver("0.6.10", "0.6.9"), 1, "numeric not lexical compare");
+});
+
+test("compareSemver: prerelease has lower precedence than release", () => {
+    // SemVer 2.0.0 §11.3: a pre-release version has lower precedence
+    // than a normal version. So 1.0.0-alpha < 1.0.0.
+    const { compareSemver } = __test__;
+    assert.equal(compareSemver("1.0.0-alpha", "1.0.0"), -1);
+    assert.equal(compareSemver("1.0.0", "1.0.0-alpha"), 1);
+    assert.equal(compareSemver("0.6.0", "0.6.0-rc.1"), 1);
+});
+
+test("compareSemver: prerelease ordering follows SemVer §11.4", () => {
+    const { compareSemver } = __test__;
+    // §11.4.1 lexical compare for non-numeric ids
+    assert.equal(compareSemver("1.0.0-alpha", "1.0.0-beta"), -1);
+    // §11.4.2 numeric compare for numeric ids
+    assert.equal(compareSemver("1.0.0-alpha.2", "1.0.0-alpha.10"), -1, "numeric prerelease compare");
+    // §11.4.3 numeric < alphanumeric
+    assert.equal(compareSemver("1.0.0-1", "1.0.0-alpha"), -1);
+    // §11.4.4 longer set wins
+    assert.equal(compareSemver("1.0.0-alpha", "1.0.0-alpha.1"), -1);
+    assert.equal(compareSemver("1.0.0-alpha.1", "1.0.0-alpha"), 1);
+    // Equal prereleases
+    assert.equal(compareSemver("1.0.0-rc.1", "1.0.0-rc.1"), 0);
+});
+
+test("compareSemver: malformed inputs resolve to 0 (silent degrade)", () => {
+    // Per issue #25 design: malformed → equal so the future update
+    // check never falsely recommends an upgrade on a parse error.
+    const { compareSemver } = __test__;
+    assert.equal(compareSemver("not-a-version", "1.0.0"), 0);
+    assert.equal(compareSemver("1.0.0", "also bad"), 0);
+    assert.equal(compareSemver("v1.0.0", "1.0.0"), 0, "leading v rejected");
+    assert.equal(compareSemver("1.0", "1.0.0"), 0, "missing patch rejected");
+    assert.equal(compareSemver("1.0.0.0", "1.0.0"), 0, "extra segment rejected");
+    assert.equal(compareSemver("", ""), 0);
+    assert.equal(compareSemver(null, "1.0.0"), 0);
+    assert.equal(compareSemver(undefined, "1.0.0"), 0);
+    assert.equal(compareSemver(123, "1.0.0"), 0, "non-string rejected");
+});
+
+test("compareSemver: spec example chain (SemVer §11)", () => {
+    // The full chain from the SemVer 2.0.0 spec, §11 example. Verifies
+    // the comparator produces a strictly-ascending sequence end-to-end.
+    const { compareSemver } = __test__;
+    const chain = [
+        "1.0.0-alpha",
+        "1.0.0-alpha.1",
+        "1.0.0-alpha.beta",
+        "1.0.0-beta",
+        "1.0.0-beta.2",
+        "1.0.0-beta.11",
+        "1.0.0-rc.1",
+        "1.0.0",
+    ];
+    for (let i = 0; i < chain.length - 1; i++) {
+        assert.equal(
+            compareSemver(chain[i], chain[i + 1]),
+            -1,
+            `${chain[i]} < ${chain[i + 1]}`,
+        );
+        assert.equal(
+            compareSemver(chain[i + 1], chain[i]),
+            1,
+            `${chain[i + 1]} > ${chain[i]}`,
+        );
+    }
+});

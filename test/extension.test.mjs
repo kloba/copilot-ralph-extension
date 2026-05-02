@@ -8629,3 +8629,35 @@ test("install.sh: --dry-run annotates each file with [unchanged] when target equ
         rmSync(sandboxHome, { recursive: true, force: true });
     }
 });
+
+// Iter 102 — release.yml hardcodes `node-version: "20"` for the
+// release runner. If a future contributor bumps `engines.node` past
+// 20 (say to ">=22" because of a syntax / runtime feature dependency)
+// without also bumping release.yml, every tagged release would run on
+// a Node version the project no longer claims to support: tests might
+// still pass on the older runtime but ship a tarball that crashes on
+// the supported floor. Iter 94 pinned the CI matrix's lowest entry
+// against the engines floor; this iter pins release.yml the same way.
+test("release.yml setup-node version equals package.json#engines.node floor major", () => {
+    const yml = readFileSync(resolve(REPO_ROOT, ".github/workflows/release.yml"), "utf8");
+    // Pull every `node-version: "..."` declaration. The release workflow
+    // currently has exactly one, but the test is robust against future
+    // additions (e.g. a separate notify job): every declared version
+    // must agree with the engines floor major.
+    const matches = [...yml.matchAll(/^\s*node-version:\s*"([^"]+)"/gm)];
+    assert.ok(matches.length >= 1, "release.yml must pin at least one setup-node node-version");
+    const pkg = JSON.parse(readFileSync(resolve(REPO_ROOT, "package.json"), "utf8"));
+    const floorMatch = pkg.engines?.node?.match(/(\d+)/);
+    assert.ok(floorMatch, "package.json#engines.node must declare a numeric floor");
+    const floorMajor = floorMatch[1];
+    for (const m of matches) {
+        const declared = m[1];
+        const declaredMajor = declared.split(".")[0];
+        assert.equal(
+            declaredMajor,
+            floorMajor,
+            `release.yml node-version "${declared}" major (${declaredMajor}) must equal package.json#engines.node floor major (${floorMajor}); ` +
+            "if you bumped engines.node, also bump release.yml's setup-node node-version (and ci.yml's matrix) so releases ship on a supported runtime.",
+        );
+    }
+});

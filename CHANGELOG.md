@@ -58,6 +58,14 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Drift guard: `release.yml`'s `setup-node` pin (currently
+  `node-version: "20"`) must equal `package.json#engines.node`'s
+  floor major. Mirrors iter 94's guard for `ci.yml`'s matrix
+  lowest entry — if a future engines bump forgets to update
+  the release runner, tagged releases would silently ship from
+  a runtime the project no longer claims to support. Test scans
+  every `node-version: "..."` declaration so a future second
+  job (notify, post-publish smoke) is automatically covered.
 - Behavioural coverage for `extension/events-emit.mjs`'s
   `createEventEmitter.write()` and its 3-tier `serialize()`
   fallback (issue #22's "swallow every error" contract): tier-1

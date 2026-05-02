@@ -301,6 +301,21 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Pin `ralph_resume`'s `totalPausedMs` accumulator across
+  multiple pause/resume cycles. The handler does
+  `a.totalPausedMs += pausedFor` — the `+=` is load-bearing.
+  A future "simplify" that wrote `= pausedFor` would silently
+  lose every prior pause window: a user who paused twice
+  would see `total_paused_ms` reflect only the most recent
+  pause, and `finish()`'s `durationMs = wallClock −
+  totalPausedMs` calculation would over-bill the earlier
+  pause's wall-clock time as "running" when it wasn't. The
+  new test injects deterministic 1500ms + 800ms pause windows
+  via direct `pausedAt` backdating, then asserts the
+  accumulator sums to ~2300ms (not ~800ms). A belt-and-braces
+  assertion explicitly forbids the regression shape (post-
+  second-resume value at-or-below the first cycle's
+  contribution) with a hint pointing at `+=` vs `=`.
 - Pin `plain.mjs`'s `formatEventLine` rendering for
   `iteration_start` (verb `iter+`) and `abort` (verb
   `abort`) events. Until iter 132 these two verbs only

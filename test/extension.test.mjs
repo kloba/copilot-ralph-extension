@@ -6026,6 +6026,55 @@ test("ralph_resume: re-arms the loop and the next idle fires the next iteration"
     assert.ok(controller.state.active.i > before, "iteration counter must advance after resume");
 });
 
+test("ralph_resume: totalPausedMs ACCUMULATES across multiple pause/resume cycles", async () => {
+    // ralph_resume's handler does `a.totalPausedMs += pausedFor` — the
+    // `+=` is load-bearing. A future "simplify" that wrote
+    // `a.totalPausedMs = pausedFor` would silently lose every prior
+    // pause window: a user who paused twice (e.g. for two
+    // unrelated meetings) would see `total_paused_ms` reflect only
+    // the most recent pause, and the iter 6557 finish() durationMs
+    // calculation would over-bill the second meeting's wall-clock
+    // time as "running" when it wasn't. Pin accumulation so the
+    // contract survives a refactor.
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    runTurn(session, "boot");
+
+    // Cycle 1: pause, backdate pausedAt to inject a deterministic
+    // 1500ms pause window, resume.
+    await pause.handler({ reason: "lunch" });
+    const a = controller.state.active;
+    const FIRST_PAUSE_MS = 1500;
+    a.pausedAt = Date.now() - FIRST_PAUSE_MS;
+    await resume.handler({});
+    const afterFirst = a.totalPausedMs;
+    assert.ok(
+        afterFirst >= FIRST_PAUSE_MS - 50 && afterFirst <= FIRST_PAUSE_MS + 200,
+        `totalPausedMs after first resume should be ~${FIRST_PAUSE_MS}; got ${afterFirst}`,
+    );
+
+    // Cycle 2: pause again, inject a different deterministic
+    // 800ms pause window, resume. Accumulator must SUM the two.
+    await pause.handler({ reason: "coffee" });
+    const SECOND_PAUSE_MS = 800;
+    a.pausedAt = Date.now() - SECOND_PAUSE_MS;
+    await resume.handler({});
+    const afterSecond = a.totalPausedMs;
+    const expected = FIRST_PAUSE_MS + SECOND_PAUSE_MS;
+    assert.ok(
+        afterSecond >= expected - 100 && afterSecond <= expected + 250,
+        `totalPausedMs must accumulate (${FIRST_PAUSE_MS} + ${SECOND_PAUSE_MS} = ~${expected}); got ${afterSecond}. A regression that wrote = instead of += would surface as ~${SECOND_PAUSE_MS} here.`,
+    );
+    // Belt-and-braces: explicitly forbid the regression shape (only
+    // the most-recent pause window). If a future refactor reverts
+    // `+=` to `=`, this assertion fires with a clear hint.
+    assert.ok(
+        afterSecond > FIRST_PAUSE_MS,
+        `totalPausedMs (${afterSecond}) must exceed FIRST_PAUSE_MS (${FIRST_PAUSE_MS}); a value at-or-below first cycle indicates accumulator was overwritten, not summed`,
+    );
+});
+
 test("ralph_stop: multi-line reason is flattened at entry (parallel ralph_pause)", async () => {
     // Iter 36: parseUserReason now consolidates ralph_pause + ralph_stop
     // reason normalization. ralph_stop's stored result.note is now the

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Install copilot-ralph-extension to user-scoped Copilot CLI extensions dir.
+# Install autopilot to user-scoped Copilot CLI extensions dir.
 # Usage: ./install.sh [--project] [--dry-run] [--version|-V] [--help|-h]
-#   default:        ~/.copilot/extensions/ralph
-#   --project:      .github/extensions/ralph in current git repo
+#   default:        ~/.copilot/extensions/autopilot
+#   --project:      .github/extensions/autopilot in current git repo
 #   --dry-run:      show what would be installed without writing anything
 #   --version, -V:  print the extension version and exit
 #   --help, -h:     show this message
@@ -83,7 +83,7 @@ for arg in "$@"; do
       # above). A user/CI script that wants to know "which version
       # would this script install?" can now do so without parsing
       # `--dry-run` output or reading handler.mjs themselves.
-      echo "copilot-ralph-extension v$VERSION"
+      echo "autopilot v$VERSION"
       exit 0
       ;;
     --dry-run)
@@ -121,7 +121,7 @@ FILES=(events-emit.mjs prompts.mjs handler.mjs extension.mjs)
 # package.json) avoids a dependency on `node` / a JSON parser at
 # install time and keeps the version surface a single source of
 # truth — handler.mjs's constant is what the running extension
-# reports via `ralph_status`. The empty-version guard up there
+# reports via `ap_status`. The empty-version guard up there
 # fails the install loudly if a future refactor breaks the
 # declaration shape rather than printing "v" to the user.
 
@@ -158,7 +158,7 @@ if [[ "$SEEN_PROJECT" == "1" ]]; then
   # this script anyway, so the builtin is always available).
   if ! command -v git >/dev/null 2>&1; then
     echo "Error: --project requires the 'git' binary in PATH, but it was not found." >&2
-    echo "  Hint: install git, or omit --project to install into the user-scoped path (~/.copilot/extensions/ralph)." >&2
+    echo "  Hint: install git, or omit --project to install into the user-scoped path (~/.copilot/extensions/autopilot)." >&2
     exit 1
   fi
   GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -166,7 +166,7 @@ if [[ "$SEEN_PROJECT" == "1" ]]; then
     echo "Error: --project requires being inside a git repo." >&2
     exit 1
   fi
-  TARGET_DIR="$GIT_ROOT/.github/extensions/ralph"
+  TARGET_DIR="$GIT_ROOT/.github/extensions/autopilot"
 else
   # User-scoped install needs $HOME. Surface a friendly error if it's
   # unset (cron / minimal docker / weird CI) instead of letting `set -u`
@@ -175,7 +175,7 @@ else
     echo "Error: \$HOME is not set; cannot determine user-scoped install path. Pass --project to install into the current git repo instead." >&2
     exit 1
   fi
-  TARGET_DIR="$HOME/.copilot/extensions/ralph"
+  TARGET_DIR="$HOME/.copilot/extensions/autopilot"
 fi
 
 if [[ "$DRY_RUN" == "1" ]]; then
@@ -352,6 +352,6 @@ for f in "${FILES[@]}"; do
   fi
 done
 
-echo "✅ Installed ralph extension v$VERSION to $TARGET_DIR/"
+echo "✅ Installed autopilot v$VERSION to $TARGET_DIR/"
 echo ""
 echo "Restart Copilot CLI (or run /extensions reload) to activate."

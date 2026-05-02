@@ -1,6 +1,6 @@
 // Hook/event-driven autonomous-loop controller for Copilot CLI.
 //
-// Architecture: the ralph_loop tool returns immediately after arming the loop.
+// Architecture: the ap_loop tool returns immediately after arming the loop.
 // Iterations are driven by listening to `session.idle` events (the root
 // agent's "agentic loop fully done" signal) and re-injecting the prompt via
 // `session.send` (fire-and-forget). Using `session.idle` rather than
@@ -24,7 +24,7 @@ import {
 } from "./prompts.mjs";
 
 // Lazy-resolved sync `require` so we can pull child_process only when needed
-// (caffeinate when enabled, git for ralph_status / adaptive-budget, etc.)
+// (caffeinate when enabled, git for ap_status / adaptive-budget, etc.)
 // without paying the import cost up front.
 const moduleRequire = createRequire(import.meta.url);
 
@@ -119,9 +119,9 @@ const DEFAULTS = Object.freeze({
     // to min(max_iterations * 5, MAX_ALLOWED_ITERATIONS) at validation time
     // so the ceiling scales with the user's chosen base budget.
 });
-// self_improve has different max/min defaults than ralph_loop because the
+// self_improve has different max/min defaults than ap_loop because the
 // SDLC loop is meant to run long-haul (whole-repo polish across many
-// categories), while ralph_loop is a generic primitive that often arms
+// categories), while ap_loop is a generic primitive that often arms
 // short, targeted runs. Extract them here so the schema's `default:` hints
 // and the handler's `?? <fallback>` use the SAME source of truth.
 const SELF_IMPROVE_DEFAULTS = Object.freeze({
@@ -175,7 +175,7 @@ const MODEL_CONTEXT_WINDOWS = Object.freeze({
 
 // Issue #7: warning thresholds (percent of context window). Pre-baked
 // so we can iterate a small array instead of computing both edges
-// inline. 95% is the "stronger" warning that suggests ralph_stop.
+// inline. 95% is the "stronger" warning that suggests ap_stop.
 const TOKEN_WARNING_THRESHOLDS = Object.freeze([80, 95]);
 
 
@@ -227,16 +227,16 @@ const BAKED_COPILOT_TRAILER = "Co-authored-by: Copilot <223556219+Copilot@users.
 const BAKED_RALPH_TRAILER = "Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>";
 const BAKED_ATTRIBUTION_OPT_OUT = "RALPH_NO_ATTRIBUTION=1";
 
-// Issue #1 (ralph_loop parity): unlike self_improve / grow_project which
-// embed the COMMIT stage in their full baked SDLC prompt, ralph_loop takes
+// Issue #1 (ap_loop parity): unlike self_improve / grow_project which
+// embed the COMMIT stage in their full baked SDLC prompt, ap_loop takes
 // a user-supplied `prompt` and re-injects it verbatim every iteration. To
 // keep the dual-trailer attribution contract symmetric across all three
-// loop tools, the ralph_loop handler appends this rider to the user's
+// loop tools, the ap_loop handler appends this rider to the user's
 // prompt at arm time. The rider is short on purpose — it ships once per
 // re-injected message and adds to context on every iteration. Worded as
 // a "Controller requirement" so a user prompt that omits commit
 // instructions does not appear to override it; explicitly inert when no
-// commit is created so generic ralph_loop tasks (e.g. log analysis) are
+// commit is created so generic ap_loop tasks (e.g. log analysis) are
 // unaffected.
 const BAKED_RALPH_LOOP_RIDER = `---
 CONTROLLER REQUIREMENT — commit attribution: if this iteration produces any git commit, append BOTH Co-authored-by trailers in this exact order at the end of the commit message (separated from the body by a blank line):
@@ -264,7 +264,7 @@ for (const [label, prompt] of [
 }
 
 // Append the dual-trailer commit-attribution rider to a user-supplied
-// ralph_loop prompt. Returns `{value}` on success or `{error}` when the
+// ap_loop prompt. Returns `{value}` on success or `{error}` when the
 // composed prompt would exceed MAX_PROMPT_CHARS — the rider eats roughly
 // 600 of the 65 536-char budget, so callers near the cap need a clear
 // signal instead of a silent overshoot. The separator is part of the
@@ -275,7 +275,7 @@ function composeRalphLoopPrompt(userPrompt) {
     if (composed.length > MAX_PROMPT_CHARS) {
         const reserved = separator.length + BAKED_RALPH_LOOP_RIDER.length;
         return {
-            error: `ralph_loop: prompt + commit-attribution rider exceeds ${MAX_PROMPT_CHARS} characters (got ${composed.length}; ${reserved} chars reserved for the rider). Shorten the prompt by at least ${composed.length - MAX_PROMPT_CHARS} character${composed.length - MAX_PROMPT_CHARS === 1 ? "" : "s"}.`,
+            error: `ap_loop: prompt + commit-attribution rider exceeds ${MAX_PROMPT_CHARS} characters (got ${composed.length}; ${reserved} chars reserved for the rider). Shorten the prompt by at least ${composed.length - MAX_PROMPT_CHARS} character${composed.length - MAX_PROMPT_CHARS === 1 ? "" : "s"}.`,
         };
     }
     return { value: composed };
@@ -328,8 +328,8 @@ function boundedNoteForLog(text) {
     return collapseNote(truncateNote(text));
 }
 
-// Shared normalizer for the optional `reason` argument of ralph_pause +
-// ralph_stop. Returns the canonical single-line, length-capped form, or
+// Shared normalizer for the optional `reason` argument of ap_pause +
+// ap_stop. Returns the canonical single-line, length-capped form, or
 // `null` when the caller supplied nothing / a non-string / a value that
 // is empty after whitespace flattening. Centralising the logic prevents
 // drift between the two tools — both store `reason` on long-lived state
@@ -357,7 +357,7 @@ function deepFreeze(obj) {
 // manual clock change, daylight savings on a host without monotonic-
 // time backing) cannot credit a negative window. Returns 0 when
 // `pausedAt` is the never-paused sentinel (0). Centralised so all
-// three call sites (finish(), ralph_status, ralph_resume) share the
+// three call sites (finish(), ap_status, ap_resume) share the
 // same skew-guard contract — pre-iter-155 the resume site had drifted
 // to an unclamped form (fixed in iter 154); having one helper makes
 // that drift mechanically impossible to reintroduce.
@@ -412,7 +412,7 @@ function caffeinateFlagsForScope(scope) {
  * @param {number} deps.pid - host process pid (for `-w`)
  * @param {Function} deps.spawnFn - child_process.spawn-compatible
  * @param {(msg: string) => void} deps.log
- * @param {string} deps.label - "ralph_loop" | "self_improve" | "grow_project"
+ * @param {string} deps.label - "ap_loop" | "self_improve" | "grow_project"
  * @returns {(() => void) | null}
  */
 function startCaffeinate({ env, platform, pid, spawnFn, log, label }) {
@@ -452,7 +452,7 @@ function startCaffeinate({ env, platform, pid, spawnFn, log, label }) {
 
 // git snapshot / status helpers (issue #5)
 //
-// `ralph_status` needs to report files changed since the loop was armed.
+// `ap_status` needs to report files changed since the loop was armed.
 // We capture HEAD at arm-time and diff against it on demand. All git calls
 // are best-effort: if the repo isn't a git repo, the binary is missing, or
 // any individual call fails, the corresponding status field is omitted with
@@ -468,7 +468,7 @@ const GIT_TIMEOUT_MS = 2000;
  * @returns {{ ok: boolean, stdout: string, stderr: string, code: number|null }}
  */
 // Shared spawnSync wrapper for the two production gitExec entry points
-// (defaultGitExec for ralph_status / armLoop diagnostics, and
+// (defaultGitExec for ap_status / armLoop diagnostics, and
 // defaultAdaptiveGitExec for the end-of-iteration adaptive-budget
 // signal evaluation). Both call sites need the same total-function
 // guarantees:
@@ -638,7 +638,7 @@ function defaultAdaptiveGitExec(args, cwd) {
     // Adaptive-budget evaluation runs synchronously inside onIdle and
     // is best-effort; a stuck git invocation must not stall the loop.
     // Hence the tighter ADAPTIVE_GIT_TIMEOUT_MS budget vs the
-    // ralph_status default. Shape is identical to defaultGitExec
+    // ap_status default. Shape is identical to defaultGitExec
     // (including the `code` field — `evaluateAdaptiveSignals` only
     // reads `.ok` / `.stdout`, so the extra field is harmless and
     // keeps both entry points to a single helper).
@@ -700,12 +700,12 @@ function isSubAgentEvent(ev) {
  * @typedef {Object} RalphResult
  * @property {string} reason - One of: completion_promise, abort_promise, stagnation, max_iterations, send_error, aborted, user_stopped, detached.
  * @property {number} iterations - Number of iterations completed (post-fire count).
- * @property {string} label - Tool that armed the loop ("ralph_loop", "self_improve", or "grow_project"). Used for the post-loop additionalContext bracket and the "<verb> <label> after N iterations" finish log line.
- * @property {string} preview - Up to PREVIEW_CHARS (500) chars of the LAST iteration's accumulated assistant content. If the content was longer, an ellipsis ("…") is appended (so the truncated form is 501 chars). If finish runs before any iteration produced output (e.g. send_error before iter 1, or ralph_stop right after arm), this is the empty string. Surrogate-safe — never ends on a lone high surrogate.
+ * @property {string} label - Tool that armed the loop ("ap_loop", "self_improve", or "grow_project"). Used for the post-loop additionalContext bracket and the "<verb> <label> after N iterations" finish log line.
+ * @property {string} preview - Up to PREVIEW_CHARS (500) chars of the LAST iteration's accumulated assistant content. If the content was longer, an ellipsis ("…") is appended (so the truncated form is 501 chars). If finish runs before any iteration produced output (e.g. send_error before iter 1, or ap_stop right after arm), this is the empty string. Surrogate-safe — never ends on a lone high surrogate.
  * @property {number} startedAt - Epoch ms when the loop was armed.
  * @property {number} finishedAt - Epoch ms when the loop finished.
  * @property {number} durationMs - Elapsed wall-clock ms from arming to finish, clamped to ≥ 0 (a backward clock jump mid-loop reports 0 instead of a negative).
- * @property {string} [note] - Optional human-readable context: caller-supplied via ralph_stop({reason}), or the underlying error message on send_error, or the SDK abort reason on aborted. Truncated silently to PREVIEW_CHARS (500) (surrogate-safe) — no "…" indicator is appended (unlike `preview`). Notes are flowed inline into single-line log markers and the post-loop additionalContext bracket, where a trailing "…" would be misread as part of the message.
+ * @property {string} [note] - Optional human-readable context: caller-supplied via ap_stop({reason}), or the underlying error message on send_error, or the SDK abort reason on aborted. Truncated silently to PREVIEW_CHARS (500) (surrogate-safe) — no "…" indicator is appended (unlike `preview`). Notes are flowed inline into single-line log markers and the post-loop additionalContext bracket, where a trailing "…" would be misread as part of the message.
  */
 
 // Type name for error messages: distinguishes null/array from generic
@@ -750,7 +750,7 @@ function validateArgShape(toolName, args, knownKeys) {
 }
 
 // Variant of validateArgShape used by tools where "no args" is a valid
-// call (ralph_stop, self_improve, grow_project — all three have only
+// call (ap_stop, self_improve, grow_project — all three have only
 // optional fields). Treats null/undefined as "use defaults" and returns
 // a ready-to-return `failure(...)` result on bad shape, so the caller's
 // call site is just
@@ -762,7 +762,7 @@ function validateOptionalArgShape(label, args, knownKeys) {
     return shape ? failure(shape.error) : null;
 }
 
-// Shared `reason` type-guard for ralph_stop / ralph_pause. Both tools
+// Shared `reason` type-guard for ap_stop / ap_pause. Both tools
 // expose an identical optional `reason: string` parameter that
 // parseUserReason silently coerces non-strings to null. Without this
 // guard a buggy caller passing `reason: 42` (or `reason: false`, or a
@@ -780,24 +780,24 @@ function validateOptionalReasonField(toolName, args) {
 }
 
 // Single source of truth for the "no active loop" failure surfaced by
-// ralph_stop / ralph_pause / ralph_resume (and any future loop-mutating
+// ap_stop / ap_pause / ap_resume (and any future loop-mutating
 // tool). Centralising the wording prevents drift across handlers — every
 // caller uses the same exact string, which downstream tests + agent
 // prompts can pattern-match against without brittle per-tool variants.
 function noActiveLoopFailure(tool) {
-    return failure(`${tool}: no ralph_loop, self_improve, or grow_project is currently running.`);
+    return failure(`${tool}: no ap_loop, self_improve, or grow_project is currently running.`);
 }
 
 // self_improve and grow_project both delegate validation to validateArgs()
-// (which prefixes errors with "ralph_loop:") and then re-prefix the result
+// (which prefixes errors with "ap_loop:") and then re-prefix the result
 // with their own tool name so the user sees the actual tool they called in
 // the error stream. Centralise the swap so a future validation path that
-// forgets the "ralph_loop:" prefix still surfaces the right tool name —
+// forgets the "ap_loop:" prefix still surfaces the right tool name —
 // and so adding a new wrapper tool ("ralph_replay" etc.) inherits the
 // behaviour for free.
 function reprefixRalphLoopError(error, toolName) {
-    return error.startsWith("ralph_loop:")
-        ? error.replace(/^ralph_loop:/, `${toolName}:`)
+    return error.startsWith("ap_loop:")
+        ? error.replace(/^ap_loop:/, `${toolName}:`)
         : `${toolName}: ${error}`;
 }
 
@@ -817,10 +817,10 @@ const RALPH_LOOP_KEYS = new Set([
 const RALPH_STOP_KEYS = new Set(["reason"]);
 const RALPH_PAUSE_KEYS = new Set(["reason"]);
 const RALPH_RESUME_KEYS = new Set([]);
-// ralph_status accepts no arguments. A frozen module-level
+// ap_status accepts no arguments. A frozen module-level
 // constant keeps the call site symmetrical with every other
 // tool's `validateOptionalArgShape(..., RALPH_*_KEYS)` call and
-// avoids allocating a fresh empty Set per ralph_status invocation
+// avoids allocating a fresh empty Set per ap_status invocation
 // (cheap, but the consistency is the point — drift is the bug).
 const RALPH_STATUS_KEYS = new Set([]);
 const SELF_IMPROVE_KEYS = new Set([
@@ -868,15 +868,15 @@ function parseFocus(raw, toolName = "self_improve") {
 // ", when provided," into abort_promise's empty error (it has no default).
 function validatePromiseField(fieldName, raw, { whenProvided = false } = {}) {
     if (typeof raw !== "string") {
-        return { error: `ralph_loop: ${fieldName} must be a string (got ${describeArgType(raw)}).` };
+        return { error: `ap_loop: ${fieldName} must be a string (got ${describeArgType(raw)}).` };
     }
     const trimmed = raw.trim();
     if (!trimmed) {
         const interjection = whenProvided ? ", when provided," : "";
-        return { error: `ralph_loop: ${fieldName}${interjection} must contain at least one non-whitespace character.` };
+        return { error: `ap_loop: ${fieldName}${interjection} must contain at least one non-whitespace character.` };
     }
     if (raw.length > MAX_PROMISE_CHARS) {
-        return { error: `ralph_loop: ${fieldName} exceeds ${MAX_PROMISE_CHARS} characters (got ${raw.length}). Use a short signal phrase.` };
+        return { error: `ap_loop: ${fieldName} exceeds ${MAX_PROMISE_CHARS} characters (got ${raw.length}). Use a short signal phrase.` };
     }
     return { value: trimmed };
 }
@@ -892,35 +892,35 @@ function resolveOptionalPromise(fieldName, raw, fallback, opts) {
 // Range validation stays at the call site since each field's bounds differ.
 function coerceNumberField(fieldName, raw) {
     if (typeof raw !== "number" && typeof raw !== "string") {
-        return { error: `ralph_loop: ${fieldName} must be a number (got ${describeArgType(raw)}).` };
+        return { error: `ap_loop: ${fieldName} must be a number (got ${describeArgType(raw)}).` };
     }
     return { value: Number(raw) };
 }
 
 /**
- * Validate ralph_loop arguments.
+ * Validate ap_loop arguments.
  *
  * @param {RalphArgs} args
  * @returns {{value: object} | {error: string}} Validated values or a single human-readable error.
  */
 export function validateArgs(args) {
-    const shape = validateArgShape("ralph_loop", args, RALPH_LOOP_KEYS);
+    const shape = validateArgShape("ap_loop", args, RALPH_LOOP_KEYS);
     if (shape) return shape;
     if (args.prompt !== undefined && args.prompt !== null && typeof args.prompt !== "string") {
-        return { error: `ralph_loop: prompt must be a string (got ${describeArgType(args.prompt)}).` };
+        return { error: `ap_loop: prompt must be a string (got ${describeArgType(args.prompt)}).` };
     }
     const prompt = (args.prompt ?? "").trim();
     if (!prompt) {
         // Distinguish "missing" from "whitespace-only" — the latter
         // usually signals a templating bug (variable interpolated to "").
         if (!args.prompt) {
-            return { error: "ralph_loop: prompt is required and must be non-empty." };
+            return { error: "ap_loop: prompt is required and must be non-empty." };
         }
-        return { error: "ralph_loop: prompt must contain at least one non-whitespace character (got a whitespace-only string)." };
+        return { error: "ap_loop: prompt must contain at least one non-whitespace character (got a whitespace-only string)." };
     }
     if (prompt.length > MAX_PROMPT_CHARS) {
         return {
-            error: `ralph_loop: prompt exceeds ${MAX_PROMPT_CHARS} characters (got ${prompt.length}). Shorten the prompt or split the work.`,
+            error: `ap_loop: prompt exceeds ${MAX_PROMPT_CHARS} characters (got ${prompt.length}). Shorten the prompt or split the work.`,
         };
     }
 
@@ -930,7 +930,7 @@ export function validateArgs(args) {
     const max = maxC.value;
     if (!Number.isInteger(max) || max < 1 || max > MAX_ALLOWED_ITERATIONS) {
         return {
-            error: `ralph_loop: max_iterations must be an integer in [1, ${MAX_ALLOWED_ITERATIONS}] (got ${displayValue(rawMax)}).`,
+            error: `ap_loop: max_iterations must be an integer in [1, ${MAX_ALLOWED_ITERATIONS}] (got ${displayValue(rawMax)}).`,
         };
     }
 
@@ -940,7 +940,7 @@ export function validateArgs(args) {
     const min = minC.value;
     if (!Number.isInteger(min) || min < 1 || min > max) {
         return {
-            error: `ralph_loop: min_iterations must be an integer in [1, max_iterations=${max}] (got ${displayValue(rawMin)}).`,
+            error: `ap_loop: min_iterations must be an integer in [1, max_iterations=${max}] (got ${displayValue(rawMin)}).`,
         };
     }
 
@@ -955,12 +955,12 @@ export function validateArgs(args) {
     if (abortPromise !== null) {
         if (abortPromise === completionPromise) {
             return {
-                error: `ralph_loop: abort_promise must differ from completion_promise (both are ${JSON.stringify(completionPromise)} — the signal would be ambiguous).`,
+                error: `ap_loop: abort_promise must differ from completion_promise (both are ${JSON.stringify(completionPromise)} — the signal would be ambiguous).`,
             };
         }
         if (abortPromise.includes(completionPromise) || completionPromise.includes(abortPromise)) {
             return {
-                error: `ralph_loop: completion_promise (${JSON.stringify(completionPromise)}) and abort_promise (${JSON.stringify(abortPromise)}) overlap as substrings — whichever check runs first will always fire. Pick disjoint phrases.`,
+                error: `ap_loop: completion_promise (${JSON.stringify(completionPromise)}) and abort_promise (${JSON.stringify(abortPromise)}) overlap as substrings — whichever check runs first will always fire. Pick disjoint phrases.`,
             };
         }
     }
@@ -971,7 +971,7 @@ export function validateArgs(args) {
     const stagnationLimit = stagC.value;
     if (!Number.isInteger(stagnationLimit) || stagnationLimit < 0 || stagnationLimit === 1) {
         return {
-            error: `ralph_loop: stagnation_limit must be 0 (disabled) or an integer ≥ 2 (got ${displayValue(rawStagnation)}). 1 is meaningless because no comparison is possible after a single response.`,
+            error: `ap_loop: stagnation_limit must be 0 (disabled) or an integer ≥ 2 (got ${displayValue(rawStagnation)}). 1 is meaningless because no comparison is possible after a single response.`,
         };
     }
 
@@ -985,7 +985,7 @@ export function validateArgs(args) {
         if (mtC.error) return mtC;
         if (!Number.isInteger(mtC.value) || mtC.value < 1 || mtC.value > 1_000_000_000) {
             return {
-                error: `ralph_loop: max_tokens must be a positive integer ≤ 1e9 (got ${displayValue(args.max_tokens)}).`,
+                error: `ap_loop: max_tokens must be a positive integer ≤ 1e9 (got ${displayValue(args.max_tokens)}).`,
             };
         }
         maxTokens = mtC.value;
@@ -1000,7 +1000,7 @@ export function validateArgs(args) {
     const warnAtPct = wpC.value;
     if (!Number.isInteger(warnAtPct) || warnAtPct < 1 || warnAtPct > 99) {
         return {
-            error: `ralph_loop: warn_at_pct must be an integer in [1, 99] (got ${displayValue(rawWarnPct)}).`,
+            error: `ap_loop: warn_at_pct must be an integer in [1, 99] (got ${displayValue(rawWarnPct)}).`,
         };
     }
 
@@ -1019,7 +1019,7 @@ export function validateArgs(args) {
     let adaptiveBudget = DEFAULTS.adaptive_budget;
     if (rawAdaptive !== undefined && rawAdaptive !== null) {
         if (typeof rawAdaptive !== "boolean") {
-            return { error: `ralph_loop: adaptive_budget must be a boolean (got ${describeArgType(rawAdaptive)}).` };
+            return { error: `ap_loop: adaptive_budget must be a boolean (got ${describeArgType(rawAdaptive)}).` };
         }
         adaptiveBudget = rawAdaptive;
     }
@@ -1036,10 +1036,10 @@ export function validateArgs(args) {
         if (c.error) return c;
         const v = c.value;
         if (!Number.isFinite(v)) {
-            return { error: `ralph_loop: ${fieldName} must be a finite number (got ${displayValue(raw)}).` };
+            return { error: `ap_loop: ${fieldName} must be a finite number (got ${displayValue(raw)}).` };
         }
         if (adaptiveBudget && (!Number.isInteger(v) || v < lo || v > MAX_ALLOWED_ITERATIONS)) {
-            return { error: `ralph_loop: ${fieldName} must be an integer in [${loLabel}, ${MAX_ALLOWED_ITERATIONS}] (got ${displayValue(raw)}).` };
+            return { error: `ap_loop: ${fieldName} must be an integer in [${loLabel}, ${MAX_ALLOWED_ITERATIONS}] (got ${displayValue(raw)}).` };
         }
         return { value: v };
     };
@@ -1058,7 +1058,7 @@ export function validateArgs(args) {
 /**
  * @typedef {Object} ActiveLoopState
  * @property {string} prompt - Validated, trimmed prompt re-fired each iteration.
- * @property {string} label - Tool that armed the loop ("ralph_loop", "self_improve", or "grow_project"). Stamps every per-iteration log line and the finish() log line with the calling tool's name.
+ * @property {string} label - Tool that armed the loop ("ap_loop", "self_improve", or "grow_project"). Stamps every per-iteration log line and the finish() log line with the calling tool's name.
  * @property {number} max - Hard iteration cap (1..MAX_ALLOWED_ITERATIONS).
  * @property {number} min - Iterations that must complete before completion/abort phrases are honored (1..max).
  * @property {string} completionPromise - Trimmed substring whose presence finishes with reason "completion_promise".
@@ -1082,9 +1082,9 @@ export function validateArgs(args) {
  * @property {number} adaptiveMaxTotal - Issue #4: hard ceiling regardless of extensions (≥ originalMax, ≤ MAX_ALLOWED_ITERATIONS).
  * @property {number} originalMax - Issue #4: snapshot of `max` at arm-time so logs/results can report the user-supplied vs effective budget.
  * @property {string[]} adaptiveContentHashes - Issue #4: rolling djb2 hashes of the last ADAPTIVE_WINDOW iterations' assistant content; powers the response-novelty signal.
- * @property {Array<{atIter: number, from: number, to: number, reason: string}>} adaptiveExtensionHistory - Issue #4: append-only log of every extension granted; surfaced in ralph_status and the finish result.
- * @property {boolean} paused - Issue #3: when true, onIdle short-circuits before firing the next iteration. Toggled by ralph_pause / ralph_resume.
- * @property {string|null} pauseReason - Issue #3: optional human-readable reason supplied to ralph_pause; surfaced in logs.
+ * @property {Array<{atIter: number, from: number, to: number, reason: string}>} adaptiveExtensionHistory - Issue #4: append-only log of every extension granted; surfaced in ap_status and the finish result.
+ * @property {boolean} paused - Issue #3: when true, onIdle short-circuits before firing the next iteration. Toggled by ap_pause / ap_resume.
+ * @property {string|null} pauseReason - Issue #3: optional human-readable reason supplied to ap_pause; surfaced in logs.
  * @property {number} pausedAt - Issue #3: epoch ms of the most recent pause; 0 when never paused.
  * @property {number} totalPausedMs - Issue #3: cumulative paused time across all pause/resume cycles, deducted from durationMs so wall-clock reflects active time.
  */
@@ -1114,14 +1114,14 @@ export function createRalphController(opts = {}) {
         pid: opts.caffeinate?.pid ?? process.pid,
         spawnFn: opts.caffeinate?.spawnFn ?? null,
     };
-    // Git dependency injection (issue #5). `ralph_status` calls gitExec(args)
+    // Git dependency injection (issue #5). `ap_status` calls gitExec(args)
     // synchronously; tests replace it with a stub that returns canned results.
     // `cwd` is captured at controller-build time so tests can pin a fake root.
     const gitCwd = opts.git?.cwd ?? process.cwd();
     const gitExecRaw = opts.git?.exec ?? ((args) => defaultGitExec(args, gitCwd));
     // Normalize a throwing gitExec into the same `{ ok: false, ... }` shape
     // that `defaultGitExec` produces on internal failure. This guarantees
-    // every call site (captureGitArmSnapshot, ralph_status's
+    // every call site (captureGitArmSnapshot, ap_status's
     // buildStatusSnapshot, computeFilesChangedBlock, etc.) can treat
     // gitExec as total — no need to wrap each call in try/catch and no
     // way for a misbehaving test injection (or a future production gitExec
@@ -1253,7 +1253,7 @@ export function createRalphController(opts = {}) {
         // so durationMs reflects ACTIVE runtime (matches the typedef:
         // "totalPausedMs ... deducted from durationMs so wall-clock
         // reflects active time"). If finish() fires while the loop is
-        // still paused (e.g. the user calls ralph_stop without resuming),
+        // still paused (e.g. the user calls ap_stop without resuming),
         // also subtract the not-yet-banked current pause window so the
         // result is consistent regardless of pause/resume cadence.
         const currentPauseMs = paused ? pauseElapsedFromAt(pausedAt, finishedAt) : 0;
@@ -1413,7 +1413,7 @@ export function createRalphController(opts = {}) {
                 const usedK = Math.round(used / 1000);
                 const winK = Math.round(window / 1000);
                 if (threshold === 95) {
-                    log(`${a.label}: ⚠ context window critical: ${usedK}k / ${winK}k tokens used (${pct.toFixed(1)}%, model ${usage.model}). Consider ralph_stop to avoid mid-iteration truncation.`);
+                    log(`${a.label}: ⚠ context window critical: ${usedK}k / ${winK}k tokens used (${pct.toFixed(1)}%, model ${usage.model}). Consider ap_stop to avoid mid-iteration truncation.`);
                 } else {
                     log(`${a.label}: ⚠ approaching context window: ${usedK}k / ${winK}k tokens used (${pct.toFixed(1)}%, model ${usage.model}). Consider stopping and restarting with a fresh session.`);
                 }
@@ -1430,7 +1430,7 @@ export function createRalphController(opts = {}) {
         if (isSubAgentEvent(ev)) return;
         // Issue #3 reliability: while paused, the user is chatting freely
         // with the agent — those messages MUST NOT mutate loop state.
-        // The companion ralph_resume reset of lastAssistantContent (iter
+        // The companion ap_resume reset of lastAssistantContent (iter
         // 57) only addressed the completion/abort contamination via
         // content accumulation; this guard additionally prevents pause-
         // time token usage from being credited to the loop's budget
@@ -1493,10 +1493,10 @@ export function createRalphController(opts = {}) {
         // Issue #3: if paused, stop here. The user may still chat freely
         // with the agent in this session — those turns reach the real
         // session.idle but we deliberately do nothing, leaving the loop
-        // counter untouched until ralph_resume re-arms.
+        // counter untouched until ap_resume re-arms.
         if (a.paused) return;
 
-        // The turn that *called* ralph_loop goes idle before any iteration runs.
+        // The turn that *called* ap_loop goes idle before any iteration runs.
         // Use that idle to fire iteration 1; evaluate completion/abort on later ones.
         if (a.pendingFire) {
             a.pendingFire = false;
@@ -1598,7 +1598,7 @@ export function createRalphController(opts = {}) {
     const onAbort = (ev) => {
         // Only react to root-agent aborts — see isSubAgentEvent() rationale.
         // A sub-agent that gets aborted (task / explore / rubber-duck
-        // failure) must NOT tear down the root ralph_loop along with it.
+        // failure) must NOT tear down the root ap_loop along with it.
         if (isSubAgentEvent(ev)) return;
         if (!state.active) return;
         // If the SDK supplies an abort reason in the event payload,
@@ -1622,13 +1622,13 @@ export function createRalphController(opts = {}) {
     }
 
     // Single source of truth for the "another loop is already active"
-    // refusal — used by ralph_loop, self_improve, and grow_project so
+    // refusal — used by ap_loop, self_improve, and grow_project so
     // the message and iteration-counter logic can never drift.
     //
     // Rendering priority: paused > pendingFire > running. A paused loop
     // would otherwise be reported as "running (iteration N/M)", which
-    // misleads the caller — "ralph_stop first" is still the right
-    // remedy, but a `ralph_resume` may also be appropriate, so the
+    // misleads the caller — "ap_stop first" is still the right
+    // remedy, but a `ap_resume` may also be appropriate, so the
     // status string must mention the pause explicitly.
     function activeLoopGuard() {
         if (!state.active) return null;
@@ -1641,16 +1641,16 @@ export function createRalphController(opts = {}) {
         } else {
             status = `running (iteration ${i}/${max})`;
         }
-        return failure(`${state.active.label} is already ${status} — call ralph_stop first.`);
+        return failure(`${state.active.label} is already ${status} — call ap_stop first.`);
     }
 
-    // Shared arming body for ralph_loop, self_improve, and grow_project.
+    // Shared arming body for ap_loop, self_improve, and grow_project.
     // Caller is responsible for the session-attached and already-active
     // guards plus arg validation; this helper mutates state.active and
     // emits the arm log + success result. The `label` is woven through
     // state.active.label, the arm log line, and the success text so
     // every observable artifact reflects which tool armed the loop.
-    function armLoop(parsedValue, label = "ralph_loop") {
+    function armLoop(parsedValue, label = "ap_loop") {
         // Resolve spawnFn lazily so child_process is only required when
         // caffeinate is actually enabled (avoids paying the require cost
         // for every loop arm). Tests inject spawnFn directly via opts.
@@ -1668,7 +1668,7 @@ export function createRalphController(opts = {}) {
             log,
             label,
         });
-        // Snapshot git HEAD/branch at arm-time for ralph_status's
+        // Snapshot git HEAD/branch at arm-time for ap_status's
         // "files changed since loop started" diff. Best-effort — a non-git
         // cwd just means status reports null for the git block.
         const armedGit = captureGitArmSnapshot(gitExec, gitCwd);
@@ -1733,7 +1733,7 @@ export function createRalphController(opts = {}) {
             ts: startedAt,
         });
         return success(
-            `${label} armed (max=${max}${min > 1 ? `, min=${min}` : ""}${adaptiveBudget ? `, adaptive_max_total=${adaptiveMaxTotal}` : ""}). Iterations will run as conversation turns. Use ralph_stop to cancel.`,
+            `${label} armed (max=${max}${min > 1 ? `, min=${min}` : ""}${adaptiveBudget ? `, adaptive_max_total=${adaptiveMaxTotal}` : ""}). Iterations will run as conversation turns. Use ap_stop to cancel.`,
             { armed: true, max, min, adaptive_budget: adaptiveBudget, adaptive_extension: adaptiveExtension, adaptive_max_total: adaptiveMaxTotal },
         );
     }
@@ -1755,7 +1755,7 @@ export function createRalphController(opts = {}) {
                 };
                 if (r.note) out.last.note = r.note;
                 // Issue #7: mirror the live `tokens` block on the
-                // post-finish summary so a user calling ralph_status after
+                // post-finish summary so a user calling ap_status after
                 // the loop ends can still see how many tokens the run
                 // consumed without parsing the terminal result. Skip
                 // byIteration / byModel to match the live snapshot's
@@ -1790,7 +1790,7 @@ export function createRalphController(opts = {}) {
             stagnation_streak: a.streak,
             pending_first_iteration: a.pendingFire,
             // Pause visibility — without these fields, a paused loop is
-            // indistinguishable from a slow / blocked one in ralph_status,
+            // indistinguishable from a slow / blocked one in ap_status,
             // because `iteration` and `elapsed_ms` keep advancing while
             // the loop is silent. `paused_for_ms` is the *current* pause
             // duration (0 when not paused); `total_paused_ms` is the
@@ -1841,9 +1841,9 @@ export function createRalphController(opts = {}) {
 
     const tools = [
         {
-            name: "ralph_loop",
+            name: "ap_loop",
             description:
-                `Run an autonomous iterative loop. The tool returns immediately after arming the loop; iterations are driven by reacting to each session.idle (root-agent agentic-loop completion) and re-injecting the prompt as a new user message. Each iteration is a real conversation turn — context is retained, and progress is visible inline. Use ralph_stop to cancel an active loop. Tip: instruct the agent in the prompt to emit the completion_promise (default '${DEFAULTS.completion_promise}') when finished, otherwise the loop only stops at max_iterations. Only one loop runs per session; returns failure if a ralph_loop, self_improve, or grow_project loop is already active. Note: the user-supplied prompt is augmented at arm time with a small commit-attribution rider that adds dual Co-authored-by trailers (Copilot + copilot-ralph) to any git commit produced during the loop; set RALPH_NO_ATTRIBUTION=1 in the environment to suppress the second trailer.`,
+                `Run an autonomous iterative loop. The tool returns immediately after arming the loop; iterations are driven by reacting to each session.idle (root-agent agentic-loop completion) and re-injecting the prompt as a new user message. Each iteration is a real conversation turn — context is retained, and progress is visible inline. Use ap_stop to cancel an active loop. Tip: instruct the agent in the prompt to emit the completion_promise (default '${DEFAULTS.completion_promise}') when finished, otherwise the loop only stops at max_iterations. Only one loop runs per session; returns failure if a ap_loop, self_improve, or grow_project loop is already active. Note: the user-supplied prompt is augmented at arm time with a small commit-attribution rider that adds dual Co-authored-by trailers (Copilot + copilot-ralph) to any git commit produced during the loop; set RALPH_NO_ATTRIBUTION=1 in the environment to suppress the second trailer.`,
             parameters: {
                 type: "object",
                 properties: {
@@ -1929,7 +1929,7 @@ export function createRalphController(opts = {}) {
                 additionalProperties: false,
             },
             handler: async (args) => {
-                const notAttached = requireAttachedSession("ralph_loop");
+                const notAttached = requireAttachedSession("ap_loop");
                 if (notAttached) return notAttached;
                 const guard = activeLoopGuard();
                 if (guard) return guard;
@@ -1942,9 +1942,9 @@ export function createRalphController(opts = {}) {
             },
         },
         {
-            name: "ralph_stop",
+            name: "ap_stop",
             description:
-                "Cancel a currently-running ralph_loop, self_improve, or grow_project. Returns the iteration count at the moment of stop. Returns failure if no loop is active. Optionally pass a `reason` describing why the loop is being stopped (recorded as `note` on the result).",
+                "Cancel a currently-running ap_loop, self_improve, or grow_project. Returns the iteration count at the moment of stop. Returns failure if no loop is active. Optionally pass a `reason` describing why the loop is being stopped (recorded as `note` on the result).",
             parameters: {
                 type: "object",
                 properties: {
@@ -1957,16 +1957,16 @@ export function createRalphController(opts = {}) {
                 additionalProperties: false,
             },
             handler: async (args) => {
-                if (!state.active) return noActiveLoopFailure("ralph_stop");
-                // ralph_stop's `reason` is optional (null/undefined valid).
+                if (!state.active) return noActiveLoopFailure("ap_stop");
+                // ap_stop's `reason` is optional (null/undefined valid).
                 // Anything else goes through the same shape + unknown-keys
-                // gate as ralph_loop so typos surface loudly.
-                const bad = validateOptionalArgShape("ralph_stop", args, RALPH_STOP_KEYS);
+                // gate as ap_loop so typos surface loudly.
+                const bad = validateOptionalArgShape("ap_stop", args, RALPH_STOP_KEYS);
                 if (bad) return bad;
-                const reasonBad = validateOptionalReasonField("ralph_stop", args);
+                const reasonBad = validateOptionalReasonField("ap_stop", args);
                 if (reasonBad) return reasonBad;
                 const { i, max, label } = state.active;
-                // parseUserReason: shared with ralph_pause. Flattens
+                // parseUserReason: shared with ap_pause. Flattens
                 // multi-line input + caps length + coerces empty to
                 // null. result.note (single-line below) is consumed by
                 // collapseNote-driven additionalContext + terminal event.
@@ -1979,16 +1979,16 @@ export function createRalphController(opts = {}) {
             },
         },
         {
-            name: "ralph_status",
+            name: "ap_status",
             description:
-                "Return a structured live snapshot of the active ralph_loop / self_improve / grow_project (iteration count, elapsed time, configured promises, pause state, live token usage, last response excerpt, files changed since arm-time). Read-only — never mutates loop state. When no loop is active, returns { active: false } plus the previous run's summary if available. Cheap (<10ms typically); safe to call repeatedly.",
+                "Return a structured live snapshot of the active ap_loop / self_improve / grow_project (iteration count, elapsed time, configured promises, pause state, live token usage, last response excerpt, files changed since arm-time). Read-only — never mutates loop state. When no loop is active, returns { active: false } plus the previous run's summary if available. Cheap (<10ms typically); safe to call repeatedly.",
             parameters: {
                 type: "object",
                 properties: {},
                 additionalProperties: false,
             },
             handler: async (args) => {
-                const bad = validateOptionalArgShape("ralph_status", args, RALPH_STATUS_KEYS);
+                const bad = validateOptionalArgShape("ap_status", args, RALPH_STATUS_KEYS);
                 if (bad) return bad;
                 const snapshot = buildStatusSnapshot();
                 // The structured payload is the primary product. The
@@ -2013,25 +2013,25 @@ export function createRalphController(opts = {}) {
             },
         },
         {
-            name: "ralph_pause",
+            name: "ap_pause",
             description:
-                "Pause the active ralph_loop / self_improve / grow_project loop without losing iteration count or conversation context. The currently-running iteration (if any) finishes normally; subsequent session.idle events are short-circuited until ralph_resume is called. While paused, the user may chat freely with the agent — those turns do NOT consume iterations. Idempotent: pausing an already-paused loop is a no-op. Returns failure if no loop is active.",
+                "Pause the active ap_loop / self_improve / grow_project loop without losing iteration count or conversation context. The currently-running iteration (if any) finishes normally; subsequent session.idle events are short-circuited until ap_resume is called. While paused, the user may chat freely with the agent — those turns do NOT consume iterations. Idempotent: pausing an already-paused loop is a no-op. Returns failure if no loop is active.",
             parameters: {
                 type: "object",
                 properties: {
                     reason: {
                         type: "string",
-                        description: `Optional human-readable reason for pausing (≤${PREVIEW_CHARS} chars). Surfaced in logs and ralph_status.`,
+                        description: `Optional human-readable reason for pausing (≤${PREVIEW_CHARS} chars). Surfaced in logs and ap_status.`,
                         maxLength: PREVIEW_CHARS,
                     },
                 },
                 additionalProperties: false,
             },
             handler: async (args) => {
-                if (!state.active) return noActiveLoopFailure("ralph_pause");
-                const bad = validateOptionalArgShape("ralph_pause", args, RALPH_PAUSE_KEYS);
+                if (!state.active) return noActiveLoopFailure("ap_pause");
+                const bad = validateOptionalArgShape("ap_pause", args, RALPH_PAUSE_KEYS);
                 if (bad) return bad;
-                const reasonBad = validateOptionalReasonField("ralph_pause", args);
+                const reasonBad = validateOptionalReasonField("ap_pause", args);
                 if (reasonBad) return reasonBad;
                 const a = state.active;
                 const { i, max, label } = a;
@@ -2041,12 +2041,12 @@ export function createRalphController(opts = {}) {
                         { iterations: i, paused: true, reason: a.pauseReason ?? null },
                     );
                 }
-                // parseUserReason: shared with ralph_stop. Flatten +
+                // parseUserReason: shared with ap_stop. Flatten +
                 // truncate the user-supplied reason at entry so a
                 // multi-line paste (e.g. an Error stack, a blockquote, a
                 // CRLF-terminated input) cannot break the single-line
                 // timeline log marker, the `pause_reason` field rendered
-                // in the ralph_status JSON snapshot, or the `reason` on
+                // in the ap_status JSON snapshot, or the `reason` on
                 // the emitted `pause` event.
                 const reason = parseUserReason(args?.reason);
                 a.paused = true;
@@ -2055,27 +2055,27 @@ export function createRalphController(opts = {}) {
                 log(`⏸ ${label} paused at ${i}/${max}${reason ? ` (${reason})` : ""}`);
                 safeEmit(a, { type: "pause", runId: a.runId, iteration: i, reason, ts: a.pausedAt });
                 return success(
-                    `${label} paused at ${i}/${max}${reason ? ` (${reason})` : ""}. Use ralph_resume to continue.`,
+                    `${label} paused at ${i}/${max}${reason ? ` (${reason})` : ""}. Use ap_resume to continue.`,
                     { iterations: i, paused: true, reason },
                 );
             },
         },
         {
-            name: "ralph_resume",
+            name: "ap_resume",
             description:
-                "Resume a paused ralph_loop / self_improve / grow_project from the same iteration counter. Stagnation streak is reset (manual intervention almost always changes context). Returns failure if no loop is active or the loop is not currently paused. The next session.idle event after resume will fire the next iteration normally.",
+                "Resume a paused ap_loop / self_improve / grow_project from the same iteration counter. Stagnation streak is reset (manual intervention almost always changes context). Returns failure if no loop is active or the loop is not currently paused. The next session.idle event after resume will fire the next iteration normally.",
             parameters: {
                 type: "object",
                 properties: {},
                 additionalProperties: false,
             },
             handler: async (args) => {
-                if (!state.active) return noActiveLoopFailure("ralph_resume");
-                const bad = validateOptionalArgShape("ralph_resume", args, RALPH_RESUME_KEYS);
+                if (!state.active) return noActiveLoopFailure("ap_resume");
+                const bad = validateOptionalArgShape("ap_resume", args, RALPH_RESUME_KEYS);
                 if (bad) return bad;
                 const a = state.active;
                 if (!a.paused) {
-                    return failure(`ralph_resume: ${a.label} is not paused. Use ralph_pause first, or ralph_stop to cancel.`);
+                    return failure(`ap_resume: ${a.label} is not paused. Use ap_pause first, or ap_stop to cancel.`);
                 }
                 const pausedFor = pauseElapsedFromAt(a.pausedAt, Date.now());
                 a.totalPausedMs += pausedFor;
@@ -2097,7 +2097,7 @@ export function createRalphController(opts = {}) {
                 // simply advances to the next iteration. Trade-off: a genuine
                 // completion signal that landed in iter N's response right
                 // before the pause is forfeited, but the user already saw it
-                // via ralph_status.last_response_excerpt and can ralph_stop
+                // via ap_status.last_response_excerpt and can ap_stop
                 // explicitly if they want to honor it.
                 state.lastAssistantContent = "";
                 log(`▶ ${a.label} resumed at ${a.i}/${a.max} (paused for ${pausedFor}ms)`);
@@ -2111,7 +2111,7 @@ export function createRalphController(opts = {}) {
         {
             name: "self_improve",
             description:
-                "Arms ralph_loop with a baked-in, project-agnostic SDLC self-improvement prompt (orient → ideate → critique → baseline → implement → test → commit → push → COMPLETE), suitable for any repo. Optional `focus` string narrows the run to a specific area without altering the SDLC scaffolding. Only one loop runs per session; cancel with ralph_stop. Returns failure if a ralph_loop, self_improve, or grow_project loop is already active.",
+                "Arms ap_loop with a baked-in, project-agnostic SDLC self-improvement prompt (orient → ideate → critique → baseline → implement → test → commit → push → COMPLETE), suitable for any repo. Optional `focus` string narrows the run to a specific area without altering the SDLC scaffolding. Only one loop runs per session; cancel with ap_stop. Returns failure if a ap_loop, self_improve, or grow_project loop is already active.",
             parameters: {
                 type: "object",
                 properties: {
@@ -2209,10 +2209,10 @@ export function createRalphController(opts = {}) {
                 if (parsed.error) {
                     // Re-prefix delegated validateArgs errors via shared
                     // helper so users see self_improve in the error stream
-                    // rather than ralph_loop. The helper handles the
+                    // rather than ap_loop. The helper handles the
                     // defensive fallback (forced "self_improve:" prefix
                     // even if a future validateArgs path forgets the
-                    // ralph_loop: prefix).
+                    // ap_loop: prefix).
                     return failure(reprefixRalphLoopError(parsed.error, "self_improve"));
                 }
                 return armLoop(parsed.value, "self_improve");
@@ -2221,7 +2221,7 @@ export function createRalphController(opts = {}) {
         {
             name: "grow_project",
             description:
-                "Arms ralph_loop with a baked-in SDLC prompt that grows a project from a GitHub-issue backlog (via the `gh` CLI). On the first iter it ideates 5-10 small, well-scoped feature issues; on each subsequent iter it picks one `proposed` issue, ships it end-to-end against a three-part gate (tests green + executable acceptance check + demo invocation), commits with `Closes #N`, and closes the issue. Optional `focus` narrows the run. Only one loop runs per session; cancel with ralph_stop. Returns failure if a ralph_loop, self_improve, or grow_project loop is already active.",
+                "Arms ap_loop with a baked-in SDLC prompt that grows a project from a GitHub-issue backlog (via the `gh` CLI). On the first iter it ideates 5-10 small, well-scoped feature issues; on each subsequent iter it picks one `proposed` issue, ships it end-to-end against a three-part gate (tests green + executable acceptance check + demo invocation), commits with `Closes #N`, and closes the issue. Optional `focus` narrows the run. Only one loop runs per session; cancel with ap_stop. Returns failure if a ap_loop, self_improve, or grow_project loop is already active.",
             parameters: {
                 type: "object",
                 properties: {
@@ -2311,7 +2311,7 @@ export function createRalphController(opts = {}) {
                     // Re-prefix delegated validateArgs errors via shared
                     // helper (mirrors self_improve handling) so users see
                     // grow_project in the error stream rather than
-                    // ralph_loop, with the same defensive fallback.
+                    // ap_loop, with the same defensive fallback.
                     return failure(reprefixRalphLoopError(parsed.error, "grow_project"));
                 }
                 return armLoop(parsed.value, "grow_project");
@@ -2331,7 +2331,7 @@ export function createRalphController(opts = {}) {
             // Collapse whitespace so a multi-line note (e.g. an Error stack from
             // send_error) doesn't break the bracketed context line.
             const noteOneLine = collapseNote(note);
-            const lbl = label ?? "ralph_loop";
+            const lbl = label ?? "ap_loop";
             const ctx = `[${lbl} just finished — iterations=${iterations}, reason=${reason}${noteOneLine ? `, note=${noteOneLine}` : ""}, durationMs=${durationMs}]`;
             log(`${lbl}: injecting post-loop context into next user prompt (reason=${reason}, iterations=${iterations})`);
             return { additionalContext: ctx };

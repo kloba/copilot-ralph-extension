@@ -1,4 +1,4 @@
-// Zero-dep JSONL event emitter for ralph_loop / self_improve / grow_project
+// Zero-dep JSONL event emitter for ap_loop / self_improve / grow_project
 // (issue #22). Mirrors the contract in packages/tui/src/{events,writer}.mjs
 // but lives here next to handler.mjs so install.sh can copy it next to
 // extension.mjs without dragging in the whole packages/tui workspace.
@@ -51,13 +51,13 @@ export function resolveRunsRoot(env = process.env) {
  * Lenient by design: this module's contract is "swallow every error
  * so the loop keeps running". A non-finite `startedAt` (undefined /
  * NaN / Infinity / string) would otherwise stringify to e.g.
- * `"ralph_loop-undefined"` and every subsequent invocation with the
+ * `"ap_loop-undefined"` and every subsequent invocation with the
  * same defect would collide on the same per-run directory, silently
  * overwriting events. Substitute `Date.now()` instead so each call
  * still gets a unique, sortable id even under degraded input.
  */
 export function makeRunId(label, startedAt) {
-    const safeLabel = String(label || "ralph_loop").replace(/[^A-Za-z0-9_-]/g, "_");
+    const safeLabel = String(label || "ap_loop").replace(/[^A-Za-z0-9_-]/g, "_");
     const safeTs = Number.isFinite(startedAt) ? startedAt : Date.now();
     return `${safeLabel}-${safeTs}`;
 }
@@ -111,7 +111,7 @@ function serialize(ev) {
  *   - close(): no-op today; reserved for future buffered backends.
  *
  * @param {Object} args
- * @param {string} args.label       Loop kind: ralph_loop | self_improve | grow_project.
+ * @param {string} args.label       Loop kind: ap_loop | self_improve | grow_project.
  * @param {number} args.startedAt   armLoop's Date.now() snapshot.
  * @param {Object} [args.env]       Override process.env (tests).
  * @param {Object} [args.fs]        { mkdirSync, appendFileSync } overrides (tests).

@@ -9,7 +9,7 @@ const controller = createRalphController({ events: true });
 
 // joinSession / attach can fail (SDK version mismatch, missing session
 // methods). Without a try/catch the rejection becomes an unhandled
-// promise rejection at module-load and the user sees neither ralph_loop
+// promise rejection at module-load and the user sees neither ap_loop
 // in /extensions nor any clue why. Emit stderr and rethrow.
 function fatal(stage, err) {
     const msg = err && err.message ? err.message : String(err);

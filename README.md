@@ -5,7 +5,7 @@
 [![CI](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml)
 [![Inspired by](https://img.shields.io/badge/inspired_by-Anthropic_Ralph_Wiggum-blue)](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)
 
-**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Development](#development) · [Documentation](#documentation) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [Inspecting a running loop](#inspecting-a-running-loop-ralph_status-tool) · [Adaptive budget](#adaptive-iteration-budget) · [Pause/resume](#pause-and-resume) · [How it works](#how-it-works) · [Commit attribution](#commit-attribution) · [Keep system awake](#keep-system-awake-caffeinate-macos) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog) · [License](#license)
+**Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [What's different](#whats-different-here) · [Install](#install) · [Usage](#usage) · [Development](#development) · [Documentation](#documentation) · [Self-improve](#self-improve-self_improve-tool) · [Grow-project](#grow-project-grow_project-tool) · [Inspecting a running loop](#inspecting-a-running-loop-ap_status-tool) · [Adaptive budget](#adaptive-iteration-budget) · [Pause/resume](#pause-and-resume) · [How it works](#how-it-works) · [Commit attribution](#commit-attribution) · [Keep system awake](#keep-system-awake-caffeinate-macos) · [Troubleshooting](#troubleshooting) · [Limitations](#limitations) · [Requirements](#requirements) · [Changelog](#changelog) · [License](#license)
 
 ## What is Ralph Wiggum?
 
@@ -94,9 +94,9 @@ For a project-scoped pin, swap `~/.copilot/extensions/ralph` for `.github/extens
 
 ## Usage
 
-In a Copilot CLI session, ask the agent to invoke `ralph_loop`:
+In a Copilot CLI session, ask the agent to invoke `ap_loop`:
 
-> *"Use ralph_loop to: create a REST API for todos with CRUD operations and tests. Run tests after each change. Output COMPLETE when all tests pass. max_iterations 20."*
+> *"Use ap_loop to: create a REST API for todos with CRUD operations and tests. Run tests after each change. Output COMPLETE when all tests pass. max_iterations 20."*
 
 The tool **arms** the loop and returns immediately. Iterations then play out as normal assistant turns, each kicked off by a `session.idle` event re-injecting the prompt via `session.send`.
 
@@ -118,32 +118,32 @@ The tool **arms** the loop and returns immediately. Iterations then play out as 
 
 ### Companion tool
 
-`ralph_stop` cancels an active loop and returns the iteration count. Optionally takes a `reason` string (≤500 chars) which is recorded on the result as `note` and surfaced in the log line and `additionalContext` injection — handy when the agent (or user) wants to record *why* the loop was stopped manually.
+`ap_stop` cancels an active loop and returns the iteration count. Optionally takes a `reason` string (≤500 chars) which is recorded on the result as `note` and surfaced in the log line and `additionalContext` injection — handy when the agent (or user) wants to record *why* the loop was stopped manually.
 
 ```js
-ralph_stop({ reason: "user changed plan" })
+ap_stop({ reason: "user changed plan" })
 ```
 
-`ralph_stop` returns:
+`ap_stop` returns:
 
 ```js
 {
-  textResultForLlm: "ralph_loop stopped after 4/20 iterations (user changed plan).",   // leading "ralph_loop" reflects the calling tool's label — a self_improve-armed loop reads "self_improve stopped after …", and a grow_project-armed loop reads "grow_project stopped after …"
+  textResultForLlm: "ap_loop stopped after 4/20 iterations (user changed plan).",   // leading "ap_loop" reflects the calling tool's label — a self_improve-armed loop reads "self_improve stopped after …", and a grow_project-armed loop reads "grow_project stopped after …"
   resultType: "success",
   iterations: 4,
   note: "user changed plan"   // omitted when no reason was supplied
 }
 ```
 
-If no loop is active it returns `resultType: "failure"` with the message `ralph_stop: no ralph_loop, self_improve, or grow_project is currently running.` and does nothing else — there's no new outcome to surface. (When `ralph_stop` *does* succeed, the resulting `user_stopped` outcome flows through the `additionalContext` injection on the next `onUserPromptSubmitted` hook, exactly as for any other finish reason.)
+If no loop is active it returns `resultType: "failure"` with the message `ap_stop: no ap_loop, self_improve, or grow_project is currently running.` and does nothing else — there's no new outcome to surface. (When `ap_stop` *does* succeed, the resulting `user_stopped` outcome flows through the `additionalContext` injection on the next `onUserPromptSubmitted` hook, exactly as for any other finish reason.)
 
 ### Result shape
 
-`ralph_loop` (the arming call) returns:
+`ap_loop` (the arming call) returns:
 
 ```js
 {
-  textResultForLlm: "ralph_loop armed (max=20). Iterations will run as conversation turns. Use ralph_stop to cancel.",
+  textResultForLlm: "ap_loop armed (max=20). Iterations will run as conversation turns. Use ap_stop to cancel.",
   resultType: "success",
   armed: true,
   max: 20,
@@ -152,8 +152,8 @@ If no loop is active it returns `resultType: "failure"` with the message `ralph_
 ```
 
 The actual loop **outcome** (iteration count, reason, timing) is surfaced in two ways:
-- `session.log` markers visible in the timeline (`🔁 ralph_loop iter 4/20 (elapsed 12345ms)`, `✅ completed ralph_loop after 4 iterations (reason: completion_promise, 12345ms)`). The leading label (`ralph_loop`, `self_improve`, or `grow_project`) reflects which tool armed the loop, so a `self_improve`-armed run shows `🔁 self_improve iter 4/20` and a `grow_project`-armed run shows `🔁 grow_project iter 4/200`. The closing-line verb depends on the finish reason: ✅ *completed* (`completion_promise`), ⚠️ *ended* (`send_error`, `aborted`, `abort_promise`, `stagnation` — the four reasons that map to `type=abort` in the terminal event, so the marker matches the red badge in the TUI), and ⏹ *stopped* for the neutral exits (`max_iterations`, `max_tokens`, `user_stopped`, `detached`).
-- An `additionalContext` injection on the *next* `onUserPromptSubmitted` hook so the agent silently learns the loop finished and why (`[ralph_loop just finished — iterations=4, reason=completion_promise, durationMs=12345]`, or `[self_improve just finished — …]` / `[grow_project just finished — …]` when armed via the corresponding tool).
+- `session.log` markers visible in the timeline (`🔁 ap_loop iter 4/20 (elapsed 12345ms)`, `✅ completed ap_loop after 4 iterations (reason: completion_promise, 12345ms)`). The leading label (`ap_loop`, `self_improve`, or `grow_project`) reflects which tool armed the loop, so a `self_improve`-armed run shows `🔁 self_improve iter 4/20` and a `grow_project`-armed run shows `🔁 grow_project iter 4/200`. The closing-line verb depends on the finish reason: ✅ *completed* (`completion_promise`), ⚠️ *ended* (`send_error`, `aborted`, `abort_promise`, `stagnation` — the four reasons that map to `type=abort` in the terminal event, so the marker matches the red badge in the TUI), and ⏹ *stopped* for the neutral exits (`max_iterations`, `max_tokens`, `user_stopped`, `detached`).
+- An `additionalContext` injection on the *next* `onUserPromptSubmitted` hook so the agent silently learns the loop finished and why (`[ap_loop just finished — iterations=4, reason=completion_promise, durationMs=12345]`, or `[self_improve just finished — …]` / `[grow_project just finished — …]` when armed via the corresponding tool).
 
 The full structured result (available via `controller.state.lastResult` for embedders):
 
@@ -161,12 +161,12 @@ The full structured result (available via `controller.state.lastResult` for embe
 {
   reason: "completion_promise",
   iterations: 4,
-  label: "ralph_loop",                 // "ralph_loop", "self_improve", or "grow_project" — which tool armed the loop
+  label: "ap_loop",                 // "ap_loop", "self_improve", or "grow_project" — which tool armed the loop
   preview: "first 500 chars of last assistant content…",
   startedAt: 1719000000000,
   finishedAt: 1719000012345,
   durationMs: 12345,                  // active runtime — wall-clock from arming MINUS total paused time (issue #3)
-  note: "user changed plan",          // present when set via ralph_stop or on send_error / abort with reason
+  note: "user changed plan",          // present when set via ap_stop or on send_error / abort with reason
   tokens: {                            // present only when usage events were observed (issue #7)
     input: 12500,
     output: 1800,
@@ -198,7 +198,7 @@ The loop tracks per-iteration token usage from the SDK's `assistant.message` eve
 
 ### Self-improve (`self_improve` tool)
 
-`self_improve` is a thin wrapper that arms `ralph_loop` with a baked-in, **project-agnostic SDLC** prompt. Use it on **any repo** to drive an autonomous improvement loop without writing the prompt yourself:
+`self_improve` is a thin wrapper that arms `ap_loop` with a baked-in, **project-agnostic SDLC** prompt. Use it on **any repo** to drive an autonomous improvement loop without writing the prompt yourself:
 
 > *"Use self_improve to keep improving this project for 100 iterations."*
 
@@ -210,12 +210,12 @@ Each iteration walks the agent through nine stages: **ORIENT** (read recent comm
 | `min_iterations` | `5` | Honors completion / abort phrases only after N iterations. The default is automatically clamped down to `max_iterations` when `max_iterations < 5` (so `self_improve({max_iterations: 3})` runs 3 iters, not a confusing rejection); an explicitly-supplied `min_iterations > max_iterations` is still rejected loudly. |
 | `focus` | _(none)_ | Optional ≤2000-char string. Appended verbatim as `Focus this run on: <focus>` after the SDLC scaffolding — narrows the run to one area without altering the SDLC stages. |
 | `completion_promise` | `"COMPLETE"` | Substring → stop. Trimmed; max 200 chars. |
-| `abort_promise` | _(none)_ | Substring → early abort. Same disjoint-substring rule as `ralph_loop`. |
-| `stagnation_limit` | `3` | Same rules as `ralph_loop` (≥ 2 or `0` to disable; `1` is rejected). |
+| `abort_promise` | _(none)_ | Substring → early abort. Same disjoint-substring rule as `ap_loop`. |
+| `stagnation_limit` | `3` | Same rules as `ap_loop` (≥ 2 or `0` to disable; `1` is rejected). |
 
-`self_improve` reuses the same internal state machine as `ralph_loop` — the same `controller.state.active` shape, the same `finish()` pipeline, the same timeline log line (just with `self_improve` as the label), and the same `additionalContext` post-loop hook. Only one loop runs per session at a time, so a `self_improve` while a `ralph_loop` (or `grow_project`) is active fails fast (and vice versa). Cancel with `ralph_stop` exactly as you would for any `ralph_loop`.
+`self_improve` reuses the same internal state machine as `ap_loop` — the same `controller.state.active` shape, the same `finish()` pipeline, the same timeline log line (just with `self_improve` as the label), and the same `additionalContext` post-loop hook. Only one loop runs per session at a time, so a `self_improve` while a `ap_loop` (or `grow_project`) is active fails fast (and vice versa). Cancel with `ap_stop` exactly as you would for any `ap_loop`.
 
-> ⚠️ **The baked SDLC prompt instructs the agent to emit `COMPLETE` at the end of every iteration.** That means `completion_promise` would fire on iter 1 if `min_iterations` allowed it. The default `min_iterations: 5` defers honoring `COMPLETE` until iter 5 (so a 100-iter call usually stops there). To run the full budget, set `min_iterations` equal to `max_iterations` — e.g. `self_improve({ max_iterations: 100, min_iterations: 100 })`. Use `ralph_stop` to tear down a long-running session early.
+> ⚠️ **The baked SDLC prompt instructs the agent to emit `COMPLETE` at the end of every iteration.** That means `completion_promise` would fire on iter 1 if `min_iterations` allowed it. The default `min_iterations: 5` defers honoring `COMPLETE` until iter 5 (so a 100-iter call usually stops there). To run the full budget, set `min_iterations` equal to `max_iterations` — e.g. `self_improve({ max_iterations: 100, min_iterations: 100 })`. Use `ap_stop` to tear down a long-running session early.
 
 ### Grow-project (`grow_project` tool)
 
@@ -231,18 +231,18 @@ Each iteration walks the agent through thirteen stages: **ORIENT** (`gh issue li
 | `min_iterations` | `10` | Honors completion / abort phrases only after N iterations. Drains a baseline portion of the backlog before honoring early `ABORT_NO_BACKLOG`. The default is automatically clamped down to `max_iterations` when `max_iterations < 10`; an explicitly-supplied `min_iterations > max_iterations` is still rejected loudly. |
 | `focus` | _(none)_ | Optional ≤2000-char string. Appended verbatim as `Focus this run on: <focus>` after the SDLC scaffolding — narrows the backlog ideation/selection to one area without altering the SDLC stages. |
 | `completion_promise` | `"COMPLETE"` | Substring → stop. Trimmed; max 200 chars. |
-| `abort_promise` | `"ABORT_NO_BACKLOG"` | Substring → early abort (signaled by the agent when no proposed issue is ready). Same disjoint-substring rule as `ralph_loop`. |
-| `stagnation_limit` | `3` | Same rules as `ralph_loop` (≥ 2 or `0` to disable; `1` is rejected). |
+| `abort_promise` | `"ABORT_NO_BACKLOG"` | Substring → early abort (signaled by the agent when no proposed issue is ready). Same disjoint-substring rule as `ap_loop`. |
+| `stagnation_limit` | `3` | Same rules as `ap_loop` (≥ 2 or `0` to disable; `1` is rejected). |
 
-`grow_project` reuses the same internal state machine as `ralph_loop` and `self_improve` — the same `controller.state.active` shape, the same `finish()` pipeline, the same timeline log line (just with `grow_project` as the label), and the same `additionalContext` post-loop hook. **Only one loop runs per session at a time**, so calling `grow_project` while a `ralph_loop` or `self_improve` is active fails fast (and vice versa). Cancel with `ralph_stop` exactly as you would for any `ralph_loop`.
+`grow_project` reuses the same internal state machine as `ap_loop` and `self_improve` — the same `controller.state.active` shape, the same `finish()` pipeline, the same timeline log line (just with `grow_project` as the label), and the same `additionalContext` post-loop hook. **Only one loop runs per session at a time**, so calling `grow_project` while a `ap_loop` or `self_improve` is active fails fast (and vice versa). Cancel with `ap_stop` exactly as you would for any `ap_loop`.
 
 > ⚠️ **The baked prompt drives `gh` CLI calls.** Make sure the agent has a working `gh auth status` before arming `grow_project` — without auth, the very first `gh issue list` call fails and the agent will burn iterations trying to recover. Run `gh auth login` once per repo / once per machine. The `grow-project` and `proposed` labels do not need to exist beforehand; `gh issue create --label X` will refuse on first use, but the agent is instructed to create them with `gh label create grow-project` / `gh label create proposed` on the first iter.
 
-> ⚠️ **The baked prompt instructs the agent to emit `COMPLETE` at the end of every iteration and `ABORT_NO_BACKLOG` when the backlog is exhausted.** As with `self_improve`, `completion_promise` would fire on iter 1 if `min_iterations` allowed it; the default `min_iterations: 10` defers honoring `COMPLETE` until iter 10. Set `min_iterations` equal to `max_iterations` to drain the full budget. Use `ralph_stop` to tear down a long-running session early.
+> ⚠️ **The baked prompt instructs the agent to emit `COMPLETE` at the end of every iteration and `ABORT_NO_BACKLOG` when the backlog is exhausted.** As with `self_improve`, `completion_promise` would fire on iter 1 if `min_iterations` allowed it; the default `min_iterations: 10` defers honoring `COMPLETE` until iter 10. Set `min_iterations` equal to `max_iterations` to drain the full budget. Use `ap_stop` to tear down a long-running session early.
 
 ### Out-of-session driver (`ralph-tui run`)
 
-The in-session loop tools (`ralph_loop` / `self_improve` / `grow_project`) reuse the same Copilot CLI session across every iteration, so context grows monotonically — useful when each iter builds on the last, but it caps the practical iteration count and the Copilot SDK exposes no session-history reset to extension code, so a "clean context per iter" mode is not possible from inside the tool surface.
+The in-session loop tools (`ap_loop` / `self_improve` / `grow_project`) reuse the same Copilot CLI session across every iteration, so context grows monotonically — useful when each iter builds on the last, but it caps the practical iteration count and the Copilot SDK exposes no session-history reset to extension code, so a "clean context per iter" mode is not possible from inside the tool surface.
 
 The `ralph-tui run` subcommand is the **out-of-session** alternative: it spawns each iteration as a fresh `copilot -p "<prompt>" --allow-all-tools --output-format json` subprocess and gives you both shapes:
 
@@ -251,7 +251,7 @@ The `ralph-tui run` subcommand is the **out-of-session** alternative: it spawns 
 ralph-tui run --self-improve --fresh --max 50
 
 # Drain the backlog while the conversation history grows across iters
-# (closer to the in-session ralph_loop shape, but with a TTY-free driver).
+# (closer to the in-session ap_loop shape, but with a TTY-free driver).
 ralph-tui run --self-improve --continue --max 50
 
 # Grow the project backlog with a focus area, fresh context per iter.
@@ -291,12 +291,12 @@ Contributor and design docs live under [`docs/`](docs/) so this README can stay 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — design notes on the `session.idle` event-driven loop, the `extension.mjs`/`handler.mjs` split, the baked-prompt pattern, and the tool surface.
 - [`docs/RELEASING.md`](docs/RELEASING.md) — manual release checklist for tagged GitHub Releases.
 - [`SECURITY.md`](SECURITY.md) — how to report a vulnerability and the supported-versions policy.
-## Inspecting a running loop (`ralph_status` tool)
+## Inspecting a running loop (`ap_status` tool)
 
-`ralph_status` returns a structured live snapshot of the active loop — iteration count, elapsed time, configured promises, pause state, live token usage, last response excerpt, and (when running inside a git repo) the files touched since the loop was armed. It's read-only and cheap (typically <10ms), so call it as often as you like.
+`ap_status` returns a structured live snapshot of the active loop — iteration count, elapsed time, configured promises, pause state, live token usage, last response excerpt, and (when running inside a git repo) the files touched since the loop was armed. It's read-only and cheap (typically <10ms), so call it as often as you like.
 
 ```bash
-> ralph_status
+> ap_status
 ```
 
 Sample structured payload (`status` key on the tool result):
@@ -347,20 +347,20 @@ Sample structured payload (`status` key on the tool result):
 }
 ```
 
-When no loop is active, `ralph_status` returns `{ active: false }` plus a `last` summary of the most recent run in this session (label, reason, iteration count, duration, and preview), or just `{ active: false }` if no loop has run yet.
+When no loop is active, `ap_status` returns `{ active: false }` plus a `last` summary of the most recent run in this session (label, reason, iteration count, duration, and preview), or just `{ active: false }` if no loop has run yet.
 
 Behaviour notes:
 
 - **Read-only.** Never mutates loop state — calling it during a loop never advances iterations, resets stagnation, or moves any timer.
-- **`elapsed_ms` is wall-clock.** Counted from arm-time to "now" and includes pause time — so a loop paused for 60 seconds reports `elapsed_ms` 60_000 ms higher than its active-time peer would. Subtract `total_paused_ms` (and `paused_for_ms` if currently paused) from the structured snapshot if you need active-only time. The one-line `textResultForLlm` summary uses the same wall-clock value, mirroring the [`ralph_status` summary contract documented in concepts.md](./docs/concepts.md#ralph_status-one-line-summary).
-- **Pause visibility.** When `ralph_pause` has parked the loop, `paused` is `true`, `pause_reason` echoes whatever was passed (truncated to a preview length), `paused_at` is the ISO timestamp the pause took effect, `paused_for_ms` is the *current* pause duration (always 0 when not paused), and `total_paused_ms` is the cumulative time spent paused across prior pause/resume cycles in this run. The one-line `textResultForLlm` summary appends `(PAUSED — <reason>, for <ms>ms)` when a reason was supplied, or the bare `(PAUSED, for <ms>ms)` (no em-dash, no reason slot) when `ralph_pause` was called without one — see the [summary contract in concepts.md](./docs/concepts.md#ralph_status-one-line-summary) for the canonical grammar — so a model reading the result without introspecting the JSON still sees the pause.
+- **`elapsed_ms` is wall-clock.** Counted from arm-time to "now" and includes pause time — so a loop paused for 60 seconds reports `elapsed_ms` 60_000 ms higher than its active-time peer would. Subtract `total_paused_ms` (and `paused_for_ms` if currently paused) from the structured snapshot if you need active-only time. The one-line `textResultForLlm` summary uses the same wall-clock value, mirroring the [`ap_status` summary contract documented in concepts.md](./docs/concepts.md#ap_status-one-line-summary).
+- **Pause visibility.** When `ap_pause` has parked the loop, `paused` is `true`, `pause_reason` echoes whatever was passed (truncated to a preview length), `paused_at` is the ISO timestamp the pause took effect, `paused_for_ms` is the *current* pause duration (always 0 when not paused), and `total_paused_ms` is the cumulative time spent paused across prior pause/resume cycles in this run. The one-line `textResultForLlm` summary appends `(PAUSED — <reason>, for <ms>ms)` when a reason was supplied, or the bare `(PAUSED, for <ms>ms)` (no em-dash, no reason slot) when `ap_pause` was called without one — see the [summary contract in concepts.md](./docs/concepts.md#ap_status-one-line-summary) for the canonical grammar — so a model reading the result without introspecting the JSON still sees the pause.
 - **Live token usage.** The `tokens` block surfaces cumulative `input`, `output`, and `total` token counts credited so far, plus the configured `max_tokens` cap (or `null` when no cap was armed). Counts start at 0 and accumulate from every `assistant.message` event observed during the loop; while the loop is paused, no tokens are credited (matching the pause/resume isolation contract). Use this to monitor budget consumption mid-run without waiting for the terminal result. The one-line `textResultForLlm` summary appends `, tokens X/Y` when `max_tokens` is armed (omitted otherwise) so a model reading the result without introspecting the JSON still sees budget pressure.
 - **Files-changed window.** Computed by diffing the current working tree (`git status --porcelain`) plus `git diff --name-status` against the HEAD captured at arm-time. Untracked files surface in `added`. Outside a git repo the entire `git` block is `null` and `files_changed` is omitted.
 - **No external API calls.** Only synchronous local `git` invocations with a 2-second timeout each; if any individual call fails, the corresponding field is `null` and the rest of the snapshot still returns.
 
 ## Adaptive iteration budget
 
-By default, `ralph_loop` (and `self_improve`, `grow_project`) hard-stops at `max_iterations`. Sometimes the loop is genuinely making progress at the terminator and a flat cap aborts useful work. Issue [#4](https://github.com/kloba/copilot-ralph-extension/issues/4) adds an opt-in **adaptive budget**: when the loop hits `max_iterations`, the controller checks two cheap signals — and if either is positive, grants `adaptive_extension` more iterations (capped by `adaptive_max_total`).
+By default, `ap_loop` (and `self_improve`, `grow_project`) hard-stops at `max_iterations`. Sometimes the loop is genuinely making progress at the terminator and a flat cap aborts useful work. Issue [#4](https://github.com/kloba/copilot-ralph-extension/issues/4) adds an opt-in **adaptive budget**: when the loop hits `max_iterations`, the controller checks two cheap signals — and if either is positive, grants `adaptive_extension` more iterations (capped by `adaptive_max_total`).
 
 Signals (positive ⇒ extend):
 
@@ -370,7 +370,7 @@ Signals (positive ⇒ extend):
 Stagnation, `completion_promise`, and `abort_promise` always win over the adaptive extension. The hard ceiling `adaptive_max_total` is never crossed.
 
 ```js
-ralph_loop({
+ap_loop({
   prompt: "Fix the failing build, run tests, commit. Emit COMPLETE when green.",
   max_iterations: 20,
   adaptive_budget: true,
@@ -382,21 +382,21 @@ ralph_loop({
 Each granted extension is logged (`adaptive budget extended N → M (reason: …)`) and surfaced on the loop's final `RalphResult` as `result.adaptive = { enabled, originalMax, effectiveMax, extensions, history }`.
 ## Pause and resume
 
-Long autonomous runs sometimes need a manual checkpoint — to read a diff, run tests by hand, fix something, then continue. `ralph_pause` and `ralph_resume` (issue [#3](https://github.com/kloba/copilot-ralph-extension/issues/3)) let you do that without losing iteration count or conversation context:
+Long autonomous runs sometimes need a manual checkpoint — to read a diff, run tests by hand, fix something, then continue. `ap_pause` and `ap_resume` (issue [#3](https://github.com/kloba/copilot-ralph-extension/issues/3)) let you do that without losing iteration count or conversation context:
 
 ```js
-ralph_pause({ reason: "manual review of the refactor" });
+ap_pause({ reason: "manual review of the refactor" });
 // …chat freely with the agent. Those turns do NOT count toward max_iterations.
-ralph_resume();
+ap_resume();
 ```
 
-- The currently-running iteration finishes normally; subsequent `session.idle` events are short-circuited until `ralph_resume`.
+- The currently-running iteration finishes normally; subsequent `session.idle` events are short-circuited until `ap_resume`.
 - Iteration counter, prompt, and full conversation context are preserved across the pause.
-- **Pause-time chat is isolated from loop bookkeeping.** Tokens consumed during your pause-time conversation are not credited to the loop's budget (so a long chat cannot spuriously trip a configured `max_tokens` cap on resume), and your pause-time messages are not inspected for the configured `completion_promise` / `abort_promise` triggers (so a casual mention of the phrase will not terminate the loop). See [Concepts → Pause / resume semantics](./docs/concepts.md#pause--resume-semantics) for the full contract and the trade-off (an in-flight iter completion signal that landed right before pause is forfeited; you can still inspect it via `ralph_status.last_response_excerpt`).
-- `ralph_resume` resets the stagnation streak (manual intervention almost always changes context, so a post-resume identical-to-pre-pause turn must NOT be misclassified as stuck).
-- `ralph_pause` is idempotent: pausing an already-paused loop is a no-op success. **First reason wins** — a second `ralph_pause({reason: "newer"})` against an already-paused loop returns the FIRST reason in both the success payload (`reason` field) and the rendered `textResultForLlm` (`<label> already paused at i/max (firstReason).`). Automation polling pause state will not see its own input echoed back.
-- `ralph_stop` works while paused and terminates the loop.
-- `ralph_resume` on a non-paused loop is a failure (use `ralph_pause` first).
+- **Pause-time chat is isolated from loop bookkeeping.** Tokens consumed during your pause-time conversation are not credited to the loop's budget (so a long chat cannot spuriously trip a configured `max_tokens` cap on resume), and your pause-time messages are not inspected for the configured `completion_promise` / `abort_promise` triggers (so a casual mention of the phrase will not terminate the loop). See [Concepts → Pause / resume semantics](./docs/concepts.md#pause--resume-semantics) for the full contract and the trade-off (an in-flight iter completion signal that landed right before pause is forfeited; you can still inspect it via `ap_status.last_response_excerpt`).
+- `ap_resume` resets the stagnation streak (manual intervention almost always changes context, so a post-resume identical-to-pre-pause turn must NOT be misclassified as stuck).
+- `ap_pause` is idempotent: pausing an already-paused loop is a no-op success. **First reason wins** — a second `ap_pause({reason: "newer"})` against an already-paused loop returns the FIRST reason in both the success payload (`reason` field) and the rendered `textResultForLlm` (`<label> already paused at i/max (firstReason).`). Automation polling pause state will not see its own input echoed back.
+- `ap_stop` works while paused and terminates the loop.
+- `ap_resume` on a non-paused loop is a failure (use `ap_pause` first).
 
 ## How it works
 
@@ -406,7 +406,7 @@ import { createRalphController } from "./handler.mjs";
 
 const controller = createRalphController();
 const session = await joinSession({
-    tools: controller.tools,   // ralph_loop + ralph_stop + ralph_status + ralph_pause + ralph_resume + self_improve + grow_project
+    tools: controller.tools,   // ap_loop + ap_stop + ap_status + ap_pause + ap_resume + self_improve + grow_project
     hooks: controller.hooks,   // onUserPromptSubmitted carries the result forward
 });
 const detach = controller.attach(session);    // wires session.idle / assistant.message / abort listeners
@@ -415,7 +415,7 @@ const detach = controller.attach(session);    // wires session.idle / assistant.
 
 ### Arming
 
-`ralph_loop(...)` returns immediately with `{ armed: true }`. It does **not** loop synchronously. The validated arguments (`prompt`, `max`, `min`, `completionPromise`, `abortPromise`, `stagnationLimit`) are stored on `controller.state.active`; the loop is now driven entirely by SDK events.
+`ap_loop(...)` returns immediately with `{ armed: true }`. It does **not** loop synchronously. The validated arguments (`prompt`, `max`, `min`, `completionPromise`, `abortPromise`, `stagnationLimit`) are stored on `controller.state.active`; the loop is now driven entirely by SDK events.
 
 ### Iterations are driven by events, not by a hook
 
@@ -424,7 +424,7 @@ const detach = controller.attach(session);    // wires session.idle / assistant.
 | Event | Role |
 |---|---|
 | `assistant.message` | Accumulates the current turn's content into `state.lastAssistantContent` (capped at 1 MiB; tail preserved so completion phrases near the end aren't lost). |
-| `session.idle` | The heartbeat. The first idle after arming is the turn that *called* `ralph_loop` — that fires iteration 1's prompt. Each subsequent idle runs the decision ladder: completion → abort → stagnation → max → otherwise re-fire. |
+| `session.idle` | The heartbeat. The first idle after arming is the turn that *called* `ap_loop` — that fires iteration 1's prompt. Each subsequent idle runs the decision ladder: completion → abort → stagnation → max → otherwise re-fire. |
 | `abort` | Finalizes the loop with `reason: "aborted"` (and `note` if the SDK supplies a reason). |
 
 Re-firing means calling `session.send({ prompt })` and not awaiting the response synchronously — the next iteration is driven by the next `session.idle`. The returned promise *is* still observed for rejection: an async send-failure finishes the loop with `reason: "send_error"` rather than silently dropping the iteration. Each call **enqueues a new user-turn** in the live conversation, which is why every iteration shows up in the timeline as a real user prompt followed by a real assistant turn (not some hidden background invocation).
@@ -458,16 +458,16 @@ The SDK emits one `session.idle` per *root-level* agentic loop completion — no
 `onUserPromptSubmitted` is the only hook the extension registers. It does **not** drive iterations. It runs on the *next* user prompt after the loop has finished and injects a single `additionalContext` line so the agent silently learns the outcome:
 
 ```text
-[ralph_loop just finished — iterations=4, reason=completion_promise, durationMs=12345]
+[ap_loop just finished — iterations=4, reason=completion_promise, durationMs=12345]
 ```
 
 This mirrors how Anthropic's Claude Code `ralph-wiggum` plugin uses the `Stop` hook to re-prompt — same architectural shape, just expressed via the Copilot CLI extension SDK.
 
-If you arm a new `ralph_loop` *before* the next user prompt fires, the prior run's result is wiped during arming — the post-loop context from the previous run will **not** leak into the new loop's first prompt.
+If you arm a new `ap_loop` *before* the next user prompt fires, the prior run's result is wiped during arming — the post-loop context from the previous run will **not** leak into the new loop's first prompt.
 
 ## Commit attribution
 
-The baked `self_improve` and `grow_project` SDLC prompts instruct the agent to add `Co-authored-by:` trailers to every commit so loop-driven changes are attributable. `ralph_loop` reaches parity by appending a small commit-attribution rider to the user-supplied prompt at arm time — so any commit produced during a `ralph_loop` iteration carries the same dual trailer. By default, every loop-driven commit ships **two** trailers (per [issue #1](https://github.com/kloba/copilot-ralph-extension/issues/1)):
+The baked `self_improve` and `grow_project` SDLC prompts instruct the agent to add `Co-authored-by:` trailers to every commit so loop-driven changes are attributable. `ap_loop` reaches parity by appending a small commit-attribution rider to the user-supplied prompt at arm time — so any commit produced during a `ap_loop` iteration carries the same dual trailer. By default, every loop-driven commit ships **two** trailers (per [issue #1](https://github.com/kloba/copilot-ralph-extension/issues/1)):
 
 ```
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
@@ -478,10 +478,10 @@ The first identifies the agent. The second attributes the commit to a dedicated 
 
 ### Opt-out
 
-Set `RALPH_NO_ATTRIBUTION=1` in the environment before arming the loop to suppress the second `copilot-ralph` trailer. The first `Copilot` trailer still ships, since it identifies the agent that made the change. The opt-out is **honored by the prompt** (baked SDLC prompt for `self_improve` / `grow_project`; appended rider for `ralph_loop`), not by the extension code path — the agent reads the env var during the COMMIT stage and omits the trailer accordingly.
+Set `RALPH_NO_ATTRIBUTION=1` in the environment before arming the loop to suppress the second `copilot-ralph` trailer. The first `Copilot` trailer still ships, since it identifies the agent that made the change. The opt-out is **honored by the prompt** (baked SDLC prompt for `self_improve` / `grow_project`; appended rider for `ap_loop`), not by the extension code path — the agent reads the env var during the COMMIT stage and omits the trailer accordingly.
 
 ```bash
-RALPH_NO_ATTRIBUTION=1 copilot   # subsequent ralph_loop / self_improve / grow_project loops omit the copilot-ralph trailer
+RALPH_NO_ATTRIBUTION=1 copilot   # subsequent ap_loop / self_improve / grow_project loops omit the copilot-ralph trailer
 ```
 
 ### Caveats
@@ -492,7 +492,7 @@ RALPH_NO_ATTRIBUTION=1 copilot   # subsequent ralph_loop / self_improve / grow_p
 
 ## Keep system awake (`caffeinate`, macOS)
 
-Long `ralph_loop` / `self_improve` / `grow_project` runs can outlast macOS's idle-sleep timeout, which interrupts in-flight tool calls and timers. Opt in to a `caffeinate`-backed sleep block for the duration of the loop:
+Long `ap_loop` / `self_improve` / `grow_project` runs can outlast macOS's idle-sleep timeout, which interrupts in-flight tool calls and timers. Opt in to a `caffeinate`-backed sleep block for the duration of the loop:
 
 ```bash
 RALPH_CAFFEINATE=1 copilot                                # block idle sleep only (default)
@@ -507,7 +507,7 @@ RALPH_CAFFEINATE=1 RALPH_CAFFEINATE_SCOPE=idle+display copilot   # also keep the
 Behaviour:
 
 - Spawns `caffeinate -i [-d] -w <pid>` on arm, where `<pid>` is the host CLI process. Logs a single line: `keeping system awake via caffeinate (pid=…, scope=…)`.
-- Killed automatically on loop completion, `ralph_stop`, abort, or detach. The `-w` flag is a belt-and-braces fallback so a hard crash of the CLI still releases the wake-lock.
+- Killed automatically on loop completion, `ap_stop`, abort, or detach. The `-w` flag is a belt-and-braces fallback so a hard crash of the CLI still releases the wake-lock.
 - **macOS only.** On Linux/Windows the helper is a silent no-op (a single log line records the skip). Future PRs may add `systemd-inhibit` / `SetThreadExecutionState` equivalents.
 - **Graceful when the binary is missing.** If `caffeinate` isn't on `PATH` or `spawn` fails, the loop runs without sleep prevention and logs the failure — it never aborts the loop over a power-management nicety.
 - **Disabled by default.** The extension does not modify system power state unless you set `RALPH_CAFFEINATE`.
@@ -515,7 +515,7 @@ Behaviour:
 ## Troubleshooting
 
 - **`/extensions` doesn't list `ralph`.** Confirm every `.mjs` from `extension/` (currently `extension.mjs`, `handler.mjs`, and `events-emit.mjs`) is present in `~/.copilot/extensions/ralph/` (user-scoped) or `.github/extensions/ralph/` (project-scoped, only visible from inside that repo) and restart Copilot CLI. `./install.sh` from source double-checks every file with `node --check` before writing, and a partial copy (e.g. only the first two modules) crashes at module-load with `Cannot find module './events-emit.mjs'`.
-- **`<owner> is already armed/running` failure.** Only one loop runs per session at a time — call `ralph_stop` before re-arming. The leading word (`ralph_loop`, `self_improve`, or `grow_project`) reflects whichever tool armed the active loop, so the guard fires on any of the three when one of the others is active.
+- **`<owner> is already armed/running` failure.** Only one loop runs per session at a time — call `ap_stop` before re-arming. The leading word (`ap_loop`, `self_improve`, or `grow_project`) reflects whichever tool armed the active loop, so the guard fires on any of the three when one of the others is active.
 - **`abort_promise … overlap as substrings`.** `completion_promise` and `abort_promise` must be disjoint phrases (e.g. `"DONE"` and `"DONE_FAIL"` is rejected because one contains the other). Pick non-overlapping tokens.
 - **Loop ends immediately with `reason: send_error`.** The first `session.send` call rejected — usually because `controller.attach(session)` was not called or the session is no longer live. Check `result.note` for the underlying error.
 - **Loop runs N+ times instead of stopping.** Check that the prompt actually instructs the agent to emit the `completion_promise` literally; with a quoted/paraphrased completion phrase the loop only stops at `max_iterations`.
@@ -525,12 +525,12 @@ Behaviour:
 
 - **Substring-match completion can self-trigger.** Both `completion_promise` and `abort_promise` use plain substring matching against the assistant's accumulated turn output. If the agent quotes the trigger phrase mid-thought (e.g. *"I'll mark this COMPLETE when done"*), the loop will finish on that turn. Pick a phrase the agent is unlikely to mention casually; emoji or unusual tokens (e.g. `RALPH_DONE_42`) work well.
 - **Multi-message turns join with newlines.** When the SDK emits multiple `assistant.message` events within a single turn, Ralph concatenates them with `\n`. A trigger phrase that lands *split* exactly across the boundary (e.g. one message ends with `"DO"` and the next starts with `"NE"` while looking for `"DONE"`) becomes `"DO\nNE"` and won't match. In practice the SDK emits whole responses or large multi-paragraph chunks, so this rarely bites — but choose phrases that won't realistically straddle a chunk boundary.
-- **Prompt is re-injected verbatim every iteration.** The loop has no concept of progress — the agent must derive what's already done from its own conversation history. This is intentional (it matches the Anthropic plugin) but means a vague prompt yields vague iteration. Note: `ralph_loop` augments the user-supplied prompt once at arm time with a small commit-attribution rider (see [Commit attribution](#commit-attribution)); after that augmentation, the same composed prompt is what gets re-injected verbatim each iteration.
+- **Prompt is re-injected verbatim every iteration.** The loop has no concept of progress — the agent must derive what's already done from its own conversation history. This is intentional (it matches the Anthropic plugin) but means a vague prompt yields vague iteration. Note: `ap_loop` augments the user-supplied prompt once at arm time with a small commit-attribution rider (see [Commit attribution](#commit-attribution)); after that augmentation, the same composed prompt is what gets re-injected verbatim each iteration.
 - **Stagnation always overrides `min_iterations`.** Identical responses fire stagnation regardless of `min_iterations` — this is a safety floor, not a configurable behavior.
-- **Iteration timing is loop-arm-relative and pause-deducted.** The `(elapsed Xms)` value in iter logs is wall-clock from arming. The final `durationMs` on the result is **active time** — wall-clock from arming minus `total_paused_ms` (cumulative time the loop spent paused via `ralph_pause`), so a loop paused for an hour and then run for five minutes reports `durationMs ≈ 5 min`, not `≈ 65 min`. Per-turn timing isn't tracked. See [Pause and resume](#pause-and-resume) for the pause semantics.
-- **One loop per session.** Arming a second `ralph_loop` (or a `self_improve`, or a `grow_project`) while one is active fails fast — you must `ralph_stop` the active loop first. The guard applies symmetrically across all three tools: a `ralph_loop` while `self_improve` or `grow_project` is active is also rejected, and vice versa.
-- **`self_improve` keeps re-iterating with no commits.** The baked SDLC prompt instructs the agent to emit `COMPLETE` when the staircase is done. Until that token appears in an iteration, the loop runs to `max_iterations`. To stop early, either `ralph_stop` it manually or prepend a tighter `focus` so each iteration converges faster.
-- **Attribution opt-out is honored by the prompt, not enforced by the runtime.** [`RALPH_NO_ATTRIBUTION=1`](#opt-out) suppresses the second `copilot-ralph` `Co-authored-by:` trailer only because the prompt instructs the agent to read the env var during the COMMIT stage and omit the trailer (baked into `self_improve` / `grow_project` SDLC prompts; appended as a rider to user prompts on `ralph_loop`). The extension does not rewrite commits — if a sub-agent ignores the env var (or runs in a context where `process.env` isn't visible), the trailer can still ship. Audit a commit afterwards with `git log -1 --pretty=%B` if attribution must be guaranteed off.
+- **Iteration timing is loop-arm-relative and pause-deducted.** The `(elapsed Xms)` value in iter logs is wall-clock from arming. The final `durationMs` on the result is **active time** — wall-clock from arming minus `total_paused_ms` (cumulative time the loop spent paused via `ap_pause`), so a loop paused for an hour and then run for five minutes reports `durationMs ≈ 5 min`, not `≈ 65 min`. Per-turn timing isn't tracked. See [Pause and resume](#pause-and-resume) for the pause semantics.
+- **One loop per session.** Arming a second `ap_loop` (or a `self_improve`, or a `grow_project`) while one is active fails fast — you must `ap_stop` the active loop first. The guard applies symmetrically across all three tools: a `ap_loop` while `self_improve` or `grow_project` is active is also rejected, and vice versa.
+- **`self_improve` keeps re-iterating with no commits.** The baked SDLC prompt instructs the agent to emit `COMPLETE` when the staircase is done. Until that token appears in an iteration, the loop runs to `max_iterations`. To stop early, either `ap_stop` it manually or prepend a tighter `focus` so each iteration converges faster.
+- **Attribution opt-out is honored by the prompt, not enforced by the runtime.** [`RALPH_NO_ATTRIBUTION=1`](#opt-out) suppresses the second `copilot-ralph` `Co-authored-by:` trailer only because the prompt instructs the agent to read the env var during the COMMIT stage and omit the trailer (baked into `self_improve` / `grow_project` SDLC prompts; appended as a rider to user prompts on `ap_loop`). The extension does not rewrite commits — if a sub-agent ignores the env var (or runs in a context where `process.env` isn't visible), the trailer can still ship. Audit a commit afterwards with `git log -1 --pretty=%B` if attribution must be guaranteed off.
 
 ## Requirements
 
@@ -538,7 +538,7 @@ Behaviour:
 - Copilot CLI Extension SDK (`@github/copilot-sdk/extension`) — bundled with Copilot CLI
 - Node.js ≥ 20 (only required for running the test suite; the installed extension uses the Node runtime bundled with Copilot CLI)
 - No runtime npm dependencies. Tests use `node:test` (built-in); run them with `npm test`.
-- **`gh` CLI** (≥ 2.0) authenticated via `gh auth login` — *only* required when arming `grow_project`. The baked SDLC prompt drives `gh issue list/create/edit/close` calls every iteration; without auth, the very first call fails and the agent burns iterations trying to recover. `ralph_loop` and `self_improve` do not invoke `gh` and have no such requirement.
+- **`gh` CLI** (≥ 2.0) authenticated via `gh auth login` — *only* required when arming `grow_project`. The baked SDLC prompt drives `gh issue list/create/edit/close` calls every iteration; without auth, the very first call fails and the agent burns iterations trying to recover. `ap_loop` and `self_improve` do not invoke `gh` and have no such requirement.
 
 ## Changelog
 

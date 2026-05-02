@@ -36,7 +36,7 @@ test("resolveRunsRoot: tolerates missing env arg", () => {
 });
 
 test("makeRunId: composes ${label}-${startedAt}", () => {
-    assert.equal(makeRunId("ralph_loop", 1700000000000), "ralph_loop-1700000000000");
+    assert.equal(makeRunId("ap_loop", 1700000000000), "ap_loop-1700000000000");
 });
 
 test("makeRunId: sanitises label by replacing every non-[A-Za-z0-9_-] with _", () => {
@@ -44,10 +44,10 @@ test("makeRunId: sanitises label by replacing every non-[A-Za-z0-9_-] with _", (
     assert.equal(makeRunId("a b c", 1), "a_b_c-1");
 });
 
-test("makeRunId: falls back to 'ralph_loop' when label is empty / null / undefined", () => {
-    assert.equal(makeRunId("", 1), "ralph_loop-1");
-    assert.equal(makeRunId(null, 1), "ralph_loop-1");
-    assert.equal(makeRunId(undefined, 1), "ralph_loop-1");
+test("makeRunId: falls back to 'ap_loop' when label is empty / null / undefined", () => {
+    assert.equal(makeRunId("", 1), "ap_loop-1");
+    assert.equal(makeRunId(null, 1), "ap_loop-1");
+    assert.equal(makeRunId(undefined, 1), "ap_loop-1");
 });
 
 test("makeRunId: substitutes Date.now() when startedAt is non-finite", () => {
@@ -59,15 +59,15 @@ test("makeRunId: substitutes Date.now() when startedAt is non-finite", () => {
     // under degraded input.
     const before = Date.now();
     for (const bad of [undefined, null, NaN, Infinity, -Infinity, "1700000000000", {}]) {
-        const id = makeRunId("ralph_loop", bad);
-        const m = /^ralph_loop-(\d+)$/.exec(id);
+        const id = makeRunId("ap_loop", bad);
+        const m = /^ap_loop-(\d+)$/.exec(id);
         assert.ok(m, `expected fallback runId, got ${id} (input: ${String(bad)})`);
         const ts = Number(m[1]);
         assert.ok(ts >= before, `fallback ts must be >= now() snapshot (got ${ts}, before ${before})`);
     }
     // Finite numeric startedAt is preserved verbatim.
-    assert.equal(makeRunId("ralph_loop", 0), "ralph_loop-0");
-    assert.equal(makeRunId("ralph_loop", 1700000000000), "ralph_loop-1700000000000");
+    assert.equal(makeRunId("ap_loop", 0), "ap_loop-0");
+    assert.equal(makeRunId("ap_loop", 1700000000000), "ap_loop-1700000000000");
 });
 
 test("createEventEmitter: write appends one JSONL line per call", () => {
@@ -77,14 +77,14 @@ test("createEventEmitter: write appends one JSONL line per call", () => {
         appendFileSync: (path, line) => lines.push({ path, line }),
     };
     const e = createEventEmitter({
-        label: "ralph_loop",
+        label: "ap_loop",
         startedAt: 1234,
         env: { RALPH_EVENTS_DIR: "/tmp/r" },
         fs: fakeFs,
     });
     e.write({ type: "iteration_start", runId: e.runId, ts: 1, iteration: 1 });
     assert.equal(lines.length, 1);
-    assert.equal(lines[0].path, "/tmp/r/ralph_loop-1234/events.jsonl");
+    assert.equal(lines[0].path, "/tmp/r/ap_loop-1234/events.jsonl");
     assert.equal(JSON.parse(lines[0].line.trimEnd()).type, "iteration_start");
 });
 
@@ -134,15 +134,15 @@ test("createEventEmitter: index entry round-trips through TUI's readRunIndex", a
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "ralph-emit-rt-"));
     try {
         const e = createEventEmitter({
-            label: "ralph_loop",
+            label: "ap_loop",
             startedAt: 12345,
             env: { RALPH_EVENTS_DIR: root },
         });
         e.write({ type: "armed", runId: e.runId, ts: 0, maxIterations: 7, minIterations: 1 });
         const entries = readRunIndex({ env: { RALPH_EVENTS_DIR: root } });
         assert.equal(entries.length, 1, "TUI's readRunIndex must surface the extension-emitted run");
-        assert.equal(entries[0].runId, "ralph_loop-12345");
-        assert.equal(entries[0].label, "ralph_loop");
+        assert.equal(entries[0].runId, "ap_loop-12345");
+        assert.equal(entries[0].label, "ap_loop");
         assert.equal(entries[0].type, "armed");
     } finally {
         fs.rmSync(root, { recursive: true, force: true });
@@ -156,7 +156,7 @@ test("createEventEmitter: non-armed events do NOT touch the index", () => {
         appendFileSync: (path, line) => lines.push({ path, line }),
     };
     const e = createEventEmitter({
-        label: "ralph_loop",
+        label: "ap_loop",
         startedAt: 1,
         env: { RALPH_EVENTS_DIR: "/tmp/r" },
         fs: fakeFs,
@@ -169,7 +169,7 @@ test("createEventEmitter: non-armed events do NOT touch the index", () => {
 test("createEventEmitter: ignores non-object / falsy events instead of writing junk", () => {
     const lines = [];
     const e = createEventEmitter({
-        label: "ralph_loop",
+        label: "ap_loop",
         startedAt: 1,
         env: { RALPH_EVENTS_DIR: "/tmp/r" },
         fs: { mkdirSync: () => {}, appendFileSync: (p, l) => lines.push({ p, l }) },
@@ -184,7 +184,7 @@ test("createEventEmitter: ignores non-object / falsy events instead of writing j
 test("createEventEmitter: long excerpt is clipped to <= 500 chars + trailing ellipsis", () => {
     const captured = [];
     const e = createEventEmitter({
-        label: "ralph_loop",
+        label: "ap_loop",
         startedAt: 1,
         env: { RALPH_EVENTS_DIR: "/tmp/r" },
         fs: {
@@ -202,7 +202,7 @@ test("createEventEmitter: long excerpt is clipped to <= 500 chars + trailing ell
 
 test("createEventEmitter: write swallows mkdir + append errors so the loop never crashes", () => {
     const e = createEventEmitter({
-        label: "ralph_loop",
+        label: "ap_loop",
         startedAt: 1,
         env: { RALPH_EVENTS_DIR: "/tmp/r" },
         fs: {
@@ -218,7 +218,7 @@ test("createEventEmitter: write swallows mkdir + append errors so the loop never
 test("createEventEmitter: mkdir is called once across many writes (memoised)", () => {
     let mkdirCalls = 0;
     const e = createEventEmitter({
-        label: "ralph_loop",
+        label: "ap_loop",
         startedAt: 1,
         env: { RALPH_EVENTS_DIR: "/tmp/r" },
         fs: {
@@ -234,7 +234,7 @@ test("createEventEmitter: mkdir is called once across many writes (memoised)", (
 
 test("createEventEmitter: close() is a no-op safe to call repeatedly", () => {
     const e = createEventEmitter({
-        label: "ralph_loop",
+        label: "ap_loop",
         startedAt: 1,
         env: { RALPH_EVENTS_DIR: "/tmp/r" },
         fs: { mkdirSync: () => {}, appendFileSync: () => {} },
@@ -245,7 +245,7 @@ test("createEventEmitter: close() is a no-op safe to call repeatedly", () => {
 test("createEventEmitter: oversize event line is dropped after stripping excerpt+note (best-effort)", () => {
     const captured = [];
     const e = createEventEmitter({
-        label: "ralph_loop",
+        label: "ap_loop",
         startedAt: 1,
         env: { RALPH_EVENTS_DIR: "/tmp/r" },
         fs: {
@@ -270,7 +270,7 @@ test("createEventEmitter: BigInt / circular ref events are dropped, not thrown",
     // drop the bad event silently and leave the disk untouched.
     const captured = [];
     const e = createEventEmitter({
-        label: "ralph_loop",
+        label: "ap_loop",
         startedAt: 1,
         env: { RALPH_EVENTS_DIR: "/tmp/r" },
         fs: {
@@ -324,7 +324,7 @@ test("resolveRunsRoot: trims surrounding whitespace from RALPH_EVENTS_DIR overri
 test("createEventEmitter: clipExcerpt does not produce lone high surrogates at the truncation boundary", () => {
     const captured = [];
     const e = createEventEmitter({
-        label: "ralph_loop",
+        label: "ap_loop",
         startedAt: 1,
         env: { RALPH_EVENTS_DIR: "/tmp/r" },
         fs: {
@@ -452,7 +452,7 @@ test("createEventEmitter: serialize salvages an oversize event by stripping exce
     // (after stripping excerpt+note) is ~15.7KB (under).
     const captured = [];
     const e = createEventEmitter({
-        label: "ralph_loop",
+        label: "ap_loop",
         startedAt: 1,
         env: { RALPH_EVENTS_DIR: "/tmp/r" },
         fs: {

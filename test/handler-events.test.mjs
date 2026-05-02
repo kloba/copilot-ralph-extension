@@ -59,8 +59,8 @@ async function arm(extra = {}, eventsOpt = true) {
     const session = makeFakeSession();
     const controller = createRalphController({ events });
     controller.attach(session);
-    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
-    const stop = controller.tools.find((t) => t.name === "ralph_stop");
+    const ralph = controller.tools.find((t) => t.name === "ap_loop");
+    const stop = controller.tools.find((t) => t.name === "ap_stop");
     await ralph.handler({ prompt: "go", max_iterations: 5, ...extra });
     return { session, controller, ralph, stop, calls, closes };
 }
@@ -85,9 +85,9 @@ test("events: emits armed → iteration_start → iteration_end → complete seq
         "complete",
     ]);
     const armed = calls[0].events[0];
-    assert.equal(armed.label, "ralph_loop");
+    assert.equal(armed.label, "ap_loop");
     assert.equal(armed.maxIterations, 2);
-    assert.match(armed.runId, /^ralph_loop-\d+$/);
+    assert.match(armed.runId, /^ap_loop-\d+$/);
     const done = calls[0].events.at(-1);
     assert.equal(done.reason, "completion_promise");
     assert.equal(done.iterations, 2);
@@ -127,8 +127,8 @@ test("events: aborted reason maps to type=abort, not type=complete", async () =>
 test("events: pause/resume emit dedicated events keyed to the active runId", async () => {
     const { session, controller, calls } = await arm({ max_iterations: 5 });
     session.emit("session.idle", { data: {} });   // iter 1 fires
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
-    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
+    const resume = controller.tools.find((t) => t.name === "ap_resume");
     await pause.handler({ reason: "lunch" });
     await resume.handler({});
     runTurn(session, "back");
@@ -137,14 +137,14 @@ test("events: pause/resume emit dedicated events keyed to the active runId", asy
     assert.ok(types.includes("resume"));
     const pauseEv = calls[0].events.find((e) => e.type === "pause");
     assert.equal(pauseEv.reason, "lunch");
-    assert.match(pauseEv.runId, /^ralph_loop-\d+$/);
+    assert.match(pauseEv.runId, /^ap_loop-\d+$/);
 });
 
 test("events: opts.events undefined ⇒ no writer attached, no emit", async () => {
     const session = makeFakeSession();
     const controller = createRalphController(); // no events at all
     controller.attach(session);
-    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
+    const ralph = controller.tools.find((t) => t.name === "ap_loop");
     await ralph.handler({ prompt: "go", max_iterations: 1, completion_promise: "X" });
     session.emit("session.idle", { data: {} });
     assert.equal(controller.state.active.events, null);
@@ -166,7 +166,7 @@ test("events: factory throwing is swallowed; loop runs without events", async ()
         events: { factory: () => { throw new Error("boom"); } },
     });
     controller.attach(session);
-    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
+    const ralph = controller.tools.find((t) => t.name === "ap_loop");
     const r = await ralph.handler({ prompt: "go", max_iterations: 1, completion_promise: "X" });
     assert.equal(r.resultType, "success");
     assert.equal(controller.state.active.events, null);
@@ -203,7 +203,7 @@ test("events: iteration_end carries excerpt and per-iter token totals", async ()
 test("events: pause event reason is null when reason is absent", async () => {
     const { session, controller, calls } = await arm({ max_iterations: 5 });
     session.emit("session.idle", { data: {} });   // iter 1 fires
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     await pause.handler({});
     const pauseEv = calls[0].events.find((e) => e.type === "pause");
     assert.ok(pauseEv, "pause event must be emitted");
@@ -217,7 +217,7 @@ test("events: pause event reason is null when reason is absent", async () => {
 test("events: pause event reason is null when reason is whitespace-only", async () => {
     const { session, controller, calls } = await arm({ max_iterations: 5 });
     session.emit("session.idle", { data: {} });   // iter 1 fires
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     // Mix every common whitespace shape: spaces, tabs, newlines, CRLF.
     await pause.handler({ reason: "   \t\r\n   " });
     const pauseEv = calls[0].events.find((e) => e.type === "pause");
@@ -230,8 +230,8 @@ test("events: pause event reason is null when reason is whitespace-only", async 
 });
 
 // Iter 124 — pin that the JSONL `pause` event is emitted exactly ONCE
-// per logical pause. `ralph_pause` is idempotent at the handler level
-// (test/extension.test.mjs:"ralph_pause is idempotent — pausing an
+// per logical pause. `ap_pause` is idempotent at the handler level
+// (test/extension.test.mjs:"ap_pause is idempotent — pausing an
 // already-paused loop is a no-op success") — the second call returns
 // success with the FIRST pause's reason and does not mutate state. But
 // the JSONL emitter side has no equivalent runtime guard: if a future
@@ -246,10 +246,10 @@ test("events: pause event reason is null when reason is whitespace-only", async 
 // invariant directly catches a copy-paste regression that test
 // 5959-5968 would not — that test only inspects in-memory state, not
 // the durable JSONL trace.
-test("events: ralph_pause is idempotent on the JSONL emit side too — exactly one pause event per logical pause", async () => {
+test("events: ap_pause is idempotent on the JSONL emit side too — exactly one pause event per logical pause", async () => {
     const { session, controller, calls } = await arm({ max_iterations: 5 });
     session.emit("session.idle", { data: {} });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     await pause.handler({ reason: "first" });
     await pause.handler({ reason: "second" });
     await pause.handler({ reason: "third" });
@@ -257,7 +257,7 @@ test("events: ralph_pause is idempotent on the JSONL emit side too — exactly o
     assert.equal(
         pauseEvents.length,
         1,
-        `idempotent ralph_pause must emit exactly ONE pause event in the JSONL stream; got ${pauseEvents.length}: ${JSON.stringify(pauseEvents)}`,
+        `idempotent ap_pause must emit exactly ONE pause event in the JSONL stream; got ${pauseEvents.length}: ${JSON.stringify(pauseEvents)}`,
     );
     // First pause's reason wins (first-write-wins matches the in-memory
     // pauseReason semantics asserted in test 5959-5968).

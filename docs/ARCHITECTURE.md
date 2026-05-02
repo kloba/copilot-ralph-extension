@@ -45,7 +45,7 @@ While a loop is running, `state.active` holds the canonical loop state. Field-by
 - `prompt` / `completionPromise` / `abortPromise` — the strings re-fed each iter and the substrings that terminate the loop.
 - `prev` / `streak` / `stagnationLimit` — byte-identical-response detector that aborts a stuck loop.
 - `pendingFire` / `fireInFlight` / `observedMessageThisFire` — per-iteration dispatch guards. The first idle (the one that *armed* the loop) consumes `pendingFire` to fire iter 1; the in-flight markers prevent stale-idle bloat from cancelled tool calls or sub-agents.
-- `paused` / `pauseReason` / `pausedAt` / `totalPausedMs` — pause-state fields (issue [#3](https://github.com/kloba/copilot-ralph-extension/issues/3)). When `paused === true`, `onIdle` short-circuits before firing the next iteration so the user can chat freely without consuming iterations. `ralph_resume` re-arms by zeroing the streak detector (manual intervention almost always changes context) and folding `pausedFor` into `totalPausedMs` for accurate elapsed-time reporting in `ralph_status`.
+- `paused` / `pauseReason` / `pausedAt` / `totalPausedMs` — pause-state fields (issue [#3](https://github.com/kloba/copilot-ralph-extension/issues/3)). When `paused === true`, `onIdle` short-circuits before firing the next iteration so the user can chat freely without consuming iterations. `ap_resume` re-arms by zeroing the streak detector (manual intervention almost always changes context) and folding `pausedFor` into `totalPausedMs` for accurate elapsed-time reporting in `ap_status`.
 - Adaptive-budget fields (issue [#4](https://github.com/kloba/copilot-ralph-extension/issues/4)): `adaptiveBudget`, `adaptiveExtension`, `adaptiveMaxTotal`, `originalMax`, `adaptiveContentHashes`, `adaptiveExtensionHistory`.
 
 When the loop finishes, `state.active` becomes `null` and the immutable `state.lastResult` (a deep-frozen `RalphResult`) holds the post-mortem.
@@ -64,11 +64,11 @@ The baked prompts include hard-coded `COMPLETE` / `ABORT_…` tokens and `min_it
 
 | Tool | Purpose | Key contract |
 |---|---|---|
-| `ralph_loop` | Generic re-fed-prompt loop | One loop at a time. Returns immediately after arming. Driven by `session.idle`. |
-| `ralph_stop` | Cancel the active loop | Returns failure if no loop is active. Optional `reason` string is recorded as `note` on the result. |
-| `ralph_status` | Live structured snapshot of the active loop | Issue [#5](https://github.com/kloba/copilot-ralph-extension/issues/5) — read-only; safe to call mid-loop. |
-| `ralph_pause` | Pause the active loop without losing state | Issue [#3](https://github.com/kloba/copilot-ralph-extension/issues/3). Idempotent; `onIdle` short-circuits while `paused === true`. Returns failure if no loop is active. |
-| `ralph_resume` | Resume a paused loop | Returns failure if no loop is active or the loop is not paused. Stagnation streak is reset on resume. |
+| `ap_loop` | Generic re-fed-prompt loop | One loop at a time. Returns immediately after arming. Driven by `session.idle`. |
+| `ap_stop` | Cancel the active loop | Returns failure if no loop is active. Optional `reason` string is recorded as `note` on the result. |
+| `ap_status` | Live structured snapshot of the active loop | Issue [#5](https://github.com/kloba/copilot-ralph-extension/issues/5) — read-only; safe to call mid-loop. |
+| `ap_pause` | Pause the active loop without losing state | Issue [#3](https://github.com/kloba/copilot-ralph-extension/issues/3). Idempotent; `onIdle` short-circuits while `paused === true`. Returns failure if no loop is active. |
+| `ap_resume` | Resume a paused loop | Returns failure if no loop is active or the loop is not paused. Stagnation streak is reset on resume. |
 | `self_improve` | Baked SDLC self-improvement prompt | Wraps `armLoop` with `PROMPT_SELF_IMPROVE`. Honors `focus` for narrowing scope. |
 | `grow_project` | Baked backlog-grooming + execution loop | Wraps `armLoop` with `PROMPT_GROW_PROJECT`. Drives `gh` CLI calls. |
 

@@ -48,8 +48,8 @@ async function arm(args = {}) {
     const session = makeFakeSession();
     const controller = createRalphController();
     controller.attach(session);
-    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
-    const stop = controller.tools.find((t) => t.name === "ralph_stop");
+    const ralph = controller.tools.find((t) => t.name === "ap_loop");
+    const stop = controller.tools.find((t) => t.name === "ap_stop");
     const armResult = await ralph.handler({ prompt: "go", max_iterations: 5, ...args });
     return { session, controller, ralph, stop, armResult };
 }
@@ -243,7 +243,7 @@ test("validateArgs: trims surrounding whitespace from completion_promise / abort
     assert.match(r2.error, /completion_promise exceeds/, r2.error);
 });
 
-test("ralph_loop: re-fires the trimmed prompt to session.send (not the raw padded input)", async () => {
+test("ap_loop: re-fires the trimmed prompt to session.send (not the raw padded input)", async () => {
     // validateArgs trims args.prompt before storing it on state.active. The
     // value re-fired each iteration should therefore be the trimmed string,
     // not the user's raw input. Without this pin, a future change that
@@ -253,7 +253,7 @@ test("ralph_loop: re-fires the trimmed prompt to session.send (not the raw padde
     const session = makeFakeSession();
     const controller = createRalphController();
     controller.attach(session);
-    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
+    const ralph = controller.tools.find((t) => t.name === "ap_loop");
     await ralph.handler({ prompt: "  go\n  ", max_iterations: 3 });
     const expected = composeRalphLoopPrompt("go").value;
     assert.equal(controller.state.active.prompt, expected);
@@ -373,8 +373,8 @@ test("validateArgs: rejects unknown keys (typo guard)", () => {
 
 test("all tool schemas declare additionalProperties:false (mirrors runtime validation)", () => {
     const c = createRalphController();
-    const ralph = c.tools.find((t) => t.name === "ralph_loop");
-    const stop = c.tools.find((t) => t.name === "ralph_stop");
+    const ralph = c.tools.find((t) => t.name === "ap_loop");
+    const stop = c.tools.find((t) => t.name === "ap_stop");
     const si = c.tools.find((t) => t.name === "self_improve");
     assert.equal(ralph.parameters.additionalProperties, false);
     assert.equal(stop.parameters.additionalProperties, false);
@@ -387,8 +387,8 @@ test("all tool schemas declare type:'object' at the root", () => {
     // type goes missing). Pin it for all three tools alongside the
     // additionalProperties:false invariant above.
     const c = createRalphController();
-    const ralph = c.tools.find((t) => t.name === "ralph_loop");
-    const stop = c.tools.find((t) => t.name === "ralph_stop");
+    const ralph = c.tools.find((t) => t.name === "ap_loop");
+    const stop = c.tools.find((t) => t.name === "ap_stop");
     const si = c.tools.find((t) => t.name === "self_improve");
     assert.equal(ralph.parameters.type, "object");
     assert.equal(stop.parameters.type, "object");
@@ -397,17 +397,17 @@ test("all tool schemas declare type:'object' at the root", () => {
 
 // ── tool spec ─────────────────────────────────────────────────────────────
 
-test("ralph_loop arm result has the documented shape (textResultForLlm + extras)", async () => {
+test("ap_loop arm result has the documented shape (textResultForLlm + extras)", async () => {
     // Pin the user-facing arm message so the README's "Result shape"
     // example doesn't drift from reality. This caught one such drift
-    // (the trailing "Use ralph_stop to cancel." sentence had been
+    // (the trailing "Use ap_stop to cancel." sentence had been
     // added to the handler but the README example wasn't updated).
     //
     // We don't use the arm() helper here because we need the raw arming
     // return value, not the {session, controller} envelope arm() returns.
     const c = createRalphController();
     c.attach(makeFakeSession());
-    const r = await c.tools.find((t) => t.name === "ralph_loop").handler({
+    const r = await c.tools.find((t) => t.name === "ap_loop").handler({
         prompt: "go", max_iterations: 20,
     });
     assert.equal(r.resultType, "success");
@@ -416,22 +416,22 @@ test("ralph_loop arm result has the documented shape (textResultForLlm + extras)
     assert.equal(r.min, 1);
     assert.equal(
         r.textResultForLlm,
-        "ralph_loop armed (max=20). Iterations will run as conversation turns. Use ralph_stop to cancel.",
+        "ap_loop armed (max=20). Iterations will run as conversation turns. Use ap_stop to cancel.",
     );
     // min > 1 path: the text adds ", min=N" inside the parens.
     const c2 = createRalphController();
     c2.attach(makeFakeSession());
-    const r2 = await c2.tools.find((t) => t.name === "ralph_loop").handler({
+    const r2 = await c2.tools.find((t) => t.name === "ap_loop").handler({
         prompt: "go", max_iterations: 5, min_iterations: 3,
     });
     assert.equal(
         r2.textResultForLlm,
-        "ralph_loop armed (max=5, min=3). Iterations will run as conversation turns. Use ralph_stop to cancel.",
+        "ap_loop armed (max=5, min=3). Iterations will run as conversation turns. Use ap_stop to cancel.",
     );
     assert.equal(r2.min, 3);
 });
 
-test("ralph_loop arm result has exactly { textResultForLlm, resultType, armed, max, min } — no stray keys", () => {
+test("ap_loop arm result has exactly { textResultForLlm, resultType, armed, max, min } — no stray keys", () => {
     // The arm-success object is constructed via `success(message, {armed, max, min})`,
     // and `success()`'s contract is `{...extra, textResultForLlm, resultType}` with
     // extra unable to override the latter two. Pin the EXACT key set so a future
@@ -440,7 +440,7 @@ test("ralph_loop arm result has exactly { textResultForLlm, resultType, armed, m
     // bloat the response and risk exposing private state.
     const c = createRalphController();
     c.attach(makeFakeSession());
-    return c.tools.find((t) => t.name === "ralph_loop").handler({
+    return c.tools.find((t) => t.name === "ap_loop").handler({
         prompt: "go", max_iterations: 7, min_iterations: 1,
     }).then((r) => {
         assert.deepEqual(
@@ -450,8 +450,8 @@ test("ralph_loop arm result has exactly { textResultForLlm, resultType, armed, m
     });
 });
 
-test("self_improve arm result has the same shape as ralph_loop's — no stray keys", async () => {
-    // Mirror of the ralph_loop arm-result shape pin. self_improve flows
+test("self_improve arm result has the same shape as ap_loop's — no stray keys", async () => {
+    // Mirror of the ap_loop arm-result shape pin. self_improve flows
     // through the same armLoop() helper and the same success(...) call,
     // so the LLM-facing shape MUST match: any divergence (e.g. an extra
     // "label" or "focus" key leaking through) is a code smell that would
@@ -554,7 +554,7 @@ test("state.active: arming sets exactly the documented 32-field ActiveLoopState 
     assert.equal(a.pendingFire, true);
     assert.equal(a.fireInFlight, false);
     assert.equal(a.observedMessageThisFire, false);
-    assert.equal(a.label, "ralph_loop");
+    assert.equal(a.label, "ap_loop");
     assert.equal(typeof a.startedAt, "number");
     assert.ok(a.startedAt > 0);
     assert.equal(a.maxTokens, null);
@@ -593,9 +593,9 @@ test("controller instances are independent (state is closure-private, not module
 });
 
 
-test("controller exposes ralph_loop, ralph_stop, ralph_pause, ralph_resume, ralph_status, self_improve, and grow_project tools and hooks", () => {
+test("controller exposes ap_loop, ap_stop, ap_pause, ap_resume, ap_status, self_improve, and grow_project tools and hooks", () => {
     const c = createRalphController();
-    assert.deepEqual(c.tools.map((t) => t.name).sort(), ["grow_project", "ralph_loop", "ralph_pause", "ralph_resume", "ralph_status", "ralph_stop", "self_improve"]);
+    assert.deepEqual(c.tools.map((t) => t.name).sort(), ["ap_loop", "ap_pause", "ap_resume", "ap_status", "ap_stop", "grow_project", "self_improve"]);
     assert.equal(typeof c.hooks.onUserPromptSubmitted, "function");
     assert.equal(typeof c.attach, "function");
     // Pin the EXACT hook surface — if a future change leaks an internal
@@ -604,16 +604,16 @@ test("controller exposes ralph_loop, ralph_stop, ralph_pause, ralph_resume, ralp
     // shipping contract is exactly one hook: onUserPromptSubmitted.
     assert.deepEqual(Object.keys(c.hooks), ["onUserPromptSubmitted"]);
     // Pin the tools-array ORDER: dozens of integration tests in this file
-    // index `c.tools[0]` for the ralph_loop handler. A future refactor
-    // that reorders the array (e.g. puts ralph_stop first) would break
+    // index `c.tools[0]` for the ap_loop handler. A future refactor
+    // that reorders the array (e.g. puts ap_stop first) would break
     // every one of those tests with confusing "wrong tool name" or
     // "missing prompt" failures. Surface the regression with one focused
     // assertion instead of a cascade of cryptic ones.
-    assert.equal(c.tools[0].name, "ralph_loop", "tools[0] must be ralph_loop");
-    assert.equal(c.tools[1].name, "ralph_stop", "tools[1] must be ralph_stop");
-    assert.equal(c.tools[2].name, "ralph_status", "tools[2] must be ralph_status");
-    assert.equal(c.tools[3].name, "ralph_pause", "tools[3] must be ralph_pause");
-    assert.equal(c.tools[4].name, "ralph_resume", "tools[4] must be ralph_resume");
+    assert.equal(c.tools[0].name, "ap_loop", "tools[0] must be ap_loop");
+    assert.equal(c.tools[1].name, "ap_stop", "tools[1] must be ap_stop");
+    assert.equal(c.tools[2].name, "ap_status", "tools[2] must be ap_status");
+    assert.equal(c.tools[3].name, "ap_pause", "tools[3] must be ap_pause");
+    assert.equal(c.tools[4].name, "ap_resume", "tools[4] must be ap_resume");
     assert.equal(c.tools[5].name, "self_improve", "tools[5] must be self_improve");
     assert.equal(c.tools[6].name, "grow_project", "tools[6] must be grow_project");
     assert.equal(c.tools.length, 7, "tools array must have exactly seven entries");
@@ -627,21 +627,21 @@ test("self_improve tool is exposed (stub)", () => {
     assert.ok(t.parameters && t.parameters.type === "object");
 });
 
-test("self_improve description tells the LLM about ralph_stop and single-loop guard", () => {
+test("self_improve description tells the LLM about ap_stop and single-loop guard", () => {
     const c = createRalphController();
     const t = c.tools.find((x) => x.name === "self_improve");
-    assert.match(t.description, /ralph_stop/, "must point users at ralph_stop for cancellation");
+    assert.match(t.description, /ap_stop/, "must point users at ap_stop for cancellation");
     assert.match(t.description, /one loop|single loop/i, "must mention single-loop-per-session");
     assert.match(t.description, /SDLC/i);
 });
 
-test("ralph_stop description names self_improve too (not just ralph_loop)", () => {
-    // ralph_stop cancels both flavors of armed loop; the tool description
+test("ap_stop description names self_improve too (not just ap_loop)", () => {
+    // ap_stop cancels both flavors of armed loop; the tool description
     // surfaced to the LLM must name both so the agent knows it can call
-    // ralph_stop on either, not assume self_improve has a separate stop.
+    // ap_stop on either, not assume self_improve has a separate stop.
     const c = createRalphController();
-    const t = c.tools.find((x) => x.name === "ralph_stop");
-    assert.match(t.description, /ralph_loop/);
+    const t = c.tools.find((x) => x.name === "ap_stop");
+    assert.match(t.description, /ap_loop/);
     assert.match(t.description, /self_improve/);
 });
 
@@ -658,23 +658,23 @@ test("self_improve arms with max=100 min=5 defaults", async () => {
     assert.match(r.textResultForLlm, /^self_improve armed/);
 });
 
-test("self_improve refuses when ralph_loop is already active", async () => {
+test("self_improve refuses when ap_loop is already active", async () => {
     const session = makeFakeSession();
     const c = createRalphController();
     c.attach(session);
-    const ralph = c.tools.find((x) => x.name === "ralph_loop");
+    const ralph = c.tools.find((x) => x.name === "ap_loop");
     const si = c.tools.find((x) => x.name === "self_improve");
     await ralph.handler({ prompt: "go", max_iterations: 5 });
     const r = await si.handler({});
     assert.equal(r.resultType, "failure");
-    assert.match(r.textResultForLlm, /ralph_loop is already/);
+    assert.match(r.textResultForLlm, /ap_loop is already/);
 });
 
-test("ralph_loop refuses when self_improve is already active", async () => {
+test("ap_loop refuses when self_improve is already active", async () => {
     const session = makeFakeSession();
     const c = createRalphController();
     c.attach(session);
-    const ralph = c.tools.find((x) => x.name === "ralph_loop");
+    const ralph = c.tools.find((x) => x.name === "ap_loop");
     const si = c.tools.find((x) => x.name === "self_improve");
     const armed = await si.handler({ max_iterations: 5 });
     assert.equal(armed.resultType, "success");
@@ -683,20 +683,20 @@ test("ralph_loop refuses when self_improve is already active", async () => {
     assert.match(r.textResultForLlm, /already/i);
     // Label-aware wording: the active loop was armed by self_improve, so
     // the error should say "self_improve is already …" — not the previous
-    // hardcoded "ralph_loop is already …" which lied about who armed it.
+    // hardcoded "ap_loop is already …" which lied about who armed it.
     assert.match(r.textResultForLlm, /^self_improve is already/);
 });
 
-test("grow_project refuses when ralph_loop is already active", async () => {
+test("grow_project refuses when ap_loop is already active", async () => {
     const session = makeFakeSession();
     const c = createRalphController();
     c.attach(session);
-    const ralph = c.tools.find((x) => x.name === "ralph_loop");
+    const ralph = c.tools.find((x) => x.name === "ap_loop");
     const gp = c.tools.find((x) => x.name === "grow_project");
     await ralph.handler({ prompt: "go", max_iterations: 5 });
     const r = await gp.handler({});
     assert.equal(r.resultType, "failure");
-    assert.match(r.textResultForLlm, /^ralph_loop is already/);
+    assert.match(r.textResultForLlm, /^ap_loop is already/);
 });
 
 test("grow_project refuses when self_improve is already active", async () => {
@@ -711,11 +711,11 @@ test("grow_project refuses when self_improve is already active", async () => {
     assert.match(r.textResultForLlm, /^self_improve is already/);
 });
 
-test("ralph_loop refuses when grow_project is already active", async () => {
+test("ap_loop refuses when grow_project is already active", async () => {
     const session = makeFakeSession();
     const c = createRalphController();
     c.attach(session);
-    const ralph = c.tools.find((x) => x.name === "ralph_loop");
+    const ralph = c.tools.find((x) => x.name === "ap_loop");
     const gp = c.tools.find((x) => x.name === "grow_project");
     const armed = await gp.handler({});
     assert.equal(armed.resultType, "success");
@@ -756,9 +756,9 @@ test("grow_project refuses when grow_project is already active", async () => {
 
 test("self_improve refuses when self_improve is already active", async () => {
     // Symmetry pin parallel to the grow_project self-block test above
-    // and the existing ralph_loop "arming twice" test. self_improve's
+    // and the existing ap_loop "arming twice" test. self_improve's
     // handler must use the SAME activeLoopGuard plumbing — re-arming
-    // it without an intervening ralph_stop must fail with the
+    // it without an intervening ap_stop must fail with the
     // label-aware "self_improve is already …" wording (proves armLoop's
     // label propagation, mirroring the cross-tool tests above).
     const session = makeFakeSession();
@@ -772,12 +772,12 @@ test("self_improve refuses when self_improve is already active", async () => {
     assert.match(second.textResultForLlm, /^self_improve is already/);
 });
 
-test("ralph_stop tears down a self_improve-armed loop", async () => {
+test("ap_stop tears down a self_improve-armed loop", async () => {
     const session = makeFakeSession();
     const c = createRalphController();
     c.attach(session);
     const si = c.tools.find((x) => x.name === "self_improve");
-    const stop = c.tools.find((x) => x.name === "ralph_stop");
+    const stop = c.tools.find((x) => x.name === "ap_stop");
     const armed = await si.handler({ max_iterations: 5 });
     assert.equal(armed.resultType, "success");
     const r = await stop.handler({ reason: "user wants out" });
@@ -792,15 +792,15 @@ test("self_improve stamps state.active.label and lastResult.label", async () => 
     const c = createRalphController();
     c.attach(session);
     const si = c.tools.find((x) => x.name === "self_improve");
-    const stop = c.tools.find((x) => x.name === "ralph_stop");
+    const stop = c.tools.find((x) => x.name === "ap_stop");
     await si.handler({ max_iterations: 5 });
     assert.equal(c.state.active.label, "self_improve");
     await stop.handler({ reason: "test" });
     assert.equal(c.state.lastResult.label, "self_improve");
 });
 
-test("ralph_stop success-text uses calling tool's label (self_improve / ralph_loop)", async () => {
-    // The ralph_stop success message used to hardcode "ralph_loop
+test("ap_stop success-text uses calling tool's label (self_improve / ap_loop)", async () => {
+    // The ap_stop success message used to hardcode "ap_loop
     // stopped after N/M iterations …" regardless of which tool armed
     // the loop. After label propagation it must read
     // "<state.active.label> stopped after …" so a self_improve-armed
@@ -811,30 +811,30 @@ test("ralph_stop success-text uses calling tool's label (self_improve / ralph_lo
         const c = createRalphController();
         c.attach(session);
         const si = c.tools.find((x) => x.name === "self_improve");
-        const stop = c.tools.find((x) => x.name === "ralph_stop");
+        const stop = c.tools.find((x) => x.name === "ap_stop");
         await si.handler({ max_iterations: 5 });
         const r = await stop.handler({ reason: "done" });
         assert.equal(r.resultType, "success");
         assert.match(r.textResultForLlm, /^self_improve stopped after 0\/5 iterations/);
-        assert.doesNotMatch(r.textResultForLlm, /^ralph_loop stopped/);
+        assert.doesNotMatch(r.textResultForLlm, /^ap_loop stopped/);
     }
-    // ralph_loop-armed branch (regression guard for the original
-    // wording — must still say "ralph_loop stopped …"):
+    // ap_loop-armed branch (regression guard for the original
+    // wording — must still say "ap_loop stopped …"):
     {
         const session = makeFakeSession();
         const c = createRalphController();
         c.attach(session);
-        const ralph = c.tools.find((x) => x.name === "ralph_loop");
-        const stop = c.tools.find((x) => x.name === "ralph_stop");
+        const ralph = c.tools.find((x) => x.name === "ap_loop");
+        const stop = c.tools.find((x) => x.name === "ap_stop");
         await ralph.handler({ prompt: "go", max_iterations: 7 });
         const r = await stop.handler({});
         assert.equal(r.resultType, "success");
-        assert.match(r.textResultForLlm, /^ralph_loop stopped after 0\/7 iterations/);
+        assert.match(r.textResultForLlm, /^ap_loop stopped after 0\/7 iterations/);
         assert.doesNotMatch(r.textResultForLlm, /^self_improve stopped/);
     }
 });
 
-test("self_improve per-iteration log line uses self_improve label, not ralph_loop", async () => {
+test("self_improve per-iteration log line uses self_improve label, not ap_loop", async () => {
     const session = makeFakeSession();
     const c = createRalphController();
     c.attach(session);
@@ -848,8 +848,8 @@ test("self_improve per-iteration log line uses self_improve label, not ralph_loo
         `expected "🔁 self_improve iter 1/5" log line, got: ${JSON.stringify(session.logs)}`,
     );
     assert.ok(
-        !session.logs.some((l) => /^🔁 ralph_loop iter/.test(l)),
-        "must not leak ralph_loop label into a self_improve-armed iteration",
+        !session.logs.some((l) => /^🔁 ap_loop iter/.test(l)),
+        "must not leak ap_loop label into a self_improve-armed iteration",
     );
 });
 
@@ -861,10 +861,10 @@ test("arm-time log line '🔁 <label> armed —' carries the calling tool's labe
     const session1 = makeFakeSession();
     const c1 = createRalphController();
     c1.attach(session1);
-    await c1.tools.find((x) => x.name === "ralph_loop").handler({ prompt: "go", max_iterations: 5 });
+    await c1.tools.find((x) => x.name === "ap_loop").handler({ prompt: "go", max_iterations: 5 });
     assert.ok(
-        session1.logs.some((l) => /^🔁 ralph_loop armed — /.test(l)),
-        `expected "🔁 ralph_loop armed —" log line, got: ${JSON.stringify(session1.logs)}`,
+        session1.logs.some((l) => /^🔁 ap_loop armed — /.test(l)),
+        `expected "🔁 ap_loop armed —" log line, got: ${JSON.stringify(session1.logs)}`,
     );
     const session2 = makeFakeSession();
     const c2 = createRalphController();
@@ -875,55 +875,55 @@ test("arm-time log line '🔁 <label> armed —' carries the calling tool's labe
         `expected "🔁 self_improve armed —" log line, got: ${JSON.stringify(session2.logs)}`,
     );
     assert.ok(
-        !session2.logs.some((l) => /^🔁 ralph_loop armed/.test(l)),
-        "must not leak ralph_loop label into a self_improve arm log",
+        !session2.logs.some((l) => /^🔁 ap_loop armed/.test(l)),
+        "must not leak ap_loop label into a self_improve arm log",
     );
 });
 
-test("ralph_loop per-iteration log line uses ralph_loop label, not self_improve", async () => {
+test("ap_loop per-iteration log line uses ap_loop label, not self_improve", async () => {
     // Mirror of the self_improve label test above — when armed via
-    // ralph_loop, the iter-log line must read "🔁 ralph_loop iter N/M"
+    // ap_loop, the iter-log line must read "🔁 ap_loop iter N/M"
     // and never carry a "🔁 self_improve" prefix.
     const session = makeFakeSession();
     const c = createRalphController();
     c.attach(session);
-    const ralph = c.tools.find((x) => x.name === "ralph_loop");
+    const ralph = c.tools.find((x) => x.name === "ap_loop");
     await ralph.handler({ prompt: "go", max_iterations: 5 });
     session.emit("session.idle", { data: {} });
     await new Promise((r) => setTimeout(r, 0));
     assert.ok(
-        session.logs.some((l) => /^🔁 ralph_loop iter 1\/5/.test(l)),
-        `expected "🔁 ralph_loop iter 1/5" log line, got: ${JSON.stringify(session.logs)}`,
+        session.logs.some((l) => /^🔁 ap_loop iter 1\/5/.test(l)),
+        `expected "🔁 ap_loop iter 1/5" log line, got: ${JSON.stringify(session.logs)}`,
     );
     assert.ok(
         !session.logs.some((l) => /^🔁 self_improve iter/.test(l)),
-        "must not leak self_improve label into a ralph_loop-armed iteration",
+        "must not leak self_improve label into a ap_loop-armed iteration",
     );
 });
 
-test("ralph_loop stamps state.active.label and lastResult.label", async () => {
+test("ap_loop stamps state.active.label and lastResult.label", async () => {
     const session = makeFakeSession();
     const c = createRalphController();
     c.attach(session);
-    const ralph = c.tools.find((x) => x.name === "ralph_loop");
-    const stop = c.tools.find((x) => x.name === "ralph_stop");
+    const ralph = c.tools.find((x) => x.name === "ap_loop");
+    const stop = c.tools.find((x) => x.name === "ap_stop");
     await ralph.handler({ prompt: "go", max_iterations: 5 });
-    assert.equal(c.state.active.label, "ralph_loop");
+    assert.equal(c.state.active.label, "ap_loop");
     await stop.handler({ reason: "test" });
-    assert.equal(c.state.lastResult.label, "ralph_loop");
+    assert.equal(c.state.lastResult.label, "ap_loop");
 });
 
-test("PROMPT_SELF_IMPROVE does not leak internal tool names (ralph_loop/ralph_stop/self_improve)", () => {
+test("PROMPT_SELF_IMPROVE does not leak internal tool names (ap_loop/ap_stop/self_improve)", () => {
     // Defence against copy-paste drift: the SDLC prompt is text shown
     // to the agent doing the work, not to a tool dispatcher. Mentioning
-    // ralph_loop / ralph_stop / self_improve inside it would either
-    // confuse the agent (does it call ralph_stop itself?) or make the
+    // ap_loop / ap_stop / self_improve inside it would either
+    // confuse the agent (does it call ap_stop itself?) or make the
     // prompt project-specific (the goal is project-AGNOSTIC). Pin
     // their absence so a future "let's reference the tool by name"
     // edit fails loudly.
     const p = PROMPT_SELF_IMPROVE;
-    assert.equal(/\bralph_loop\b/.test(p), false, "PROMPT_SELF_IMPROVE must not mention ralph_loop");
-    assert.equal(/\bralph_stop\b/.test(p), false, "PROMPT_SELF_IMPROVE must not mention ralph_stop");
+    assert.equal(/\bralph_loop\b/.test(p), false, "PROMPT_SELF_IMPROVE must not mention ap_loop");
+    assert.equal(/\bralph_stop\b/.test(p), false, "PROMPT_SELF_IMPROVE must not mention ap_stop");
     assert.equal(/\bself_improve\b/.test(p), false, "PROMPT_SELF_IMPROVE must not mention self_improve (it IS self_improve)");
 });
 
@@ -1121,16 +1121,16 @@ test("self_improve actually arms with the real SDLC prompt", async () => {
     assert.equal(session.sent[0]?.prompt, PROMPT_SELF_IMPROVE);
 });
 
-test("PROMPT_GROW_PROJECT does not leak internal tool names (ralph_loop/ralph_stop/self_improve/grow_project)", () => {
+test("PROMPT_GROW_PROJECT does not leak internal tool names (ap_loop/ap_stop/self_improve/grow_project)", () => {
     // The baked SDLC prompt is fired into a sub-agent that has no
     // notion of this extension's internal tool names. Leaking
-    // `ralph_loop` / `ralph_stop` / `self_improve` / `grow_project`
+    // `ap_loop` / `ap_stop` / `self_improve` / `grow_project`
     // into the prompt confuses the agent (it tries to invoke them)
     // and couples the prompt body to extension internals. Mirror the
     // PROMPT_SELF_IMPROVE leak guard.
     const p = PROMPT_GROW_PROJECT;
-    assert.equal(/\bralph_loop\b/.test(p), false, "PROMPT_GROW_PROJECT must not mention ralph_loop");
-    assert.equal(/\bralph_stop\b/.test(p), false, "PROMPT_GROW_PROJECT must not mention ralph_stop");
+    assert.equal(/\bralph_loop\b/.test(p), false, "PROMPT_GROW_PROJECT must not mention ap_loop");
+    assert.equal(/\bralph_stop\b/.test(p), false, "PROMPT_GROW_PROJECT must not mention ap_stop");
     assert.equal(/\bself_improve\b/.test(p), false, "PROMPT_GROW_PROJECT must not mention self_improve");
     assert.equal(/\bgrow_project\b/.test(p), false, "PROMPT_GROW_PROJECT must not mention grow_project (it IS grow_project)");
 });
@@ -1406,10 +1406,10 @@ test("PROMPT_GROW_PROJECT bakes the dual Co-authored-by trailer + RALPH_NO_ATTRI
     assert.match(p, /\balways\s+ship/i, "must promise the Copilot trailer (and Closes #N) always ship");
 });
 
-test("BAKED_RALPH_LOOP_RIDER bakes the dual Co-authored-by trailer + RALPH_NO_ATTRIBUTION opt-out (issue #1, ralph_loop parity)", () => {
-    // ralph_loop parity with self_improve / grow_project: every
+test("BAKED_RALPH_LOOP_RIDER bakes the dual Co-authored-by trailer + RALPH_NO_ATTRIBUTION opt-out (issue #1, ap_loop parity)", () => {
+    // ap_loop parity with self_improve / grow_project: every
     // loop-driven commit must carry the dual trailer. Because
-    // ralph_loop's prompt is user-supplied, the rider is appended
+    // ap_loop's prompt is user-supplied, the rider is appended
     // at arm time. Pin the same invariants the SDLC prompts enforce
     // so a future edit can't silently drop the bot-account trailer
     // or invert the opt-out polarity.
@@ -1424,7 +1424,7 @@ test("BAKED_RALPH_LOOP_RIDER bakes the dual Co-authored-by trailer + RALPH_NO_AT
     // surfaces the first co-author more prominently).
     assert.ok(r.indexOf(BAKED_COPILOT_TRAILER) < r.indexOf(BAKED_RALPH_TRAILER), "Copilot trailer must appear before copilot-ralph in the rider");
     // Rider must be inert when no commit is created — generic
-    // ralph_loop tasks (log analysis, etc.) shouldn't be forced
+    // ap_loop tasks (log analysis, etc.) shouldn't be forced
     // to invent a commit just to satisfy the trailer policy.
     assert.match(r, /no commit|creates no commit|does not commit|do(?: not|n't) commit/i, "rider must explicitly opt out when the iteration creates no commit");
 });
@@ -1452,8 +1452,8 @@ test("composeRalphLoopPrompt rejects a user prompt that would push the composed 
     assert.match(r.error ?? "", new RegExp(`exceeds ${MAX_PROMPT_CHARS}`));
 });
 
-test("ralph_loop handler appends the rider to the user-supplied prompt before re-injection", async () => {
-    // Behavioral test: arm ralph_loop with a generic prompt and assert
+test("ap_loop handler appends the rider to the user-supplied prompt before re-injection", async () => {
+    // Behavioral test: arm ap_loop with a generic prompt and assert
     // that the prompt ACTUALLY sent via session.send each iteration
     // contains both trailers + the opt-out env var. This closes the
     // loophole where a future refactor could compute the rider but
@@ -1461,7 +1461,7 @@ test("ralph_loop handler appends the rider to the user-supplied prompt before re
     const session = makeFakeSession();
     const controller = createRalphController();
     controller.attach(session);
-    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
+    const ralph = controller.tools.find((t) => t.name === "ap_loop");
     await ralph.handler({ prompt: "investigate the logs", max_iterations: 3 });
     session.emit("session.idle", { data: {} });
     runTurn(session, "still working");
@@ -1659,7 +1659,7 @@ test("grow_project appends focus text to PROMPT_GROW_PROJECT", async () => {
 });
 
 test("calling grow_project before attach fails fast with a grow_project-labelled error and does NOT arm", async () => {
-    // Mirror of the self_improve / ralph_loop pins. requireAttachedSession()
+    // Mirror of the self_improve / ap_loop pins. requireAttachedSession()
     // weaves the calling tool's name through the message; a regression that
     // drops the label would lie about which tool the caller invoked.
     const c = createRalphController();
@@ -1673,7 +1673,7 @@ test("calling grow_project before attach fails fast with a grow_project-labelled
 test("grow_project rejects unknown keys with a grow_project-prefixed error", async () => {
     // validateOptionalArgShape catches typos and stale arg names before
     // they silently pass through validateArgs unrecognised. The error
-    // must carry the grow_project: prefix, not ralph_loop:.
+    // must carry the grow_project: prefix, not ap_loop:.
     const session = makeFakeSession();
     const c = createRalphController();
     c.attach(session);
@@ -1697,9 +1697,9 @@ test("self_improve respects max_iterations / min_iterations overrides", async ()
 });
 
 test("self_improve rejects min_iterations > max_iterations with self_improve prefix", async () => {
-    // Mirror of the ralph_loop "min_iterations must be ≤ max_iterations"
+    // Mirror of the ap_loop "min_iterations must be ≤ max_iterations"
     // test — self_improve delegates to validateArgs, which emits the
-    // error with a "ralph_loop:" prefix, then the handler must rewrite
+    // error with a "ap_loop:" prefix, then the handler must rewrite
     // it to "self_improve:" before returning.
     const session = makeFakeSession();
     const c = createRalphController();
@@ -1709,7 +1709,7 @@ test("self_improve rejects min_iterations > max_iterations with self_improve pre
     assert.equal(r.resultType, "failure");
     assert.match(r.textResultForLlm, /^self_improve:/);
     assert.match(r.textResultForLlm, /min_iterations/);
-    assert.doesNotMatch(r.textResultForLlm, /ralph_loop:/);
+    assert.doesNotMatch(r.textResultForLlm, /ap_loop:/);
 });
 
 test("self_improve rejects unknown args", async () => {
@@ -1763,7 +1763,7 @@ test("self_improve rejects array/primitive args; accepts null/undefined", async 
     assert.equal(ok1.resultType, "success");
     assert.equal(c.state.active.label, "self_improve");
     // Tear down before re-arming to satisfy the single-loop guard.
-    const stop = c.tools.find((x) => x.name === "ralph_stop");
+    const stop = c.tools.find((x) => x.name === "ap_stop");
     await stop.handler({});
     const ok2 = await t.handler(undefined);
     assert.equal(ok2.resultType, "success");
@@ -1773,7 +1773,7 @@ test("self_improve rejects array/primitive args; accepts null/undefined", async 
 test("arming grow_project sets state.active.label to 'grow_project'", async () => {
     // Pin the label because finish() logs ("<label>: stopped after …"),
     // the active-loop guard's "armed by <label>" wording, and the
-    // ralph_stop "stopped <label> after N iterations" line all derive
+    // ap_stop "stopped <label> after N iterations" line all derive
     // from state.active.label. A future refactor that armLoop'd
     // grow_project with the wrong literal (e.g. copy-pasted "self_improve"
     // from the sibling block) would silently mislabel every log line
@@ -1787,7 +1787,7 @@ test("arming grow_project sets state.active.label to 'grow_project'", async () =
     assert.equal(r.resultType, "success");
     assert.equal(c.state.active.label, "grow_project");
     assert.notEqual(c.state.active.label, "self_improve");
-    assert.notEqual(c.state.active.label, "ralph_loop");
+    assert.notEqual(c.state.active.label, "ap_loop");
 });
 
 test("self_improve schema declares max_iterations / min_iterations bounds matching runtime", () => {
@@ -1847,14 +1847,14 @@ test("self_improve and grow_project schema descriptions disclose the baked-promp
     assert.equal(/ABORT_NO_IMPROVEMENTS/.test(gpAp), false, "grow_project.abort_promise must NOT mention self_improve's token");
 });
 
-test("ralph_loop schema declares max/min/stagnation/completion/abort bounds matching runtime", () => {
-    // Mirror of the self_improve bounds tests: pin ralph_loop's
+test("ap_loop schema declares max/min/stagnation/completion/abort bounds matching runtime", () => {
+    // Mirror of the self_improve bounds tests: pin ap_loop's
     // numeric and string schema bounds so a future "harmless" tweak
     // to MAX_ALLOWED_ITERATIONS, MAX_PROMISE_CHARS, MAX_PROMPT_CHARS
     // or the DEFAULTS dict can't drift the schema away from the
     // runtime validator without a loud test-suite failure.
     const c = createRalphController();
-    const rl = c.tools.find((t) => t.name === "ralph_loop");
+    const rl = c.tools.find((t) => t.name === "ap_loop");
     const p = rl.parameters.properties;
 
     assert.equal(p.prompt.type, "string");
@@ -1889,7 +1889,7 @@ test("ralph_loop schema declares max/min/stagnation/completion/abort bounds matc
     assert.deepEqual(rl.parameters.required, ["prompt"], "prompt is the only required arg");
 });
 
-test("ralph_loop & ralph_stop schema properties match their KEYS sets", () => {
+test("ap_loop & ap_stop schema properties match their KEYS sets", () => {
     // Mirror of the self_improve schema-vs-KEYS-set drift test
     // (above). Same rationale: a divergence between the
     // JSON-schema's advertised properties and the Set used by
@@ -1897,7 +1897,7 @@ test("ralph_loop & ralph_stop schema properties match their KEYS sets", () => {
     // rejected" arg or an "accepted but undocumented" arg. Pin both
     // tools the same way so the invariant is enforced uniformly.
     const c = createRalphController();
-    const rl = c.tools.find((t) => t.name === "ralph_loop");
+    const rl = c.tools.find((t) => t.name === "ap_loop");
     assert.deepEqual(Object.keys(rl.parameters.properties).sort(), [
         "abort_promise",
         "adaptive_budget",
@@ -1910,10 +1910,10 @@ test("ralph_loop & ralph_stop schema properties match their KEYS sets", () => {
         "prompt",
         "stagnation_limit",
         "warn_at_pct",
-    ], "ralph_loop schema properties must match RALPH_LOOP_KEYS exactly");
-    const rs = c.tools.find((t) => t.name === "ralph_stop");
+    ], "ap_loop schema properties must match RALPH_LOOP_KEYS exactly");
+    const rs = c.tools.find((t) => t.name === "ap_stop");
     assert.deepEqual(Object.keys(rs.parameters.properties).sort(), ["reason"],
-        "ralph_stop schema properties must match RALPH_STOP_KEYS exactly");
+        "ap_stop schema properties must match RALPH_STOP_KEYS exactly");
 });
 
 test("self_improve schema properties match SELF_IMPROVE_KEYS membership exactly", () => {
@@ -2008,40 +2008,40 @@ test("grow_project schema declares max/min/completion/abort/stagnation/focus bou
     assert.equal(p.focus.maxLength, MAX_FOCUS_CHARS);
 });
 
-test("ralph_stop schema description names all three loop tools it can cancel", () => {
-    // Same family as the gp-15/gp-23 disclosure pins: ralph_stop is
+test("ap_stop schema description names all three loop tools it can cancel", () => {
+    // Same family as the gp-15/gp-23 disclosure pins: ap_stop is
     // the symmetric cancel endpoint for all three loop arms. Its
-    // description hardcoded "ralph_loop or self_improve" until iter
+    // description hardcoded "ap_loop or self_improve" until iter
     // gp-24 and never mentioned grow_project, so an LLM dispatcher
     // searching the schema for "grow_project" had no signal that
-    // ralph_stop was the right tool to cancel one. Pin the
+    // ap_stop was the right tool to cancel one. Pin the
     // disclosure for all three peers — symmetric with the per-tool
     // description pins — so a future fourth-tool addition is forced
     // to update this string too.
     const c = createRalphController();
-    const rs = c.tools.find((t) => t.name === "ralph_stop");
-    assert.match(rs.description, /ralph_loop/, "must name ralph_loop");
+    const rs = c.tools.find((t) => t.name === "ap_stop");
+    assert.match(rs.description, /ap_loop/, "must name ap_loop");
     assert.match(rs.description, /self_improve/, "must name self_improve");
     assert.match(rs.description, /grow_project/, "must name grow_project");
 });
 
-test("ralph_loop schema description discloses all three loop conflict siblings", () => {
+test("ap_loop schema description discloses all three loop conflict siblings", () => {
     // Mirror of the self_improve / grow_project disclosure pins.
-    // ralph_loop is the lowest-level tool but its activeLoopGuard
-    // blocks symmetrically — calling ralph_loop while a self_improve
+    // ap_loop is the lowest-level tool but its activeLoopGuard
+    // blocks symmetrically — calling ap_loop while a self_improve
     // or grow_project loop is active fails fast. The schema
     // description must surface that contract so the LLM dispatcher
     // doesn't have to learn it through a runtime failure.
     const c = createRalphController();
-    const rl = c.tools.find((t) => t.name === "ralph_loop");
+    const rl = c.tools.find((t) => t.name === "ap_loop");
     assert.match(rl.description, /self_improve/, "must disclose conflict with self_improve");
     assert.match(rl.description, /grow_project/, "must disclose conflict with grow_project");
-    assert.match(rl.description, /ralph_stop/, "must disclose ralph_stop as the cancel mechanism");
+    assert.match(rl.description, /ap_stop/, "must disclose ap_stop as the cancel mechanism");
 });
 
 test("self_improve schema description discloses all three loop conflict siblings", () => {
     // Iter gp-15 finding: when grow_project shipped as a third peer,
-    // self_improve's description still said "ralph_loop or
+    // self_improve's description still said "ap_loop or
     // self_improve" — it did not mention grow_project even though
     // grow_project now also blocks self_improve. Pin the disclosure
     // for all three peers symmetric with the grow_project pin so a
@@ -2050,23 +2050,23 @@ test("self_improve schema description discloses all three loop conflict siblings
     // is caught loudly).
     const c = createRalphController();
     const si = c.tools.find((t) => t.name === "self_improve");
-    assert.match(si.description, /ralph_loop/);
+    assert.match(si.description, /ap_loop/);
     assert.match(si.description, /grow_project/, "must disclose conflict with grow_project");
-    assert.match(si.description, /ralph_stop/, "must disclose ralph_stop as the cancel mechanism");
+    assert.match(si.description, /ap_stop/, "must disclose ap_stop as the cancel mechanism");
 });
 
 test("grow_project schema description mentions the active-loop conflict siblings", () => {
     // Schema description is the public contract the LLM sees. It must
-    // explicitly call out that grow_project / ralph_loop / self_improve
+    // explicitly call out that grow_project / ap_loop / self_improve
     // share state — otherwise the model has no way to learn about the
     // conflict until it hits a runtime failure. Pin the contract so a
     // future "trim the description" refactor can't silently drop the
     // disclosure.
     const c = createRalphController();
     const gp = c.tools.find((t) => t.name === "grow_project");
-    assert.match(gp.description, /ralph_loop/, "must disclose conflict with ralph_loop");
+    assert.match(gp.description, /ap_loop/, "must disclose conflict with ap_loop");
     assert.match(gp.description, /self_improve/, "must disclose conflict with self_improve");
-    assert.match(gp.description, /ralph_stop/, "must disclose ralph_stop as the cancel mechanism");
+    assert.match(gp.description, /ap_stop/, "must disclose ap_stop as the cancel mechanism");
 });
 
 test("self_improve schema declares completion/abort/stagnation bounds matching runtime", () => {
@@ -2158,7 +2158,7 @@ test("self_improve rejects non-string focus", async () => {
 test("grow_project rejects focus over MAX_FOCUS_CHARS, accepts the boundary, and rejects whitespace/non-string", async () => {
     // Mirror of the four self_improve focus-bound pins, consolidated:
     // each path must surface the grow_project: prefix (not the
-    // delegated ralph_loop: prefix from validateArgs).
+    // delegated ap_loop: prefix from validateArgs).
     const c = createRalphController();
     const session = makeFakeSession();
     c.attach(session);
@@ -2167,7 +2167,7 @@ test("grow_project rejects focus over MAX_FOCUS_CHARS, accepts the boundary, and
     const tooBig = await t.handler({ focus: "x".repeat(MAX_FOCUS_CHARS + 1) });
     assert.equal(tooBig.resultType, "failure");
     assert.match(tooBig.textResultForLlm, new RegExp(`^grow_project: focus exceeds ${MAX_FOCUS_CHARS}`));
-    assert.doesNotMatch(tooBig.textResultForLlm, /ralph_loop:/);
+    assert.doesNotMatch(tooBig.textResultForLlm, /ap_loop:/);
 
     // Boundary: trimmed.length === MAX_FOCUS_CHARS must arm. The
     // handler check is `> MAX_FOCUS_CHARS`, so an off-by-one
@@ -2327,12 +2327,12 @@ test("all three tools arm with completionPromise='COMPLETE' when caller omits co
     // changed DEFAULTS.completion_promise) would silently mis-arm: the
     // baked PROMPT_* prompts emit "COMPLETE" but the loop watcher would
     // be looking for something else, so completion would never fire.
-    for (const name of ["ralph_loop", "self_improve", "grow_project"]) {
+    for (const name of ["ap_loop", "self_improve", "grow_project"]) {
         const session = makeFakeSession();
         const c = createRalphController();
         c.attach(session);
         const t = c.tools.find((x) => x.name === name);
-        const args = name === "ralph_loop"
+        const args = name === "ap_loop"
             ? { prompt: "x", max_iterations: 1, min_iterations: 1 }
             : { max_iterations: 1, min_iterations: 1 };
         const r = await t.handler(args);
@@ -2344,7 +2344,7 @@ test("all three tools arm with completionPromise='COMPLETE' when caller omits co
 
 test("grow_project rewrites delegated bound errors with grow_project prefix", async () => {
     // Mirror of iter 17/the equivalent self_improve test: validateArgs
-    // emits ralph_loop:-prefixed errors; the handler rewrites them so
+    // emits ap_loop:-prefixed errors; the handler rewrites them so
     // the caller sees grow_project: in the error stream.
     const session = makeFakeSession();
     const c = createRalphController();
@@ -2353,7 +2353,7 @@ test("grow_project rewrites delegated bound errors with grow_project prefix", as
     const tooBig = await t.handler({ max_iterations: 99999 });
     assert.equal(tooBig.resultType, "failure");
     assert.match(tooBig.textResultForLlm, /^grow_project:/);
-    assert.doesNotMatch(tooBig.textResultForLlm, /ralph_loop:/);
+    assert.doesNotMatch(tooBig.textResultForLlm, /ap_loop:/);
     const tooSmall = await t.handler({ max_iterations: 0 });
     assert.equal(tooSmall.resultType, "failure");
     assert.match(tooSmall.textResultForLlm, /^grow_project:/);
@@ -2367,7 +2367,7 @@ test("grow_project rejects stagnation_limit=1 with grow_project prefix", async (
     const r = await t.handler({ stagnation_limit: 1 });
     assert.equal(r.resultType, "failure");
     assert.match(r.textResultForLlm, /^grow_project:/);
-    assert.doesNotMatch(r.textResultForLlm, /ralph_loop:/);
+    assert.doesNotMatch(r.textResultForLlm, /ap_loop:/);
 });
 
 test("self_improve rewrites delegated bound errors with self_improve prefix", async () => {
@@ -2378,7 +2378,7 @@ test("self_improve rewrites delegated bound errors with self_improve prefix", as
     const tooBig = await t.handler({ max_iterations: 99999 });
     assert.equal(tooBig.resultType, "failure");
     assert.match(tooBig.textResultForLlm, /^self_improve:/);
-    assert.doesNotMatch(tooBig.textResultForLlm, /ralph_loop:/);
+    assert.doesNotMatch(tooBig.textResultForLlm, /ap_loop:/);
     const tooSmall = await t.handler({ max_iterations: 0 });
     assert.equal(tooSmall.resultType, "failure");
     assert.match(tooSmall.textResultForLlm, /^self_improve:/);
@@ -2392,7 +2392,7 @@ test("self_improve rejects stagnation_limit=1 with self_improve prefix", async (
     const r = await t.handler({ stagnation_limit: 1 });
     assert.equal(r.resultType, "failure");
     assert.match(r.textResultForLlm, /^self_improve:/);
-    assert.doesNotMatch(r.textResultForLlm, /ralph_loop:/);
+    assert.doesNotMatch(r.textResultForLlm, /ap_loop:/);
 });
 
 test("self_improve warns when completion_promise / abort_promise drift from the baked SDLC prompt's emit tokens", async () => {
@@ -2532,12 +2532,12 @@ test("self_improve rejects overlapping completion/abort phrases with self_improv
     assert.equal(r.resultType, "failure");
     assert.match(r.textResultForLlm, /^self_improve:/);
     assert.match(r.textResultForLlm, /overlap/i);
-    assert.doesNotMatch(r.textResultForLlm, /ralph_loop:/);
+    assert.doesNotMatch(r.textResultForLlm, /ap_loop:/);
 });
 
 test("grow_project rejects overlapping completion/abort phrases with grow_project prefix", async () => {
     // Mirror of the self_improve overlap-rejection test for grow_project's
-    // error-prefix rewrite (`ralph_loop:` → `grow_project:`). The most
+    // error-prefix rewrite (`ap_loop:` → `grow_project:`). The most
     // intuitive footgun here is *swapping* the baked tokens — passing
     // completion_promise: "ABORT_NO_BACKLOG", abort_promise: "COMPLETE"
     // — because both substrings are baked into PROMPT_GROW_PROJECT and
@@ -2545,7 +2545,7 @@ test("grow_project rejects overlapping completion/abort phrases with grow_projec
     // The substring-overlap check ("ABORT_NO_BACKLOG" ⊃ "COMPLETE"? no;
     // but identical-or-substring catches the more common "DONE"/"DONE_NOW"
     // case) must surface with the `grow_project:` prefix, not the inner
-    // `ralph_loop:` prefix from the shared validator.
+    // `ap_loop:` prefix from the shared validator.
     const session = makeFakeSession();
     const c = createRalphController();
     c.attach(session);
@@ -2554,7 +2554,7 @@ test("grow_project rejects overlapping completion/abort phrases with grow_projec
     assert.equal(r.resultType, "failure");
     assert.match(r.textResultForLlm, /^grow_project:/);
     assert.match(r.textResultForLlm, /overlap/i);
-    assert.doesNotMatch(r.textResultForLlm, /ralph_loop:/);
+    assert.doesNotMatch(r.textResultForLlm, /ap_loop:/);
 });
 
 test("public tools and hooks surface is frozen (defensive against accidental mutation)", () => {
@@ -2567,7 +2567,7 @@ test("public tools and hooks surface is frozen (defensive against accidental mut
     assert.throws(() => { c.hooks.onUserPromptSubmitted = null; }, TypeError);
     // Deep freeze: nested parameters/properties also locked so a consumer
     // can't tweak the declared JSON-schema bounds at runtime.
-    const ralphTool = c.tools.find((t) => t.name === "ralph_loop");
+    const ralphTool = c.tools.find((t) => t.name === "ap_loop");
     assert.ok(Object.isFrozen(ralphTool.parameters));
     assert.ok(Object.isFrozen(ralphTool.parameters.properties));
     assert.ok(Object.isFrozen(ralphTool.parameters.properties.prompt));
@@ -2584,8 +2584,8 @@ test("public tools and hooks surface is frozen (defensive against accidental mut
     assert.ok(Object.isFrozen(ralphTool.parameters.required));
     assert.throws(() => { ralphTool.parameters.required.push("max_iterations"); }, TypeError);
     assert.throws(() => { ralphTool.parameters.properties.max_iterations.maximum = 999999; }, TypeError);
-    // ralph_stop tool surface is also frozen (same defensive contract).
-    const stopTool = c.tools.find((t) => t.name === "ralph_stop");
+    // ap_stop tool surface is also frozen (same defensive contract).
+    const stopTool = c.tools.find((t) => t.name === "ap_stop");
     assert.ok(Object.isFrozen(stopTool.parameters));
     assert.ok(Object.isFrozen(stopTool.parameters.properties));
     assert.throws(() => { stopTool.parameters.properties.reason.maxLength = 9999; }, TypeError);
@@ -2624,16 +2624,16 @@ test("DEFAULTS object is frozen — defaults cannot be mutated at runtime", () =
     assert.equal(DEFAULTS.stagnation_limit, 3);
 });
 
-test("ralph_loop tool spec includes stagnation_limit and required prompt", () => {
+test("ap_loop tool spec includes stagnation_limit and required prompt", () => {
     const c = createRalphController();
-    const t = c.tools.find((x) => x.name === "ralph_loop");
+    const t = c.tools.find((x) => x.name === "ap_loop");
     assert.ok(t.parameters.properties.stagnation_limit);
     assert.deepEqual(t.parameters.required, ["prompt"]);
 });
 
-test("ralph_loop tool spec declares numeric ranges (minimum/maximum) on integer params", () => {
+test("ap_loop tool spec declares numeric ranges (minimum/maximum) on integer params", () => {
     const c = createRalphController();
-    const t = c.tools.find((x) => x.name === "ralph_loop");
+    const t = c.tools.find((x) => x.name === "ap_loop");
     const p = t.parameters.properties;
     // max_iterations: 1..MAX_ALLOWED_ITERATIONS — bound to the runtime cap
     // so a future bump to MAX_ALLOWED_ITERATIONS automatically widens the
@@ -2660,9 +2660,9 @@ test("ralph_loop tool spec declares numeric ranges (minimum/maximum) on integer 
     assert.equal(p.prompt.maxLength, MAX_PROMPT_CHARS);
 });
 
-test("ralph_stop tool spec declares maxLength on optional reason", () => {
+test("ap_stop tool spec declares maxLength on optional reason", () => {
     const c = createRalphController();
-    const t = c.tools.find((x) => x.name === "ralph_stop");
+    const t = c.tools.find((x) => x.name === "ap_stop");
     // Locked to PREVIEW_CHARS / truncateNote cap so clients learn the bound up-front
     // and a runtime cap change automatically updates the schema.
     assert.equal(t.parameters.properties.reason.maxLength, PREVIEW_CHARS);
@@ -2676,7 +2676,7 @@ test("schema `default` fields stay in lockstep with the DEFAULTS source-of-truth
     // LLM sees one number and the runtime applies another — the user gets
     // mysterious "expected default" surprises. Pin the equality.
     const c = createRalphController();
-    const p = c.tools.find((x) => x.name === "ralph_loop").parameters.properties;
+    const p = c.tools.find((x) => x.name === "ap_loop").parameters.properties;
     const { DEFAULTS } = __test__;
     assert.equal(p.max_iterations.default, DEFAULTS.max_iterations);
     assert.equal(p.min_iterations.default, DEFAULTS.min_iterations);
@@ -2702,14 +2702,14 @@ test("tool parameters round-trip through JSON.stringify without losing fields", 
     }
 });
 
-test("ralph_loop tool description matches the actual refire trigger (session.idle)", () => {
+test("ap_loop tool description matches the actual refire trigger (session.idle)", () => {
     // Pin the user-facing description so a future refactor that changes the
     // event we listen on (or vice-versa, that re-introduces a stale "turn_end"
     // mention) is caught by tests rather than mis-informing tool consumers.
     // The earlier description still claimed "assistant turn_end" long after
     // the implementation switched to session.idle.
     const c = createRalphController();
-    const t = c.tools.find((x) => x.name === "ralph_loop");
+    const t = c.tools.find((x) => x.name === "ap_loop");
     assert.match(t.description, /session\.idle/, "description must mention session.idle");
     assert.doesNotMatch(t.description, /turn_end/, "description must not mention the obsolete turn_end trigger");
 });
@@ -2746,12 +2746,12 @@ test("arming twice while active is rejected", async () => {
     assert.equal(controller.state.active.i, 1);
     // Same paren-balance guard as the "already armed" branch — the
     // "running" template path is rendered separately, so pin it too.
-    assert.match(r.textResultForLlm, /\(iteration 1\/9\) — call ralph_stop first\.$/);
+    assert.match(r.textResultForLlm, /\(iteration 1\/9\) — call ap_stop first\.$/);
     assert.doesNotMatch(r.textResultForLlm, /first\)\./);
 });
 
 test("arming twice before first turn_end shows clearer 'armed' message", async () => {
-    // Race: ralph_loop called, then ralph_loop called again before any
+    // Race: ap_loop called, then ap_loop called again before any
     // turn_end has fired (state.active.i === 0). The error message used to
     // confusingly say "iteration 0/max"; now it says "armed (iteration 1/max
     // pending …)".
@@ -2767,7 +2767,7 @@ test("arming twice before first turn_end shows clearer 'armed' message", async (
     // Parens around the status clause must be balanced and the sentence
     // must end with a clean period — guards against a regression where
     // the close-paren was misplaced after the period ("first).").
-    assert.match(r.textResultForLlm, /\(iteration 1\/7 pending\) — call ralph_stop first\.$/);
+    assert.match(r.textResultForLlm, /\(iteration 1\/7 pending\) — call ap_stop first\.$/);
     assert.doesNotMatch(r.textResultForLlm, /first\)\./);
 });
 
@@ -3056,9 +3056,9 @@ test("stagnation: two identical empty-string responses trigger stagnation (silen
     assert.equal(controller.state.lastResult.iterations, 2);
 });
 
-// ── ralph_stop tool ───────────────────────────────────────────────────────
+// ── ap_stop tool ───────────────────────────────────────────────────────
 
-test("ralph_stop cancels an active loop and reports iteration count", async () => {
+test("ap_stop cancels an active loop and reports iteration count", async () => {
     const { session, controller, stop } = await arm({ max_iterations: 10 });
     session.emit("session.idle", { data: {} });
     runTurn(session, "still going");
@@ -3070,8 +3070,8 @@ test("ralph_stop cancels an active loop and reports iteration count", async () =
     assert.equal(controller.state.lastResult.reason, "user_stopped");
 });
 
-test("ralph_stop success result has EXACTLY { textResultForLlm, resultType, iterations, note } — no stray keys", async () => {
-    // Mirrors the arm-success "no stray keys" pin. ralph_stop returns
+test("ap_stop success result has EXACTLY { textResultForLlm, resultType, iterations, note } — no stray keys", async () => {
+    // Mirrors the arm-success "no stray keys" pin. ap_stop returns
     // `success(message, { iterations, note })`, where note is undefined
     // when no reason is supplied. Lock the closed key set so a future
     // refactor can't silently widen the LLM-facing return with internal
@@ -3096,7 +3096,7 @@ test("ralph_stop success result has EXACTLY { textResultForLlm, resultType, iter
     assert.equal(r2.note, "explicit");
 });
 
-test("ralph_stop accepts an optional reason and records it as note", async () => {
+test("ap_stop accepts an optional reason and records it as note", async () => {
     const { stop, controller, session } = await arm({ max_iterations: 5 });
     runTurn(session, "still working");
     const r = await stop.handler({ reason: "user changed plan" });
@@ -3106,7 +3106,7 @@ test("ralph_stop accepts an optional reason and records it as note", async () =>
     assert.equal(controller.state.lastResult.note, "user changed plan");
 });
 
-test("ralph_stop trims surrounding whitespace from reason before storing as note", async () => {
+test("ap_stop trims surrounding whitespace from reason before storing as note", async () => {
     // The trim happens at handler.mjs ~line 651 (`reason.trim()`). Without
     // this pin, a future change that stored the raw value would surface
     // padded notes ("  hello  ") in the additionalContext bracket and the
@@ -3120,7 +3120,7 @@ test("ralph_stop trims surrounding whitespace from reason before storing as note
     assert.match(r.textResultForLlm, /\(hello world\)\.$/, "user-facing suffix must use the trimmed value verbatim");
 });
 
-test("ralph_stop with empty/whitespace-only reason silently drops it (note=undefined)", async () => {
+test("ap_stop with empty/whitespace-only reason silently drops it (note=undefined)", async () => {
     // The note path requires `reason.trim()` to be non-empty (handler.mjs
     // ~line 634). An empty-string or whitespace-only reason is treated
     // the same as omitting it: loop stops, no note attached, no quote
@@ -3141,12 +3141,12 @@ test("ralph_stop with empty/whitespace-only reason silently drops it (note=undef
     }
 });
 
-test("ralph_stop with non-string reason rejects loudly with typed error (loop still active)", async () => {
-    // ralph_stop's `reason` arg used to accept the loose contract
+test("ap_stop with non-string reason rejects loudly with typed error (loop still active)", async () => {
+    // ap_stop's `reason` arg used to accept the loose contract
     // "string or missing" and silently drop a number / object / array.
     // That made buggy callers' miscoercion invisible — the loop stopped
     // but the user's intended note vanished. We tightened the contract
-    // to surface a typed failure, matching how ralph_loop validates
+    // to surface a typed failure, matching how ap_loop validates
     // every other typed field (see fix(handler): durationMs cohort).
     // The deliberate-decision sentinel comment in the prior version of
     // this test is now resolved: rejection is loud, the loop stays
@@ -3154,7 +3154,7 @@ test("ralph_stop with non-string reason rejects loudly with typed error (loop st
     const { stop, controller } = await arm({ max_iterations: 5 });
     const r = await stop.handler({ reason: 42 });
     assert.equal(r.resultType, "failure");
-    assert.match(r.textResultForLlm, /^ralph_stop: reason must be a string \(got number\)\./);
+    assert.match(r.textResultForLlm, /^ap_stop: reason must be a string \(got number\)\./);
     assert.notEqual(controller.state.active, null, "loop must not be stopped when validation fails");
     // A correctly-typed call still works.
     const ok = await stop.handler({ reason: "ok" });
@@ -3162,8 +3162,8 @@ test("ralph_stop with non-string reason rejects loudly with typed error (loop st
     assert.equal(controller.state.lastResult.note, "ok");
 });
 
-test("ralph_stop rejects unknown keys (typo guard, mirrors ralph_loop)", async () => {
-    // Without this, `ralph_stop({ resaon: "..." })` would silently drop
+test("ap_stop rejects unknown keys (typo guard, mirrors ap_loop)", async () => {
+    // Without this, `ap_stop({ resaon: "..." })` would silently drop
     // the user's note instead of surfacing it. The active loop must
     // remain untouched on validation failure (no premature finish()).
     const { stop, controller } = await arm({ max_iterations: 5 });
@@ -3179,14 +3179,14 @@ test("ralph_stop rejects unknown keys (typo guard, mirrors ralph_loop)", async (
     assert.equal(controller.state.lastResult.note, "ok");
 });
 
-test("ralph_stop with no active loop returns failure", async () => {
+test("ap_stop with no active loop returns failure", async () => {
     const c = createRalphController();
-    const stop = c.tools.find((t) => t.name === "ralph_stop");
+    const stop = c.tools.find((t) => t.name === "ap_stop");
     const r = await stop.handler({});
     assert.equal(r.resultType, "failure");
 });
 
-test("ralph_stop with no active loop reports 'no loop' even if args have a typo", async () => {
+test("ap_stop with no active loop reports 'no loop' even if args have a typo", async () => {
     // Priority pin: when no loop is active, the "nothing to stop" error
     // takes precedence over the unknown-arg shape error. The typo is
     // moot if there's nothing to act on, and reporting the validation
@@ -3194,24 +3194,24 @@ test("ralph_stop with no active loop reports 'no loop' even if args have a typo"
     // Pin this priority so a future refactor that hoists validateArgShape
     // above the active-check doesn't silently flip the message order.
     const c = createRalphController();
-    const stop = c.tools.find((t) => t.name === "ralph_stop");
+    const stop = c.tools.find((t) => t.name === "ap_stop");
     const r = await stop.handler({ resaon: "typo" });
     assert.equal(r.resultType, "failure");
-    assert.match(r.textResultForLlm, /no ralph_loop, self_improve, or grow_project is currently running/);
+    assert.match(r.textResultForLlm, /no ap_loop, self_improve, or grow_project is currently running/);
     assert.doesNotMatch(r.textResultForLlm, /unknown argument/);
 });
 
-test("no-active-loop failure wording is identical (modulo tool name) across ralph_stop / ralph_pause / ralph_resume", async () => {
+test("no-active-loop failure wording is identical (modulo tool name) across ap_stop / ap_pause / ap_resume", async () => {
     // Drift guard: every loop-mutating tool surfaces the SAME error
     // string when called with no active loop, only the leading
     // `<tool>:` prefix differs. Centralised in noActiveLoopFailure() —
     // this test pins the contract so a future refactor that re-words
-    // one site (e.g. swapping in "ralph_loop" only when other tools
-    // still say "ralph_loop / self_improve / grow_project") immediately
+    // one site (e.g. swapping in "ap_loop" only when other tools
+    // still say "ap_loop / self_improve / grow_project") immediately
     // surfaces the inconsistency. Downstream agents + log scrapers
     // pattern-match on this exact string, so drift is a real bug.
     const c = createRalphController();
-    const tools = ["ralph_stop", "ralph_pause", "ralph_resume"];
+    const tools = ["ap_stop", "ap_pause", "ap_resume"];
     const messages = [];
     for (const name of tools) {
         const tool = c.tools.find((t) => t.name === name);
@@ -3221,14 +3221,14 @@ test("no-active-loop failure wording is identical (modulo tool name) across ralp
     }
     // Strip the per-tool prefix and assert the remainder is byte-identical.
     const tails = messages.map((m, i) => m.replace(new RegExp(`^${tools[i]}: `), ""));
-    assert.equal(tails[0], tails[1], "ralph_stop and ralph_pause no-loop wording must match");
-    assert.equal(tails[1], tails[2], "ralph_pause and ralph_resume no-loop wording must match");
+    assert.equal(tails[0], tails[1], "ap_stop and ap_pause no-loop wording must match");
+    assert.equal(tails[1], tails[2], "ap_pause and ap_resume no-loop wording must match");
     // Exact wording pin — a refactor that drops "self_improve" or
     // "grow_project" should fail this test loudly.
-    assert.equal(tails[0], "no ralph_loop, self_improve, or grow_project is currently running.");
+    assert.equal(tails[0], "no ap_loop, self_improve, or grow_project is currently running.");
 });
 
-test("ralph_stop tolerates null/undefined args; rejects array shape loudly", async () => {
+test("ap_stop tolerates null/undefined args; rejects array shape loudly", async () => {
     const { session, controller, stop } = await arm({ max_iterations: 5 });
     session.emit("session.idle", { data: {} });
     // null instead of {} — JS default params don't catch null
@@ -3243,7 +3243,7 @@ test("ralph_stop tolerates null/undefined args; rejects array shape loudly", asy
     const r2 = await stop.handler(undefined);
     assert.equal(r2.resultType, "success");
 
-    // Array: rejected loudly (mirrors ralph_loop's shape guard) so a caller
+    // Array: rejected loudly (mirrors ap_loop's shape guard) so a caller
     // who passed e.g. ["reason"] gets a clear error instead of silently
     // stopping with no note.
     await controller.tools[0].handler({ prompt: "go", max_iterations: 5 });
@@ -3364,7 +3364,7 @@ test("abort event falls back to top-level ev.reason when ev.data.reason is absen
 
 test("abort log line carries calling tool's label (self_improve)", async () => {
     // The "⏹ <label> interrupted by session abort" log line was
-    // hardcoded to "ralph_loop" and missed the iter-14 label sweep.
+    // hardcoded to "ap_loop" and missed the iter-14 label sweep.
     // When armed via self_improve, the abort log must read
     // "⏹ self_improve interrupted by session abort …".
     const session = makeFakeSession();
@@ -3376,7 +3376,7 @@ test("abort log line carries calling tool's label (self_improve)", async () => {
     session.emit("abort", { data: { reason: "user changed plan" } });
     const joined = session.logs.join("\n");
     assert.match(joined, /⏹ self_improve interrupted by session abort \(user changed plan\)/);
-    assert.doesNotMatch(joined, /⏹ ralph_loop interrupted/);
+    assert.doesNotMatch(joined, /⏹ ap_loop interrupted/);
 });
 
 test("abort event prefers ev.data.reason over ev.reason when both are present", async () => {
@@ -3424,14 +3424,14 @@ test("abort event with oversized reason truncates BOTH the log line and result.n
     assert.ok(controller.state.lastResult.note.length <= PREVIEW_CHARS);
     const abortLog = session.logs.find((l) => /interrupted by session abort/.test(l));
     assert.ok(abortLog, "expected abort log line");
-    // Wrapper text "⏹ ralph_loop interrupted by session abort (…)." adds
+    // Wrapper text "⏹ ap_loop interrupted by session abort (…)." adds
     // ~50 chars; PREVIEW_CHARS + a generous slack still rules out 50KB.
     assert.ok(abortLog.length < PREVIEW_CHARS + 200, `abort log too long: ${abortLog.length}`);
 });
 
-test("calling ralph_stop immediately after arm (before any session.idle) finishes with iterations=0", async () => {
+test("calling ap_stop immediately after arm (before any session.idle) finishes with iterations=0", async () => {
     // Arm but never emit session.idle — so the loop never even gets to
-    // iteration 1. ralph_stop must still be able to clean up cleanly,
+    // iteration 1. ap_stop must still be able to clean up cleanly,
     // and the recorded iteration count must reflect reality (0), not
     // the user-facing "iter 1/max" label that pre-fire arming uses
     // for the "already armed" error message.
@@ -3448,8 +3448,8 @@ test("calling ralph_stop immediately after arm (before any session.idle) finishe
     assert.equal(controller.state.lastResult.preview, "");
 });
 
-test("calling ralph_stop twice in a row: 2nd call reports no active loop", async () => {
-    // After ralph_stop succeeds, finish() nulls state.active. A retried
+test("calling ap_stop twice in a row: 2nd call reports no active loop", async () => {
+    // After ap_stop succeeds, finish() nulls state.active. A retried
     // stop (e.g. caller wasn't sure the first one landed) must not
     // silently succeed — the loop is already gone, and reporting
     // success would falsely imply we just stopped a fresh loop.
@@ -3459,21 +3459,21 @@ test("calling ralph_stop twice in a row: 2nd call reports no active loop", async
     assert.equal(controller.state.lastResult.reason, "user_stopped");
     const r2 = await stop.handler({ reason: "second" });
     assert.equal(r2.resultType, "failure");
-    assert.match(r2.textResultForLlm, /no ralph_loop, self_improve, or grow_project is currently running/);
+    assert.match(r2.textResultForLlm, /no ap_loop, self_improve, or grow_project is currently running/);
     // The original result must NOT be overwritten by the failed second stop.
     assert.equal(controller.state.lastResult.note, "first");
 });
 
-test("ralph_stop no-loop failure mentions BOTH ralph_loop and self_improve", async () => {
-    // ralph_stop tears down either flavor of armed loop, so the failure
+test("ap_stop no-loop failure mentions BOTH ap_loop and self_improve", async () => {
+    // ap_stop tears down either flavor of armed loop, so the failure
     // message must name both — otherwise an LLM that only ever called
-    // self_improve will think ralph_stop refers to a different state
+    // self_improve will think ap_stop refers to a different state
     // machine and won't realize it's the right cancellation tool.
     const c = createRalphController();
-    const stop = c.tools.find((t) => t.name === "ralph_stop");
+    const stop = c.tools.find((t) => t.name === "ap_stop");
     const r = await stop.handler({});
     assert.equal(r.resultType, "failure");
-    assert.match(r.textResultForLlm, /ralph_loop/);
+    assert.match(r.textResultForLlm, /ap_loop/);
     assert.match(r.textResultForLlm, /self_improve/);
 });
 
@@ -3525,7 +3525,7 @@ test("onUserPromptSubmitted injects additionalContext exactly once after a finis
     assert.equal(controller.state.lastResult.reason, "completion_promise");
 
     const r1 = await controller.hooks.onUserPromptSubmitted({ prompt: "next" });
-    assert.match(r1.additionalContext, /ralph_loop just finished/);
+    assert.match(r1.additionalContext, /ap_loop just finished/);
     assert.match(r1.additionalContext, /reason=completion_promise/);
     // Injection should be visible in the session log so users can see
     // why the next prompt was rewritten.
@@ -3543,7 +3543,7 @@ test("onUserPromptSubmitted bracket reflects the calling tool's label (self_impr
     const c = createRalphController();
     c.attach(session);
     const si = c.tools.find((x) => x.name === "self_improve");
-    const stop = c.tools.find((x) => x.name === "ralph_stop");
+    const stop = c.tools.find((x) => x.name === "ap_stop");
     await si.handler({ max_iterations: 5 });
     await stop.handler({ reason: "test" });
     assert.equal(c.state.lastResult.label, "self_improve");
@@ -3551,7 +3551,7 @@ test("onUserPromptSubmitted bracket reflects the calling tool's label (self_impr
     assert.ok(r?.additionalContext, "expected additionalContext after a finished self_improve loop");
     assert.match(r.additionalContext, /^\[self_improve just finished/,
         `expected bracket prefix to be self_improve, got: ${r.additionalContext}`);
-    assert.doesNotMatch(r.additionalContext, /ralph_loop just finished/);
+    assert.doesNotMatch(r.additionalContext, /ap_loop just finished/);
     assert.ok(
         session.logs.some((l) => /^self_improve: injecting post-loop context/.test(l)),
         "expected the self_improve-prefixed injection log line",
@@ -3564,13 +3564,13 @@ test("onUserPromptSubmitted bracket reflects the calling tool's label (grow_proj
     // "[grow_project just finished …]" in the additionalContext
     // injection AND a "grow_project: injecting post-loop context"
     // log line — proves state.lastResult.label is plumbed through the
-    // hook end-to-end. A regression that hardcodes "ralph_loop" or
+    // hook end-to-end. A regression that hardcodes "ap_loop" or
     // "self_improve" anywhere in the post-loop pipeline is caught.
     const session = makeFakeSession();
     const c = createRalphController();
     c.attach(session);
     const gp = c.tools.find((x) => x.name === "grow_project");
-    const stop = c.tools.find((x) => x.name === "ralph_stop");
+    const stop = c.tools.find((x) => x.name === "ap_stop");
     await gp.handler({ max_iterations: 5, min_iterations: 1 });
     await stop.handler({ reason: "test" });
     assert.equal(c.state.lastResult.label, "grow_project");
@@ -3578,7 +3578,7 @@ test("onUserPromptSubmitted bracket reflects the calling tool's label (grow_proj
     assert.ok(r?.additionalContext, "expected additionalContext after a finished grow_project loop");
     assert.match(r.additionalContext, /^\[grow_project just finished/,
         `expected bracket prefix to be grow_project, got: ${r.additionalContext}`);
-    assert.doesNotMatch(r.additionalContext, /ralph_loop just finished/);
+    assert.doesNotMatch(r.additionalContext, /ap_loop just finished/);
     assert.doesNotMatch(r.additionalContext, /self_improve just finished/);
     assert.ok(
         session.logs.some((l) => /^grow_project: injecting post-loop context/.test(l)),
@@ -3593,7 +3593,7 @@ test("onUserPromptSubmitted is a no-op when no loop has finished", async () => {
 });
 
 test("onUserPromptSubmitted consumes lastResult exactly once (no replay on subsequent prompts)", async () => {
-    // The hook injects [ralph_loop just finished — …] on the FIRST user
+    // The hook injects [ap_loop just finished — …] on the FIRST user
     // prompt after a loop ends, then clears state.lastResult so a
     // SECOND prompt isn't decorated with the same stale context. A
     // future refactor that forgets the `state.lastResult = null` line
@@ -3645,7 +3645,7 @@ test("finish log line collapses multi-line note (single-line timeline marker)", 
     session.emit("session.idle", { data: {} });
     await stop.handler({ reason: "line1\nline2\n  line3" });
     // Find the finish log entry.
-    const finishLog = session.logs.find((l) => /ralph_loop after \d+ iteration/.test(l));
+    const finishLog = session.logs.find((l) => /ap_loop after \d+ iteration/.test(l));
     assert.ok(finishLog, "expected a finish log line");
     assert.equal(finishLog.includes("\n"), false, `finish log contains newline: ${JSON.stringify(finishLog)}`);
     assert.match(finishLog, /note: line1 line2 line3/);
@@ -3738,7 +3738,7 @@ test("empty assistant.message content still flips observedMessageThisFire (next 
 });
 
 test("pre-arm assistant content is discarded — does not satisfy iter-1 completion check", async () => {
-    // The turn that *calls* ralph_loop is itself an assistant turn that
+    // The turn that *calls* ap_loop is itself an assistant turn that
     // can have already emitted text before the tool call resolved. If
     // the agent happened to mention the completion_promise in that
     // pre-arm content (e.g. quoting the user "I'll loop until DONE"),
@@ -3892,11 +3892,11 @@ test("assistant.message with non-string content is silently ignored (defensive t
 });
 
 
-test("sub-agent abort event does NOT terminate the root ralph_loop", async () => {
+test("sub-agent abort event does NOT terminate the root ap_loop", async () => {
     // Sub-agents (task / explore / rubber-duck …) emit their own abort
     // events when they fail or are cancelled. Per the SDK schema, those
     // events carry an `agentId` field while root-agent events don't.
-    // A sub-agent's abort must NOT tear down the root ralph_loop.
+    // A sub-agent's abort must NOT tear down the root ap_loop.
     const { session, controller } = await arm({ max_iterations: 5, stagnation_limit: 0 });
     session.emit("session.idle", { data: {} }); // fire iter 1
     assert.equal(controller.state.active.i, 1);
@@ -4086,7 +4086,7 @@ test("note truncation is silent — no '…' indicator (asymmetric with preview)
 
 test("note truncation does not split UTF-16 surrogate pairs", async () => {
     // 499 'a's + "🎉" + filler — same surrogate-edge as preview test, but
-    // exercising the note path via ralph_stop reason.
+    // exercising the note path via ap_stop reason.
     const longReason = "a".repeat(499) + "🎉" + "z".repeat(100);
     const { session, controller, stop } = await arm({ max_iterations: 5 });
     session.emit("session.idle", { data: {} });
@@ -4097,7 +4097,7 @@ test("note truncation does not split UTF-16 surrogate pairs", async () => {
     assert.deepEqual(JSON.parse(JSON.stringify(note)), note);
 });
 
-test("ralph_stop caps oversized user-supplied reason in response and result.note", async () => {
+test("ap_stop caps oversized user-supplied reason in response and result.note", async () => {
     // A pathologically large reason must not balloon the LLM-visible response
     // string nor the structured note field. Both should be ≤ PREVIEW_CHARS.
     const huge = "x".repeat(50_000);
@@ -4116,7 +4116,7 @@ test("ralph_stop caps oversized user-supplied reason in response and result.note
     assert.ok(controller.state.lastResult.note.length <= PREVIEW_CHARS);
 });
 
-test("ralph_stop reason at exactly PREVIEW_CHARS passes through unchanged (boundary)", async () => {
+test("ap_stop reason at exactly PREVIEW_CHARS passes through unchanged (boundary)", async () => {
     // Pin the boundary: reason length === PREVIEW_CHARS must NOT trip the
     // truncation path (no ellipsis added, no chars dropped). This guards
     // an off-by-one in truncateNote (uses `<=` not `<`) so the cap is
@@ -4183,7 +4183,7 @@ test("lastAssistantContent is capped at MAX_CONTENT_CHARS (1 MiB)", async () => 
 test("late send-rejection from a stale arming does NOT poison a freshly-armed loop", async () => {
     // Sequence:
     //  1. Arm loop A1; capture its pending send-promise so we can reject it later.
-    //  2. Stop A1 cleanly via ralph_stop. state.active becomes null.
+    //  2. Stop A1 cleanly via ap_stop. state.active becomes null.
     //  3. Arm loop A2.
     //  4. Late-reject the A1 promise. Without per-arming identity capture, the
     //     rejection handler would call finish('send_error') on A2 and kill it.
@@ -4214,8 +4214,8 @@ test("late send-rejection from a stale arming does NOT poison a freshly-armed lo
     };
     const controller = createRalphController();
     controller.attach(session);
-    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
-    const stop = controller.tools.find((t) => t.name === "ralph_stop");
+    const ralph = controller.tools.find((t) => t.name === "ap_loop");
+    const stop = controller.tools.find((t) => t.name === "ap_stop");
 
     // A1
     await ralph.handler({ prompt: "first", max_iterations: 5, stagnation_limit: 0 });
@@ -4241,7 +4241,7 @@ test("late send-rejection from a stale arming does NOT poison a freshly-armed lo
 
 // ── attach/detach ─────────────────────────────────────────────────────────
 
-test("calling ralph_loop before attach fails fast with a clear error and does NOT arm", async () => {
+test("calling ap_loop before attach fails fast with a clear error and does NOT arm", async () => {
     const c = createRalphController();
     // No attach() call.
     const r = await c.tools[0].handler({ prompt: "go" });
@@ -4251,7 +4251,7 @@ test("calling ralph_loop before attach fails fast with a clear error and does NO
 });
 
 test("calling self_improve before attach fails fast with a self_improve-labelled error and does NOT arm", async () => {
-    // Mirror of the ralph_loop pin above. requireAttachedSession() weaves
+    // Mirror of the ap_loop pin above. requireAttachedSession() weaves
     // the calling tool's name through the message, so the failure must
     // carry "self_improve:" rather than the previous hardcoded prefix —
     // a regression that drops the label would lie about which tool the
@@ -4562,7 +4562,7 @@ test("durationMs is clamped to ≥ 0 if the system clock jumps backward", async 
     }
 });
 
-test("arming a fresh ralph_loop clears stale lastResult from prior run", async () => {
+test("arming a fresh ap_loop clears stale lastResult from prior run", async () => {
     // First loop completes and records a result.
     const { session, controller, ralph } = await arm({ max_iterations: 2 });
     session.emit("session.idle", { data: {} });   // first idle fires iter 1 prompt
@@ -4579,7 +4579,7 @@ test("arming a fresh ralph_loop clears stale lastResult from prior run", async (
         "prior lastResult must be cleared on re-arm to prevent stale post-loop context");
 });
 
-test("self_improve re-arm clears prior lastResult (mirror of ralph_loop)", async () => {
+test("self_improve re-arm clears prior lastResult (mirror of ap_loop)", async () => {
     // Symmetric guarantee: re-arming via self_improve after a previous
     // self_improve completed must clear state.lastResult so the
     // additionalContext hook can't bleed the previous run's preview
@@ -4648,31 +4648,31 @@ test("finish log marker differentiates by reason category", async () => {
     c1.attach(session1);
     await c1.tools[0].handler({ prompt: "go", max_iterations: 5 });
     session1.emit("session.idle", { data: {} });
-    assert.match(session1.logs.join("\n"), /⚠️ ended ralph_loop.*reason: send_error/);
+    assert.match(session1.logs.join("\n"), /⚠️ ended ap_loop.*reason: send_error/);
 
     // user_stopped → ⏹ stopped (not ⚠️)
     const { session: s2, stop } = await arm({ max_iterations: 5 });
     s2.emit("session.idle", { data: {} });
     await stop.handler({});
-    assert.match(s2.logs.join("\n"), /⏹ stopped ralph_loop.*reason: user_stopped/);
+    assert.match(s2.logs.join("\n"), /⏹ stopped ap_loop.*reason: user_stopped/);
 
     // aborted (SDK abort event) → ⚠️ ended (mirrors send_error: something went wrong).
     // Pins the second branch of the verb ladder, which previously had no
     // dedicated test — only send_error covered it.
     const { session: s3 } = await arm({ max_iterations: 5 });
     s3.emit("abort", { data: { reason: "user_cancelled" } });
-    assert.match(s3.logs.join("\n"), /⚠️ ended ralph_loop.*reason: aborted/);
+    assert.match(s3.logs.join("\n"), /⚠️ ended ap_loop.*reason: aborted/);
 
     // completion_promise → ✅ completed
     const { session: s4 } = await arm({ max_iterations: 5 });
     s4.emit("session.idle", { data: {} });
     runTurn(s4, "all done COMPLETE");
-    assert.match(s4.logs.join("\n"), /✅ completed ralph_loop.*reason: completion_promise/);
+    assert.match(s4.logs.join("\n"), /✅ completed ap_loop.*reason: completion_promise/);
 });
 
 test("finish log line carries the self_improve label for ⏹/✅/⚠️ verbs", async () => {
-    // Mirror of the ralph_loop verb-ladder test above, exercised through
-    // self_improve so a regression that hardcodes "ralph_loop" back into
+    // Mirror of the ap_loop verb-ladder test above, exercised through
+    // self_improve so a regression that hardcodes "ap_loop" back into
     // the finish log line — bypassing state.active.label — is caught.
     // Three branches: user_stopped (⏹), completion_promise (✅), and
     // send_error (⚠️) cover all three verbs in VERB_BY_REASON's fallback
@@ -4684,7 +4684,7 @@ test("finish log line carries the self_improve label for ⏹/✅/⚠️ verbs", 
         const c = createRalphController();
         c.attach(session);
         const si = c.tools.find((t) => t.name === "self_improve");
-        const stop = c.tools.find((t) => t.name === "ralph_stop");
+        const stop = c.tools.find((t) => t.name === "ap_stop");
         await si.handler({ max_iterations: 5, min_iterations: 1 });
         session.emit("session.idle", { data: {} });
         await stop.handler({});
@@ -4715,7 +4715,7 @@ test("finish log line carries the self_improve label for ⏹/✅/⚠️ verbs", 
 
 test("finish log line carries the grow_project label for ⏹/✅/⚠️ verbs", async () => {
     // Mirror of the self_improve verb-ladder test above, exercised
-    // through grow_project so a regression that hardcodes "ralph_loop"
+    // through grow_project so a regression that hardcodes "ap_loop"
     // (or "self_improve") back into the finish log line — bypassing
     // state.active.label — is caught for the new tool too. Three
     // branches cover all three verbs in VERB_BY_REASON's fallback
@@ -4727,7 +4727,7 @@ test("finish log line carries the grow_project label for ⏹/✅/⚠️ verbs", 
         const c = createRalphController();
         c.attach(session);
         const gp = c.tools.find((t) => t.name === "grow_project");
-        const stop = c.tools.find((t) => t.name === "ralph_stop");
+        const stop = c.tools.find((t) => t.name === "ap_stop");
         await gp.handler({ max_iterations: 5, min_iterations: 1 });
         session.emit("session.idle", { data: {} });
         await stop.handler({});
@@ -4841,7 +4841,7 @@ test("ARCHITECTURE.md tool surface table lists every registered tool", () => {
     const c = createRalphController();
     for (const tool of c.tools) {
         // Each row uses backtick-wrapped tool name in the leading cell,
-        // e.g. `| \`ralph_pause\` | …`.
+        // e.g. `| \`ap_pause\` | …`.
         const needle = `\`${tool.name}\``;
         assert.ok(
             arch.includes(needle),
@@ -4850,7 +4850,7 @@ test("ARCHITECTURE.md tool surface table lists every registered tool", () => {
     }
 });
 
-test("README documents every ralph_loop parameter the schema advertises", () => {
+test("README documents every ap_loop parameter the schema advertises", () => {
     // Pin the docs↔code agreement: the README "Tool parameters" table
     // is where users look up defaults. Until iter 19 it omitted the
     // three adaptive_* params even though the JSON schema had been
@@ -4858,15 +4858,15 @@ test("README documents every ralph_loop parameter the schema advertises", () => 
     // README row would silently drift again. This test fails fast.
     const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf8");
     const c = createRalphController();
-    const ralphLoop = c.tools.find((t) => t.name === "ralph_loop");
+    const ralphLoop = c.tools.find((t) => t.name === "ap_loop");
     const props = Object.keys(ralphLoop.parameters.properties);
-    assert.ok(props.length > 0, "schema must declare ralph_loop properties");
+    assert.ok(props.length > 0, "schema must declare ap_loop properties");
     for (const name of props) {
         // Each row uses backtick-wrapped param name in the leading cell.
         const needle = `\`${name}\``;
         assert.ok(
             readme.includes(needle),
-            `README must mention the ralph_loop param ${name} (in the Tool parameters table)`,
+            `README must mention the ap_loop param ${name} (in the Tool parameters table)`,
         );
     }
 });
@@ -5066,9 +5066,9 @@ test("README install Option headings are unique (no duplicate H3 anchors)", () =
 
 test("README `tools: controller.tools` comment lists every controller.tools name in order", () => {
     // Drift guard for the inline tool list in README's "How it works"
-    // code block. The previous form (`ralph_loop + ralph_stop +
-    // self_improve + grow_project`) drifted out of date when ralph_pause,
-    // ralph_resume, and ralph_status shipped — a contributor reading
+    // code block. The previous form (`ap_loop + ap_stop +
+    // self_improve + grow_project`) drifted out of date when ap_pause,
+    // ap_resume, and ap_status shipped — a contributor reading
     // README would have built the wrong mental model of the tool surface.
     // Pin the comment to the actual order of names exported by
     // `controller.tools` so adding a new tool fails this test loudly.
@@ -5643,7 +5643,7 @@ async function armWithCaffeinate({ env = {}, platform = "darwin", spawnSpy } = {
         },
     });
     controller.attach(session);
-    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
+    const ralph = controller.tools.find((t) => t.name === "ap_loop");
     const armResult = await ralph.handler({ prompt: "go", max_iterations: 3 });
     return { session, controller, armResult, ralph };
 }
@@ -5706,14 +5706,14 @@ test("caffeinate: child is killed on loop completion", async () => {
     assert.deepEqual(spy.children[0].killArgs, ["SIGTERM"]);
 });
 
-test("caffeinate: child is killed on ralph_stop", async () => {
+test("caffeinate: child is killed on ap_stop", async () => {
     const spy = makeCaffeinateSpy();
     const { controller } = await armWithCaffeinate({
         env: { RALPH_CAFFEINATE: "1" },
         platform: "darwin",
         spawnSpy: spy,
     });
-    const stop = controller.tools.find((t) => t.name === "ralph_stop");
+    const stop = controller.tools.find((t) => t.name === "ap_stop");
     await stop.handler({});
     assert.equal(spy.children[0].killed, true);
 });
@@ -5773,7 +5773,7 @@ test("caffeinate: README documents env vars and macOS-only scope", () => {
     assert.match(readme, /macOS only|darwin/i, "README must clarify macOS-only scope");
 });
 
-// ── ralph_status tool (issue #5) ──────────────────────────────────────────
+// ── ap_status tool (issue #5) ──────────────────────────────────────────
 
 function makeGitStub(scripts = {}) {
     // scripts: map "first-arg" → { ok, stdout } or full handler fn(args)
@@ -5795,8 +5795,8 @@ async function armStatusable({ git } = {}) {
     const session = makeFakeSession();
     const controller = createRalphController(git ? { git: { exec: git.exec, cwd: "/tmp/fake" } } : undefined);
     controller.attach(session);
-    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
-    const status = controller.tools.find((t) => t.name === "ralph_status");
+    const ralph = controller.tools.find((t) => t.name === "ap_loop");
+    const status = controller.tools.find((t) => t.name === "ap_status");
     return { session, controller, ralph, status };
 }
 
@@ -5812,12 +5812,12 @@ test("createRalphController: throwing gitExec is normalized to { ok: false } at 
         git: { exec: () => { throw new Error("boom"); }, cwd: "/tmp/fake" },
     });
     controller.attach(session);
-    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
-    const status = controller.tools.find((t) => t.name === "ralph_status");
+    const ralph = controller.tools.find((t) => t.name === "ap_loop");
+    const status = controller.tools.find((t) => t.name === "ap_status");
     const r = await ralph.handler({ prompt: "test prompt" });
-    assert.equal(r.resultType, "success", "throwing gitExec must not break ralph_loop arm");
+    assert.equal(r.resultType, "success", "throwing gitExec must not break ap_loop arm");
     assert.equal(r.armed, true);
-    // ralph_status mid-loop must also tolerate the throw (it calls
+    // ap_status mid-loop must also tolerate the throw (it calls
     // gitExec twice via buildStatusSnapshot).
     const s = await status.handler({});
     assert.equal(s.resultType, "success");
@@ -5833,7 +5833,7 @@ test("createRalphController: throwing adaptive.gitExec is normalized at boundary
         adaptive: { gitExec: () => { throw new Error("adaptive boom"); }, cwd: "/tmp/fake" },
     });
     controller.attach(session);
-    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
+    const ralph = controller.tools.find((t) => t.name === "ap_loop");
     const r = await ralph.handler({
         prompt: "go",
         max_iterations: 1,
@@ -5846,7 +5846,7 @@ test("createRalphController: throwing adaptive.gitExec is normalized at boundary
     // hence no extension granted -- but no crash.
 });
 
-test("ralph_status: with no active loop and no prior run returns { active: false }", async () => {
+test("ap_status: with no active loop and no prior run returns { active: false }", async () => {
     const { status } = await armStatusable();
     const r = await status.handler({});
     assert.equal(r.resultType, "success");
@@ -5854,14 +5854,14 @@ test("ralph_status: with no active loop and no prior run returns { active: false
     assert.equal(r.status.last, undefined);
 });
 
-test("ralph_status: rejects unknown args", async () => {
+test("ap_status: rejects unknown args", async () => {
     const { status } = await armStatusable();
     const r = await status.handler({ verbose: true });
     assert.equal(r.resultType, "failure");
     assert.match(r.textResultForLlm, /unknown/i);
 });
 
-test("ralph_status: during active loop reports iteration, elapsed, promises", async () => {
+test("ap_status: during active loop reports iteration, elapsed, promises", async () => {
     const git = makeGitStub({
         "rev-parse HEAD": { ok: false }, // not a repo
     });
@@ -5871,7 +5871,7 @@ test("ralph_status: during active loop reports iteration, elapsed, promises", as
     const r = await status.handler({});
     assert.equal(r.resultType, "success");
     assert.equal(r.status.active, true);
-    assert.equal(r.status.label, "ralph_loop");
+    assert.equal(r.status.label, "ap_loop");
     assert.equal(r.status.max_iterations, 5);
     assert.equal(r.status.min_iterations, 2);
     assert.equal(r.status.completion_promise, "COMPLETE");
@@ -5885,7 +5885,7 @@ test("ralph_status: during active loop reports iteration, elapsed, promises", as
     assert.match(r.textResultForLlm, /iteration \d+\/5/);
 });
 
-test("ralph_status: includes git block + files_changed when armedGit.isRepo", async () => {
+test("ap_status: includes git block + files_changed when armedGit.isRepo", async () => {
     const git = makeGitStub({
         "rev-parse HEAD": { ok: true, stdout: "abc1234\n" },
         "rev-parse --abbrev-ref HEAD": { ok: true, stdout: "feature/x\n" },
@@ -5915,7 +5915,7 @@ test("ralph_status: includes git block + files_changed when armedGit.isRepo", as
     assert.deepEqual(r.status.files_changed.deleted, ["src/old.ts"]);
 });
 
-test("ralph_status: never mutates loop state (read-only)", async () => {
+test("ap_status: never mutates loop state (read-only)", async () => {
     const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
     const { ralph, status, controller } = await armStatusable({ git });
     await ralph.handler({ prompt: "go", max_iterations: 5 });
@@ -5929,7 +5929,7 @@ test("ralph_status: never mutates loop state (read-only)", async () => {
     assert.equal(after.startedAt, before.startedAt);
 });
 
-test("ralph_status: after loop finishes, returns { active: false } + last summary", async () => {
+test("ap_status: after loop finishes, returns { active: false } + last summary", async () => {
     const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
     const { ralph, status, session } = await armStatusable({ git });
     await ralph.handler({ prompt: "go", max_iterations: 3 });
@@ -5938,14 +5938,14 @@ test("ralph_status: after loop finishes, returns { active: false } + last summar
     const r = await status.handler({});
     assert.equal(r.status.active, false);
     assert.ok(r.status.last, "must include last-run summary");
-    assert.equal(r.status.last.label, "ralph_loop");
+    assert.equal(r.status.last.label, "ap_loop");
     assert.equal(r.status.last.reason, "completion_promise");
     assert.match(r.status.last.started_at, /^\d{4}-\d{2}-\d{2}T/);
     assert.match(r.status.last.finished_at, /^\d{4}-\d{2}-\d{2}T/);
     assert.equal(typeof r.status.last.duration_ms, "number");
 });
 
-test("ralph_status: last_iteration_at advances each iteration", async () => {
+test("ap_status: last_iteration_at advances each iteration", async () => {
     const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
     const { ralph, status, session } = await armStatusable({ git });
     await ralph.handler({ prompt: "go", max_iterations: 5, stagnation_limit: 0 });
@@ -5960,28 +5960,28 @@ test("ralph_status: last_iteration_at advances each iteration", async () => {
     assert.notEqual(a, b);
 });
 
-test("ralph_status: README documents the tool", () => {
+test("ap_status: README documents the tool", () => {
     const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf8");
-    assert.match(readme, /\bralph_status\b/, "README must mention the ralph_status tool");
+    assert.match(readme, /\bap_status\b/, "README must mention the ap_status tool");
     // Pause fields are part of the documented payload shape — the
     // example JSON block and the prose blurb must both mention them
-    // so a docs reader sees the same surface a live `ralph_status`
+    // so a docs reader sees the same surface a live `ap_status`
     // would return.
     for (const field of ["paused", "pause_reason", "paused_at", "paused_for_ms", "total_paused_ms"]) {
         assert.ok(
             readme.includes(`"${field}"`),
-            `README's ralph_status example payload must include the ${field} field`,
+            `README's ap_status example payload must include the ${field} field`,
         );
     }
-    assert.match(readme, /pause state/i, "README prose must mention pause state in the ralph_status overview");
+    assert.match(readme, /pause state/i, "README prose must mention pause state in the ap_status overview");
     // Tool description in handler.mjs must agree.
     const handler = readFileSync(resolve(REPO_ROOT, "extension/handler.mjs"), "utf8");
-    assert.match(handler, /pause state/i, "ralph_status tool description must mention pause state");
+    assert.match(handler, /pause state/i, "ap_status tool description must mention pause state");
 });
 
-test("ralph_status: surfaces paused state (paused, pause_reason, paused_at, paused_for_ms, total_paused_ms)", async () => {
+test("ap_status: surfaces paused state (paused, pause_reason, paused_at, paused_for_ms, total_paused_ms)", async () => {
     // Reliability gap fix: before this, a paused loop was indistinguishable
-    // from a live-but-slow one in ralph_status — `iteration` and `elapsed_ms`
+    // from a live-but-slow one in ap_status — `iteration` and `elapsed_ms`
     // keep advancing while the loop is silent. Without these fields, an
     // operator who paused the loop and queried status had no way to confirm
     // the pause took effect or see how long the loop had been parked.
@@ -5999,7 +5999,7 @@ test("ralph_status: surfaces paused state (paused, pause_reason, paused_at, paus
     assert.ok(!/PAUSED/.test(live.textResultForLlm), "live summary must not claim paused");
 
     // Pause it.
-    const pauseTool = controller.tools.find((t) => t.name === "ralph_pause");
+    const pauseTool = controller.tools.find((t) => t.name === "ap_pause");
     await pauseTool.handler({ reason: "manual diagnostic break" });
 
     const paused = await status.handler({});
@@ -6014,7 +6014,7 @@ test("ralph_status: surfaces paused state (paused, pause_reason, paused_at, paus
 
     // Resume — now total_paused_ms must reflect the prior pause window
     // and the live counters must zero out again.
-    const resumeTool = controller.tools.find((t) => t.name === "ralph_resume");
+    const resumeTool = controller.tools.find((t) => t.name === "ap_resume");
     await resumeTool.handler({});
     const resumed = await status.handler({});
     assert.equal(resumed.status.paused, false);
@@ -6046,7 +6046,7 @@ async function armAdaptive(args = {}, gitStub) {
     const session = makeFakeSession();
     const controller = createRalphController(gitStub ? { adaptive: { gitExec: gitStub.exec } } : {});
     controller.attach(session);
-    const ralph = controller.tools.find((t) => t.name === "ralph_loop");
+    const ralph = controller.tools.find((t) => t.name === "ap_loop");
     const armResult = await ralph.handler({ prompt: "go", max_iterations: 2, adaptive_budget: true, adaptive_extension: 2, adaptive_max_total: 6, ...args });
     return { session, controller, armResult };
 }
@@ -6147,37 +6147,37 @@ test("adaptive_budget: when feature is OFF, finish() result has no adaptive bloc
     assert.equal(r.adaptive, undefined, "no adaptive block when adaptive_budget is false");
 });
 
-// ── ralph_pause / ralph_resume (issue #3) ──────────────────────────────
+// ── ap_pause / ap_resume (issue #3) ──────────────────────────────
 
-test("ralph_pause: with no active loop returns failure", async () => {
+test("ap_pause: with no active loop returns failure", async () => {
     const c = createRalphController();
     c.attach(makeFakeSession());
-    const pause = c.tools.find((t) => t.name === "ralph_pause");
+    const pause = c.tools.find((t) => t.name === "ap_pause");
     const r = await pause.handler({});
     assert.equal(r.resultType, "failure");
-    assert.match(r.textResultForLlm, /no ralph_loop/);
+    assert.match(r.textResultForLlm, /no ap_loop/);
 });
 
-test("ralph_resume: with no active loop returns failure", async () => {
+test("ap_resume: with no active loop returns failure", async () => {
     const c = createRalphController();
     c.attach(makeFakeSession());
-    const resume = c.tools.find((t) => t.name === "ralph_resume");
+    const resume = c.tools.find((t) => t.name === "ap_resume");
     const r = await resume.handler({});
     assert.equal(r.resultType, "failure");
-    assert.match(r.textResultForLlm, /no ralph_loop/);
+    assert.match(r.textResultForLlm, /no ap_loop/);
 });
 
-test("ralph_resume: on a non-paused loop returns failure", async () => {
+test("ap_resume: on a non-paused loop returns failure", async () => {
     const { controller } = await arm({ max_iterations: 5 });
-    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const resume = controller.tools.find((t) => t.name === "ap_resume");
     const r = await resume.handler({});
     assert.equal(r.resultType, "failure");
     assert.match(r.textResultForLlm, /not paused/);
 });
 
-test("ralph_pause: short-circuits onIdle so iteration counter does not advance", async () => {
+test("ap_pause: short-circuits onIdle so iteration counter does not advance", async () => {
     const { session, controller } = await arm({ max_iterations: 5 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     runTurn(session, "boot");
     runTurn(session, "first");
     const beforePause = controller.state.active.i;
@@ -6193,9 +6193,9 @@ test("ralph_pause: short-circuits onIdle so iteration counter does not advance",
     assert.ok(controller.state.active, "loop must still be active (paused, not stopped)");
 });
 
-test("ralph_pause is idempotent — pausing an already-paused loop is a no-op success", async () => {
+test("ap_pause is idempotent — pausing an already-paused loop is a no-op success", async () => {
     const { session, controller } = await arm({ max_iterations: 5 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     runTurn(session, "boot");
     await pause.handler({ reason: "first" });
     const r = await pause.handler({ reason: "second" });
@@ -6204,7 +6204,7 @@ test("ralph_pause is idempotent — pausing an already-paused loop is a no-op su
     assert.equal(controller.state.active.pauseReason, "first", "first reason wins; second pause is a no-op");
 });
 
-test("ralph_pause idempotent path returns the FIRST reason, not the second caller's reason", async () => {
+test("ap_pause idempotent path returns the FIRST reason, not the second caller's reason", async () => {
     // Iter 171 — the test above pins that `state.active.pauseReason`
     // stays "first" after a redundant pause. But the no-op success
     // ALSO returns `reason` to the caller (handler.mjs ~line 2195:
@@ -6212,14 +6212,14 @@ test("ralph_pause idempotent path returns the FIRST reason, not the second calle
     // that swapped the idempotent-branch return to `args?.reason ?? null`
     // (or, worse, dropped the `?? null` and let `undefined` ride out)
     // would silently leak the second caller's reason into the success
-    // payload — an automation polling `ralph_pause({reason})` to
+    // payload — an automation polling `ap_pause({reason})` to
     // confirm pause state would see its own input echoed back rather
     // than the original reason that the user typed in the first
     // (effective) pause. Pin both the returned `reason` field AND the
     // single-line `textResultForLlm` rendering so a regression in
     // either surface fires this test.
     const { session, controller } = await arm({ max_iterations: 5 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     runTurn(session, "boot");
     await pause.handler({ reason: "first" });
     const r = await pause.handler({ reason: "second" });
@@ -6233,24 +6233,24 @@ test("ralph_pause idempotent path returns the FIRST reason, not the second calle
         "the second caller's reason must NOT leak into the success message");
 });
 
-test("ralph_pause: multi-line / whitespace-noisy reason is flattened at entry", async () => {
+test("ap_pause: multi-line / whitespace-noisy reason is flattened at entry", async () => {
     // Pause reasons land in three user-visible places: the timeline log
     // line ("⏸ <label> paused at i/max (reason)"), the `pause` event's
-    // `reason` field, and the `pause_reason` slot in the ralph_status
+    // `reason` field, and the `pause_reason` slot in the ap_status
     // JSON snapshot. A multi-line paste (Error stack, blockquote,
     // CRLF input) into any of those would visually break the layout.
     // Flattening at entry (boundedNoteForLog: collapseNote +
     // truncateNote) keeps every downstream consumer single-line.
     const { session, controller } = await arm({ max_iterations: 5 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
-    const status = controller.tools.find((t) => t.name === "ralph_status");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
+    const status = controller.tools.find((t) => t.name === "ap_status");
     runTurn(session, "boot");
     const r = await pause.handler({ reason: "  going to lunch\n\twith newlines\r\nand   spaces  " });
     assert.equal(r.resultType, "success");
     // Pinned canonical form (single line, single-spaced, trimmed).
     assert.equal(r.reason, "going to lunch with newlines and spaces");
     assert.equal(controller.state.active.pauseReason, "going to lunch with newlines and spaces");
-    // Surfaces single-line in ralph_status JSON snapshot.
+    // Surfaces single-line in ap_status JSON snapshot.
     const s = await status.handler({});
     assert.equal(s.status.pause_reason, "going to lunch with newlines and spaces");
     // Timeline log marker stays single-line.
@@ -6260,12 +6260,12 @@ test("ralph_pause: multi-line / whitespace-noisy reason is flattened at entry", 
     assert.equal(/[\t\r\f]/.test(pausedLog), false, `paused log marker contains tab/CR/FF: ${JSON.stringify(pausedLog)}`);
 });
 
-test("ralph_pause: reason that is whitespace-only after flatten resolves to null (not empty string)", async () => {
+test("ap_pause: reason that is whitespace-only after flatten resolves to null (not empty string)", async () => {
     // `"   \n\t  "` collapses to "" — must be stored as null so the
     // success message ("paused at i/max") does not render an empty
-    // " ()" suffix and ralph_status surfaces null rather than "".
+    // " ()" suffix and ap_status surfaces null rather than "".
     const { session, controller } = await arm({ max_iterations: 5 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     runTurn(session, "boot");
     const r = await pause.handler({ reason: "   \n\t  " });
     assert.equal(r.resultType, "success");
@@ -6275,10 +6275,10 @@ test("ralph_pause: reason that is whitespace-only after flatten resolves to null
 });
 
 
-test("ralph_resume: re-arms the loop and the next idle fires the next iteration", async () => {
+test("ap_resume: re-arms the loop and the next idle fires the next iteration", async () => {
     const { session, controller } = await arm({ max_iterations: 5 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
-    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
+    const resume = controller.tools.find((t) => t.name === "ap_resume");
     runTurn(session, "boot");
     runTurn(session, "first");
     const before = controller.state.active.i;
@@ -6292,8 +6292,8 @@ test("ralph_resume: re-arms the loop and the next idle fires the next iteration"
     assert.ok(controller.state.active.i > before, "iteration counter must advance after resume");
 });
 
-test("ralph_resume: totalPausedMs ACCUMULATES across multiple pause/resume cycles", async () => {
-    // ralph_resume's handler does `a.totalPausedMs += pausedFor` — the
+test("ap_resume: totalPausedMs ACCUMULATES across multiple pause/resume cycles", async () => {
+    // ap_resume's handler does `a.totalPausedMs += pausedFor` — the
     // `+=` is load-bearing. A future "simplify" that wrote
     // `a.totalPausedMs = pausedFor` would silently lose every prior
     // pause window: a user who paused twice (e.g. for two
@@ -6303,8 +6303,8 @@ test("ralph_resume: totalPausedMs ACCUMULATES across multiple pause/resume cycle
     // time as "running" when it wasn't. Pin accumulation so the
     // contract survives a refactor.
     const { session, controller } = await arm({ max_iterations: 5 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
-    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
+    const resume = controller.tools.find((t) => t.name === "ap_resume");
     runTurn(session, "boot");
 
     // Cycle 1: pause, backdate pausedAt to inject a deterministic
@@ -6341,15 +6341,15 @@ test("ralph_resume: totalPausedMs ACCUMULATES across multiple pause/resume cycle
     );
 });
 
-test("ralph_stop: multi-line reason is flattened at entry (parallel ralph_pause)", async () => {
-    // Iter 36: parseUserReason now consolidates ralph_pause + ralph_stop
-    // reason normalization. ralph_stop's stored result.note is now the
+test("ap_stop: multi-line reason is flattened at entry (parallel ap_pause)", async () => {
+    // Iter 36: parseUserReason now consolidates ap_pause + ap_stop
+    // reason normalization. ap_stop's stored result.note is now the
     // canonical single-line form so the textResultForLlm success message,
     // the additionalContext line (`note=...`), and the terminal event
     // payload all stay single-line — same downstream surfaces that
-    // motivated the ralph_pause fix in iter 35.
+    // motivated the ap_pause fix in iter 35.
     const { session, controller } = await arm({ max_iterations: 5 });
-    const stop = controller.tools.find((t) => t.name === "ralph_stop");
+    const stop = controller.tools.find((t) => t.name === "ap_stop");
     runTurn(session, "boot");
     const r = await stop.handler({ reason: "  user requested\n\twith newlines\r\nand   spaces  " });
     assert.equal(r.resultType, "success");
@@ -6359,9 +6359,9 @@ test("ralph_stop: multi-line reason is flattened at entry (parallel ralph_pause)
     assert.doesNotMatch(r.textResultForLlm, /\n|\r|\t|\f/, "success message must be single-line");
 });
 
-test("ralph_stop: whitespace-only reason resolves to undefined (no empty parens)", async () => {
+test("ap_stop: whitespace-only reason resolves to undefined (no empty parens)", async () => {
     const { session, controller } = await arm({ max_iterations: 5 });
-    const stop = controller.tools.find((t) => t.name === "ralph_stop");
+    const stop = controller.tools.find((t) => t.name === "ap_stop");
     runTurn(session, "boot");
     const r = await stop.handler({ reason: "   \n\t  " });
     assert.equal(r.resultType, "success");
@@ -6369,7 +6369,7 @@ test("ralph_stop: whitespace-only reason resolves to undefined (no empty parens)
     assert.doesNotMatch(r.textResultForLlm, /\(\)/, "user-facing text must not render an empty `()` suffix");
 });
 
-test("ralph_pause before iter 1 fires keeps pendingFire true; resume then idle fires iter 1", async () => {
+test("ap_pause before iter 1 fires keeps pendingFire true; resume then idle fires iter 1", async () => {
     // Reliability: pause/resume during the transient pre-iter-1 window.
     // After arm, `pendingFire` is true and i=0; the FIRST session.idle
     // is what fires iter 1. If a user pauses before that idle lands, the
@@ -6378,8 +6378,8 @@ test("ralph_pause before iter 1 fires keeps pendingFire true; resume then idle f
     // first-iteration response). This test pins the contract on both
     // sides of the resume so the loop survives an early pause cleanly.
     const { session, controller } = await arm({ max_iterations: 5 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
-    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
+    const resume = controller.tools.find((t) => t.name === "ap_resume");
     const a = controller.state.active;
     assert.equal(a.pendingFire, true, "armed loop starts with pendingFire=true");
     assert.equal(a.i, 0);
@@ -6401,10 +6401,10 @@ test("ralph_pause before iter 1 fires keeps pendingFire true; resume then idle f
     assert.equal(session.sent.length, sentBeforePause + 1, "exactly one prompt queued after resume + idle");
 });
 
-test("ralph_stop while paused still works and tears the loop down", async () => {
+test("ap_stop while paused still works and tears the loop down", async () => {
     const { session, controller } = await arm({ max_iterations: 5 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
-    const stop = controller.tools.find((t) => t.name === "ralph_stop");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
+    const stop = controller.tools.find((t) => t.name === "ap_stop");
     runTurn(session, "boot");
     runTurn(session, "first");
     await pause.handler({});
@@ -6414,10 +6414,10 @@ test("ralph_stop while paused still works and tears the loop down", async () => 
     assert.equal(controller.state.lastResult.reason, "user_stopped");
 });
 
-test("ralph_pause / ralph_resume reject unknown args", async () => {
+test("ap_pause / ap_resume reject unknown args", async () => {
     const { controller } = await arm({ max_iterations: 5 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
-    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
+    const resume = controller.tools.find((t) => t.name === "ap_resume");
     const r1 = await pause.handler({ reason: "ok", bogus: 1 });
     assert.equal(r1.resultType, "failure");
     assert.match(r1.textResultForLlm, /unknown|bogus/i);
@@ -6517,21 +6517,21 @@ test("evaluateAdaptiveSignals: ADAPTIVE_WINDOW is the documented constant 3", ()
     assert.equal(ADAPTIVE_WINDOW, 3);
 });
 
-test("reprefixRalphLoopError: rewrites a `ralph_loop:` prefix to the calling tool", () => {
+test("reprefixRalphLoopError: rewrites a `ap_loop:` prefix to the calling tool", () => {
     // self_improve / grow_project both delegate validation to validateArgs
-    // (which prefixes errors with "ralph_loop:") and then rewrite the
+    // (which prefixes errors with "ap_loop:") and then rewrite the
     // prefix to their own tool name. Pin the rewrite branch so a future
     // refactor that, say, swaps the regex anchor doesn't silently let
-    // "ralph_loop:" leak into self_improve / grow_project error streams.
-    const out = reprefixRalphLoopError("ralph_loop: prompt is required and must be non-empty.", "self_improve");
+    // "ap_loop:" leak into self_improve / grow_project error streams.
+    const out = reprefixRalphLoopError("ap_loop: prompt is required and must be non-empty.", "self_improve");
     assert.equal(out, "self_improve: prompt is required and must be non-empty.");
-    const out2 = reprefixRalphLoopError("ralph_loop: max_iterations must be …", "grow_project");
+    const out2 = reprefixRalphLoopError("ap_loop: max_iterations must be …", "grow_project");
     assert.equal(out2, "grow_project: max_iterations must be …");
 });
 
-test("reprefixRalphLoopError: forces a tool prefix on errors lacking the `ralph_loop:` prefix", () => {
+test("reprefixRalphLoopError: forces a tool prefix on errors lacking the `ap_loop:` prefix", () => {
     // Defensive fallback: if a future validateArgs path forgets the
-    // "ralph_loop:" prefix (e.g. a new validation branch returns a bare
+    // "ap_loop:" prefix (e.g. a new validation branch returns a bare
     // string), the helper must STILL stamp the calling tool's name on
     // the front so the user's error stream never carries a prefix-less
     // message. Pin both prefix-less and other-prefix variants.
@@ -6541,7 +6541,7 @@ test("reprefixRalphLoopError: forces a tool prefix on errors lacking the `ralph_
     );
     // A wrong-prefix string (e.g. some hypothetical ralph_v2:) must be
     // wrapped, NOT rewritten — the helper only swaps the exact
-    // "ralph_loop:" anchor, so any other prefix gets the tool name
+    // "ap_loop:" anchor, so any other prefix gets the tool name
     // glued to its left.
     assert.equal(
         reprefixRalphLoopError("ralph_v2: bogus", "grow_project"),
@@ -6583,7 +6583,7 @@ test("no CR (\\r) bytes in any shipped source file (LF-only line endings)", () =
 
 // -----------------------------------------------------------------------------
 // gitAheadBehind / gitUncommittedLines: pin the parsing edge cases that feed
-// ralph_status's "git" snapshot block. Both helpers degrade to null on parse
+// ap_status's "git" snapshot block. Both helpers degrade to null on parse
 // failure (a noisy snapshot is worse than a missing one), so verify each
 // failure mode produces null instead of a thrown TypeError or a partial
 // numeric result.
@@ -6657,7 +6657,7 @@ test("gitUncommittedLines: handles insertion-only and deletion-only output", () 
 // -----------------------------------------------------------------------------
 // docs/concepts.md drift guard: the "Pause / resume semantics" section makes
 // concrete behavioural claims (streak resets on resume; total_paused_ms
-// accumulates; ralph_resume errors when not paused). If a future refactor
+// accumulates; ap_resume errors when not paused). If a future refactor
 // changes one of those behaviours in handler.mjs but doesn't update the doc,
 // the docs would silently lie. This test pins the section's existence + its
 // most load-bearing factual claims.
@@ -6672,16 +6672,16 @@ test("docs/concepts.md: Pause / resume semantics section exists and pins core cl
     assert.match(doc, /idempotent/i, "docs must describe pause idempotency");
     assert.match(doc, /not\b[\s\S]*?idempotent/i, "docs must call out that resume is NOT idempotent");
     // Whichever direction the table runs, both verbs must appear in it.
-    assert.match(doc, /ralph_pause/, "table must reference ralph_pause");
-    assert.match(doc, /ralph_resume/, "table must reference ralph_resume");
-    assert.match(doc, /ralph_stop/, "table must reference ralph_stop");
+    assert.match(doc, /ap_pause/, "table must reference ap_pause");
+    assert.match(doc, /ap_resume/, "table must reference ap_resume");
+    assert.match(doc, /ap_stop/, "table must reference ap_stop");
 });
 
-test("docs document the iter-172 'first reason wins' contract for ralph_pause idempotent path", () => {
+test("docs document the iter-172 'first reason wins' contract for ap_pause idempotent path", () => {
     // Iter 173 — iter 172 pinned via test that the idempotent
-    // `ralph_pause` branch returns the FIRST committed reason, not
+    // `ap_pause` branch returns the FIRST committed reason, not
     // the second caller's reason. Automation polling pause state
-    // depends on this contract: a redundant `ralph_pause({reason:
+    // depends on this contract: a redundant `ap_pause({reason:
     // "newer"})` against an already-paused loop must not echo back
     // "newer" — it must surface the original "first" so the caller
     // can detect their input was rejected as a no-op. Pin both
@@ -6703,13 +6703,13 @@ test("docs document the iter-172 'first reason wins' contract for ralph_pause id
 // -----------------------------------------------------------------------------
 // validateArgShape: when a tool accepts NO arguments at all (knownKeys empty),
 // the legacy wording "Valid keys: ." rendered with a stray dangling period
-// that read like a typo. Pin the cleaner phrasing for ralph_resume (the only
+// that read like a typo. Pin the cleaner phrasing for ap_resume (the only
 // shipped tool with an empty key set) and the no-bogus-period invariant.
 // -----------------------------------------------------------------------------
 
-test("ralph_resume: rejects unknown args with 'takes no arguments' guidance (no Valid keys: . typo)", async () => {
+test("ap_resume: rejects unknown args with 'takes no arguments' guidance (no Valid keys: . typo)", async () => {
     const { controller } = await arm({ max_iterations: 5 });
-    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const resume = controller.tools.find((t) => t.name === "ap_resume");
     const r = await resume.handler({ foo: 1 });
     assert.equal(r.resultType, "failure");
     assert.match(r.textResultForLlm, /unknown argument: "foo"/);
@@ -6719,9 +6719,9 @@ test("ralph_resume: rejects unknown args with 'takes no arguments' guidance (no 
     assert.doesNotMatch(r.textResultForLlm, /Valid keys: ?\./);
 });
 
-test("ralph_resume: pluralizes 'unknown arguments' when more than one bogus key supplied", async () => {
+test("ap_resume: pluralizes 'unknown arguments' when more than one bogus key supplied", async () => {
     const { controller } = await arm({ max_iterations: 5 });
-    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const resume = controller.tools.find((t) => t.name === "ap_resume");
     const r = await resume.handler({ foo: 1, bar: 2 });
     assert.equal(r.resultType, "failure");
     assert.match(r.textResultForLlm, /unknown arguments: "foo", "bar"/);
@@ -6731,8 +6731,8 @@ test("ralph_resume: pluralizes 'unknown arguments' when more than one bogus key 
 // -----------------------------------------------------------------------------
 // activeLoopGuard: when the active loop is paused, the refusal must say
 // "paused" rather than "running". The legacy form rendered "running
-// (iteration N/M)" even after ralph_pause, which was confusing — call sites
-// got told to ralph_stop first when ralph_resume might have been the right
+// (iteration N/M)" even after ap_pause, which was confusing — call sites
+// got told to ap_stop first when ap_resume might have been the right
 // remedy. Pin the priority order: paused > pendingFire > running.
 // -----------------------------------------------------------------------------
 
@@ -6743,8 +6743,8 @@ test("activeLoopGuard: reports 'paused' status when the active loop has been pau
     runTurn(session, "first response");
     await new Promise((r) => setImmediate(r));
     assert.equal(controller.state.active.i, 1);
-    // Pause via the ralph_pause tool (mirrors a real caller).
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    // Pause via the ap_pause tool (mirrors a real caller).
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     const pr = await pause.handler({});
     assert.equal(pr.resultType, "success");
     assert.equal(controller.state.active.paused, true);
@@ -6755,16 +6755,16 @@ test("activeLoopGuard: reports 'paused' status when the active loop has been pau
     assert.match(r.textResultForLlm, /\(iteration 1\/9\)/);
     assert.doesNotMatch(r.textResultForLlm, /running/);
     // Sentence-end remains clean (paren balance + period in the right place).
-    assert.match(r.textResultForLlm, /\(iteration 1\/9\) — call ralph_stop first\.$/);
+    assert.match(r.textResultForLlm, /\(iteration 1\/9\) — call ap_stop first\.$/);
 });
 
 test("activeLoopGuard: paused beats pendingFire when both flags are set", async () => {
-    // ralph_loop was armed but no turn_end fired yet; ralph_pause then runs
+    // ap_loop was armed but no turn_end fired yet; ap_pause then runs
     // before iter 1 lands. paused should still be the headline status.
     const { controller, ralph } = await arm({ max_iterations: 4 });
     assert.equal(controller.state.active.pendingFire, true);
     assert.equal(controller.state.active.i, 0);
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     const pr = await pause.handler({});
     assert.equal(pr.resultType, "success");
     assert.equal(controller.state.active.paused, true);
@@ -6874,7 +6874,7 @@ test("docs/faq.md is no longer the stub and answers core operational questions",
     // they ever drift away from the actual handler behaviour:
     // (a) RALPH_NO_ATTRIBUTION suppresses ONLY the second trailer.
     assert.match(faq, /suppresses [\s\S]{0,40}only[\s\S]{0,80}second[\s\S]{0,40}trailer/i);
-    // (b) ralph_pause is idempotent, ralph_resume is not.
+    // (b) ap_pause is idempotent, ap_resume is not.
     assert.match(faq, /pause[\s\S]{0,80}idempotent/i);
     assert.match(faq, /resume[\s\S]{0,40}\*\*not\*\* idempotent/i);
     // (c) The default runs root path — used by the events emitter.
@@ -6918,7 +6918,7 @@ test("finish: durationMs subtracts totalPausedMs from wall-clock elapsed", async
 });
 
 test("finish: durationMs also subtracts the not-yet-banked current pause window", async () => {
-    // If the user calls ralph_stop while the loop is still paused, the
+    // If the user calls ap_stop while the loop is still paused, the
     // current pause window hasn't been added to totalPausedMs yet — but
     // it's still time the loop wasn't running. Pin that finish() also
     // subtracts the live `Date.now() - pausedAt` window.
@@ -6947,7 +6947,7 @@ test("finish: durationMs clamped to 0 when totalPausedMs exceeds elapsed", async
     // Defensive guard: if a clock skew or buggy caller pushed
     // totalPausedMs past wall-clock elapsed, the result must NOT go
     // negative. Clamp at 0 so downstream consumers (TUI, JSON
-    // serializers, the ralph_status snapshot) never see a negative
+    // serializers, the ap_status snapshot) never see a negative
     // duration.
     const { controller, session, stop } = await arm({ max_iterations: 3 });
     runTurn(session, "first");
@@ -6958,39 +6958,39 @@ test("finish: durationMs clamped to 0 when totalPausedMs exceeds elapsed", async
     assert.equal(controller.state.lastResult.durationMs, 0);
 });
 
-test("ralph_stop: rejects non-string reason with typed error (number)", async () => {
+test("ap_stop: rejects non-string reason with typed error (number)", async () => {
     const { session, controller, stop } = await arm({ prompt: "p" });
     await runTurn(session, "first");
     const r = await stop.handler({ reason: 123 });
     assert.equal(r.resultType, "failure");
-    assert.match(r.textResultForLlm, /^ralph_stop: reason must be a string \(got number\)\./);
+    assert.match(r.textResultForLlm, /^ap_stop: reason must be a string \(got number\)\./);
     // State must be unchanged — a rejected stop is a no-op.
     assert.ok(controller.state.active, "loop should still be active after rejected stop");
 });
 
-test("ralph_stop: rejects non-string reason (boolean)", async () => {
+test("ap_stop: rejects non-string reason (boolean)", async () => {
     const { session, stop } = await arm({ prompt: "p" });
     await runTurn(session, "first");
     const r = await stop.handler({ reason: true });
     assert.equal(r.resultType, "failure");
-    assert.match(r.textResultForLlm, /^ralph_stop: reason must be a string \(got boolean\)\./);
+    assert.match(r.textResultForLlm, /^ap_stop: reason must be a string \(got boolean\)\./);
 });
 
-test("ralph_pause: rejects non-string reason with typed error (array)", async () => {
+test("ap_pause: rejects non-string reason with typed error (array)", async () => {
     const { session, controller, ralph } = await arm({ prompt: "p" });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     await runTurn(session, "first");
     const r = await pause.handler({ reason: ["a", "b"] });
     assert.equal(r.resultType, "failure");
-    assert.match(r.textResultForLlm, /^ralph_pause: reason must be a string \(got array\)\./);
+    assert.match(r.textResultForLlm, /^ap_pause: reason must be a string \(got array\)\./);
     // Ensure pause did NOT take effect.
     assert.equal(controller.state.active.paused, false);
     void ralph;
 });
 
-test("ralph_pause / ralph_stop: null reason still treated as not-supplied (no false rejection)", async () => {
+test("ap_pause / ap_stop: null reason still treated as not-supplied (no false rejection)", async () => {
     const { session, controller, stop } = await arm({ prompt: "p" });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     await runTurn(session, "first");
     // null is the SDK's "not supplied" sentinel for optional fields —
     // must continue to be accepted, not flipped to a typed error.
@@ -7104,7 +7104,7 @@ test("README pins the corrected durationMs semantics (active runtime, not raw wa
     assert.doesNotMatch(readme, /the final `durationMs` measure time from arming, not per-turn latency/);
 });
 
-test("ralph_resume clears lastAssistantContent so user-chat during pause cannot trigger completion_promise", async () => {
+test("ap_resume clears lastAssistantContent so user-chat during pause cannot trigger completion_promise", async () => {
     // Reliability: while paused, the user chats freely with the agent.
     // Each user-chat turn fires assistant.message events that accumulate
     // into state.lastAssistantContent (the buffer onIdle reads to
@@ -7114,8 +7114,8 @@ test("ralph_resume clears lastAssistantContent so user-chat during pause cannot 
     // on the first post-resume idle. Pin the contract: resume MUST
     // reset the buffer so post-resume evaluation starts clean.
     const { session, controller } = await arm({ max_iterations: 5 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
-    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
+    const resume = controller.tools.find((t) => t.name === "ap_resume");
     runTurn(session, "boot");                 // fires iter 1
     runTurn(session, "iter 1 normal output"); // fires iter 2
     const iterBeforePause = controller.state.active.i;
@@ -7126,7 +7126,7 @@ test("ralph_resume clears lastAssistantContent so user-chat during pause cannot 
     await resume.handler({});
     // Post-condition 1: buffer reset.
     assert.equal(controller.state.lastAssistantContent, "",
-        "ralph_resume must clear lastAssistantContent so chat-during-pause cannot leak into completion evaluation");
+        "ap_resume must clear lastAssistantContent so chat-during-pause cannot leak into completion evaluation");
     // Post-condition 2: loop survives the next idle and advances —
     // it must NOT terminate on the chat content.
     runTurn(session, "iter N+1 output");
@@ -7136,13 +7136,13 @@ test("ralph_resume clears lastAssistantContent so user-chat during pause cannot 
     assert.equal(controller.state.lastResult, null, "no terminal result must have been recorded");
 });
 
-test("ralph_resume clears lastAssistantContent so user-chat during pause cannot trigger abort_promise either", async () => {
+test("ap_resume clears lastAssistantContent so user-chat during pause cannot trigger abort_promise either", async () => {
     // Symmetric guard for abort_promise. Different code path inside
     // onIdle (different terminator) so a future refactor that splits
     // resume's reset by reason kind would still need both pinned.
     const { session, controller } = await arm({ max_iterations: 5, abort_promise: "ABORT_NOW" });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
-    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
+    const resume = controller.tools.find((t) => t.name === "ap_resume");
     runTurn(session, "boot");
     runTurn(session, "iter 1 output");
     await pause.handler({});
@@ -7184,7 +7184,7 @@ test("`npm run check` is wired to scripts/check.mjs and exits 0 on a clean tree"
         "success output must include the CI-compatible marker line");
 });
 
-test("ralph_pause: pause-time assistant.message tokens are NOT credited to the loop budget", async () => {
+test("ap_pause: pause-time assistant.message tokens are NOT credited to the loop budget", async () => {
     // Reliability symmetric to iter 57's lastAssistantContent reset
     // (which fixed completion/abort contamination from pause-time chat).
     // Issue: while paused, the user chats freely with the agent. Each
@@ -7195,8 +7195,8 @@ test("ralph_pause: pause-time assistant.message tokens are NOT credited to the l
     // potentially triggering the max_tokens cap or warn_at_pct
     // threshold spuriously on the first post-resume idle.
     const { session, controller } = await arm({ max_iterations: 5 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
-    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
+    const resume = controller.tools.find((t) => t.name === "ap_resume");
     // Fire iter 1 with real usage.
     emitUsage(session, { input: 100, output: 20, content: "iter 1 ok" });
     const a = controller.state.active;
@@ -7223,15 +7223,15 @@ test("ralph_pause: pause-time assistant.message tokens are NOT credited to the l
         "post-resume usage must be credited normally");
 });
 
-test("ralph_pause: pause-time chat with `max_tokens` would-be-exceeded does NOT terminate the loop", async () => {
+test("ap_pause: pause-time chat with `max_tokens` would-be-exceeded does NOT terminate the loop", async () => {
     // Concrete consequence of the byIteration/cumulative pollution test
     // above: without the guard, a long pause-time conversation would
     // push a.tokens past max_tokens and finish("max_tokens") would fire
     // on the first post-resume idle. This pins the practical user-
     // facing outcome.
     const { session, controller } = await arm({ max_iterations: 10, max_tokens: 1000, min_iterations: 1 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
-    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
+    const resume = controller.tools.find((t) => t.name === "ap_resume");
     emitUsage(session, { input: 100, output: 10, content: "iter 1 ok" });
     assert.ok(controller.state.active, "iter 1 must NOT trip the cap");
     await pause.handler({});
@@ -7246,14 +7246,14 @@ test("ralph_pause: pause-time chat with `max_tokens` would-be-exceeded does NOT 
     assert.notEqual(controller.state.lastResult?.reason, "max_tokens");
 });
 
-test("ralph_pause: pause-time content does NOT accumulate into state.lastAssistantContent", async () => {
+test("ap_pause: pause-time content does NOT accumulate into state.lastAssistantContent", async () => {
     // Iter 57 fix mitigated this via a resume-time reset; iter 59's
     // top-of-handler paused-guard is the root-cause defense. Both
     // should cooperate so even a partial future refactor that drops
     // one still keeps the contract: pause-time content is invisible
     // to the next iteration's evaluation.
     const { session, controller } = await arm({ max_iterations: 5 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     runTurn(session, "iter 1 normal output");
     await pause.handler({});
     const beforePauseContent = controller.state.lastAssistantContent;
@@ -7265,7 +7265,7 @@ test("ralph_pause: pause-time content does NOT accumulate into state.lastAssista
 test("docs/concepts.md documents the iter-57 + iter-59 pause/resume isolation contracts", () => {
     // Drift guard: iters 57 + 59 changed the observable pause/resume
     // contract — pause-time chat is isolated from token budget AND
-    // completion/abort evaluation, and ralph_resume resets the
+    // completion/abort evaluation, and ap_resume resets the
     // lastAssistantContent buffer in addition to the stagnation
     // streak. Pin the doc so a future "trim the page" PR can't strip
     // these contracts without flagging.
@@ -7308,7 +7308,7 @@ test("sub-agent assistant.message during pause: sub-agent guard wins (no token c
     // no observedMessageThisFire mutation when a sub-agent fires
     // during pause.
     const { session, controller } = await arm({ max_iterations: 5 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     // Fire iter 1 with real usage; a is the active state shorthand.
     emitUsage(session, { input: 100, output: 20, content: "iter 1 ok" });
     const a = controller.state.active;
@@ -7568,9 +7568,9 @@ test("release.yml runs `npm run check` so a release tag cannot ship a broken TUI
         "release.yml must run `npm run check` to syntax-validate shipped .mjs");
 });
 
-// Iter 67 — issue #7: ralph_status surfaces live token usage so the user can
+// Iter 67 — issue #7: ap_status surfaces live token usage so the user can
 // monitor budget consumption against `max_tokens` mid-run.
-test("ralph_status: includes tokens block with input/output/total/max_tokens", async () => {
+test("ap_status: includes tokens block with input/output/total/max_tokens", async () => {
     const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
     const { ralph, status, session } = await armStatusable({ git });
     await ralph.handler({ prompt: "go", max_iterations: 5, max_tokens: 999_999, stagnation_limit: 0 });
@@ -7589,7 +7589,7 @@ test("ralph_status: includes tokens block with input/output/total/max_tokens", a
     assert.equal(after.status.tokens.max_tokens, 999_999);
 });
 
-test("ralph_status: tokens.max_tokens is null when no cap was armed", async () => {
+test("ap_status: tokens.max_tokens is null when no cap was armed", async () => {
     const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
     const { ralph, status } = await armStatusable({ git });
     await ralph.handler({ prompt: "go", max_iterations: 3, stagnation_limit: 0 });
@@ -7601,10 +7601,10 @@ test("ralph_status: tokens.max_tokens is null when no cap was armed", async () =
     assert.equal(r.status.tokens.total, 0);
 });
 
-// Iter 68 — issue #7: ralph_status's `last` summary mirrors the live
+// Iter 68 — issue #7: ap_status's `last` summary mirrors the live
 // `tokens` block so a post-finish status call surfaces the run's token
 // totals without forcing the caller to parse the terminal result.
-test("ralph_status: last summary surfaces tokens block (input/output/total)", async () => {
+test("ap_status: last summary surfaces tokens block (input/output/total)", async () => {
     const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
     const { ralph, status, session } = await armStatusable({ git });
     await ralph.handler({ prompt: "go", max_iterations: 3, stagnation_limit: 0 });
@@ -7627,7 +7627,7 @@ test("ralph_status: last summary surfaces tokens block (input/output/total)", as
         "byModel must NOT bloat the snapshot's last.tokens block");
 });
 
-test("ralph_status: last.tokens omitted when run consumed zero tokens", async () => {
+test("ap_status: last.tokens omitted when run consumed zero tokens", async () => {
     const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
     const { ralph, status, session } = await armStatusable({ git });
     await ralph.handler({ prompt: "go", max_iterations: 3, stagnation_limit: 0 });
@@ -7647,17 +7647,17 @@ test("ralph_status: last.tokens omitted when run consumed zero tokens", async ()
 // token-tracking model added in iters 67/68 (live tokens block, post-finish
 // last.tokens, negative/NaN rejection, pause-time isolation, context-window
 // warnings). Pin the key terms so a future "trim concepts.md" PR cannot
-// silently drop the section that backs ralph_status's token visibility.
+// silently drop the section that backs ap_status's token visibility.
 test("docs/concepts.md documents the token-tracking model (issues #7 + iters 67/68)", () => {
     const concepts = readFileSync(resolve(REPO_ROOT, "docs/concepts.md"), "utf8");
     assert.match(concepts, /## Token tracking and context-window warnings/,
         "concepts.md must include the Token tracking section heading");
-    // Live snapshot fields surfaced by ralph_status (iter 67).
-    assert.match(concepts, /ralph_status\.tokens/);
+    // Live snapshot fields surfaced by ap_status (iter 67).
+    assert.match(concepts, /ap_status\.tokens/);
     assert.match(concepts, /\binput\b.*\boutput\b.*\btotal\b.*\bmax_tokens\b/s,
         "must list all four fields exposed on the live snapshot");
     // Post-finish summary mirror (iter 68).
-    assert.match(concepts, /ralph_status\.last\.tokens/);
+    assert.match(concepts, /ap_status\.last\.tokens/);
     // Two reliability contracts.
     assert.match(concepts, /Negative.*NaN.*Infinity.*reject/s,
         "must document the extractUsage rejection contract (iters 63/65)");
@@ -7713,19 +7713,19 @@ test("events-emit resolveRunsRoot: ignores non-string env override types", () =>
 });
 
 test("events-emit makeRunId: well-formed inputs produce `${label}-${ts}`", () => {
-    assert.equal(makeRunId("ralph_loop", 1730000000000), "ralph_loop-1730000000000");
+    assert.equal(makeRunId("ap_loop", 1730000000000), "ap_loop-1730000000000");
     assert.equal(makeRunId("self_improve", 0), "self_improve-0");
     assert.equal(makeRunId("grow_project", 1), "grow_project-1");
 });
 
 test("events-emit makeRunId: substitutes Date.now() for non-finite startedAt", () => {
     // Reliability contract: a NaN / Infinity / undefined / string startedAt
-    // must NOT collide on a literal "ralph_loop-undefined" directory path
+    // must NOT collide on a literal "ap_loop-undefined" directory path
     // (which would silently overwrite events across runs). The helper
     // substitutes Date.now() so each call gets a unique, sortable id.
     for (const bad of [undefined, null, NaN, Infinity, -Infinity, "1730000000000", {}, []]) {
-        const id = makeRunId("ralph_loop", bad);
-        assert.match(id, /^ralph_loop-\d+$/,
+        const id = makeRunId("ap_loop", bad);
+        assert.match(id, /^ap_loop-\d+$/,
             `non-finite startedAt ${displayValue(bad)} must yield a numeric id (got ${id})`);
         assert.doesNotMatch(id, /undefined|NaN|Infinity|object|\[/i,
             `non-finite startedAt ${displayValue(bad)} must NOT leak its repr into id (got ${id})`);
@@ -7743,20 +7743,20 @@ test("events-emit makeRunId: sanitizes filesystem-unsafe label characters", () =
     // uses [^A-Za-z0-9_-] → "_".
     assert.equal(makeRunId("../etc/passwd", 1), "___etc_passwd-1",
         "path traversal characters must be replaced with _");
-    assert.equal(makeRunId("ralph loop", 1), "ralph_loop-1",
+    assert.equal(makeRunId("ap loop", 1), "ap_loop-1",
         "spaces must be replaced with _");
     assert.equal(makeRunId("ralph;rm -rf", 1), "ralph_rm_-rf-1",
         "shell metacharacters must be replaced with _");
-    assert.equal(makeRunId("", 1), "ralph_loop-1",
-        "empty label falls back to the default `ralph_loop`");
-    assert.equal(makeRunId(null, 1), "ralph_loop-1",
-        "null label falls back to the default `ralph_loop`");
+    assert.equal(makeRunId("", 1), "ap_loop-1",
+        "empty label falls back to the default `ap_loop`");
+    assert.equal(makeRunId(null, 1), "ap_loop-1",
+        "null label falls back to the default `ap_loop`");
 });
 
-// Iter 71 — issue #7: ralph_status's textResultForLlm summary now appends
+// Iter 71 — issue #7: ap_status's textResultForLlm summary now appends
 // `, tokens X/Y` when max_tokens is configured so an LLM consumer reading
 // only the summary line (not the JSON snapshot) can see budget pressure.
-test("ralph_status: textResultForLlm appends tokens X/Y when max_tokens armed", async () => {
+test("ap_status: textResultForLlm appends tokens X/Y when max_tokens armed", async () => {
     const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
     const { ralph, status, session } = await armStatusable({ git });
     await ralph.handler({ prompt: "go", max_iterations: 5, max_tokens: 100_000, stagnation_limit: 0 });
@@ -7770,7 +7770,7 @@ test("ralph_status: textResultForLlm appends tokens X/Y when max_tokens armed", 
         "summary must show cumulative input+output against the cap");
 });
 
-test("ralph_status: textResultForLlm omits tokens segment when no max_tokens", async () => {
+test("ap_status: textResultForLlm omits tokens segment when no max_tokens", async () => {
     const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
     const { ralph, status, session } = await armStatusable({ git });
     await ralph.handler({ prompt: "go", max_iterations: 5, stagnation_limit: 0 });
@@ -7786,13 +7786,13 @@ test("ralph_status: textResultForLlm omits tokens segment when no max_tokens", a
     assert.equal(r.status.tokens.output, 2500);
 });
 
-test("ralph_status: paused summary still includes tokens segment when capped", async () => {
+test("ap_status: paused summary still includes tokens segment when capped", async () => {
     // Reliability: the PAUSED suffix is concatenated AFTER the tokens
     // segment so a paused loop with a cap still surfaces both pieces.
     const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
     const { ralph, status, controller } = await armStatusable({ git });
     await ralph.handler({ prompt: "go", max_iterations: 5, max_tokens: 50_000, stagnation_limit: 0 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     await pause.handler({ reason: "review diff" });
     const r = await status.handler({});
     assert.match(r.textResultForLlm, /tokens 0\/50000/);
@@ -7813,7 +7813,7 @@ test("finish log marker: abort_promise → ⚠️ ended (matches terminal event 
     session.emit("session.idle", { data: {} });
     runTurn(session, "we hit FAIL state");
     assert.match(session.logs.join("\n"),
-        /⚠️ ended ralph_loop.*reason: abort_promise/,
+        /⚠️ ended ap_loop.*reason: abort_promise/,
         "abort_promise log must use ⚠️ ended (not ⏹ stopped)");
 });
 
@@ -7823,7 +7823,7 @@ test("finish log marker: stagnation → ⚠️ ended (matches terminal event typ
     runTurn(session, "");
     runTurn(session, "");
     assert.match(session.logs.join("\n"),
-        /⚠️ ended ralph_loop.*reason: stagnation/,
+        /⚠️ ended ap_loop.*reason: stagnation/,
         "stagnation log must use ⚠️ ended (not ⏹ stopped)");
 });
 
@@ -7836,14 +7836,14 @@ test("finish log marker: max_iterations + user_stopped + max_tokens still use �
     a.session.emit("session.idle", { data: {} });
     runTurn(a.session, "iter 1, no completion");
     assert.match(a.session.logs.join("\n"),
-        /⏹ stopped ralph_loop.*reason: max_iterations/);
+        /⏹ stopped ap_loop.*reason: max_iterations/);
     // user_stopped already covered by an earlier test, but add a bare
     // sanity check here for symmetry with the ⚠️ tests above.
     const b = await arm({ max_iterations: 5 });
     b.session.emit("session.idle", { data: {} });
     await b.stop.handler({});
     assert.match(b.session.logs.join("\n"),
-        /⏹ stopped ralph_loop.*reason: user_stopped/);
+        /⏹ stopped ap_loop.*reason: user_stopped/);
 });
 
 // Iter 73 — README drift guard: the closing-line verb sentence in
@@ -7883,8 +7883,8 @@ test("README closing-line verb sentence matches VERB_BY_REASON contract", async 
 });
 
 // Iter 74 — parseUserReason direct unit tests. The helper is the
-// shared normaliser for the optional `reason` argument of ralph_pause
-// and ralph_stop. It's only covered by integration tests today; pin
+// shared normaliser for the optional `reason` argument of ap_pause
+// and ap_stop. It's only covered by integration tests today; pin
 // the documented contract directly so a future refactor (e.g.
 // inlining the helper, or swapping boundedNoteForLog for a stricter
 // trim) can't silently change behaviour for either tool.
@@ -7932,7 +7932,7 @@ test("parseUserReason: normal strings pass through bounded + flattened", () => {
 test("parseUserReason: long string is truncated at PREVIEW_CHARS", () => {
     // truncateNote enforces the PREVIEW_CHARS cap surrogate-safely.
     // A reason longer than the cap must be truncated so log markers
-    // (`paused ralph_loop (reason: …)`) cannot be flooded by a
+    // (`paused ap_loop (reason: …)`) cannot be flooded by a
     // pathological payload from a buggy automation caller.
     const long = "x".repeat(PREVIEW_CHARS + 50);
     const out = parseUserReason(long);
@@ -8021,9 +8021,9 @@ test("adaptive_budget=true: strict bounds checks are unchanged (regression guard
     assert.match(r2.error, /adaptive_max_total must be an integer in \[max_iterations=50,/);
 });
 
-test("docs/concepts.md pins the ralph_status one-line summary format (drift guard)", async () => {
+test("docs/concepts.md pins the ap_status one-line summary format (drift guard)", async () => {
     // Iter 71 added a `textResultForLlm` summary line on every
-    // `ralph_status` result. Iter 77 documented its exact slot
+    // `ap_status` result. Iter 77 documented its exact slot
     // layout in docs/concepts.md so callers can rely on a stable
     // contract. Pin the doc here so a future refactor that renames
     // a slot — `iteration` → `iter`, drops the trailing `ms` unit,
@@ -8035,7 +8035,7 @@ test("docs/concepts.md pins the ralph_status one-line summary format (drift guar
     const here = path.dirname(url.fileURLToPath(import.meta.url));
     const concepts = await fs.readFile(path.join(here, "..", "docs", "concepts.md"), "utf8");
     // Active-loop format must mention every slot the handler emits.
-    assert.match(concepts, /## `ralph_status` one-line summary/, "section heading must exist");
+    assert.match(concepts, /## `ap_status` one-line summary/, "section heading must exist");
     assert.match(concepts, /iteration \{N\}\/\{M\}, elapsed \{ms\}ms/, "active-loop summary template must list iteration + elapsed slots in order");
     assert.match(concepts, /tokens \{X\}\/\{Y\}/, "active-loop summary must document the optional tokens segment");
     assert.match(concepts, /PAUSED — \{reason\}, for \{ms\}ms/, "active-loop summary must document the optional pause segment");
@@ -8063,7 +8063,7 @@ test("coerceNumberField: rejects non-{number,string} types with type-aware error
     ]) {
         const r = coerceNumberField("max_iterations", raw);
         assert.ok(r.error, `must error on ${label}`);
-        assert.match(r.error, /^ralph_loop: max_iterations must be a number/);
+        assert.match(r.error, /^ap_loop: max_iterations must be a number/);
     }
 });
 
@@ -8223,10 +8223,10 @@ test("compareSemver: spec example chain (SemVer §11)", () => {
     }
 });
 
-test("README pins ralph_status elapsed_ms wall-clock semantics (drift guard)", async () => {
+test("README pins ap_status elapsed_ms wall-clock semantics (drift guard)", async () => {
     // Iter 77 documented in docs/concepts.md that elapsed_ms is
     // wall-clock (includes pause time). Iter 82 surfaces the same
-    // claim in README's ralph_status behaviour-notes block, since
+    // claim in README's ap_status behaviour-notes block, since
     // README is the doc most users read first. This drift guard
     // pins the README sentence so a future refactor that switches
     // elapsed_ms to active-only time (or quietly subtracts pause
@@ -8400,8 +8400,8 @@ test("RALPH_*_KEYS constants are module-level (no inline new Set in tool handler
     // every loop-control tool uses the same module-level
     // `validateOptionalArgShape(..., RALPH_*_KEYS)` shape. The
     // previous form allocated a fresh `new Set()` inline per
-    // ralph_status invocation — cheap but drift-prone (a future
-    // refactor that adds an arg to ralph_status would have to
+    // ap_status invocation — cheap but drift-prone (a future
+    // refactor that adds an arg to ap_status would have to
     // update the call site rather than a module constant).
     //
     // This drift guard pins:
@@ -8427,7 +8427,7 @@ test("RALPH_*_KEYS constants are module-level (no inline new Set in tool handler
     );
 });
 
-test("ralph_pause re-pause: pausedAt + textResultForLlm preserve the FIRST pause's identity", async () => {
+test("ap_pause re-pause: pausedAt + textResultForLlm preserve the FIRST pause's identity", async () => {
     // Iter 89 hardens the idempotency contract beyond the simpler
     // "second call returns success and first reason wins" test
     // already in place. The full contract a re-pause must honor:
@@ -8437,14 +8437,14 @@ test("ralph_pause re-pause: pausedAt + textResultForLlm preserve the FIRST pause
     //      a subsequent pause call. Otherwise the pause-duration
     //      math (`totalPausedMs += Date.now() - pausedAt` on
     //      resume) would silently undercount, hiding the time the
-    //      loop was actually paused from `ralph_status`.
+    //      loop was actually paused from `ap_status`.
     //   3. `textResultForLlm` echoes the FIRST reason — agents that
     //      read the message back must see the canonical reason,
     //      not the one they just sent. Otherwise an agent that
     //      "re-pauses with a more specific reason" would believe
     //      its update landed when it silently did not.
     const { session, controller } = await arm({ max_iterations: 5 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     runTurn(session, "boot");
     await pause.handler({ reason: "first" });
     const a = controller.state.active;
@@ -8785,7 +8785,7 @@ function captureEmitter(opts = {}) {
         mkdirSync: (p) => { dirsCreated.push(String(p)); },
         appendFileSync: (p, line) => { writes.push({ path: String(p), line: String(line) }); },
     };
-    const w = _eeCreate({ label: "ralph_loop", startedAt: 1, env: { RALPH_EVENTS_DIR: "/tmp/ralph-iter98" }, fs, ...opts });
+    const w = _eeCreate({ label: "ap_loop", startedAt: 1, env: { RALPH_EVENTS_DIR: "/tmp/ralph-iter98" }, fs, ...opts });
     return { writer: w, writes, dirsCreated };
 }
 
@@ -8854,7 +8854,7 @@ test("createEventEmitter.write: armed event also appends to the index file", () 
     // `type: "armed"` — without the index entry, `ralph-tui list` and
     // `ralph-tui stats` would skip every run this emitter records.
     const { writer, writes } = captureEmitter();
-    writer.write({ type: "armed", runId: writer.runId, label: "ralph_loop", startedAt: 1, maxIterations: 100, minIterations: 1 });
+    writer.write({ type: "armed", runId: writer.runId, label: "ap_loop", startedAt: 1, maxIterations: 100, minIterations: 1 });
     assert.equal(writes.length, 2, "armed must append to BOTH events.jsonl and index.jsonl");
     const paths = writes.map((w) => w.path);
     assert.ok(paths.some((p) => p.endsWith("events.jsonl")), "one write must target events.jsonl");
@@ -8863,7 +8863,7 @@ test("createEventEmitter.write: armed event also appends to the index file", () 
     const parsed = JSON.parse(idxLine.line.trimEnd());
     assert.equal(parsed.type, "armed", "index entry must carry type=armed (TUI filters on this)");
     assert.equal(parsed.runId, writer.runId);
-    assert.equal(parsed.label, "ralph_loop");
+    assert.equal(parsed.label, "ap_loop");
 });
 
 test("createEventEmitter.write: malformed (null/undefined/string/number) event types must not throw", () => {
@@ -9206,7 +9206,7 @@ test("install.sh: cleanup() returns 0 explicitly so the EXIT trap cannot leak a 
 // prints it on both the dry-run header (`Version:   vX.Y.Z`) and
 // the post-install success line (`Installed ralph extension vX.Y.Z
 // to …`). Single source of truth: handler.mjs's VERSION constant
-// is what the running extension reports via `ralph_status`, so the
+// is what the running extension reports via `ap_status`, so the
 // install output cannot drift away from what's actually loaded.
 test("install.sh: --dry-run header prints `Version: vX.Y.Z` matching extension/handler.mjs VERSION", () => {
     const handler = readFileSync(resolve(REPO_ROOT, "extension/handler.mjs"), "utf8");
@@ -9233,7 +9233,7 @@ test("install.sh: success line prints `Installed ralph extension vX.Y.Z` matchin
         assert.equal(r.status, 0, `install.sh exited ${r.status}; stderr=${r.stderr}`);
         const re = new RegExp(`✅ Installed ralph extension v${version.replace(/\./g, "\\.")} to `);
         assert.match(r.stdout, re,
-            `success line must echo "Installed ralph extension v${version} to …" so the post-install confirmation matches what ralph_status reports at runtime`);
+            `success line must echo "Installed ralph extension v${version} to …" so the post-install confirmation matches what ap_status reports at runtime`);
     } finally {
         rmSync(sandboxHome, { recursive: true, force: true });
     }
@@ -9322,8 +9322,8 @@ test("docs/RELEASING.md and AGENTS.md describe the same canonical CHANGELOG head
         "AGENTS.md must not document a date suffix on release headings — no existing CHANGELOG section uses one, and adding one would break the manual extraction awk in RELEASING.md");
 });
 
-// Iter 111 — ralph_status one-line summary when paused WITHOUT a
-// reason. `docs/concepts.md` §"`ralph_status` one-line summary"
+// Iter 111 — ap_status one-line summary when paused WITHOUT a
+// reason. `docs/concepts.md` §"`ap_status` one-line summary"
 // explicitly documents that the em-dash + reason are omitted when
 // no reason was provided, leaving the literal ` (PAUSED, for
 // {ms}ms)` segment. The em-dash-with-reason case is pinned by
@@ -9332,11 +9332,11 @@ test("docs/RELEASING.md and AGENTS.md describe the same canonical CHANGELOG head
 // asserted, so a future ternary refactor could silently render
 // ` (PAUSED — , for {ms}ms)` (stray em-dash + empty reason)
 // without any failing test. Pin the documented format.
-test("ralph_status: paused-without-reason summary uses ` (PAUSED, for {ms}ms)` form (no em-dash)", async () => {
+test("ap_status: paused-without-reason summary uses ` (PAUSED, for {ms}ms)` form (no em-dash)", async () => {
     const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
     const { ralph, status, controller } = await armStatusable({ git });
     await ralph.handler({ prompt: "go", max_iterations: 5, stagnation_limit: 0 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     // Pause WITHOUT supplying `reason`. parseUserReason coerces a
     // missing field to null, so the summary builder must drop the
     // em-dash + reason fragment entirely.
@@ -9348,7 +9348,7 @@ test("ralph_status: paused-without-reason summary uses ` (PAUSED, for {ms}ms)` f
         `summary must NOT include the em-dash separator when no pause reason was provided — that would render ' (PAUSED — , for …)' with an empty reason slot. Got: ${JSON.stringify(r.textResultForLlm)}`);
 });
 
-test("ralph_status: paused-without-reason summary preserves docs format even after whitespace-only reason input", async () => {
+test("ap_status: paused-without-reason summary preserves docs format even after whitespace-only reason input", async () => {
     // Companion guard: parseUserReason flattens whitespace-only
     // strings to null (iter 7559 test pins the helper). Ensure the
     // summary path inherits the same coercion — a user passing
@@ -9358,7 +9358,7 @@ test("ralph_status: paused-without-reason summary preserves docs format even aft
     const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
     const { ralph, status, controller } = await armStatusable({ git });
     await ralph.handler({ prompt: "go", max_iterations: 5, stagnation_limit: 0 });
-    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const pause = controller.tools.find((t) => t.name === "ap_pause");
     await pause.handler({ reason: "   \t\n   " });
     const r = await status.handler({});
     assert.match(r.textResultForLlm, / \(PAUSED, for \d+ms\)/,
@@ -9469,7 +9469,7 @@ test("install.sh: FILES array places entry-point extension.mjs LAST for atomic-r
 // no-reason summary as ` (PAUSED, for {ms}ms)` (no em-dash) but the
 // README still claimed the em-dash form was unconditional. A
 // contributor consuming the README to write a regex against
-// ralph_status output would have built `/PAUSED — /` and missed every
+// ap_status output would have built `/PAUSED — /` and missed every
 // reasonless pause. Pin the docs accuracy so a future "shorten the
 // README" PR can't silently re-introduce the drift.
 test("README documents both PAUSED summary forms (with-reason em-dash + bare no-reason)", () => {
@@ -10457,13 +10457,13 @@ test("docs/concepts.md mentions zero/zero pair rejection in token-credit contrac
         "concepts.md credit-rejection bullet must mention the at-least-one-positive clause");
 });
 
-test("ralph_resume: clamps pausedFor to >= 0 when system clock skews backward (clock-rewind guard)", async () => {
+test("ap_resume: clamps pausedFor to >= 0 when system clock skews backward (clock-rewind guard)", async () => {
     // Iter 154 — `finish()` (handler.mjs:1400) already guards
     // currentPauseMs with `Math.max(0, finishedAt - pausedAt)` for
     // exactly the case where the system clock moves backward
     // between pause and finish (NTP correction, manual clock change,
     // a daylight-savings transition on a host without monotonic-time
-    // backing). The companion `ralph_resume` path computed
+    // backing). The companion `ap_resume` path computed
     // `pausedFor = a.pausedAt > 0 ? Date.now() - a.pausedAt : 0`
     // with NO clamp, so a clock rewind during a pause would credit
     // a NEGATIVE pause duration to `totalPausedMs` — which is
@@ -10474,11 +10474,11 @@ test("ralph_resume: clamps pausedFor to >= 0 when system clock skews backward (c
     const controller = createRalphController();
     const sess = makeFakeSession();
     controller.attach(sess);
-    await controller.tools.find((t) => t.name === "ralph_loop").handler({
+    await controller.tools.find((t) => t.name === "ap_loop").handler({
         prompt: "x", max_iterations: 5, min_iterations: 1,
     });
-    const pauseTool = controller.tools.find((t) => t.name === "ralph_pause");
-    const resumeTool = controller.tools.find((t) => t.name === "ralph_resume");
+    const pauseTool = controller.tools.find((t) => t.name === "ap_pause");
+    const resumeTool = controller.tools.find((t) => t.name === "ap_resume");
     await pauseTool.handler({ reason: "clock-skew test" });
     // Simulate clock skew: shove pausedAt INTO the future so the
     // resume's `Date.now() - pausedAt` would compute negative.
@@ -10496,12 +10496,12 @@ test("ralph_resume: clamps pausedFor to >= 0 when system clock skews backward (c
     // And totalPausedMs must NOT have been credited a negative value.
     assert.ok(controller.state.active.totalPausedMs >= 0,
         `totalPausedMs must remain >= 0 (got ${controller.state.active.totalPausedMs})`);
-    await controller.tools.find((t) => t.name === "ralph_stop").handler({});
+    await controller.tools.find((t) => t.name === "ap_stop").handler({});
 });
 
 test("pauseElapsedFromAt: never-paused sentinel + clock-skew clamp (direct)", () => {
     // Iter 155 — the helper extracted from three formerly-duplicated
-    // call sites (finish(), ralph_status, ralph_resume) that all
+    // call sites (finish(), ap_status, ap_resume) that all
     // computed "elapsed ms since pausedAt, clamped >= 0, with a
     // never-paused sentinel of 0". Pre-iter-155 the resume site had
     // drifted off the clamp (fixed iter 154); centralising the
@@ -10530,7 +10530,7 @@ test("docs/faq.md pausedForMs section reflects iter-154 Math.max(0, …) clamp",
     // Iter 157 — `docs/faq.md` "Why is pausedForMs zero on a resume
     // event?" section described pausedForMs as `now - pausedAt` —
     // the pre-iter-154 unclamped formula. After iter 154 (the
-    // ralph_resume clamp fix) and iter 155 (the pauseElapsedFromAt
+    // ap_resume clamp fix) and iter 155 (the pauseElapsedFromAt
     // helper extraction), the runtime computes
     // `pausedAt > 0 ? Math.max(0, now - pausedAt) : 0`. A user on a
     // system with NTP correction or a manual clock change would

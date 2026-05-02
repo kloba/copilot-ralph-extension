@@ -13,10 +13,10 @@ Topics planned:
 
 ## Pause / resume semantics
 
-`ralph_pause` and `ralph_resume` let you stop the next iteration from
+`ap_pause` and `ap_resume` let you stop the next iteration from
 firing without losing the iteration counter, the conversation context,
 or the arm-time git snapshot. The iteration in flight at the moment
-you call `ralph_pause` is not interrupted — it runs to completion and
+you call `ap_pause` is not interrupted — it runs to completion and
 emits its `iteration_end` event. Pause only takes effect on the
 **next** `session.idle`: the on-idle handler short-circuits when
 `active.paused` is `true`, and the iteration counter stays at the
@@ -43,12 +43,12 @@ loop also **isolates** its bookkeeping from the pause-time chat:
   terminate the loop. Trade-off: a genuine completion / abort signal
   that landed in the in-flight iteration's response right before you
   paused is forfeited; you can still read it via
-  `ralph_status.last_response_excerpt` and `ralph_stop` the loop
+  `ap_status.last_response_excerpt` and `ap_stop` the loop
   explicitly if you want to honor it.
 
-`ralph_pause` is idempotent: calling it on an already-paused loop is
+`ap_pause` is idempotent: calling it on an already-paused loop is
 a no-op and returns success. **First reason wins** — a redundant
-`ralph_pause({reason: "newer"})` against an already-paused loop
+`ap_pause({reason: "newer"})` against an already-paused loop
 returns the FIRST committed reason in both the success payload's
 `reason` field and the rendered `textResultForLlm` (`<label>
 already paused at i/max (firstReason).`). Automation polling pause
@@ -59,7 +59,7 @@ modes are:
 1. No loop is currently active (`{ active: false }`).
 2. The `reason` argument exceeds 500 chars (validation rejection).
 
-`ralph_resume` flips `paused` back to `false` and resets three
+`ap_resume` flips `paused` back to `false` and resets three
 pieces of state that would otherwise leak pause-time context into
 the next iteration's evaluation:
 
@@ -71,7 +71,7 @@ the next iteration's evaluation:
   could trip the stagnation guard even though the conversation
   context has changed substantially.
 - The **last-assistant-content buffer** (`state.lastAssistantContent
-  = ""`). Even though `ralph_pause` itself stops new pause-time
+  = ""`). Even though `ap_pause` itself stops new pause-time
   content from being appended (see "Completion / abort isolation"
   above), the in-flight iteration's response that arrived **before**
   the pause is still sitting in that buffer at resume time. Clearing
@@ -79,13 +79,13 @@ the next iteration's evaluation:
   string for completion / abort triggers — same defense-in-depth
   reasoning as the streak reset.
 
-`ralph_resume` returns failure if the loop is **not** currently
+`ap_resume` returns failure if the loop is **not** currently
 paused — the error message is
-`ralph_resume: <label> is not paused. Use ralph_pause first, or
-ralph_stop to cancel.` So unlike `ralph_pause`, `ralph_resume` is
+`ap_resume: <label> is not paused. Use ap_pause first, or
+ap_stop to cancel.` So unlike `ap_pause`, `ap_resume` is
 **not** idempotent.
 
-Pause time is tracked in two places visible via `ralph_status`:
+Pause time is tracked in two places visible via `ap_status`:
 
 - `paused_for_ms` — the duration of the **current** pause (zero when
   the loop is not paused).
@@ -101,9 +101,9 @@ In summary, the contract is:
 
 | Operation         | When it succeeds                       | What it does                                                                |
 | ----------------- | -------------------------------------- | --------------------------------------------------------------------------- |
-| `ralph_pause`     | Loop active (paused or unpaused)       | Sets `paused = true`. Currently-running iteration finishes normally. Pause-time `assistant.message` events are not credited to the loop's token budget and do not accumulate into the completion/abort buffer. |
-| `ralph_resume`    | Loop active **and** paused             | Clears `paused`, resets `streak` / `prev` / `lastAssistantContent`, adds elapsed pause to `total_paused_ms`. |
-| `ralph_stop`      | Loop active (paused or unpaused)       | Cancels the loop entirely. Pausing first is not required.                   |
+| `ap_pause`     | Loop active (paused or unpaused)       | Sets `paused = true`. Currently-running iteration finishes normally. Pause-time `assistant.message` events are not credited to the loop's token budget and do not accumulate into the completion/abort buffer. |
+| `ap_resume`    | Loop active **and** paused             | Clears `paused`, resets `streak` / `prev` / `lastAssistantContent`, adds elapsed pause to `total_paused_ms`. |
+| `ap_stop`      | Loop active (paused or unpaused)       | Cancels the loop entirely. Pausing first is not required.                   |
 
 
 ## Token tracking and context-window warnings
@@ -115,22 +115,22 @@ window pressure climb in real time.
 
 ### What you observe
 
-- **Live cumulative totals** — `ralph_status.tokens` (added in
+- **Live cumulative totals** — `ap_status.tokens` (added in
   issue [#7](https://github.com/kloba/copilot-ralph-extension/issues/7))
   exposes `{ input, output, total, max_tokens }` on the active
   snapshot. Counts start at zero and grow with every credited
   iteration. `max_tokens` echoes the configured cap, or is `null`
   when no cap was armed.
-- **Post-finish summary** — `ralph_status.last.tokens` mirrors the
+- **Post-finish summary** — `ap_status.last.tokens` mirrors the
   same `{ input, output, total }` shape on the prior-run summary so
-  a post-mortem `ralph_status` call after the loop exits still sees
+  a post-mortem `ap_status` call after the loop exits still sees
   how many tokens the run consumed. Omitted entirely when the run
   credited zero tokens.
 - **Per-iteration breakdown** — the deep-frozen
   `result.tokens.byIteration` and `result.tokens.byModel` (returned
   on the loop's terminal value, not on the live snapshot) carry
   per-iter and per-model rollups for callers that want detail. They
-  are intentionally **not** mirrored on `ralph_status` to keep that
+  are intentionally **not** mirrored on `ap_status` to keep that
   payload cheap to serialise.
 
 ### Two safety contracts
@@ -172,9 +172,9 @@ exact lines enforce the two contracts — see the
 [Token tracking section in `docs/ARCHITECTURE.md`](ARCHITECTURE.md).
 
 
-## `ralph_status` one-line summary
+## `ap_status` one-line summary
 
-Every `ralph_status` invocation returns a structured snapshot **plus**
+Every `ap_status` invocation returns a structured snapshot **plus**
 a single-line `textResultForLlm` summary so a model that reads only
 the prose result still sees the loop's pulse. The shape is fixed and
 intended to be parsed (or grepped) by tooling.
@@ -187,7 +187,7 @@ intended to be parsed (or grepped) by tooling.
 
 Slot-by-slot:
 
-- `{label}` — the loop's display name (`ralph_loop`,
+- `{label}` — the loop's display name (`ap_loop`,
   `self_improve`, or `grow_project`).
 - `iteration {N}/{M}` — current iteration count vs. the configured
   `max_iterations`. `N` is the number of completed iterations, so
@@ -221,6 +221,6 @@ no active loop; last {label} {reason} after {N} iterations
 no active loop and no prior run in this session
 ```
 
-This is the only case where `ralph_status` returns neither an
+This is the only case where `ap_status` returns neither an
 active snapshot nor a `last` block. It is safe to call from any
 session, including before any loop has been armed.

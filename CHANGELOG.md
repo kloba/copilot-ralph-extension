@@ -182,6 +182,21 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Direct unit-test coverage for `safeSliceChars`'s
+  defensive guards (extracted in iter 119): non-string
+  input → returned unchanged (null, undefined, number,
+  boolean, object identity preserved); non-finite or
+  invalid max → returned unchanged (NaN, Infinity,
+  -Infinity, 0, -1); short input (length ≤ max) →
+  fast-path returns identity; ASCII at the boundary →
+  sliced to exactly `max`; high surrogate at index
+  `max-1` → backed off by one (length = max-1); low
+  surrogate at `max-1` (pair fully captured) → no
+  back-off (length = max). The two existing call sites
+  (serializeEvent + formatEventLine) only exercise the
+  string + finite-max happy path, so the helper's
+  defensive branches were untested — pin them so a
+  future "simplify" PR can't silently drop the guards.
 - Pin the emitted `pause` JSONL event's `reason` field to
   `null` when the user supplies no reason (`{}`) OR a
   whitespace-only reason. The existing test only pinned the

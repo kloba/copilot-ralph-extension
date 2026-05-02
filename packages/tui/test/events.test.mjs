@@ -7,6 +7,7 @@ import {
     foldEvents,
     makeRunId,
     parseEventLine,
+    safeSliceChars,
     serializeEvent,
 } from "../src/events.mjs";
 
@@ -244,4 +245,84 @@ test("serializeEvent: note truncation is also surrogate-safe", () => {
         }
     }
     assert.ok(parsed.note.length <= 500);
+});
+
+// Iter 120 — direct unit-test coverage for `safeSliceChars`'s defensive
+// guards (extracted in iter 119). Two callers wire it up today
+// (serializeEvent's 500-char excerpt/note cap, plain.mjs's 80-char
+// excerpt cap) — both pass well-formed string + finite max. The
+// helper's non-string / non-finite-max / max<1 fall-through branches
+// were added defensively against future callers and are not exercised
+// by either of the existing two callers' regression tests. Without a
+// direct unit test pinning them, a "simplify safeSliceChars" PR could
+// silently drop the guards (e.g. assume the caller always passes a
+// string), and an accidental call site like `safeSliceChars(null, 80)`
+// would start throwing TypeError on `s.length` lookup.
+test("safeSliceChars: non-string input is returned unchanged", () => {
+    // Covers every typeof JS could give us. Each must round-trip to
+    // the same identity (===) — no coercion, no throw.
+    assert.equal(safeSliceChars(null, 80), null);
+    assert.equal(safeSliceChars(undefined, 80), undefined);
+    assert.equal(safeSliceChars(42, 80), 42);
+    assert.equal(safeSliceChars(true, 80), true);
+    const obj = { a: 1 };
+    assert.equal(safeSliceChars(obj, 80), obj, "object identity preserved");
+});
+
+test("safeSliceChars: non-finite or invalid max is returned unchanged", () => {
+    // NaN, Infinity, -Infinity, 0, negative integers — none are valid
+    // truncation lengths. The helper must return the original string
+    // verbatim rather than fall through to a slice with a bogus index
+    // (e.g. `s.slice(0, NaN)` returns "" — a silent data-loss bug).
+    const long = "x".repeat(200);
+    assert.equal(safeSliceChars(long, NaN), long);
+    assert.equal(safeSliceChars(long, Infinity), long);
+    assert.equal(safeSliceChars(long, -Infinity), long);
+    assert.equal(safeSliceChars(long, 0), long);
+    assert.equal(safeSliceChars(long, -1), long);
+});
+
+test("safeSliceChars: short input (length <= max) is returned unchanged", () => {
+    // No allocation, no slice — the existing serializeEvent test on
+    // a sub-500-char excerpt relies on this fast-path. Pin it so a
+    // future "always slice" simplification can't slow the common case.
+    assert.equal(safeSliceChars("hi", 80), "hi");
+    assert.equal(safeSliceChars("x".repeat(80), 80), "x".repeat(80), "boundary equality");
+});
+
+test("safeSliceChars: ASCII input at the boundary is sliced to exactly max", () => {
+    // No surrogate involved; result length must be exactly `max`.
+    const s = "x".repeat(200);
+    assert.equal(safeSliceChars(s, 80).length, 80);
+    assert.equal(safeSliceChars(s, 1).length, 1);
+});
+
+test("safeSliceChars: high surrogate at the boundary backs off by one", () => {
+    // U+1F480 (💀) — high+low = 0xD83D + 0xDC80. Place high surrogate
+    // at index max-1 so the helper backs off (length = max-1).
+    const skull = String.fromCharCode(0xD83D, 0xDC80);
+    const s = "x".repeat(79) + skull + skull.repeat(20);
+    assert.equal(s.charCodeAt(79), 0xD83D, "test setup: high surrogate at index 79");
+    const out = safeSliceChars(s, 80);
+    assert.equal(out.length, 79, "backed off by one to keep the surrogate pair intact");
+    // Last code unit is the LAST `x` (the 79th), not the high surrogate.
+    assert.equal(out.charCodeAt(out.length - 1), "x".charCodeAt(0));
+});
+
+test("safeSliceChars: low surrogate at the boundary is fine (no back-off)", () => {
+    // If the BMP/4-byte char ENDS at index max-1 (i.e. low surrogate
+    // at max-1, high surrogate at max-2), the helper must NOT back off
+    // — the pair is fully retained. Cover this corner so a future
+    // refactor that tightens the check doesn't regress to backing off
+    // unnecessarily.
+    const skull = String.fromCharCode(0xD83D, 0xDC80);
+    // Place the pair at indices 78..79, then plain x's after.
+    const s = "x".repeat(78) + skull + "x".repeat(120);
+    assert.equal(s.charCodeAt(78), 0xD83D);
+    assert.equal(s.charCodeAt(79), 0xDC80);
+    const out = safeSliceChars(s, 80);
+    assert.equal(out.length, 80, "no back-off when boundary lands AFTER a complete pair");
+    // The pair must still be intact in the output.
+    assert.equal(out.charCodeAt(78), 0xD83D);
+    assert.equal(out.charCodeAt(79), 0xDC80);
 });

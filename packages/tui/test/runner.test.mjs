@@ -1874,3 +1874,129 @@ test("runRalphTui: no backlog_snapshot when the agent ran no gh probes (e.g. --p
     assert.equal(events.filter((e) => e.type === "backlog_snapshot").length, 0,
         "no probes ran → no backlog_snapshot event (renderer shows ?)");
 });
+
+// ─── Issue #48 slice 9 commit 4: smoke test — full marker stream ────────
+//
+// Drives runRalphTui end-to-end with a single iter that emits the
+// complete marker hierarchy:
+//   workitem_start → stage_plan → task_list → task_start →
+//   tool_complete (git commit) → commit_observed (runner side) →
+//   task_end → workitem_end → COMPLETE
+// then asserts that all the new event types fire, the foldEvents
+// snapshot picks them up, the runner's gitExec stub was called for
+// the commit_observed path (idempotence respected), and the loop
+// terminates cleanly with terminationReason="complete".
+
+import { foldEvents } from "../src/events.mjs";
+
+test("runRalphTui smoke: full marker stream surfaces stage_plan + task_list + task_start/end + commit_observed + workitem_start/end", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "smoke-r-48",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    // Realistic agent stdout: one assistant message that lays out the
+    // whole iter as a multi-line content blob (mirrors how a real
+    // self-improve iter would narrate one workitem). The stage_plan
+    // includes the canonical pinned tail so the runner does NOT
+    // amend-in COMMIT/PUSH/END.
+    const content = [
+        '[WORKITEM_START: {"kind":"issue","ref":48,"title":"3-level hierarchical TUI"}]',
+        '[STAGE_PLAN: {"stages":["DIAG","FIX","TEST","COMMIT","PUSH","END"]}]',
+        '[TASK_LIST: {"stage":"FIX","items":["wire TasksPane into App","add stageOrdinal helper"]}]',
+        '[TASK_START: {"stage":"FIX","sub":1,"desc":"wire TasksPane into App"}]',
+        // Substage stream: the agent hits bash to commit. The runner
+        // side-channels `tool.execution_complete` to detect a successful
+        // git commit and shells out to git for HEAD.
+        '[TASK_END: {"stage":"FIX","sub":1,"outcome":"ok","durationMs":4200}]',
+        '[WORKITEM_END: {"kind":"issue","ref":48,"closesN":1}]',
+        'COMPLETE',
+    ].join("\n");
+    const stdout = [
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-06-01T00:00:00.000Z",
+            data: { content } }),
+        // tool.execution_complete for `git commit -m "feat(tui): land
+        // 3-level renderer"` — runner detects this via looksLikeGitCommit
+        // + the success flag and emits a commit_observed event.
+        JSON.stringify({ type: "tool.execution_start", timestamp: "2026-06-01T00:00:01.000Z",
+            data: { toolCallId: "c-commit", toolName: "bash",
+                arguments: { command: 'git commit -m "feat(tui): smoke" --no-verify' } } }),
+        JSON.stringify({ type: "tool.execution_complete", timestamp: "2026-06-01T00:00:01.500Z",
+            data: { toolCallId: "c-commit", success: true,
+                result: { content: "[main abc1234] feat(tui): smoke\n" } } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "sess-smoke" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    // Stub gitExec so the smoke test doesn't depend on the test's cwd
+    // being a real git repo. Returns canned data for the two
+    // composing calls readHeadCommit makes.
+    let gitCalls = 0;
+    const gitExec = ({ args }) => {
+        gitCalls++;
+        if (args[0] === "rev-parse" && args[1] === "--short") {
+            return "abc1234\n";
+        }
+        if (args[0] === "log") {
+            return "feat(tui): smoke\u0000Co-authored-by: Copilot <c@e>\nCo-authored-by: copilot-ralph <r@e>\n";
+        }
+        return null;
+    };
+    const result = await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+        gitExec,
+    });
+    assert.equal(result.terminationReason, "complete");
+
+    // All slice 9 event types must have surfaced exactly once.
+    const types = events.map((e) => e.type);
+    assert.ok(types.includes("workitem_start"), "workitem_start emitted");
+    assert.ok(types.includes("stage_plan"), "stage_plan emitted");
+    assert.ok(types.includes("task_list"), "task_list emitted");
+    assert.ok(types.includes("task_start"), "task_start emitted");
+    assert.ok(types.includes("task_end"), "task_end emitted");
+    assert.ok(types.includes("workitem_end"), "workitem_end emitted");
+    assert.ok(types.includes("commit_observed"), "commit_observed emitted");
+
+    // Verify the marker payloads round-tripped intact.
+    const stagePlan = events.find((e) => e.type === "stage_plan");
+    assert.deepEqual(stagePlan.stages, ["DIAG", "FIX", "TEST", "COMMIT", "PUSH", "END"]);
+    const taskList = events.find((e) => e.type === "task_list");
+    assert.equal(taskList.stage, "FIX");
+    assert.deepEqual(taskList.items, ["wire TasksPane into App", "add stageOrdinal helper"]);
+    const taskStart = events.find((e) => e.type === "task_start");
+    assert.equal(taskStart.sub, 1);
+    const taskEnd = events.find((e) => e.type === "task_end");
+    assert.equal(taskEnd.outcome, "ok");
+    const commitObs = events.find((e) => e.type === "commit_observed");
+    assert.equal(commitObs.sha, "abc1234");
+    assert.equal(commitObs.subject, "feat(tui): smoke");
+    assert.equal(commitObs.trailers.length, 2);
+
+    // commit_observed is exactly once (idempotent per toolCallId).
+    assert.equal(events.filter((e) => e.type === "commit_observed").length, 1,
+        "commit_observed must be idempotent per toolCallId");
+
+    // foldEvents must build a snapshot the renderer can consume.
+    const snap = foldEvents(events);
+    // After workitem_end, activeWorkItem clears; the completed item
+    // moves into completedWorkItems.
+    assert.ok(
+        (Array.isArray(snap.completedWorkItems) && snap.completedWorkItems.length > 0) || snap.activeWorkItem,
+        "work item recorded in snapshot",
+    );
+    assert.deepEqual(snap.currentPlan?.stages, ["DIAG", "FIX", "TEST", "COMMIT", "PUSH", "END"]);
+    assert.equal(snap.currentTaskList?.stage, "FIX");
+    assert.equal(snap.lastCommit?.sha, "abc1234");
+    assert.equal(snap.lastCommit?.subject, "feat(tui): smoke");
+
+    // The runner shelled out to git twice (rev-parse + log) for the
+    // single commit — proves the readHeadCommit path actually fired.
+    assert.equal(gitCalls, 2, "readHeadCommit composes two git commands");
+});

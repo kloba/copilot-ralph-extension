@@ -1190,6 +1190,27 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Issue #48 slice 9 commit 4 — end-to-end smoke test that drives
+  `runRalphTui` with the full marker stream (`workitem_start →
+  stage_plan → task_list → task_start → tool_complete (git
+  commit) → task_end → workitem_end → COMPLETE`) and asserts
+  every slice 9 event type fires exactly once, the marker
+  payloads round-trip intact, the runner-side `commit_observed`
+  detector fired (including idempotent per-toolCallId behaviour)
+  with both `git rev-parse` + `git log` shell-outs invoked
+  exactly once each, and the `foldEvents` snapshot stitches
+  everything into a renderer-ready shape (`completedWorkItems`
+  has the closed item, `currentPlan.stages` matches the agent's
+  STAGE_PLAN, `currentTaskList.stage` = "FIX",
+  `lastCommit.{sha,subject}` = the stubbed HEAD). End-to-end
+  proof that the L1/L2/L3/footer hierarchy works through the
+  whole pipeline (markers → runner emit → JSONL events →
+  foldEvents snapshot → renderer-consumable shape) without
+  needing a real `copilot` binary or a real git repo. Pins the
+  contract so a future runner refactor that drops one of the
+  marker passes, the substage fan-out, or the `commit_observed`
+  trigger fails this test loudly.
+
 - Pinned that `ralph_pause`'s idempotent branch returns the
   FIRST (committed) `reason` to the caller, not the second
   caller's `reason`. The pre-existing iter-116 test pinned

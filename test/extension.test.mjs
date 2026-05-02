@@ -8377,3 +8377,43 @@ test("composeRalphLoopPrompt error message: exact reserved bytes (no `~`) and ac
     assert.ok(r1.error?.includes("by at least 1 character."),
         `singular form must read "1 character." (no "s"); got: ${r1.error}`);
 });
+
+test(".editorconfig captures project indent + EOL conventions", () => {
+    // Iter 97 chore. Without `.editorconfig` every contributor's
+    // editor falls back to its global default (e.g. JetBrains'
+    // tab-or-2-space, or VS Code's 4-space). That manifests as
+    // mixed-indent diffs sneaking into PRs and "fix indentation"
+    // commits cluttering history. Pin the file's existence + the
+    // five facts that matter for this repo:
+    //   - EOL = lf (matches .gitattributes);
+    //   - .mjs / .js indent = 4 spaces (matches handler.mjs);
+    //   - .sh indent = 2 spaces (matches install.sh);
+    //   - .yml indent = 2 spaces (matches ci.yml);
+    //   - the `[*]` defaults assert utf-8 + final-newline +
+    //     trim-trailing-whitespace (catches stray BOMs / no-trailing-
+    //     newline POSIX text-file violations).
+    const ec = readFileSync(resolve(REPO_ROOT, ".editorconfig"), "utf8");
+    assert.match(ec, /^root\s*=\s*true/m, "must declare `root = true` so editor walks stop here");
+    // Globals
+    assert.match(ec, /\[\*\][\s\S]*?end_of_line\s*=\s*lf/,
+        "[*] must pin end_of_line = lf to mirror .gitattributes");
+    assert.match(ec, /\[\*\][\s\S]*?charset\s*=\s*utf-8/,
+        "[*] must pin charset = utf-8");
+    assert.match(ec, /\[\*\][\s\S]*?insert_final_newline\s*=\s*true/,
+        "[*] must require a trailing newline (POSIX text-file convention)");
+    // Per-language overrides — match against the section + first
+    // indent_size line that follows so a future reorder doesn't break.
+    const sectionIndent = (re) => {
+        const m = ec.match(re);
+        if (!m) return null;
+        const tail = ec.slice(m.index + m[0].length);
+        const sz = tail.match(/^\s*indent_size\s*=\s*(\d+)/m);
+        return sz ? Number(sz[1]) : null;
+    };
+    assert.equal(sectionIndent(/\[\*\.\{mjs[^\]]*\]/), 4,
+        ".mjs/.js indent_size must be 4 (matches handler.mjs)");
+    assert.equal(sectionIndent(/\[\*\.sh\]/), 2,
+        ".sh indent_size must be 2 (matches install.sh)");
+    assert.equal(sectionIndent(/\[\*\.\{yml[^\]]*\]/), 2,
+        ".yml indent_size must be 2 (matches ci.yml)");
+});

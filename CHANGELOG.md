@@ -26,6 +26,18 @@
   approximate. Pluralisation flips correctly between
   `1 character.` and `N characters.`.
 
+### Internal
+- Added `.editorconfig` capturing the project's existing
+  whitespace conventions (LF EOL mirroring `.gitattributes`,
+  4-space `*.mjs`, 2-space `install.sh` + `*.yml`,
+  trim-trailing-whitespace except in `*.md` to preserve
+  CommonMark hard breaks). EditorConfig-aware editors (VS
+  Code, JetBrains, Vim, Emacs, Sublime, …) now land on the
+  right indent / EOL automatically — without each contributor
+  re-configuring per-project. Drift-guarded so the five facts
+  that matter (EOL, charset, final-newline, plus per-language
+  indent sizes) cannot silently rot.
+
 ### Tests
 - Drift guard: `ci.yml`'s `matrix.node` lowest entry must equal
   `package.json#engines.node`'s floor major. Mirrors the

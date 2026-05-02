@@ -1,0 +1,47 @@
+# EditorConfig — https://editorconfig.org
+#
+# Captures the project's existing whitespace conventions so a
+# contributor opening the repo in any EditorConfig-aware editor
+# (VS Code, JetBrains, Vim, Emacs, Sublime, …) lands on the
+# right indent / EOL automatically — without re-configuring the
+# editor per-project. Mirrors the line-ending policy already
+# pinned by `.gitattributes` (LF for every text file) and the
+# indent convention in handler.mjs (4-space) / install.sh +
+# YAML (2-space).
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+# JavaScript / ES module sources — handler.mjs et al. use 4-space.
+[*.{mjs,js,cjs,jsx,tsx,ts}]
+indent_size = 4
+
+# Shell scripts — install.sh uses 2-space.
+[*.sh]
+indent_size = 2
+
+# YAML (GitHub Actions workflows, mkdocs config, …) — YAML is
+# whitespace-sensitive and the existing files use 2-space.
+[*.{yml,yaml}]
+indent_size = 2
+
+# JSON (package.json et al.) — npm tooling defaults to 2-space.
+[*.json]
+indent_size = 2
+
+# Markdown — preserve trailing whitespace because two trailing
+# spaces is the CommonMark hard-break syntax.
+[*.md]
+indent_size = 2
+trim_trailing_whitespace = false
+
+# Makefiles require literal tabs — the EditorConfig spec says
+# `indent_style = tab` overrides the [*] default for these.
+[Makefile]
+indent_style = tab

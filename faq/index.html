@@ -524,6 +524,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#i-just-want-to-try-autopilot-with-no-install-does-plain-mode-work-from-a-fresh-checkout" class="md-nav__link">
+    <span class="md-ellipsis">
+      I just want to try autopilot with no install. Does plain mode work from a fresh checkout?
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#do-i-need-any-npm-dependencies" class="md-nav__link">
     <span class="md-ellipsis">
       Do I need any npm dependencies?
@@ -620,6 +629,15 @@
   <a href="#where-does-a-running-loops-event-log-live" class="md-nav__link">
     <span class="md-ellipsis">
       Where does a running loop's event log live?
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#which-environment-variables-does-autopilot-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      Which environment variables does autopilot read?
     </span>
   </a>
   
@@ -735,6 +753,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#i-just-want-to-try-autopilot-with-no-install-does-plain-mode-work-from-a-fresh-checkout" class="md-nav__link">
+    <span class="md-ellipsis">
+      I just want to try autopilot with no install. Does plain mode work from a fresh checkout?
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#do-i-need-any-npm-dependencies" class="md-nav__link">
     <span class="md-ellipsis">
       Do I need any npm dependencies?
@@ -837,6 +864,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#which-environment-variables-does-autopilot-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      Which environment variables does autopilot read?
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#how-do-i-tail-a-running-loops-events" class="md-nav__link">
     <span class="md-ellipsis">
       How do I tail a running loop's events?
@@ -920,18 +956,28 @@
 
 
 <h1 id="faq">FAQ<a class="headerlink" href="#faq" title="Permanent link">&para;</a></h1>
-<p>Short answers to the questions that come up most often when running Ralph in anger. Most of these point at a deeper section in the <a href="https://github.com/kloba/autopilot#readme">README</a> or at <a href="../concepts/"><code>docs/concepts.md</code></a> — keep this page narrow and link out rather than duplicating prose.</p>
+<p>Short answers to the questions that come up most often when running <code>autopilot</code> in anger. Most of these point at a deeper section in the <a href="https://github.com/kloba/autopilot#readme">README</a> or at <a href="../concepts/"><code>docs/concepts.md</code></a> — keep this page narrow and link out rather than duplicating prose.</p>
 <h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h2>
-<h3 id="do-i-need-any-npm-dependencies">Do I need any npm dependencies?<a class="headerlink" href="#do-i-need-any-npm-dependencies" title="Permanent link">&para;</a></h3>
-<p>Not for plain mode. The non-render layer (<code>prompts.mjs</code>, <code>runner.mjs</code>, <code>events*.mjs</code>, <code>writer.mjs</code>, <code>tail.mjs</code>, <code>plain.mjs</code>, <code>bin/tui.mjs</code>) is zero-dep — only Node ≥ 20 is required. The interactive Ink-rendered <code>watch</code> / <code>run</code> UI pulls Ink + React + Yoga + Commander via <code>cd packages/tui &amp;&amp; npm install</code>.</p>
-<h3 id="how-do-i-install-a-specific-tagged-release">How do I install a specific tagged release?<a class="headerlink" href="#how-do-i-install-a-specific-tagged-release" title="Permanent link">&para;</a></h3>
-<p>Check out the matching tag in your clone:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>checkout<span class="w"> </span>vX.Y.Z
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>--help
+<h3 id="i-just-want-to-try-autopilot-with-no-install-does-plain-mode-work-from-a-fresh-checkout">I just want to try autopilot with no install. Does plain mode work from a fresh checkout?<a class="headerlink" href="#i-just-want-to-try-autopilot-with-no-install-does-plain-mode-work-from-a-fresh-checkout" title="Permanent link">&para;</a></h3>
+<p>Yes — the non-render layer (<code>prompts.mjs</code>, <code>runner.mjs</code>, <code>events*.mjs</code>, <code>writer.mjs</code>, <code>tail.mjs</code>, <code>plain.mjs</code>, <code>bin/tui.mjs</code>) is zero-dep. From the repo root:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>--help
 </code></pre></div>
-<p>Tags are immutable, so a pinned checkout never silently shifts. A future release will publish <code>autopilot</code> to npm so <code>npm i -g autopilot@X.Y.Z</code> works.</p>
+<p>Only the Ink-rendered <code>watch</code> / <code>run</code> UIs require <code>cd packages/tui &amp;&amp; npm install</code>.</p>
+<h3 id="do-i-need-any-npm-dependencies">Do I need any npm dependencies?<a class="headerlink" href="#do-i-need-any-npm-dependencies" title="Permanent link">&para;</a></h3>
+<p>Not for plain mode (see the previous FAQ) — only Node ≥ 20 is required. The interactive Ink-rendered <code>watch</code> / <code>run</code> UI pulls Ink + React + Yoga + Commander via <code>cd packages/tui &amp;&amp; npm install</code>.</p>
+<h3 id="how-do-i-install-a-specific-tagged-release">How do I install a specific tagged release?<a class="headerlink" href="#how-do-i-install-a-specific-tagged-release" title="Permanent link">&para;</a></h3>
+<p>Today the install is a clone + <code>npm link</code>; pin a tag with <code>git checkout</code> before <code>npm install</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/kloba/autopilot.git
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nb">cd</span><span class="w"> </span>autopilot
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>git<span class="w"> </span>checkout<span class="w"> </span>v0.7.0<span class="w">          </span><span class="c1"># pin to a tagged release; tags are immutable</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nb">cd</span><span class="w"> </span>packages/tui
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>npm<span class="w"> </span>install
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>npm<span class="w"> </span>link<span class="w">                      </span><span class="c1"># exposes `autopilot` on $PATH</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>autopilot<span class="w"> </span>--help
+</code></pre></div>
+<p>A future release will publish <code>autopilot</code> to npm so <code>npm i -g autopilot@X.Y.Z</code> works.</p>
 <h3 id="what-happened-to-the-copilotextensionsralph-install">What happened to the <code>~/.copilot/extensions/ralph</code> install?<a class="headerlink" href="#what-happened-to-the-copilotextensionsralph-install" title="Permanent link">&para;</a></h3>
-<p>The previous in-session Copilot CLI extension was retired — see <a href="../CHANGELOG.md"><code>CHANGELOG.md</code></a>. If you still have <code>~/.copilot/extensions/ralph</code> from an older install, <code>rm -rf ~/.copilot/extensions/ralph</code> and switch to <code>autopilot run</code> as documented in the <a href="../README.md#usage">README</a>.</p>
+<p>The in-session Copilot CLI extension was retired in 0.7.0 — see the <a href="../CHANGELOG.md"><code>CHANGELOG.md</code></a> extension-drop entry. The standalone <code>autopilot</code> binary is now the only product, and the legacy <code>extension/</code> directory is gone. If you still have an <code>~/.copilot/extensions/ralph</code> directory from an older install, it is inert (<code>/extensions reload</code> will no longer find a <code>ralph</code> extension); <code>rm -rf ~/.copilot/extensions/ralph</code> and switch to the <code>autopilot</code> CLI as documented in the <a href="../README.md#usage">README</a>.</p>
 <h2 id="running-a-loop">Running a loop<a class="headerlink" href="#running-a-loop" title="Permanent link">&para;</a></h2>
 <h3 id="why-did-my-loop-stop-after-exactly-one-iteration">Why did my loop stop after exactly one iteration?<a class="headerlink" href="#why-did-my-loop-stop-after-exactly-one-iteration" title="Permanent link">&para;</a></h3>
 <p>The most common cause is an early <code>--completion-promise</code> match. Both <code>--completion-promise</code> and <code>--abort-promise</code> use plain substring matching against the assistant's response — if the agent quotes the trigger phrase mid-thought (e.g. <em>"I'll mark this COMPLETE when done"</em>), the loop finishes. Pick a phrase the agent is unlikely to mention casually; <code>RALPH_DONE_42</code> and similar unusual tokens work well. See README → <a href="https://github.com/kloba/autopilot#limitations">Limitations</a>.</p>
@@ -953,22 +999,28 @@
 <p>See <a href="../concepts/#pause--resume-semantics"><code>docs/concepts.md</code> → Pause / resume semantics</a> for the state-machine writeup.</p>
 <h2 id="output-and-observability">Output and observability<a class="headerlink" href="#output-and-observability" title="Permanent link">&para;</a></h2>
 <h3 id="where-does-a-running-loops-event-log-live">Where does a running loop's event log live?<a class="headerlink" href="#where-does-a-running-loops-event-log-live" title="Permanent link">&para;</a></h3>
-<p>By default: <code>~/.copilot/ralph-tui/runs/&lt;runId&gt;/events.jsonl</code>. Override the runs root with <code>RALPH_TUI_RUNS_DIR</code>. The <code>&lt;runId&gt;</code> shape is <code>${label}-${startedAt}</code> — sortable, filesystem-safe, and surfaced in the <code>armed</code> event.</p>
+<p>By default: <code>~/.copilot/autopilot/runs/&lt;runId&gt;/events.jsonl</code>. Override the runs root with <code>AUTOPILOT_RUNS_DIR</code>. The <code>&lt;runId&gt;</code> shape is <code>${label}-${startedAt}</code> — sortable, filesystem-safe, and surfaced in the <code>armed</code> event.</p>
+<p>Legacy <code>~/.copilot/ralph-tui/runs</code> is read on first run if the new path doesn't exist; new emissions write to the autopilot path.</p>
+<h3 id="which-environment-variables-does-autopilot-read">Which environment variables does autopilot read?<a class="headerlink" href="#which-environment-variables-does-autopilot-read" title="Permanent link">&para;</a></h3>
+<p>Canonical names are <code>AUTOPILOT_RUNS_DIR</code>, <code>AUTOPILOT_COPILOT_BIN</code>, and <code>AUTOPILOT_NO_ATTRIBUTION</code>. Legacy <code>RALPH_TUI_*</code> env-var names still work via fallback for one release with a one-line stderr deprecation notice.</p>
 <h3 id="how-do-i-tail-a-running-loops-events">How do I tail a running loop's events?<a class="headerlink" href="#how-do-i-tail-a-running-loops-events" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>autopilot<span class="w"> </span>watch<span class="w">              </span><span class="c1"># tail the most recent run</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>autopilot<span class="w"> </span>watch<span class="w"> </span>&lt;runId&gt;<span class="w">      </span><span class="c1"># tail a specific run</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>autopilot<span class="w"> </span>list<span class="w">               </span><span class="c1"># enumerate recorded runs newest-first</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>autopilot<span class="w"> </span>replay<span class="w"> </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># print every event in a past run</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>autopilot<span class="w"> </span>watch<span class="w">              </span><span class="c1"># tail the most recent run</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>autopilot<span class="w"> </span>watch<span class="w"> </span>&lt;runId&gt;<span class="w">      </span><span class="c1"># tail a specific run</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>autopilot<span class="w"> </span>list<span class="w">               </span><span class="c1"># enumerate recorded runs newest-first</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>autopilot<span class="w"> </span>replay<span class="w"> </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># print every event in a past run</span>
 </code></pre></div>
 <h3 id="how-do-i-get-a-structured-snapshot-of-a-live-run">How do I get a structured snapshot of a live run?<a class="headerlink" href="#how-do-i-get-a-structured-snapshot-of-a-live-run" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>autopilot<span class="w"> </span>run<span class="w"> </span>--status<span class="w"> </span>&lt;runId&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>autopilot<span class="w"> </span>run<span class="w"> </span>--status<span class="w"> </span>&lt;runId&gt;
 </code></pre></div>
 <p>Reads the run's <code>state.json</code> and renders iter counter, pause/stop flags, and (in <code>--continue</code> mode) the captured Copilot session id.</p>
 <h2 id="commit-attribution">Commit attribution<a class="headerlink" href="#commit-attribution" title="Permanent link">&para;</a></h2>
 <h3 id="how-are-loop-driven-commits-attributed">How are loop-driven commits attributed?<a class="headerlink" href="#how-are-loop-driven-commits-attributed" title="Permanent link">&para;</a></h3>
 <p>Every commit produced inside a loop carries two <code>Co-authored-by:</code> trailers — one for the <code>Copilot</code> GitHub identity, one for the dedicated <code>copilot-ralph</code> bot account. The dual-trailer convention is baked into the SDLC prompts (<code>--self-improve</code>, <code>--grow-project</code>). See README → <a href="https://github.com/kloba/autopilot#commit-attribution">Commit attribution</a>.</p>
 <h3 id="how-do-i-opt-out-of-the-second-copilot-ralph-trailer">How do I opt out of the second <code>copilot-ralph</code> trailer?<a class="headerlink" href="#how-do-i-opt-out-of-the-second-copilot-ralph-trailer" title="Permanent link">&para;</a></h3>
-<p>Set <code>RALPH_NO_ATTRIBUTION=1</code> in the environment before running the loop. The opt-out suppresses <strong>only</strong> the second <code>copilot-ralph</code> trailer; the first <code>Copilot</code> trailer always ships. Note that the opt-out is honored by the prompt, not enforced by the runtime — if a sub-agent ignores <code>process.env</code>, the trailer can still appear. Audit afterwards with <code>git log -1 --pretty=%B</code> to confirm.</p>
+<p>Set <code>AUTOPILOT_NO_ATTRIBUTION=1</code> in the environment before running the loop. The opt-out suppresses <strong>only</strong> the second trailer:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Co-authored-by: copilot-ralph &lt;copilot-ralph@users.noreply.github.com&gt;
+</code></pre></div>
+<p>The first <code>Copilot</code> trailer always ships. The legacy <code>RALPH_NO_ATTRIBUTION=1</code> env var is still recognized for backwards compatibility. The opt-out is honored by the prompt, not enforced by the runtime — if a sub-agent ignores <code>process.env</code>, the trailer can still appear. Audit afterwards with <code>git log -1 --pretty=%B</code> to confirm.</p>
 <h2 id="anything-else">Anything else?<a class="headerlink" href="#anything-else" title="Permanent link">&para;</a></h2>
 <p>If your question isn't answered here, open an issue or skim the <a href="https://github.com/kloba/autopilot#readme">README</a> Limitations section — it covers the long-tail edge cases this page intentionally elides.</p>
 

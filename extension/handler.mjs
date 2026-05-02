@@ -1060,6 +1060,13 @@ export function validateArgs(args) {
     // adaptive fields are accepted-and-ignored so a user can keep
     // adaptive_extension / adaptive_max_total presets in their tooling without
     // having to remember to flip them off when adaptive_budget is false.
+    // "Accepted-and-ignored" means: the values still must be numbers (a
+    // typo like `adaptive_extension: "ten"` still surfaces loudly), but
+    // the integer-and-range bounds checks only run when adaptive_budget
+    // is true — so a preset like `adaptive_extension: 0` paired with
+    // `adaptive_budget: false` does not reject the call. Round-tripped
+    // unchanged on the arm result so consumers see exactly what they
+    // configured.
     const rawAdaptive = args.adaptive_budget;
     let adaptiveBudget = DEFAULTS.adaptive_budget;
     if (rawAdaptive !== undefined && rawAdaptive !== null) {
@@ -1072,14 +1079,20 @@ export function validateArgs(args) {
     const extC = coerceNumberField("adaptive_extension", rawExt);
     if (extC.error) return extC;
     const adaptiveExtension = extC.value;
-    if (!Number.isInteger(adaptiveExtension) || adaptiveExtension < 1 || adaptiveExtension > MAX_ALLOWED_ITERATIONS) {
+    if (!Number.isFinite(adaptiveExtension)) {
+        return { error: `ralph_loop: adaptive_extension must be a finite number (got ${displayValue(rawExt)}).` };
+    }
+    if (adaptiveBudget && (!Number.isInteger(adaptiveExtension) || adaptiveExtension < 1 || adaptiveExtension > MAX_ALLOWED_ITERATIONS)) {
         return { error: `ralph_loop: adaptive_extension must be an integer in [1, ${MAX_ALLOWED_ITERATIONS}] (got ${displayValue(rawExt)}).` };
     }
     const rawTotal = args.adaptive_max_total ?? Math.min(max * 5, MAX_ALLOWED_ITERATIONS);
     const totalC = coerceNumberField("adaptive_max_total", rawTotal);
     if (totalC.error) return totalC;
     const adaptiveMaxTotal = totalC.value;
-    if (!Number.isInteger(adaptiveMaxTotal) || adaptiveMaxTotal < max || adaptiveMaxTotal > MAX_ALLOWED_ITERATIONS) {
+    if (!Number.isFinite(adaptiveMaxTotal)) {
+        return { error: `ralph_loop: adaptive_max_total must be a finite number (got ${displayValue(rawTotal)}).` };
+    }
+    if (adaptiveBudget && (!Number.isInteger(adaptiveMaxTotal) || adaptiveMaxTotal < max || adaptiveMaxTotal > MAX_ALLOWED_ITERATIONS)) {
         return { error: `ralph_loop: adaptive_max_total must be an integer in [max_iterations=${max}, ${MAX_ALLOWED_ITERATIONS}] (got ${displayValue(rawTotal)}).` };
     }
 

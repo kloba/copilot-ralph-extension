@@ -7600,3 +7600,61 @@ test("parseUserReason: idempotent — running twice yields the same string", () 
             `parseUserReason must be idempotent for input ${JSON.stringify(c.slice(0, 40))}`);
     }
 });
+
+// Iter 76 — adaptive_budget=false honours the documented "accept-and-
+// ignore" contract for adaptive_extension / adaptive_max_total. The
+// rationale (per the comment above the validator): a user with
+// adaptive presets baked into their tooling should be able to
+// toggle adaptive_budget=false without first clearing the presets.
+// Previously the validator strictly bounds-checked both fields
+// regardless of adaptive_budget, so a preset like `adaptive_extension: 0`
+// paired with `adaptive_budget: false` was rejected even though the
+// runtime never reads the value. Type checks (must-be-number) still
+// run so a typo (e.g. `"ten"`) surfaces loudly.
+test("adaptive_budget=false: out-of-range adaptive_extension is accepted (ignored at runtime)", () => {
+    // adaptive_extension < 1 — would error if adaptive_budget were true.
+    const r1 = validateArgs({ prompt: "go", adaptive_budget: false, adaptive_extension: 0 });
+    assert.ok(r1.value, `expected accept, got error: ${r1.error}`);
+    assert.equal(r1.value.adaptiveExtension, 0,
+        "user-supplied value must round-trip unchanged on the arm result");
+    // adaptive_extension > MAX_ALLOWED_ITERATIONS — same.
+    const r2 = validateArgs({ prompt: "go", adaptive_budget: false, adaptive_extension: 2000 });
+    assert.ok(r2.value, `expected accept, got error: ${r2.error}`);
+    assert.equal(r2.value.adaptiveExtension, 2000);
+    // Negative — same.
+    const r3 = validateArgs({ prompt: "go", adaptive_budget: false, adaptive_extension: -5 });
+    assert.ok(r3.value, `expected accept, got error: ${r3.error}`);
+    assert.equal(r3.value.adaptiveExtension, -5);
+});
+
+test("adaptive_budget=false: adaptive_max_total below max is accepted (ignored at runtime)", () => {
+    // adaptive_max_total < max — would error with "must be in [max=..., 1000]"
+    // when adaptive_budget=true. Disabled, the bound is irrelevant.
+    const r = validateArgs({
+        prompt: "go", max_iterations: 50, adaptive_budget: false, adaptive_max_total: 5,
+    });
+    assert.ok(r.value, `expected accept, got error: ${r.error}`);
+    assert.equal(r.value.adaptiveMaxTotal, 5);
+});
+
+test("adaptive_budget=false: non-numeric adaptive_extension still errors (type check unchanged)", () => {
+    // The "accept-and-ignore" loosening is only for bounds. A typo that
+    // produces a non-numeric value must still surface as a validation
+    // error so the caller learns about the bug instead of silently
+    // shipping garbage to the arm result.
+    const r = validateArgs({ prompt: "go", adaptive_budget: false, adaptive_extension: "ten" });
+    assert.ok(r.error, "non-numeric adaptive_extension must error even when budget=false");
+    assert.match(r.error, /adaptive_extension must be a finite number/);
+});
+
+test("adaptive_budget=true: strict bounds checks are unchanged (regression guard)", () => {
+    // Pin the tight contract so a future "simplify validateArgs" pass
+    // can't accidentally loosen the enabled path. Mirrors the iter 22
+    // assertions at line ~5868 — duplicated here so the loosening of
+    // the disabled path is paired with explicit re-affirmation that
+    // the enabled path's strictness was preserved.
+    const r1 = validateArgs({ prompt: "go", adaptive_budget: true, adaptive_extension: 0 });
+    assert.match(r1.error, /adaptive_extension must be an integer in \[1,/);
+    const r2 = validateArgs({ prompt: "go", max_iterations: 50, adaptive_budget: true, adaptive_max_total: 5 });
+    assert.match(r2.error, /adaptive_max_total must be an integer in \[max_iterations=50,/);
+});

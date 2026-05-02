@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Fixes
+- `validateArgs` now honours the documented "accept-and-ignore"
+  contract for `adaptive_extension` and `adaptive_max_total` when
+  `adaptive_budget` is false (the default). The comment above the
+  validator promised that a user with adaptive presets baked into
+  their tooling could toggle `adaptive_budget=false` without first
+  clearing the presets — but the validator strictly bounds-checked
+  both fields regardless of `adaptive_budget`, so a preset like
+  `adaptive_extension: 0` paired with `adaptive_budget: false` was
+  rejected even though the runtime never reads the value. Loosen
+  the integer-and-range bounds check so it only runs when
+  `adaptive_budget` is true. Type checks (must-be-a-finite-number)
+  still run unconditionally so a typo (`"ten"`, `Infinity`, `NaN`)
+  surfaces loudly. Round-tripped unchanged on the arm result so
+  consumers see exactly what they configured. Four new tests pin
+  the loosened path (out-of-range, negative, below-`max`, type-
+  error) and one regression test re-affirms the strict path when
+  `adaptive_budget` is true.
+
 ### Refactor
 - Extract `isCreditableTokenPair(input, output)` helper inside the
   ralph controller closure to dedupe the four-clause validation

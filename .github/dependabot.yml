@@ -1,11 +1,50 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+# Dependabot configuration. Two update streams:
+#
+#  1. `github-actions` at repo root — bumps the pinned-SHA `uses:`
+#     references across `.github/workflows/*.yml`. The workflows
+#     deliberately pin every external action by full commit SHA
+#     (best-practice supply-chain hardening — see
+#     `actions/checkout@11bd71901bbe…` in ci.yml / release.yml /
+#     docs.yml). Without dependabot, those SHAs silently rot:
+#     security patches in actions/checkout, actions/setup-node,
+#     actions/setup-python don't reach this repo. Dependabot opens
+#     a weekly PR with the new SHA + matching version-tag comment
+#     so a contributor can review the diff and merge.
+#
+#  2. `npm` at `packages/tui` — the TUI workspace declares ink /
+#     react / commander dependencies and ships its own
+#     `package-lock.json`. Without an npm ecosystem entry,
+#     CVE-bearing updates to those deps would never surface as a
+#     PR. Root `package.json` declares zero runtime deps (no
+#     lockfile committed) so it does not need an npm entry today;
+#     a future addition would require a third stream here.
+#
+# Schedule: Monday morning UTC, weekly. open-pull-requests-limit
+# defaults to 5 per ecosystem — plenty for a small repo, low enough
+# that a backlog cannot drown the issue/PR list.
 
 version: 2
 updates:
-  - package-ecosystem: "" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  - package-ecosystem: "github-actions"
+    directory: "/"
     schedule:
-      interval: "weekly" 
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+
+  - package-ecosystem: "npm"
+    directory: "/packages/tui"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "npm"

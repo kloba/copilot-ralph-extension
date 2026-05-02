@@ -46,6 +46,18 @@
   `1 character.` and `N characters.`.
 
 ### Internal
+- Replace the stub `.github/dependabot.yml` (`package-ecosystem:
+  ""` — an invalid ecosystem string Dependabot silently ignored)
+  with two real update streams: `github-actions` at repo root so
+  the SHA-pinned workflow `uses:` references in `ci.yml`,
+  `release.yml`, and `docs.yml` get weekly bump PRs; and `npm` at
+  `packages/tui` so the TUI's ink / react / commander deps
+  receive CVE patches. Both streams use `chore(deps)` as the
+  Conventional-Commit prefix per AGENTS.md §2 and Monday-weekly
+  scheduling. Drift-guard pins absence of the stub plus presence
+  of both ecosystems and the correct `directory` for npm
+  (root has zero deps + no lockfile — pointing npm at `/` would
+  always error out with "no lockfile found").
 - Added `.editorconfig` capturing the project's existing
   whitespace conventions (LF EOL mirroring `.gitattributes`,
   4-space `*.mjs`, 2-space `install.sh` + `*.yml`,

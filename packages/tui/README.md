@@ -1,4 +1,4 @@
-# `ralph-tui` — autonomous Copilot CLI loop driver + live TUI
+# `autopilot` — autonomous Copilot CLI loop driver + live TUI
 
 > Standalone TUI app that drives `ralph_loop` / `self_improve` /
 > `grow_project` loops by spawning each iter as a fresh
@@ -12,28 +12,28 @@ in-session Copilot CLI extension was retired — see CHANGELOG.
 ## Subcommands
 
 ```text
-ralph-tui list [--json] [--limit N]  Show recorded runs (newest first).
+autopilot list [--json] [--limit N]  Show recorded runs (newest first).
                                      `--json` emits the index as a JSON
                                      array for scripting/dashboards;
                                      `--limit N` caps the table.
-ralph-tui replay <runId>             Print every event in a past run.
-ralph-tui watch [runId] [--plain]    Tail the given run (or the most
+autopilot replay <runId>             Print every event in a past run.
+autopilot watch [runId] [--plain]    Tail the given run (or the most
                                      recent one if omitted) in real time.
-ralph-tui doctor                     Diagnose the runs directory + writer
+autopilot doctor                     Diagnose the runs directory + writer
                                      wiring (permissions, malformed
                                      JSONL, stale lockfiles, broken
                                      symlinks).
-ralph-tui prune [--older-than D]     Remove runs older than DURATION
+autopilot prune [--older-than D]     Remove runs older than DURATION
         [--dry-run]                  (e.g. 30d / 12h / 5m; default 30d).
                                      `--dry-run` lists what would go
                                      without touching the filesystem.
-ralph-tui stats                      Aggregate stats across the run
+autopilot stats                      Aggregate stats across the run
                                      index (run count, total iterations,
                                      p50/p95 durations, top SDLC tools).
-ralph-tui where                      Print the resolved runs root path
+autopilot where                      Print the resolved runs root path
                                      so a contributor can `cd` into it.
-ralph-tui --help     | -h            Show usage.
-ralph-tui --version  | -V            Print the ralph-tui package version.
+autopilot --help     | -h            Show usage.
+autopilot --version  | -V            Print the autopilot package version.
 ```
 
 `--plain` is **auto-enabled when stdout is not a TTY** so CI logs and
@@ -49,7 +49,7 @@ the next slice; if its module isn't installed, `watch` falls back to
 # 1. From the repo root, no install needed for plain mode:
 node packages/tui/bin/tui.mjs --help
 
-# 2. List recorded runs (writes from `ralph-tui run` land in
+# 2. List recorded runs (writes from `autopilot run` land in
 #    $RALPH_TUI_RUNS_DIR or ~/.copilot/ralph-tui/runs).
 node packages/tui/bin/tui.mjs list
 
@@ -127,7 +127,7 @@ Useful for:
 
 ## Auto-upgrade for each `run`
 
-Long-haul `ralph-tui run` loops (e.g. `--self-improve` draining a
+Long-haul `autopilot run` loops (e.g. `--self-improve` draining a
 backlog over hours) often want to start on the freshest source. The
 repo ships `scripts/ralph-tui-fresh.sh` — a thin Bash wrapper that
 runs `git pull --quiet --ff-only` from the repo root *only* when the
@@ -136,14 +136,14 @@ with the same args.
 
 ```sh
 # In ~/.zshrc or ~/.bashrc — point at your local clone:
-alias ralph-tui="$HOME/repos/copilot-ralph-extension/scripts/ralph-tui-fresh.sh"
+alias autopilot="$HOME/repos/copilot-ralph-extension/scripts/ralph-tui-fresh.sh"
 
 # Then long-haul runs auto-upgrade before iter 1:
-ralph-tui run --self-improve --continue
+autopilot run --self-improve --continue
 
 # Quick read-only subcommands skip the upgrade (no `git pull` cost):
-ralph-tui list
-ralph-tui watch
+autopilot list
+autopilot watch
 ```
 
 Why this is safe:
@@ -171,7 +171,7 @@ reproducibility in CI) is still possible by invoking
 * `src/prompts.mjs` — baked SDLC prompts (`PROMPT_SELF_IMPROVE`,
   `PROMPT_GROW_PROJECT`) and the literal completion / abort tokens
   the agent emits. Pure-stdlib, zero imports.
-* `src/runner.mjs` — `ralph-tui run` driver. Each iter is a fresh
+* `src/runner.mjs` — `autopilot run` driver. Each iter is a fresh
   `copilot -p ...` subprocess; pause/resume/stop are out-of-band via
   state.json mutations.
 * `src/events-emit.mjs` — zero-dep JSONL emitter the runner uses to

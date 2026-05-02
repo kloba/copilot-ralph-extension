@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Tests
+- `coerceNumberField` (extension/handler.mjs:945) gains direct
+  unit-test coverage. Pins the helper's input contract: rejects
+  non-{number,string} types (boolean / object / array / null /
+  undefined / function / symbol) with a type-aware error,
+  accepts numeric strings via `Number()` coercion, passes
+  numbers (including 0, negatives, MAX_SAFE_INTEGER, NaN,
+  Infinity) through unchanged, lets bogus strings like `"ten"`
+  coerce to NaN so the call-site `Number.isFinite` /
+  `Number.isInteger` checks remain the gate, and interpolates
+  the requested `fieldName` into every error so a typoed
+  `stagnation_limit` cannot surface as a `max_iterations`
+  rejection. The helper is now exported via `__test__` so
+  these contracts pin directly instead of through validateArgs
+  integration tests.
+
 ### Documentation
 - `docs/concepts.md` now pins the exact slot layout of the
   `ralph_status` `textResultForLlm` one-line summary (added in

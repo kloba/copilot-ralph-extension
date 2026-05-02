@@ -7,7 +7,7 @@ import { dirname, resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
-const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, parseUserReason } = __test__;
+const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, parseUserReason, coerceNumberField } = __test__;
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -7682,4 +7682,73 @@ test("docs/concepts.md pins the ralph_status one-line summary format (drift guar
     // prior loop finished".
     assert.match(concepts, /no active loop; last \{label\} \{reason\} after \{N\} iterations/, "inactive-with-last summary must be documented");
     assert.match(concepts, /no active loop and no prior run in this session/, "inactive-with-no-prior-run summary must be documented");
+});
+
+test("coerceNumberField: rejects non-{number,string} types with type-aware error", () => {
+    // Pin the input contract directly. Until iter 78 this helper had
+    // only integration coverage via validateArgs(); a future refactor
+    // that loosened the type predicate (e.g. accepted booleans because
+    // `Number(true) === 1`) would have shipped silently.
+    for (const [raw, label] of [
+        [true, "boolean"],
+        [false, "boolean"],
+        [{}, "object"],
+        [[], "array"],
+        [null, "null"],
+        [undefined, "undefined"],
+        [() => 1, "function"],
+        [Symbol("x"), "symbol"],
+    ]) {
+        const r = coerceNumberField("max_iterations", raw);
+        assert.ok(r.error, `must error on ${label}`);
+        assert.match(r.error, /^ralph_loop: max_iterations must be a number/);
+    }
+});
+
+test("coerceNumberField: accepts numeric strings via Number() coercion", () => {
+    // Strings are explicitly allowed so YAML / JSON-as-text callers
+    // (e.g. tooling that round-trips defaults through string config)
+    // do not have to pre-cast. Pin the round-trip so a refactor that
+    // tightens the predicate to `typeof raw === "number"` only
+    // breaks loudly here instead of in distant integration tests.
+    assert.deepStrictEqual(coerceNumberField("max_iterations", "42"), { value: 42 });
+    assert.deepStrictEqual(coerceNumberField("max_iterations", "0"), { value: 0 });
+    assert.deepStrictEqual(coerceNumberField("max_iterations", "-5"), { value: -5 });
+    assert.deepStrictEqual(coerceNumberField("max_iterations", "1e3"), { value: 1000 });
+});
+
+test("coerceNumberField: passes numbers through unchanged including edge values", () => {
+    assert.deepStrictEqual(coerceNumberField("x", 0), { value: 0 });
+    assert.deepStrictEqual(coerceNumberField("x", 1), { value: 1 });
+    assert.deepStrictEqual(coerceNumberField("x", -1), { value: -1 });
+    assert.deepStrictEqual(coerceNumberField("x", Number.MAX_SAFE_INTEGER), { value: Number.MAX_SAFE_INTEGER });
+    // NaN / Infinity are deliberately passed through; the call site is
+    // responsible for catching them via Number.isFinite / isInteger.
+    // Pin that boundary explicitly so a future refactor that adds an
+    // isFinite gate inside coerceNumberField is forced to update each
+    // call site that currently relies on the gate happening downstream.
+    const nanResult = coerceNumberField("x", NaN);
+    assert.ok(!nanResult.error, "NaN must not error inside coerceNumberField");
+    assert.ok(Number.isNaN(nanResult.value), "NaN must round-trip as NaN");
+    assert.deepStrictEqual(coerceNumberField("x", Infinity), { value: Infinity });
+});
+
+test("coerceNumberField: bogus strings yield NaN (caller must isFinite-check)", () => {
+    // Number("ten") === NaN. coerceNumberField does not gate this — the
+    // call site does. This test pins the contract so a future refactor
+    // that moves the isFinite check inside the helper trips the test
+    // (and every call site can drop its own check at the same time).
+    const r = coerceNumberField("max_iterations", "ten");
+    assert.ok(!r.error, "non-numeric string must coerce, not error, at this layer");
+    assert.ok(Number.isNaN(r.value), `expected NaN, got ${r.value}`);
+});
+
+test("coerceNumberField: error message echoes the requested fieldName", () => {
+    // The fieldName is interpolated into the error so a typoed value
+    // for `stagnation_limit` cannot surface as a `max_iterations`
+    // error and confuse the user. Pin the interpolation directly.
+    for (const fieldName of ["max_iterations", "min_iterations", "stagnation_limit", "max_tokens", "warn_at_pct", "adaptive_extension", "adaptive_max_total"]) {
+        const r = coerceNumberField(fieldName, true);
+        assert.ok(r.error.includes(fieldName), `error must include ${fieldName} (got ${r.error})`);
+    }
 });

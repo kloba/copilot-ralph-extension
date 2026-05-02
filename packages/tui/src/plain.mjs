@@ -63,6 +63,7 @@ export function formatEventLine(ev) {
         parts.push(`tokens=${i}/${o}`);
     }
     if (Number.isFinite(ev.streak)) parts.push(`streak=${ev.streak}`);
+    if (Number.isFinite(ev.pausedForMs)) parts.push(`pausedForMs=${ev.pausedForMs}`);
     if (typeof ev.reason === "string" && ev.reason) parts.push(`reason=${ev.reason}`);
     if (typeof ev.note === "string" && ev.note) parts.push(`note=${JSON.stringify(ev.note)}`);
     if (typeof ev.excerpt === "string" && ev.excerpt) {

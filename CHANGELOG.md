@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Fixes
+- TUI plain-mode renderer now surfaces `pausedForMs`
+  on resume events. Previously the field was silently
+  dropped from the log line, forcing users (and any
+  `awk`/`grep` consumer) to compute pause duration
+  from the pause→resume timestamp diff — fragile
+  across log rotation or clock skew. The new segment
+  is `pausedForMs=<n>` and uses `Number.isFinite`
+  rather than a truthy check, so a same-millisecond
+  resume (`pausedForMs=0`) still renders. New tests
+  pin the rendering, the zero boundary, and the
+  segment's absence on non-resume events.
+
 ### Tests
 - Pin TUI plain-mode rendering of `pause` and
   `resume` events. The plain renderer's VERB map

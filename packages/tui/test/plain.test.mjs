@@ -129,13 +129,14 @@ test("formatEventLine: pause with null reason omits the reason segment", () => {
     assert.doesNotMatch(line, /reason=/);
 });
 
-test("formatEventLine: resume renders verb=resume + iteration", () => {
+test("formatEventLine: resume renders verb=resume + iteration + pausedForMs", () => {
     // ralph_resume emits `{ type: "resume", runId, iteration,
     // pausedForMs, ts }`. The plain renderer surfaces verb / runId /
-    // iteration; pausedForMs is not currently rendered by
-    // formatEventLine — pin the present-day contract so any future
-    // change that adds pausedForMs to the line (or removes the
-    // resume verb mapping) shows up here loudly.
+    // iteration / pausedForMs so a `tail -f`'d log of events lets a
+    // human (or `awk`) see exactly how long the loop slept — without
+    // pausedForMs the user would have to compute it from the
+    // pause→resume timestamp diff, which is fragile across log
+    // rotation or clock skew.
     const line = formatEventLine({
         type: "resume",
         ts: 0,
@@ -145,4 +146,41 @@ test("formatEventLine: resume renders verb=resume + iteration", () => {
     });
     assert.match(line, /resume\s+ralph_loop-3/);
     assert.match(line, /iter=5/);
+    assert.match(line, /pausedForMs=1234/);
+});
+
+test("formatEventLine: pausedForMs=0 still renders (Number.isFinite, not truthy)", () => {
+    // Boundary pin: pausedForMs=0 is a legitimate value (resume
+    // happened in the same millisecond as pause). The render guard
+    // uses Number.isFinite, NOT a truthy-check, so 0 must still
+    // surface in the log line. A future refactor that flipped this
+    // to `if (ev.pausedForMs)` would drop the segment for the
+    // zero-elapsed-pause case — pin the contract here.
+    const line = formatEventLine({
+        type: "resume",
+        ts: 0,
+        runId: "r-1",
+        iteration: 1,
+        pausedForMs: 0,
+    });
+    assert.match(line, /pausedForMs=0/);
+});
+
+test("formatEventLine: pausedForMs is omitted on non-resume events", () => {
+    // Defence in depth: the field guard is shape-only (`Number.isFinite`),
+    // not type-gated, so any future event that happens to carry a
+    // numeric `pausedForMs` would render the segment. Today only
+    // `resume` does, but a contributor adding a new event type that
+    // reuses the field name should remain consistent. Pin the
+    // current behaviour: pause events carry no pausedForMs and the
+    // segment must be absent.
+    const line = formatEventLine({
+        type: "pause",
+        ts: 0,
+        runId: "r-1",
+        iteration: 2,
+        reason: "x",
+        // no pausedForMs
+    });
+    assert.doesNotMatch(line, /pausedForMs=/);
 });

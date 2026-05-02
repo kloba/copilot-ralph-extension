@@ -907,13 +907,15 @@ test("formatAbortMessage: unknown reason still produces a message (don't silentl
     assert.match(msg, /custom_reason received/);
 });
 
-// ─── Issue #65: bare `autopilot` defaults to `run --self-improve --fresh` ──
+// ─── Issue #65: bare `autopilot` defaults to `run --self-improve` ──
 //
 // Pre-issue-65 behaviour: bare `ralph-tui` with no args printed USAGE.
 // Post-issue-65: bare `autopilot` (no subcommand, no flags, no positional)
-// invokes `cmdRun` with `flags["self-improve"] = true` and
-// `flags.fresh = true` so the user does not have to memorise the canonical
-// drive-the-backlog incantation. `--help` / `-h` still print USAGE.
+// invokes `cmdRun` with `flags["self-improve"] = true` so the user
+// does not have to memorise the canonical drive-the-backlog
+// incantation. `--help` / `-h` still print USAGE. Issue #51 dropped
+// the implicit `flags.fresh = true` — the `--reset-on=workitem`
+// default applies (logged in the banner).
 
 test("parseArgv: bare argv has no cmd / positional / flags (defaults dispatch happens in main)", () => {
     // Pin the parser contract: bare argv produces an empty result. The
@@ -942,10 +944,12 @@ async function captureIo(fn) {
     return { stdout: stdoutBuf, stderr: stderrBuf };
 }
 
-test("main: bare argv writes self-improve banner to stderr and routes to cmdRun (--self-improve --fresh)", async () => {
+test("main: bare argv writes self-improve banner to stderr and routes to cmdRun (--self-improve)", async () => {
     // Pin both halves of the issue #65 dispatch contract: the user-visible
     // stderr banner fires BEFORE any subprocess work, AND cmdRun receives
-    // flags with self-improve + fresh set.
+    // flags with self-improve set. Issue #51 dropped the implicit
+    // `--fresh` so the run inherits the new `--reset-on=workitem`
+    // default (banner labels it accordingly).
     //
     // To avoid spawning a real `copilot` subprocess, point
     // RALPH_TUI_COPILOT_BIN at a nonexistent path so the runner's spawn
@@ -968,7 +972,7 @@ test("main: bare argv writes self-improve banner to stderr and routes to cmdRun 
         else process.env.RALPH_TUI_RUNS_DIR = origRunsDir;
         rmSync(dir, { recursive: true, force: true });
     }
-    assert.match(captured.stderr, /autopilot: starting self-improve loop \(--fresh\)\. Press q to stop\./,
+    assert.match(captured.stderr, /autopilot: starting self-improve loop \(--reset-on=workitem\)\. Press q to stop\./,
         "bare invocation must print the self-improve banner to stderr before invoking cmdRun");
 });
 
@@ -993,4 +997,120 @@ test("parseArgv: --help is recognised and main short-circuits to USAGE before ba
     assert.equal(parseArgv(["--help"]).flags.help, true);
     assert.equal(parseArgv(["--help"]).cmd, null);
     assert.equal(parseArgv(["-h"]).flags.help, true);
+});
+
+// ─── Issue #51 — `--reset-on={workitem|iter|never}` ───────────────────
+//
+// Pin the new flag, the legacy `--continue` / `--fresh` aliases (with
+// a one-shot stderr deprecation notice), and the validation that an
+// unknown value errors with a useful message.
+
+import { warnDeprecatedFlagOnce, __test__ as binTestHooks } from "../bin/tui.mjs";
+
+test("parseArgv: --reset-on=workitem (= form) sets flags['reset-on']", () => {
+    const r = parseArgv(["run", "--self-improve", "--reset-on=workitem"]);
+    assert.equal(r.flags["reset-on"], "workitem");
+});
+
+test("parseArgv: --reset-on iter (space form) sets flags['reset-on']", () => {
+    const r = parseArgv(["run", "--self-improve", "--reset-on", "iter"]);
+    assert.equal(r.flags["reset-on"], "iter");
+});
+
+test("USAGE block documents --reset-on", () => {
+    const r = runBin(["--help"]);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /--reset-on/);
+    assert.match(r.stdout, /workitem.*iter.*never/);
+});
+
+test("USAGE block notes --continue / --fresh as deprecated aliases", () => {
+    const r = runBin(["--help"]);
+    assert.equal(r.status, 0);
+    // Either the explicit "deprecated" word OR the alias mapping
+    // wording — keep the assertion forgiving so prose tweaks don't
+    // brittle the check.
+    assert.match(r.stdout, /Deprecated alias/i);
+});
+
+test("warnDeprecatedFlagOnce: writes to stderr exactly once per process per flag", () => {
+    binTestHooks.resetDeprecationWarnings();
+    let buf = "";
+    const sink = { write: (chunk) => { buf += String(chunk); return true; } };
+    warnDeprecatedFlagOnce("continue", "never", sink);
+    warnDeprecatedFlagOnce("continue", "never", sink);
+    warnDeprecatedFlagOnce("continue", "never", sink);
+    const matches = buf.match(/--continue is deprecated/g) ?? [];
+    assert.equal(matches.length, 1, "deprecation notice must fire exactly once per process per flag");
+    assert.match(buf, /--reset-on=never/, "the notice tells the user how to migrate");
+});
+
+test("warnDeprecatedFlagOnce: distinct flags warn independently (each fires once)", () => {
+    binTestHooks.resetDeprecationWarnings();
+    let buf = "";
+    const sink = { write: (chunk) => { buf += String(chunk); return true; } };
+    warnDeprecatedFlagOnce("continue", "never", sink);
+    warnDeprecatedFlagOnce("fresh", "iter", sink);
+    warnDeprecatedFlagOnce("continue", "never", sink); // second call is no-op
+    warnDeprecatedFlagOnce("fresh", "iter", sink);     // second call is no-op
+    assert.equal((buf.match(/--continue is deprecated/g) ?? []).length, 1);
+    assert.equal((buf.match(/--fresh is deprecated/g) ?? []).length, 1);
+});
+
+test("bin run --reset-on=foo: rejects with a clear error", () => {
+    const dir = tmp();
+    const r = runBin(["run", "--self-improve", "--reset-on=foo"], { RALPH_TUI_RUNS_DIR: dir });
+    assert.equal(r.status, 2, "invalid --reset-on value must exit 2");
+    assert.match(r.stderr, /reset-on/, "error message must reference --reset-on");
+    assert.match(r.stderr, /workitem.*iter.*never|workitem, iter, never/,
+        "error message must list the accepted values so the user can fix it");
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("bin run --reset-on (no value): rejects with a clear error", () => {
+    const dir = tmp();
+    // `--reset-on` with no following arg parses as `flags["reset-on"] === true`
+    // because the parser only consumes the next arg when it isn't another
+    // flag. cmdRun must reject this with a helpful message.
+    const r = runBin(["run", "--self-improve", "--reset-on"], { RALPH_TUI_RUNS_DIR: dir });
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /requires a value/);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("bin run --continue: prints deprecation notice to stderr and proceeds (or fails for unrelated reason)", () => {
+    const dir = tmp();
+    // Point copilot bin at a nonexistent path so the runner fails fast
+    // with ENOENT — we only care that the deprecation notice fires
+    // BEFORE that failure. status code is unimportant here.
+    const r = runBin(["run", "--self-improve", "--continue", "--max", "1"], {
+        RALPH_TUI_RUNS_DIR: dir,
+        RALPH_TUI_COPILOT_BIN: "/nonexistent-copilot-binary-issue-51",
+    });
+    assert.match(r.stderr, /--continue is deprecated/,
+        "the deprecation notice must surface on stderr when --continue is passed");
+    assert.match(r.stderr, /--reset-on=never/,
+        "the notice must point users at the new spelling");
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("bin run --fresh: prints deprecation notice to stderr (--reset-on=iter migration hint)", () => {
+    const dir = tmp();
+    const r = runBin(["run", "--self-improve", "--fresh", "--max", "1"], {
+        RALPH_TUI_RUNS_DIR: dir,
+        RALPH_TUI_COPILOT_BIN: "/nonexistent-copilot-binary-issue-51-fresh",
+    });
+    assert.match(r.stderr, /--fresh is deprecated/);
+    assert.match(r.stderr, /--reset-on=iter/);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("bin run: combining --reset-on=iter and --continue rejects with a clear error", () => {
+    const dir = tmp();
+    const r = runBin(["run", "--self-improve", "--reset-on=iter", "--continue"], {
+        RALPH_TUI_RUNS_DIR: dir,
+    });
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /--continue is a deprecated alias/);
+    rmSync(dir, { recursive: true, force: true });
 });

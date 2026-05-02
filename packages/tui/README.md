@@ -32,6 +32,12 @@ autopilot stats                      Aggregate stats across the run
                                      p50/p95 durations, top SDLC tools).
 autopilot where                      Print the resolved runs root path
                                      so a contributor can `cd` into it.
+autopilot run …                      Drive an autonomous Copilot loop.
+                                     Pick exactly one prompt mode
+                                     (`--self-improve` / `--grow-project`
+                                     / `--prompt TEXT`) and optionally
+                                     `--reset-on={workitem|iter|never}`
+                                     (default `workitem`).
 autopilot --help     | -h            Show usage.
 autopilot --version  | -V            Print the autopilot package version.
 ```
@@ -42,6 +48,22 @@ interactive Ink-rendered watch UI (Header / Timeline / LiveOutputPane /
 Controls — see [docs/cli-stack.md](../../docs/cli-stack.md)) ships in
 the next slice; if its module isn't installed, `watch` falls back to
 `--plain` automatically.
+
+`--reset-on` controls when the runner starts a new Copilot session:
+
+* `workitem` (default) — fresh session at every `[WORKITEM_END]`
+  marker (or any iter exit). Stages within a single work item share
+  one Copilot session so the agent's reasoning chain stays intact;
+  unrelated backlog items don't cross-pollinate.
+* `iter` — fresh session every iter (status-quo `--fresh`).
+* `never` — same Copilot session for the whole run; iter 1's
+  `result.sessionId` is captured and reused via `--resume=<sessionId>`
+  for iter 2+ (status-quo `--continue`).
+
+The legacy `--continue` and `--fresh` flags continue to work as
+aliases for `--reset-on=never` and `--reset-on=iter` respectively,
+with a one-shot stderr deprecation notice on first use; they will be
+removed in a future release.
 
 ## Quick start
 
@@ -139,7 +161,7 @@ with the same args.
 alias autopilot="$HOME/repos/copilot-ralph-extension/scripts/ralph-tui-fresh.sh"
 
 # Then long-haul runs auto-upgrade before iter 1:
-autopilot run --self-improve --continue
+autopilot run --self-improve --reset-on=never
 
 # Quick read-only subcommands skip the upgrade (no `git pull` cost):
 autopilot list

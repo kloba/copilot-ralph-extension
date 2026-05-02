@@ -28,7 +28,7 @@ autopilot --help
 autopilot --version
 ```
 
-Bare `autopilot` (no subcommand) starts a self-improve loop with `--fresh` context, equivalent to `autopilot run --self-improve --fresh`.
+Bare `autopilot` (no subcommand) starts a self-improve loop with the default `--reset-on=workitem` boundary, equivalent to `autopilot run --self-improve`.
 
 ### Plain mode (no install)
 
@@ -45,29 +45,40 @@ A future release will publish `autopilot` to npm so `npm i -g autopilot` works; 
 ## Usage
 
 ```bash
-# Default — bare invocation runs --self-improve --fresh.
+# Default — bare invocation runs --self-improve with the per-work-item
+# reset (stages within a work item share context; new work item → fresh
+# Copilot session).
 autopilot
 
-# Drive a backlog-drain loop, fresh context every iter (50-iter cap).
-autopilot run --self-improve --fresh --max 50
+# Drive a backlog-drain loop with the default per-work-item reset.
+# 50-iter cap.
+autopilot run --self-improve --max 50
 
-# Same, but resume the same Copilot session every iter (context grows).
-autopilot run --self-improve --continue --max 50
+# Same, but reset every iter regardless of work-item boundaries
+# (status-quo `--fresh`).
+autopilot run --self-improve --reset-on=iter --max 50
 
-# Grow the project backlog with a focus area, fresh context per iter.
-autopilot run --grow-project --fresh \
+# Resume the same Copilot session every iter (context grows
+# monotonically; status-quo `--continue`).
+autopilot run --self-improve --reset-on=never --max 50
+
+# Grow the project backlog with a focus area.
+autopilot run --grow-project --reset-on=iter \
   --focus "autopilot replay UX" --max 30
 
 # Custom prompt mode — re-fed verbatim every iter until COMPLETE.
 autopilot run \
   --prompt "Refactor packages/tui/src/runner.mjs and add tests. Emit COMPLETE when green." \
-  --fresh --max 20
+  --reset-on=iter --max 20
 ```
 
-Pick exactly one prompt mode (`--self-improve` / `--grow-project` / `--prompt "..."`) AND exactly one context mode (`--continue` / `--fresh`).
+Pick exactly one prompt mode (`--self-improve` / `--grow-project` / `--prompt "..."`). The optional `--reset-on={workitem|iter|never}` flag picks the context-reset boundary; default is `workitem`:
 
-* `--continue` captures the terminal `result.sessionId` from the JSONL stream on iter 1 and resumes via `--resume=<sessionId>` on iter 2+ so the agent's context grows monotonically.
-* `--fresh` re-spawns with no session reuse — every iteration starts from a clean slate.
+* `--reset-on=workitem` (default) — start a fresh Copilot session at every `[WORKITEM_END]` marker (or any iter exit). Stages within a work item share one reasoning chain (so IMPLEMENT can see what BASELINE detected, etc.); unrelated backlog items don't cross-pollinate.
+* `--reset-on=iter` — every iter starts a brand-new Copilot session (clean context per iter; status-quo `--fresh`).
+* `--reset-on=never` — capture iter 1's `result.sessionId` from the JSONL stream and resume via `--resume=<sessionId>` on iter 2+ so the agent's context grows monotonically (status-quo `--continue`).
+
+The legacy `--continue` and `--fresh` flags continue to work as aliases for `--reset-on=never` and `--reset-on=iter` respectively, with a one-shot stderr deprecation notice on first use; they will be removed in a future release.
 
 Events flow into `~/.copilot/autopilot/runs/<runId>/events.jsonl`. Use `autopilot list / replay / watch / stats / doctor / prune` to inspect them.
 
@@ -163,7 +174,7 @@ The first identifies the agent. The second attributes the commit to a dedicated 
 Set `AUTOPILOT_NO_ATTRIBUTION=1` in the environment before running the loop to suppress the second `copilot-ralph` trailer. The first `Copilot` trailer still ships, since it identifies the agent that made the change. The opt-out is **honored by the prompt** — the agent reads the env var during the COMMIT stage and omits the trailer accordingly.
 
 ```bash
-AUTOPILOT_NO_ATTRIBUTION=1 autopilot run --self-improve --fresh
+AUTOPILOT_NO_ATTRIBUTION=1 autopilot run --self-improve
 ```
 
 > Legacy `RALPH_NO_ATTRIBUTION=1` is still recognized as a fallback for one release.
@@ -178,7 +189,7 @@ AUTOPILOT_NO_ATTRIBUTION=1 autopilot run --self-improve --fresh
 Long `autopilot run` loops can outlast macOS's idle-sleep timeout. Set `AUTOPILOT_CAFFEINATE=1` and the runner will spawn `caffeinate -i` for the duration of the run:
 
 ```bash
-AUTOPILOT_CAFFEINATE=1 autopilot run --self-improve --fresh
+AUTOPILOT_CAFFEINATE=1 autopilot run --self-improve
 ```
 
 To also keep the display awake, opt into `idle+display` scope:
@@ -192,9 +203,9 @@ The wrapper script [`scripts/autopilot-fresh.sh`](scripts/autopilot-fresh.sh) is
 ## Limitations
 
 - **Substring-match completion can self-trigger.** Both `--completion-promise` and `--abort-promise` use plain substring matching against the assistant's accumulated turn output. If the agent quotes the trigger phrase mid-thought (e.g. *"I'll mark this COMPLETE when done"*), the loop will finish on that turn. Pick a phrase the agent is unlikely to mention casually.
-- **Prompt is re-injected verbatim every iteration.** The loop has no concept of progress — the agent must derive what's already done from its own conversation history (in `--continue` mode) or from the working tree (in `--fresh` mode).
+- **Prompt is re-injected verbatim every iteration.** The loop has no concept of progress — the agent must derive what's already done from its own conversation history (in `--reset-on=never`) or from the working tree (in `--reset-on=workitem` / `--reset-on=iter` modes).
 - **One loop per `runId`.** The driver coordinates pause / resume / stop via the per-run state file; concurrently driving the same `runId` from two processes is unsupported.
-- **`--continue` mode requires a clean session-resume contract from the Copilot CLI.** If `copilot -p ... --output-format json` ever stops emitting a terminal `result.sessionId`, `--continue` falls back to `--fresh` and logs the regression.
+- **`--reset-on=never` requires a clean session-resume contract from the Copilot CLI.** If `copilot -p ... --output-format json` ever stops emitting a terminal `result.sessionId`, the resume becomes a fresh session for the next iter and the regression is logged.
 - **Attribution opt-out is honored by the prompt, not enforced by the runtime.** `AUTOPILOT_NO_ATTRIBUTION=1` suppresses the second `copilot-ralph` `Co-authored-by:` trailer only because the prompt instructs the agent to read the env var during COMMIT and omit the trailer. The driver does not rewrite commits — if a sub-agent ignores the env var, the trailer can still ship.
 - **No automatic rollback.** Loop-driven commits are not auto-reverted if a later iteration regresses. Treat the working branch as expendable, push to a feature branch, and review the diff before merging.
 - **An idle Copilot subscription still costs.** The loop keeps the Copilot CLI busy for the full run; budget accordingly.

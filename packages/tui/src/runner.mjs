@@ -1,12 +1,19 @@
 // `ralph-tui run` driver — runs each iteration as a fresh
-// `copilot -p ...` subprocess. Two session modes:
+// `copilot -p ...` subprocess. Three context-reset boundaries
+// (selected via `--reset-on={workitem|iter|never}`, default
+// `workitem`):
 //
-//   --continue   resume the same Copilot session every iter; context
-//                grows monotonically across iterations.
-//   --fresh      brand-new Copilot session every iter (clean context;
-//                the iter sees only the prompt + tool results).
+//   workitem   New Copilot session every time the runner observes
+//              `[WORKITEM_END]` (or the iter exits without emitting
+//              one). Stages within a single work item share one
+//              Copilot session so IMPLEMENT can see what BASELINE
+//              detected, etc.; unrelated backlog items don't
+//              cross-pollinate. Default.
+//   iter       New Copilot session every iter (status-quo `--fresh`).
+//   never      Same Copilot session for the whole run (status-quo
+//              `--continue`). Context accumulates monotonically.
 //
-// Both modes use the same baked SDLC prompts (PROMPT_SELF_IMPROVE /
+// All modes use the same baked SDLC prompts (PROMPT_SELF_IMPROVE /
 // PROMPT_GROW_PROJECT) from `./prompts.mjs`.
 //
 // The driver subprocess runs `copilot -p "..." --allow-all-tools
@@ -14,9 +21,10 @@
 //   - root assistant.message.data.content (no agentId field) — the
 //     iter's user-visible response, scanned for the
 //     completion_promise / abort_promise tokens.
-//   - terminal `result` event with `result.sessionId` — captured at
-//     iter 1 and reused via `--resume=<sessionId>` for iter 2+ when
-//     the driver is in --continue mode.
+//   - terminal `result` event with `result.sessionId` — captured per
+//     iter and reused via `--resume=<sessionId>` for the NEXT iter
+//     when the driver is not at a work-item boundary (workitem mode)
+//     or never resets (never mode).
 //
 // Pause/resume/stop are out-of-band: a sibling `ralph-tui run --pause
 // <runId>` flips a flag in the run's state.json (CAS-protected via
@@ -1267,6 +1275,25 @@ export function runOneIteration({
 
 // ─── Multi-iter loop ────────────────────────────────────────────────
 
+/** Map a legacy `contextMode` value (`continue` / `fresh`) to a
+ *  `resetOn` value (`never` / `iter`). Returns null when the input
+ *  is not a recognised legacy value so the caller can keep its own
+ *  validation flow. Pure / exported for testing.
+ *
+ *  Used at the API boundary so any caller still passing the old
+ *  `contextMode` parameter (test fixtures, downstream tooling) keeps
+ *  working until the next major. */
+export function legacyContextModeToResetOn(contextMode) {
+    if (contextMode === "continue") return "never";
+    if (contextMode === "fresh") return "iter";
+    return null;
+}
+
+const RESET_ON_VALUES = Object.freeze(["workitem", "iter", "never"]);
+const RESET_ON_SET = new Set(RESET_ON_VALUES);
+
+export { RESET_ON_VALUES };
+
 /**
  * Run the full multi-iter loop. Returns when the loop terminates via
  * completion_promise, abort_promise, max_iterations, stopRequested,
@@ -1274,7 +1301,12 @@ export function runOneIteration({
  *
  * Required:
  *   mode           "self-improve" | "grow-project" | "prompt"
- *   contextMode    "continue" | "fresh"
+ *
+ * One of (default `resetOn = "workitem"`):
+ *   resetOn        "workitem" (default) | "iter" | "never"
+ *   contextMode    Legacy alias: "continue" → "never", "fresh" →
+ *                  "iter". Honored at the API boundary for callers
+ *                  that haven't migrated.
  *
  * Optional:
  *   prompt              Required when mode === "prompt".
@@ -1299,6 +1331,7 @@ export function runOneIteration({
 export async function runRalphTui(opts) {
     const {
         mode,
+        resetOn: resetOnRaw,
         contextMode,
         prompt,
         focus,
@@ -1342,9 +1375,35 @@ export async function runRalphTui(opts) {
     if (mode !== "self-improve" && mode !== "grow-project" && mode !== "prompt") {
         throw new TypeError(`runRalphTui: invalid mode "${mode}"`);
     }
-    if (contextMode !== "continue" && contextMode !== "fresh") {
-        throw new TypeError(`runRalphTui: contextMode must be "continue" or "fresh"`);
+
+    // Resolve the effective resetOn value. Precedence:
+    //   1. Explicit `resetOn` (new API) — must be one of RESET_ON_VALUES.
+    //   2. Legacy `contextMode` (`continue` / `fresh`) — mapped via
+    //      legacyContextModeToResetOn so existing callers keep working.
+    //   3. Default to "workitem" when neither is provided.
+    let resetOn;
+    if (resetOnRaw !== undefined) {
+        if (!RESET_ON_SET.has(resetOnRaw)) {
+            throw new TypeError(`runRalphTui: resetOn must be one of ${RESET_ON_VALUES.join(", ")}`);
+        }
+        resetOn = resetOnRaw;
+    } else if (contextMode !== undefined) {
+        const mapped = legacyContextModeToResetOn(contextMode);
+        if (mapped === null) {
+            throw new TypeError(`runRalphTui: contextMode must be "continue" or "fresh"`);
+        }
+        resetOn = mapped;
+    } else {
+        resetOn = "workitem";
     }
+    // Internal mirror used by the existing event-emit / state-file
+    // paths that still surface `contextMode` for backwards-compatible
+    // consumers (`autopilot list`, `autopilot run --status`). Pinned
+    // to the legacy vocabulary for `iter` / `never` so dashboards
+    // built against the old strings keep rendering; `workitem` is
+    // surfaced as itself because it has no legacy synonym.
+    const RESET_ON_TO_LEGACY = { never: "continue", iter: "fresh", workitem: "workitem" };
+    const contextModeForEmit = RESET_ON_TO_LEGACY[resetOn];
     if (mode === "prompt" && (!prompt || typeof prompt !== "string")) {
         throw new TypeError(`runRalphTui: --prompt requires a non-empty string when mode === "prompt"`);
     }
@@ -1365,12 +1424,13 @@ export async function runRalphTui(opts) {
     const composedPrompt = composePrompt({ mode, prompt, focus: focusCheck.value });
 
     // Initial state-file. terminationReason starts as null; the loop
-    // sets it on exit. sessionId is captured after iter 1 in
-    // --continue mode.
+    // sets it on exit. sessionId is captured per-iter when resetOn
+    // permits the next iter to resume.
     initState(runId, {
         runId,
         mode,
-        contextMode,
+        contextMode: contextModeForEmit,
+        resetOn,
         startedAt,
         max,
         iter: 0,
@@ -1403,7 +1463,9 @@ export async function runRalphTui(opts) {
     }
 
     // Emit the canonical `armed` event so `ralph-tui list/stats`
-    // pick up this run.
+    // pick up this run. `contextMode` keeps the legacy continue/fresh
+    // vocabulary for back-compat consumers; `resetOn` carries the new
+    // tri-valued seam.
     emitter.write({
         type: "armed",
         ts: now(),
@@ -1412,7 +1474,8 @@ export async function runRalphTui(opts) {
         startedAt,
         maxIterations: max,
         minIterations: 1,
-        contextMode,
+        contextMode: contextModeForEmit,
+        resetOn,
         mode,
     });
 
@@ -1543,10 +1606,20 @@ export async function runRalphTui(opts) {
         const iterStartSha = gitRevParseHead({ gitExec, cwd, env });
 
         // Decide whether to resume an existing session or start a
-        // fresh one. --continue captures sessionId at iter 1 then
-        // resumes it; --fresh always starts fresh.
-        const resumeSessionId = (contextMode === "continue" && iter > 1) ? capturedSessionId : null;
-        const sessionNameForIter = (contextMode === "continue" && iter === 1) ? sessionName : null;
+        // fresh one.
+        //   never:    capture sessionId at iter 1, resume it for
+        //             every iter after that.
+        //   iter:     never capture, never resume — every iter is
+        //             a brand-new session.
+        //   workitem: capture sessionId per iter; resume the captured
+        //             one on the next iter UNLESS we observed
+        //             `[WORKITEM_END]` in this iter or the previous
+        //             iter exited without one (the post-iter logic
+        //             below clears `capturedSessionId` in either case
+        //             when in workitem mode).
+        const canResume = resetOn !== "iter" && capturedSessionId !== null;
+        const resumeSessionId = canResume ? capturedSessionId : null;
+        const sessionNameForIter = (resetOn !== "iter" && !canResume) ? sessionName : null;
 
         let result;
         // Issue #48 / streaming emission: extract `stage_start` /
@@ -1721,6 +1794,13 @@ export async function runRalphTui(opts) {
                         });
                     } catch { /* serializer rejection — skip */ }
                     activeWorkItemRef = null;
+                    // Note: in `workitem` reset mode this marker is
+                    // the conceptual reason we drop the captured
+                    // sessionId at iter exit (post-iter cleanup
+                    // below), but the cleanup runs on every iter
+                    // exit regardless because we treat any iter-exit
+                    // as an implicit work-item boundary too. So
+                    // there's nothing to track per-marker here.
                 } else if (item.kind === "stage_plan") {
                     const p = item.payload || {};
                     if (!Array.isArray(p.stages) || p.stages.length === 0) continue;
@@ -2013,7 +2093,14 @@ export async function runRalphTui(opts) {
 
         const reduced = reduceCopilotEvents(result.events);
         lastAssistantContent = reduced.assistantContent;
-        if (contextMode === "continue" && iter === 1 && reduced.sessionId) {
+        // Issue #51 — capture the sessionId per-iter for resetOn
+        // modes that resume across iters (`never` and `workitem`).
+        // For `never` this matches the legacy --continue behaviour
+        // (capture once at iter 1, reuse forever); for `workitem`
+        // we re-capture each iter so the post-iter cleanup below
+        // can drop the most recent value at the work-item boundary.
+        // `iter` mode skips capture entirely.
+        if (resetOn !== "iter" && reduced.sessionId) {
             capturedSessionId = reduced.sessionId;
             updateState(runId, (s) => { s.sessionId = capturedSessionId; return s; }, env);
         }
@@ -2178,6 +2265,29 @@ export async function runRalphTui(opts) {
                     branch: iterWorktree.branch,
                 });
             } catch { /* serializer rejection — skip */ }
+        }
+
+        // Issue #51 — workitem-mode session reset.
+        //
+        // Drop the captured sessionId at any work-item boundary so
+        // the next iter's resume logic starts a brand-new Copilot
+        // session. Two boundaries collapse here:
+        //
+        //   (a) `[WORKITEM_END]` was observed during this iter (the
+        //       agent emitted the structured marker — work item
+        //       genuinely closed).
+        //   (b) The iter exited without emitting `[WORKITEM_END]`
+        //       (ABORT, hit max iters, process death, the agent
+        //       just forgot). We treat any iter-exit as an implicit
+        //       work-item boundary so a half-finished item never
+        //       silently carries stale context into the next iter.
+        //
+        // `never` mode skips this — that's the whole point of the
+        // escape hatch. `iter` mode never captured anything so the
+        // reset is a no-op.
+        if (resetOn === "workitem" && capturedSessionId !== null) {
+            capturedSessionId = null;
+            updateState(runId, (s) => { s.sessionId = null; return s; }, env);
         }
 
         if (result.exitCode !== 0) {

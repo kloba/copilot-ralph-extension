@@ -12,23 +12,34 @@ The previous in-session Copilot CLI extension (`ralph_loop` / `self_improve` / `
 
 ```
 packages/tui/
-├── bin/tui.mjs        # CLI entry — argv parser + dispatcher
+├── bin/tui.mjs               # CLI entry — argv parser + dispatcher
 ├── src/
-│   ├── prompts.mjs    # Baked SDLC prompts (PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT)
-│   ├── runner.mjs     # `autopilot run` driver — spawns each iter, tracks state.json
-│   ├── events.mjs     # Pure event contract (read side)
-│   ├── events-emit.mjs # Zero-dep JSONL emitter (write side)
-│   ├── writer.mjs     # JSONL reader + index aggregator (`list`/`stats`/`prune`)
-│   ├── tail.mjs       # Live tail iterator for `watch`
-│   ├── plain.mjs      # Plain-mode log line formatter
-│   ├── watch.mjs      # Watch dispatcher (TTY → Ink, non-TTY → plain)
-│   ├── run-ui.mjs     # Ink renderer for `run`'s live UI
-│   └── components/    # Ink layout components (Header, Timeline, DetailPane, …)
-├── test/              # node:test suite
-└── package.json       # Ink/React/Yoga deps for the renderer
+│   ├── components/             # Ink layout components for `run` + `watch`
+│   │   ├── App.mjs             # Top-level Ink tree wiring panes together
+│   │   ├── Controls.mjs        # Footer controls / keybinding hints
+│   │   ├── Header.mjs          # Top bar (run label, version, run-state badge)
+│   │   ├── LastCommit.mjs      # Replay-on-mount excerpt of the latest commit
+│   │   ├── LiveOutputPane.mjs  # Tail of the agent's live session output
+│   │   ├── StagesRow.mjs       # SDLC stage strip
+│   │   ├── SubstagesPane.mjs   # Per-stage substage progress
+│   │   ├── TasksPane.mjs       # Active iter task / tool-call view
+│   │   └── Timeline.mjs        # Live event-stream excerpt
+│   ├── events-emit.mjs       # Zero-dep JSONL emitter (write side)
+│   ├── events.mjs            # Pure event contract (read side)
+│   ├── plain.mjs             # Plain-mode log line formatter
+│   ├── prompts.mjs           # Baked SDLC prompts (PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT)
+│   ├── run-ui.mjs            # Ink renderer for `run`'s live UI
+│   ├── runner.mjs            # `autopilot run` driver — spawns each iter, tracks state.json
+│   ├── stream-format.mjs     # Live-output formatter for the Copilot session log
+│   ├── tail.mjs              # Live tail iterator for `watch`
+│   ├── version.mjs           # Reads packages/tui/package.json for `--version` + Header
+│   ├── watch.mjs             # Watch dispatcher (TTY → Ink, non-TTY → plain)
+│   └── writer.mjs            # JSONL reader + index aggregator (`list`/`stats`/`prune`)
+├── test/                     # node:test suite
+└── package.json              # Ink/React/Yoga deps for the renderer
 scripts/
-├── check.mjs          # Portable equivalent of CI's syntax-check job
-└── ralph-tui-fresh.sh # Optional `git pull --ff-only` wrapper for long runs
+├── check.mjs                 # Portable equivalent of CI's syntax-check job
+└── ralph-tui-fresh.sh        # Optional `git pull --ff-only` wrapper for long runs
 ```
 
 ## `autopilot run` — the driver

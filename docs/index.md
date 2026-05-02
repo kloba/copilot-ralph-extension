@@ -7,7 +7,7 @@ An autonomous iterative loop for the GitHub Copilot CLI.
 
 ## What is this?
 
-Ralph turns the Copilot CLI into a self-driving iteration engine. You arm it with a prompt, and it re-fires that prompt every time the agent goes idle until either the agent emits a "done" phrase, you call `ralph_stop`, or a hard cap is reached.
+Ralph turns the Copilot CLI into a self-driving iteration engine. You arm it with a prompt, and it re-fires that prompt every time the agent goes idle until either the agent emits a "done" phrase, you call `ap_stop`, or a hard cap is reached.
 
 See the [Quickstart](quickstart.md) to get going in under a minute.
 

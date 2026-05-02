@@ -215,6 +215,22 @@
   `feat/rename-autopilot` branch and ship together as a single
   `feat!:` squash-merge.
 
+- Refs #49: sync `docs/quickstart.md`, `docs/index.md`, and
+  `docs/faq.md` user-facing tool-name references to the renamed
+  surface shipped by `ca5ca91` — `ralph_loop` → `ap_loop`,
+  `ralph_stop` → `ap_stop`, `ralph_pause` → `ap_pause`,
+  `ralph_resume` → `ap_resume`, `ralph_status.paused_for_ms` →
+  `ap_status.paused_for_ms`. Also fix a now-broken FAQ anchor:
+  `#inspecting-a-running-loop-ralph_status-tool` →
+  `#inspecting-a-running-loop-ap_status-tool` (the README's
+  matching heading was already renamed). Untouched on this slice
+  pending the open #49 decisions A (filesystem paths under
+  `~/.copilot/ralph/`), B (`RALPH_*` environment variables and
+  `RALPH_DONE_42` example completion phrase), and the locked
+  `copilot-ralph` co-author trailer literal. The `ralph-tui`
+  binary references in `docs/faq.md` also stay until the binary
+  rename slice lands.
+
 ### Features
 - `events.mjs` gains the `stage_plan` / `stage_plan_amend` /
   `task_list` / `task_start` / `task_end` / `commit_observed`

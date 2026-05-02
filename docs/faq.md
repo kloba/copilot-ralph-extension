@@ -45,13 +45,13 @@ version Copilot CLI ships with.
 ### Why does arming fail with `<owner> is already armed/running/paused`?
 
 Only one loop runs per session at a time. The leading word of the
-refusal — `ralph_loop`, `self_improve`, or `grow_project` — names
-whichever tool armed the *currently active* loop. Call `ralph_stop`
+refusal — `ap_loop`, `self_improve`, or `grow_project` — names
+whichever tool armed the *currently active* loop. Call `ap_stop`
 first, then arm the new one.
 
 If the active loop is paused you'll see `is already paused
-(iteration N/M) — call ralph_stop first.` Despite the wording,
-`ralph_resume` is also valid if you wanted the original loop to
+(iteration N/M) — call ap_stop first.` Despite the wording,
+`ap_resume` is also valid if you wanted the original loop to
 continue rather than be cleared.
 
 ### Why did my loop stop after exactly one iteration?
@@ -71,7 +71,7 @@ Three frequent causes:
 1. The prompt doesn't actually instruct the agent to emit the
    `completion_promise` literally. With a quoted/paraphrased
    completion phrase, only `max_iterations` (or `max_tokens`,
-   `stagnation_limit`, `ralph_stop`) ends the loop.
+   `stagnation_limit`, `ap_stop`) ends the loop.
 2. Stagnation guard is disabled (`stagnation_limit: 0`) and the
    agent oscillates indefinitely. Re-enable with the default
    `stagnation_limit: 3` or higher.
@@ -81,7 +81,7 @@ Three frequent causes:
 
 ### How do I stop a loop that's running away?
 
-Call `ralph_stop` — it returns immediately with the iteration count
+Call `ap_stop` — it returns immediately with the iteration count
 at the moment of the call. The currently-running iteration finishes
 normally; the loop simply doesn't fire on the next `session.idle`.
 You can pass an optional `reason` string that gets recorded on the
@@ -89,17 +89,17 @@ result for later forensics.
 
 ### Pause and resume — what's the difference vs stop?
 
-- `ralph_stop` clears the active loop. The iteration counter is
+- `ap_stop` clears the active loop. The iteration counter is
   gone afterwards.
-- `ralph_pause` keeps the loop alive but skips subsequent
+- `ap_pause` keeps the loop alive but skips subsequent
   `session.idle` triggers. You can chat freely with the agent
   without consuming iterations.
-- `ralph_resume` un-pauses. The iteration counter resumes where
+- `ap_resume` un-pauses. The iteration counter resumes where
   it left off; the stagnation streak is reset (manual chat
   almost always changes context).
 
-`ralph_pause` is idempotent (pausing an already-paused loop is a
-no-op). `ralph_resume` is **not** idempotent — calling it without
+`ap_pause` is idempotent (pausing an already-paused loop is a
+no-op). `ap_resume` is **not** idempotent — calling it without
 a paused loop returns a failure. See [`docs/concepts.md` → Pause /
 resume semantics](concepts.md#pause--resume-semantics) for the full
 state-machine writeup.
@@ -118,7 +118,7 @@ locate it.
 
 Use the bundled TUI: `npx ralph-tui watch <runId>` to follow events
 live, or `ralph-tui list` to see runs the index knows about. See
-README → [Inspecting a running loop](https://github.com/kloba/copilot-ralph-extension#inspecting-a-running-loop-ralph_status-tool)
+README → [Inspecting a running loop](https://github.com/kloba/copilot-ralph-extension#inspecting-a-running-loop-ap_status-tool)
 for the snapshot tool that returns a structured live snapshot
 without leaving the chat.
 
@@ -126,9 +126,9 @@ without leaving the chat.
 
 A resume reports `pausedForMs = max(0, now - pausedAt)`, where
 `pausedAt` is the wall-clock millisecond timestamp captured by the
-last `ralph_pause`. Two cases produce a zero:
+last `ap_pause`. Two cases produce a zero:
 
-- **Same-millisecond resume.** If you fire `ralph_resume` in the
+- **Same-millisecond resume.** If you fire `ap_resume` in the
   same millisecond as the pause (vanishingly rare in practice, but
   easy to hit in fast tests), `now - pausedAt` rounds to `0`.
 - **Backward clock skew.** If the system clock moves backward
@@ -139,7 +139,7 @@ last `ralph_pause`. Two cases produce a zero:
   `total_paused_ms`. Without the clamp, the run's reported
   `durationMs` would be inflated past the true wall-clock elapsed
   time. The same `Math.max(0, …)` guard runs in `finish()` and
-  `ralph_status.paused_for_ms` for symmetry; all three call sites
+  `ap_status.paused_for_ms` for symmetry; all three call sites
   share a single helper so the contract cannot drift.
 
 The `total_paused_ms` accumulated across multiple pause/resume
@@ -154,7 +154,7 @@ trailers — one for the `Copilot` GitHub identity, one for the
 dedicated `copilot-ralph` bot account. The dual-trailer convention
 is baked into the SDLC prompts (`self_improve`, `grow_project`)
 and appended as a rider to the user-supplied prompt for
-`ralph_loop`. See README → [Commit attribution](https://github.com/kloba/copilot-ralph-extension#commit-attribution).
+`ap_loop`. See README → [Commit attribution](https://github.com/kloba/copilot-ralph-extension#commit-attribution).
 
 ### How do I opt out of the second `copilot-ralph` trailer?
 

@@ -6456,6 +6456,29 @@ test("docs/concepts.md: Pause / resume semantics section exists and pins core cl
     assert.match(doc, /ralph_stop/, "table must reference ralph_stop");
 });
 
+test("docs document the iter-172 'first reason wins' contract for ralph_pause idempotent path", () => {
+    // Iter 173 — iter 172 pinned via test that the idempotent
+    // `ralph_pause` branch returns the FIRST committed reason, not
+    // the second caller's reason. Automation polling pause state
+    // depends on this contract: a redundant `ralph_pause({reason:
+    // "newer"})` against an already-paused loop must not echo back
+    // "newer" — it must surface the original "first" so the caller
+    // can detect their input was rejected as a no-op. Pin both
+    // user-facing docs (README + concepts.md) so a future docs trim
+    // that drops the clarification fires this test instead of
+    // silently leaking a contract gap to automation authors.
+    const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf8");
+    assert.match(readme, /first reason wins/i,
+        "README.md pause/resume section must document the first-reason-wins contract");
+    assert.match(readme, /already paused at[\s\S]{0,80}firstReason/,
+        "README.md must show the rendered idempotent message form");
+    const concepts = readFileSync(resolve(REPO_ROOT, "docs/concepts.md"), "utf8");
+    assert.match(concepts, /first reason wins/i,
+        "docs/concepts.md pause/resume section must document the first-reason-wins contract");
+    assert.match(concepts, /already paused at[\s\S]{0,80}firstReason/,
+        "docs/concepts.md must show the rendered idempotent message form");
+});
+
 // -----------------------------------------------------------------------------
 // validateArgShape: when a tool accepts NO arguments at all (knownKeys empty),
 // the legacy wording "Valid keys: ." rendered with a stray dangling period

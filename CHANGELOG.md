@@ -957,6 +957,22 @@
   fails loudly.
 
 ### Documentation
+- Both `README.md`'s "Pause and resume" section and
+  `docs/concepts.md`'s "Pause / resume semantics" section now
+  document the **first reason wins** contract for
+  `ralph_pause`'s idempotent path. Iter 172 pinned via test
+  that a redundant `ralph_pause({reason: "newer"})` against
+  an already-paused loop returns the FIRST committed reason
+  in both the success payload's `reason` field and the
+  rendered `textResultForLlm` (`<label> already paused at
+  i/max (firstReason).`). Automation polling pause state
+  depends on this contract: callers expect the original
+  committed reason, not their own input echoed back. Pinned
+  with a new drift-guard test that scans both surfaces for
+  the "first reason wins" phrase plus the rendered message
+  shape, so a future docs trim that drops the clarification
+  fires the test instead of silently leaking a contract gap
+  to automation authors.
 - The JSDoc block above `VALUE_FLAGS` in `packages/tui/bin/tui.mjs`
   said `(currently: --older-than)` even though the set has held
   `["older-than", "limit"]` since iter 152 (when issue #32 added

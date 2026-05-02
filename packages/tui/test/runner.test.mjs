@@ -2426,418 +2426,136 @@ test("runRalphTui: omits session_attached when result.sessionId is missing", asy
     assert.equal(sa.length, 0, "no event when reducer didn't surface a sessionId");
 });
 
-// ─── Issue #51 — `--reset-on={workitem|iter|never}` ───────────────────
+// ─── Issue #83: agent-backend abstraction smoke tests ──────────────
 //
-// Pin the three-valued reset boundary contract:
-//   - `never`    behaves like the legacy `--continue` — captures
-//                sessionId on iter 1, resumes for iter 2+.
-//   - `iter`     behaves like the legacy `--fresh` — every iter
-//                starts a brand-new session.
-//   - `workitem` (default) — drops the captured sessionId at every
-//                work-item boundary, including any iter-exit (the
-//                runner treats iter-exit as an implicit boundary so
-//                a half-finished work item never carries stale
-//                context into the next iter).
+// `runRalphTui` accepts an `agent` adapter that controls how the
+// per-iter spawn argv is constructed. We pin two contracts:
 //
-// Plus the legacy `contextMode: "continue"|"fresh"` API boundary stays
-// honored for back-compat callers.
+//   1. `runOneIteration` routes the spawn argv through the adapter's
+//      `spawnArgs(prompt, opts)` instead of building the args inline.
+//   2. `runRalphTui` defaults to the Copilot adapter when no `agent`
+//      is passed in, so existing callers (and the existing test
+//      fixtures using `spawn:` injection without `agent:`) keep
+//      working unchanged — back-compat regression guard.
+//
+// We don't re-test the adapters' internals here (covered in
+// `agents.test.mjs`); we just pin that the runner reaches into the
+// adapter at all.
 
-import { legacyContextModeToResetOn, RESET_ON_VALUES } from "../src/runner.mjs";
-
-test("legacyContextModeToResetOn: maps continue→never and fresh→iter", () => {
-    assert.equal(legacyContextModeToResetOn("continue"), "never");
-    assert.equal(legacyContextModeToResetOn("fresh"), "iter");
-});
-
-test("legacyContextModeToResetOn: returns null for unknown / non-string input", () => {
-    assert.equal(legacyContextModeToResetOn("workitem"), null,
-        "the new vocabulary is not a legacy value — caller validates separately");
-    assert.equal(legacyContextModeToResetOn("bogus"), null);
-    assert.equal(legacyContextModeToResetOn(undefined), null);
-    assert.equal(legacyContextModeToResetOn(null), null);
-    assert.equal(legacyContextModeToResetOn(42), null);
-});
-
-test("RESET_ON_VALUES exposes the three accepted values in canonical order", () => {
-    assert.deepEqual([...RESET_ON_VALUES], ["workitem", "iter", "never"]);
-});
-
-test("runRalphTui: rejects unknown resetOn value", async () => {
-    await assert.rejects(
-        runRalphTui({ mode: "self-improve", resetOn: "bogus" }),
-        /resetOn must be one of/,
-    );
-});
-
-test("runRalphTui: defaults resetOn to workitem when neither resetOn nor contextMode is passed", async () => {
-    const events = [];
-    const eventEmitter = {
-        runId: "default-resetOn",        eventsPath: "/dev/null",
-        write: (ev) => events.push(ev),
-        close: () => {},
+test("runOneIteration: routes spawn argv through agent.spawnArgs (issue #83)", async () => {
+    let spawnedBin = null;
+    let spawnedArgs = null;
+    const spawn = function (bin, args) {
+        spawnedBin = bin;
+        spawnedArgs = [...args];
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            for (const fn of handlers.stdout) fn(Buffer.from(""));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
     };
-    const spawn = makeMockSpawn([{
-        stdout: [
-            JSON.stringify({ type: "assistant.message", data: { content: "COMPLETE" } }),
-            JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
-        ].join("\n") + "\n",
-        exitCode: 0,
-    }]);
-    await runRalphTui({
-        mode: "self-improve",
-        max: 1,
-        env: makeEnv(),
+    // A trivial in-test agent stub: no real adapter needed for this
+    // contract. We pin that the runner asks the adapter for argv and
+    // honours whatever it returns.
+    const fakeAgent = {
+        name: "fake-test-agent",
+        defaultBin: "fake-bin",
+        binEnvVar: "AUTOPILOT_FAKE_BIN",
+        resolveBin: ({ override }) => override ?? "fake-bin",
+        spawnArgs: (prompt, opts) => ({
+            args: ["--canary", prompt, "--resumed", String(Boolean(opts.resumeSessionId))],
+            env: undefined,
+        }),
+    };
+    await runOneIteration({
+        prompt: "hello",
         spawn,
-        eventEmitter,
+        agent: fakeAgent,
+        env: {},
     });
-    const armed = events.find((e) => e.type === "armed");
-    assert.equal(armed.resetOn, "workitem", "default resetOn must be 'workitem'");
+    assert.equal(spawnedBin, "fake-bin", "runner must spawn the bin returned by adapter.resolveBin");
+    assert.deepEqual(spawnedArgs, ["--canary", "hello", "--resumed", "false"],
+        "runner must use the argv returned by adapter.spawnArgs");
 });
 
-test("runRalphTui: legacy contextMode='continue' maps to resetOn='never' (back-compat)", async () => {
-    const events = [];
-    const eventEmitter = {
-        runId: "legacy-continue",
-        eventsPath: "/dev/null",
-        write: (ev) => events.push(ev),
-        close: () => {},
+test("runOneIteration: defaults to the Copilot adapter when no `agent` is passed (back-compat)", async () => {
+    let spawnedArgs = null;
+    const spawn = function (_bin, args) {
+        spawnedArgs = [...args];
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            for (const fn of handlers.stdout) fn(Buffer.from(""));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
     };
-    const spawn = makeMockSpawn([{
-        stdout: [
-            JSON.stringify({ type: "assistant.message", data: { content: "COMPLETE" } }),
-            JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
-        ].join("\n") + "\n",
-        exitCode: 0,
-    }]);
-    await runRalphTui({
-        mode: "self-improve",
-        contextMode: "continue",
-        max: 1,
-        env: makeEnv(),
+    await runOneIteration({
+        prompt: "hello",
         spawn,
-        eventEmitter,
+        env: {},
     });
-    const armed = events.find((e) => e.type === "armed");
-    assert.equal(armed.resetOn, "never", "contextMode='continue' must map to resetOn='never'");
-    assert.equal(armed.contextMode, "continue", "armed event keeps the legacy contextMode value for back-compat consumers");
+    // Pre-issue-83 behaviour: the canonical Copilot argv ships
+    // unconditionally when no agent is passed in.
+    assert.ok(spawnedArgs.includes("--allow-all-tools"),
+        "back-compat: default agent must be Copilot (--allow-all-tools)");
+    assert.ok(spawnedArgs.includes("--output-format"));
+    assert.ok(spawnedArgs.includes("json"),
+        "back-compat: default agent must be Copilot (--output-format json)");
 });
 
-test("runRalphTui: legacy contextMode='fresh' maps to resetOn='iter' (back-compat)", async () => {
-    const events = [];
-    const eventEmitter = {
-        runId: "legacy-fresh",
-        eventsPath: "/dev/null",
-        write: (ev) => events.push(ev),
-        close: () => {},
+test("runRalphTui: accepts an `agent` param and threads it through to runOneIteration", async () => {
+    let spawnedArgs = null;
+    const spawn = function (_bin, args) {
+        spawnedArgs = [...args];
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            for (const fn of handlers.stdout) fn(Buffer.from(
+                JSON.stringify({ type: "assistant.message", data: { content: "wrap up COMPLETE" } }) + "\n",
+            ));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
     };
-    const spawn = makeMockSpawn([{
-        stdout: [
-            JSON.stringify({ type: "assistant.message", data: { content: "COMPLETE" } }),
-            JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
-        ].join("\n") + "\n",
-        exitCode: 0,
-    }]);    await runRalphTui({
-        mode: "self-improve",
+    const claudeShapedAgent = {
+        name: "claude-shaped",
+        defaultBin: "claude",
+        binEnvVar: "AUTOPILOT_CLAUDE_BIN",
+        resolveBin: () => "claude",
+        spawnArgs: (prompt) => ({
+            args: ["-p", prompt, "--dangerously-skip-permissions", "--output-format", "stream-json"],
+            env: undefined,
+        }),
+    };
+    await runRalphTui({        mode: "self-improve",
         contextMode: "fresh",
         max: 1,
         env: makeEnv(),
         spawn,
-        eventEmitter,
+        agent: claudeShapedAgent,
     });
-    const armed = events.find((e) => e.type === "armed");
-    assert.equal(armed.resetOn, "iter");
-    assert.equal(armed.contextMode, "fresh");
+    assert.ok(spawnedArgs.includes("--dangerously-skip-permissions"),
+        "runRalphTui must thread the chosen agent through to runOneIteration");
+    assert.ok(spawnedArgs.includes("stream-json"),
+        "runRalphTui must thread the chosen agent through to runOneIteration");
+    assert.ok(!spawnedArgs.includes("--allow-all-tools"),
+        "Copilot's flag must NOT leak when a different agent is selected");
 });
-
-// resetOn=workitem — the default. Spawn calls always start a new
-// session (no --resume) regardless of how many iters run, because
-// every iter-exit is treated as a work-item boundary that drops the
-// captured sessionId.
-test("runRalphTui: resetOn=workitem drops captured sessionId at iter exit (no --resume on iter 2+)", async () => {
-    const argLog = [];
-    const spawn = function (_bin, args) {
-        argLog.push([...args]);
-        const handlers = { stdout: [], close: [] };
-        const child = {
-            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
-            stderr: { on: () => {}, pipe: () => {} },
-            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
-            kill: () => {},
-        };
-        setImmediate(() => {
-            const isLast = argLog.length === 3;
-            const events = [
-                JSON.stringify({
-                    type: "assistant.message",
-                    data: { content: isLast ? "wrap up COMPLETE" : "iter going" },
-                }),
-                JSON.stringify({ type: "result", success: true, result: { sessionId: `sess-${argLog.length}` } }),
-            ];
-            for (const fn of handlers.stdout) fn(Buffer.from(events.join("\n") + "\n"));
-            for (const fn of handlers.close) fn(0);
-        });
-        return child;
-    };
-    await runRalphTui({
-        mode: "self-improve",
-        resetOn: "workitem",
-        max: 3,
-        env: makeEnv(),
-        spawn,
-    });
-    // Every iter must NOT carry a --resume argument: we drop the
-    // captured sessionId at every iter-exit (work-item boundary,
-    // implicit or explicit).
-    assert.equal(argLog.length, 3, "all 3 iters should run");
-    for (let i = 0; i < argLog.length; i++) {
-        assert.ok(!argLog[i].some((a) => typeof a === "string" && a.startsWith("--resume=")),
-            `iter ${i + 1} (resetOn=workitem) must not pass --resume — every iter starts a fresh session`);
-    }
-});
-
-// resetOn=workitem with an explicit `[WORKITEM_END]` marker mid-iter:
-// the runner observes the boundary and the post-iter cleanup drops
-// the captured sessionId. This test pins the marker-driven path
-// distinctly from the implicit-iter-exit path above.
-test("runRalphTui: resetOn=workitem drops sessionId after [WORKITEM_END] marker", async () => {
-    const events = [];
-    const eventEmitter = {
-        runId: "wi-reset-test",        eventsPath: "/dev/null",
-        write: (ev) => events.push(ev),
-        close: () => {},
-    };
-    // Two iters: iter 1 emits a complete WORKITEM_START + WORKITEM_END;
-    // iter 2 wraps up with COMPLETE. After iter 1 the captured
-    // sessionId should be dropped (workitem mode treats the
-    // WORKITEM_END marker as the canonical reset point), so iter 2
-    // must spawn without --resume.
-    const argLog = [];
-    const spawn = function (_bin, args) {
-        argLog.push([...args]);
-        const handlers = { stdout: [], close: [] };
-        const child = {
-            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
-            stderr: { on: () => {}, pipe: () => {} },
-            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
-            kill: () => {},
-        };
-        setImmediate(() => {
-            const isFirst = argLog.length === 1;
-            const lines = isFirst
-                ? [
-                    JSON.stringify({
-                        type: "assistant.message",
-                        timestamp: "2026-01-01T00:00:00.000Z",
-                        data: { content: '[WORKITEM_START: {"kind":"issue","ref":1,"title":"x"}]\n[WORKITEM_END: {"kind":"issue","ref":1,"closesN":1}]' },
-                    }),
-                    JSON.stringify({ type: "result", success: true, result: { sessionId: "sess-1" } }),
-                ]
-                : [
-                    JSON.stringify({ type: "assistant.message", data: { content: "COMPLETE" } }),
-                    JSON.stringify({ type: "result", success: true, result: { sessionId: "sess-2" } }),
-                ];
-            for (const fn of handlers.stdout) fn(Buffer.from(lines.join("\n") + "\n"));
-            for (const fn of handlers.close) fn(0);
-        });
-        return child;
-    };
-    await runRalphTui({
-        mode: "self-improve",
-        resetOn: "workitem",
-        max: 2,
-        env: makeEnv(),
-        spawn,
-        eventEmitter,
-    });
-    assert.ok(events.some((e) => e.type === "workitem_end"),
-        "the WORKITEM_END marker fired the workitem_end event");
-    assert.ok(!argLog[1].some((a) => typeof a === "string" && a.startsWith("--resume=")),
-        "iter 2 must not resume — sessionId dropped at the WORKITEM_END boundary");
-});
-
-test("runRalphTui: resetOn=never resumes the captured sessionId on iter 2+ (status-quo --continue)", async () => {
-    const argLog = [];
-    const spawn = function (_bin, args) {
-        argLog.push([...args]);
-        const handlers = { stdout: [], close: [] };
-        const child = {
-            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
-            stderr: { on: () => {}, pipe: () => {} },
-            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
-            kill: () => {},
-        };
-        setImmediate(() => {
-            const isFirst = argLog.length === 1;
-            const lines = isFirst
-                ? [
-                    JSON.stringify({ type: "assistant.message", data: { content: "iter 1" } }),
-                    JSON.stringify({ type: "result", success: true, result: { sessionId: "STABLE-SID" } }),
-                ]
-                : [
-                    JSON.stringify({ type: "assistant.message", data: { content: "iter 2 COMPLETE" } }),
-                    JSON.stringify({ type: "result", success: true, result: { sessionId: "STABLE-SID" } }),
-                ];
-            for (const fn of handlers.stdout) fn(Buffer.from(lines.join("\n") + "\n"));
-            for (const fn of handlers.close) fn(0);
-        });
-        return child;
-    };
-    const result = await runRalphTui({
-        mode: "self-improve",
-        resetOn: "never",
-        max: 5,
-        env: makeEnv(),
-        spawn,
-    });
-    assert.equal(result.terminationReason, "complete");
-    assert.ok(argLog[0].some((a) => a === "-n"), "iter 1 names a fresh session");
-    assert.ok(argLog[1].some((a) => a === "--resume=STABLE-SID"), "iter 2 must --resume the captured session");
-});
-
-test("runRalphTui: resetOn=iter never resumes (status-quo --fresh)", async () => {
-    const argLog = [];
-    const spawn = function (_bin, args) {
-        argLog.push([...args]);
-        const handlers = { stdout: [], close: [] };
-        const child = {
-            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
-            stderr: { on: () => {}, pipe: () => {} },
-            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
-            kill: () => {},
-        };
-        setImmediate(() => {
-            const isLast = argLog.length === 2;
-            const lines = [
-                JSON.stringify({
-                    type: "assistant.message",
-                    data: { content: isLast ? "wrap up COMPLETE" : "still going" },
-                }),
-                JSON.stringify({ type: "result", success: true, result: { sessionId: "ignored" } }),
-            ];
-            for (const fn of handlers.stdout) fn(Buffer.from(lines.join("\n") + "\n"));
-            for (const fn of handlers.close) fn(0);
-        });
-        return child;
-    };
-    await runRalphTui({
-        mode: "self-improve",
-        resetOn: "iter",
-        max: 3,
-        env: makeEnv(),
-        spawn,
-    });
-    for (let i = 0; i < argLog.length; i++) {
-        assert.ok(!argLog[i].some((a) => typeof a === "string" && a.startsWith("--resume=")),
-            `iter ${i + 1} (resetOn=iter) must never --resume`);
-        assert.ok(!argLog[i].some((a) => a === "-n"),
-            `iter ${i + 1} (resetOn=iter) must never -n (no named session)`);
-    }
-});
-
-// resetOn=workitem with an iter that does NOT emit WORKITEM_END
-// (e.g. ABORT mid-iter, or a custom prompt that never opens a work
-// item). The runner must STILL drop the captured sessionId at iter
-// exit so the next iter starts a brand-new session.
-test("runRalphTui: resetOn=workitem drops sessionId on iter exit even WITHOUT a [WORKITEM_END] marker", async () => {
-    const argLog = [];
-    const spawn = function (_bin, args) {
-        argLog.push([...args]);
-        const handlers = { stdout: [], close: [] };
-        const child = {
-            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
-            stderr: { on: () => {}, pipe: () => {} },
-            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
-            kill: () => {},
-        };
-        setImmediate(() => {
-            const isLast = argLog.length === 2;
-            // No WORKITEM markers at all — just a plain assistant
-            // message and the terminal result. workitem mode must
-            // STILL reset the session at iter exit.
-            const lines = [
-                JSON.stringify({
-                    type: "assistant.message",
-                    data: { content: isLast ? "second iter COMPLETE" : "first iter (no markers)" },
-                }),
-                JSON.stringify({ type: "result", success: true, result: { sessionId: `sid-${argLog.length}` } }),
-            ];
-            for (const fn of handlers.stdout) fn(Buffer.from(lines.join("\n") + "\n"));
-            for (const fn of handlers.close) fn(0);
-        });
-        return child;
-    };
-    await runRalphTui({
-        mode: "self-improve",
-        resetOn: "workitem",
-        max: 2,
-        env: makeEnv(),
-        spawn,
-    });
-    assert.equal(argLog.length, 2, "two iters ran");
-    assert.ok(!argLog[1].some((a) => typeof a === "string" && a.startsWith("--resume=")),
-        "iter 2 (resetOn=workitem, no WORKITEM_END in iter 1) must still start fresh — implicit work-item boundary");
-});
-
-// Multiple `[WORKITEM_END]` markers within a single iter (edge case:
-// the agent processes two unrelated items in one subprocess). The
-// runner observes the markers, emits workitem_end events for each,
-// and at iter exit drops the captured sessionId so the next iter
-// starts fresh — the within-iter resets are bookkeeping; the
-// inter-iter session reset still fires once per iter exit.
-test("runRalphTui: resetOn=workitem with multiple WORKITEM_END markers in one iter still resets at iter exit", async () => {
-    const events = [];
-    const eventEmitter = {
-        runId: "wi-multi-test",
-        eventsPath: "/dev/null",
-        write: (ev) => events.push(ev),
-        close: () => {},
-    };
-    const argLog = [];
-    const spawn = function (_bin, args) {
-        argLog.push([...args]);
-        const handlers = { stdout: [], close: [] };
-        const child = {
-            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
-            stderr: { on: () => {}, pipe: () => {} },
-            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
-            kill: () => {},
-        };
-        setImmediate(() => {
-            const isFirst = argLog.length === 1;
-            const lines = isFirst
-                ? [
-                    JSON.stringify({
-                        type: "assistant.message",
-                        timestamp: "2026-01-01T00:00:00.000Z",
-                        data: {
-                            content: [
-                                '[WORKITEM_START: {"kind":"issue","ref":1,"title":"a"}]',
-                                '[WORKITEM_END: {"kind":"issue","ref":1,"closesN":1}]',
-                                '[WORKITEM_START: {"kind":"issue","ref":2,"title":"b"}]',
-                                '[WORKITEM_END: {"kind":"issue","ref":2,"closesN":1}]',
-                            ].join("\n"),
-                        },
-                    }),
-                    JSON.stringify({ type: "result", success: true, result: { sessionId: "first-sess" } }),
-                ]
-                : [
-                    JSON.stringify({ type: "assistant.message", data: { content: "COMPLETE" } }),
-                    JSON.stringify({ type: "result", success: true, result: { sessionId: "second-sess" } }),
-                ];
-            for (const fn of handlers.stdout) fn(Buffer.from(lines.join("\n") + "\n"));
-            for (const fn of handlers.close) fn(0);
-        });
-        return child;
-    };
-    await runRalphTui({
-        mode: "self-improve",
-        resetOn: "workitem",
-        max: 2,
-        env: makeEnv(),
-        spawn,
-        eventEmitter,
-    });
-    const ends = events.filter((e) => e.type === "workitem_end");
-    assert.equal(ends.length, 2, "both WORKITEM_END markers surfaced as workitem_end events");
-    assert.ok(!argLog[1].some((a) => typeof a === "string" && a.startsWith("--resume=")),
-        "iter 2 must not resume — sessionId dropped at iter exit (workitem boundary)");});

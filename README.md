@@ -42,6 +42,13 @@ The interactive Ink-rendered watch UI requires the one-time `cd packages/tui && 
 
 A future release will publish `autopilot` to npm so `npm i -g autopilot` works; until then the source checkout above is the supported install path.
 
+To pin the backend explicitly, use the per-agent subcommand:
+
+* **`autopilot copilot`** — drive each iter with the GitHub Copilot CLI (`copilot -p ... --allow-all-tools --output-format json`).
+* **`autopilot claude`** — drive each iter with the Claude Code CLI (`claude -p ... --dangerously-skip-permissions --output-format stream-json`).
+
+Both subcommands default to `mode=self-improve`, `contextMode=fresh`, and the backend's fully-permissive ("yolo") mode so the loop can run unattended; both also accept the same `--self-improve` / `--grow-project` / `--prompt`, `--continue` / `--fresh`, `--max`, etc. flags as `autopilot run` for explicit overrides (issue #83).
+
 ## Usage
 
 ```bash
@@ -101,6 +108,12 @@ The runner honors a small set of canonical `AUTOPILOT_*` env vars:
 ## Subcommands
 
 ```text
+autopilot                             (bare — defaults to
+                                       `run --self-improve --fresh`).
+autopilot copilot [run flags]         Drive each iter with the GitHub Copilot
+                                      CLI; bare = self-improve / fresh / yolo.
+autopilot claude  [run flags]         Drive each iter with Claude Code; bare =
+                                      self-improve / fresh / yolo.
 autopilot list [--json] [--limit N]   Show recorded runs (newest first).
 autopilot replay <runId>              Print every event in a past run.
 autopilot watch [runId] [--plain]     Tail the given run (or the most
@@ -110,7 +123,7 @@ autopilot prune [--older-than 30d]    Remove runs older than DURATION.
         [--dry-run]
 autopilot stats                       Aggregate stats across runs.
 autopilot where                       Print the resolved runs root.
-autopilot run …                       Drive an autonomous Copilot loop
+autopilot run …                       Drive an autonomous loop
                                       (see Usage above).
 autopilot --help     | -h
 autopilot --version  | -V
@@ -213,7 +226,9 @@ The wrapper script [`scripts/autopilot-fresh.sh`](scripts/autopilot-fresh.sh) is
 ## Requirements
 
 - **Node.js ≥ 20.**
-- **GitHub Copilot CLI** on `$PATH` (override via `AUTOPILOT_COPILOT_BIN`).
+- One of:
+    - **GitHub Copilot CLI** on `$PATH` (override via `AUTOPILOT_COPILOT_BIN`; the legacy `RALPH_TUI_COPILOT_BIN` still works for one release with a deprecation notice). Required for `autopilot copilot` and the bare `autopilot` invocation (issue #83).
+    - **Claude Code CLI** on `$PATH` (override via `AUTOPILOT_CLAUDE_BIN`). Required for `autopilot claude`.
 - **git ≥ 2.30**, with a configured author identity (`git config user.name` / `user.email`).
 - No required runtime dependencies for plain mode. The interactive Ink renderer pulls Ink + React + Yoga + Commander via `cd packages/tui && npm install`.
 - **`gh` CLI** (≥ 2.0) authenticated via `gh auth login` — *only* required when running `--grow-project`. `--self-improve` and `--prompt` do not invoke `gh`.

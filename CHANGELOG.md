@@ -3,6 +3,23 @@
 ## Unreleased
 
 ### Features
+- `install.sh --dry-run` now derives an at-a-glance
+  `Direction:` label between the `Version:` and `Source:`
+  lines, naming the relationship between the installed
+  and source versions in five distinct shapes: `fresh
+  install` (no prior install), `no-op reinstall (same
+  version)`, `upgrade (vA.B.C → vX.Y.Z)`, `downgrade
+  (vA.B.C → vX.Y.Z)`, or `indeterminate (installed
+  VERSION unparseable)` for the iter 133 corrupt-prior-
+  install case. The direction is computed by parsing
+  both versions as strict `MAJOR.MINOR.PATCH` integers
+  and comparing lexicographically — this project has
+  never shipped a pre-release suffix, so a future tag
+  like `0.7.0-rc.1` lands in the indeterminate branch
+  rather than emit a misleading ordering. Pinned by a
+  drift-guard test in `test/extension.test.mjs` that
+  exercises all five branches through a sandbox `HOME`.
+
 - `install.sh --dry-run` now prints an `Installed:`
   line above the existing `Version:` line, sourced
   from the target dir's `handler.mjs` (if any). Reads

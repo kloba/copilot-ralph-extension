@@ -9687,3 +9687,93 @@ test("AGENTS.md section-name order matches the order used in CHANGELOG.md's ## U
         );
     }
 });
+
+test("install.sh --dry-run prints Direction line covering fresh / no-op / upgrade / downgrade / unparseable", async () => {
+    // Iter 135 — feat(install): the dry-run output already shows
+    // `Installed: vX.Y.Z` and `Version: vY.Z.A` on adjacent lines,
+    // but a contributor still has to mentally diff the two version
+    // strings to know if they're staging an upgrade, a downgrade, a
+    // no-op, or a fresh install. Add a derived `Direction:` line
+    // immediately after `Version:` that names the relationship in
+    // five distinct shapes:
+    //   fresh install                                 — no prior install
+    //   indeterminate (installed VERSION unparseable) — corrupt prior install
+    //   no-op reinstall (same version)                — identical
+    //   upgrade (vA.B.C → vX.Y.Z)                     — installed < new
+    //   downgrade (vA.B.C → vX.Y.Z)                   — installed > new
+    // The strict MAJOR.MINOR.PATCH parsing is intentional: this
+    // project has never shipped a pre-release suffix, but a future
+    // tag like 0.7.0-rc.1 would land in the indeterminate branch
+    // rather than emit a misleading direction. Pin all four
+    // primary directions plus the bare presence of the line.
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const sandboxHome = mkdtempSync(join(tmpdir(), "ralph-install-direction-"));
+    try {
+        const targetDir = join(sandboxHome, ".copilot/extensions/ralph");
+        const installScript = resolve(REPO_ROOT, "install.sh");
+        // Read the project's actual VERSION so we can craft synthetic
+        // installed handler.mjs files relative to it (sourceVersion).
+        const sourceHandler = readFileSync(resolve(REPO_ROOT, "extension/handler.mjs"), "utf8");
+        const sourceVersionMatch = sourceHandler.match(/^export const VERSION = "([^"]+)";/m);
+        assert.ok(sourceVersionMatch, "extension/handler.mjs must declare VERSION");
+        const sv = sourceVersionMatch[1];
+        const [maj, min, pat] = sv.split(".").map(Number);
+
+        const runDryRun = () =>
+            spawnSync("bash", [installScript, "--dry-run"], {
+                env: { ...process.env, HOME: sandboxHome },
+                encoding: "utf8",
+            });
+
+        // (1) fresh install — no target handler.mjs exists.
+        let r = runDryRun();
+        assert.equal(r.status, 0);
+        assert.match(r.stdout, /^Direction: fresh install$/m,
+            `fresh-install branch missing; got: ${r.stdout}`);
+
+        // (2) no-op reinstall — install identical VERSION.
+        mkdirSync(targetDir, { recursive: true });
+        writeFileSync(join(targetDir, "handler.mjs"), `export const VERSION = "${sv}";\n`);
+        r = runDryRun();
+        assert.equal(r.status, 0);
+        assert.match(r.stdout, /^Direction: no-op reinstall \(same version\)$/m,
+            `no-op branch missing; got: ${r.stdout}`);
+
+        // (3) upgrade — pretend an older version is installed. We
+        // compute "one notch older" by stepping down patch when
+        // possible, else minor, else major, ensuring the synthetic
+        // version is always < sv even at edge cases like 0.6.0.
+        let olderPatch;
+        if (pat > 0) olderPatch = `${maj}.${min}.${pat - 1}`;
+        else if (min > 0) olderPatch = `${maj}.${min - 1}.0`;
+        else olderPatch = `${maj - 1}.0.0`;
+        writeFileSync(join(targetDir, "handler.mjs"), `export const VERSION = "${olderPatch}";\n`);
+        r = runDryRun();
+        assert.equal(r.status, 0);
+        assert.match(r.stdout, new RegExp(`^Direction: upgrade \\(v${olderPatch.replace(/\./g, "\\.")} → v${sv.replace(/\./g, "\\.")}\\)$`, "m"),
+            `upgrade branch missing or wrong arrow shape; got: ${r.stdout}`);
+
+        // (4) downgrade — pretend a newer MAJOR is installed.
+        const newerMajor = `${maj + 1}.0.0`;
+        writeFileSync(join(targetDir, "handler.mjs"), `export const VERSION = "${newerMajor}";\n`);
+        r = runDryRun();
+        assert.equal(r.status, 0);
+        assert.match(r.stdout, new RegExp(`^Direction: downgrade \\(v${newerMajor.replace(/\./g, "\\.")} → v${sv.replace(/\./g, "\\.")}\\)$`, "m"),
+            `downgrade branch missing; got: ${r.stdout}`);
+
+        // (5) indeterminate — installed VERSION unparseable (the iter
+        // 133 "(unknown)" path). Direction must NOT misclaim a
+        // direction; it must say "indeterminate".
+        writeFileSync(join(targetDir, "handler.mjs"), "// no VERSION line at all\nexport const FOO = 1;\n");
+        r = runDryRun();
+        assert.equal(r.status, 0);
+        assert.match(r.stdout, /^Direction: indeterminate \(installed VERSION unparseable\)$/m,
+            `indeterminate branch missing; got: ${r.stdout}`);
+        // Belt-and-braces: must NEVER fall through to a direction
+        // string that implies ordering when ordering is unknown.
+        assert.doesNotMatch(r.stdout, /^Direction: (upgrade|downgrade|no-op|fresh)/m,
+            `indeterminate state must not regress to a direction with implied ordering; got: ${r.stdout}`);
+    } finally {
+        rmSync(sandboxHome, { recursive: true, force: true });
+    }
+});

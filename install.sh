@@ -208,6 +208,47 @@ if [[ "$DRY_RUN" == "1" ]]; then
   fi
   echo "Installed: $installed_version"
   echo "Version:   v$VERSION"
+  # Derive an at-a-glance upgrade/downgrade/no-op label so a
+  # contributor running `--dry-run` doesn't have to manually compare
+  # the two version strings above. Five distinct outcomes:
+  #   - fresh install      → no prior install (Installed: (none))
+  #   - indeterminate      → prior install present but VERSION line
+  #                          unparseable (Installed: (unknown)) OR
+  #                          a current version that doesn't match
+  #                          the strict MAJOR.MINOR.PATCH shape this
+  #                          project ships (defensive — the project
+  #                          has never shipped a pre-release suffix
+  #                          but a future tag like 0.7.0-rc.1 would
+  #                          land here rather than emit a misleading
+  #                          ordering)
+  #   - no-op reinstall    → versions identical
+  #   - upgrade            → installed < new
+  #   - downgrade          → installed > new
+  # Bash arithmetic comparison on `sort -V`-aware tokens would
+  # introduce cross-platform fragility (BSD sort lacks -V), so we
+  # parse MAJOR.MINOR.PATCH into three integers and compare
+  # lexicographically — same approach the test exercises.
+  direction="indeterminate"
+  if [[ "$installed_version" == "(none)" ]]; then
+    direction="fresh install"
+  elif [[ "$installed_version" == "(unknown)" ]]; then
+    direction="indeterminate (installed VERSION unparseable)"
+  else
+    inst_strip="${installed_version#v}"
+    new_strip="$VERSION"
+    if [[ "$inst_strip" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ && "$new_strip" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+      IFS='.' read -r i_maj i_min i_pat <<<"$inst_strip"
+      IFS='.' read -r n_maj n_min n_pat <<<"$new_strip"
+      if (( i_maj == n_maj && i_min == n_min && i_pat == n_pat )); then
+        direction="no-op reinstall (same version)"
+      elif (( i_maj < n_maj )) || (( i_maj == n_maj && i_min < n_min )) || (( i_maj == n_maj && i_min == n_min && i_pat < n_pat )); then
+        direction="upgrade ($installed_version → v$VERSION)"
+      else
+        direction="downgrade ($installed_version → v$VERSION)"
+      fi
+    fi
+  fi
+  echo "Direction: $direction"
   echo "Source:    $SOURCE_DIR/"
   echo "Target:    $TARGET_DIR/"
   echo "Files:"

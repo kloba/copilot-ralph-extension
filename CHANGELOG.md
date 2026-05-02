@@ -48,9 +48,10 @@
 ### Documentation
 - README now leads with an `autopilot watch` screenshot
   (`docs/images/autopilot-watch.jpg`) of a `--self-improve` run
-  mid-COMMIT — stages, tasks, activity, and timeline panes —
-  rendered above the TOC so first-time readers see the live TUI
-  before they hit the table of contents.
+  mid-IMPLEMENT on open issue #105 — stages, tasks, activity,
+  and timeline panes — rendered between the CI badge and the
+  `## How it works` section so first-time readers see the live
+  TUI before they hit the prose.
 
 ### Features
 - Issue #52 — `self_improve` now JIT-ideates ONE next feature

@@ -1,10 +1,32 @@
-// JSONL event writer for the ralph TUI (issue #22).
+// JSONL event writer for the autopilot TUI (issue #22).
 //
 // The loop handler in extension/handler.mjs imports createEventWriter() and
 // calls writer.emit(ev) at iteration boundaries. The writer keeps a single
 // append-mode file descriptor open per run and maintains a sibling
-// `runs/index.jsonl` so `ralph-tui list` can enumerate past runs without
+// `runs/index.jsonl` so `autopilot list` can enumerate past runs without
 // scanning every per-run directory.
+//
+// Path / env-var resolution (issue #49 rename — Decisions A + B):
+//   - Preferred env var:  AUTOPILOT_EVENTS_DIR.
+//   - Legacy fallback:    RALPH_EVENTS_DIR (still honored, one-line
+//                         stderr deprecation on first read per process).
+//   - Preferred default:  ~/.copilot/autopilot/runs.
+//   - Legacy default:     ~/.copilot/ralph/runs (read-only; honored only
+//                         when the new default does not yet exist on disk
+//                         AND the legacy default does, so an upgrading
+//                         user keeps seeing their past runs without
+//                         data movement). One-line stderr migration
+//                         notice gated by a sentinel file under the new
+//                         root (`<NEW_ROOT>/.migrated-from-ralph`) so the
+//                         notice never reprints once writes have started
+//                         landing on the new path.
+//   - On the first write to the new root, mkdir -p the new root and drop
+//     the sentinel so subsequent reads stay quiet.
+//   - The TUI writer here MUST resolve to the same path the extension's
+//     event emitter resolves to (extension/events-emit.mjs). The two
+//     surfaces share a single contract — same env-var precedence, same
+//     defaults, same legacy fallback — so a single emitted run is
+//     guaranteed to be readable by `autopilot list / stats`.
 //
 // Design constraints:
 //   - Zero runtime deps (Node stdlib only) — the core extension's bundle
@@ -24,33 +46,35 @@ import osDefault from "node:os";
 
 import { MAX_EVENT_LINE_BYTES, makeRunId, serializeEvent } from "./events.mjs";
 
-// Print a one-line stderr deprecation notice the FIRST time a given
-// migration trigger fires, then drop a sentinel line under
-// ~/.copilot/autopilot/ so subsequent runs (in this or any later
-// process) stay silent. Mirror of the helper in
-// extension/events-emit.mjs — the two surfaces resolve from the same
-// sentinel so a single legacy default-path read silences both.
-function emitDeprecationOnce({ key, message, sentinelPath, fs, stderr }) {
-    try {
-        const content = fs.readFileSync(sentinelPath, "utf8");
-        if (content.split("\n").some((l) => l === key)) return;
-    } catch { /* sentinel missing or unreadable */ }
-    try {
-        stderr.write(message);
-        fs.mkdirSync(pathDefault.dirname(sentinelPath), { recursive: true });
-        fs.appendFileSync(sentinelPath, key + "\n");
-    } catch { /* best-effort */ }
+// Sentinel filename for Decision A's path-migration gate. Sits at
+// `<NEW_ROOT>/.migrated-from-ralph` so its presence means "we've
+// already told this user the new default exists, don't reprint".
+const MIGRATION_SENTINEL = ".migrated-from-ralph";
+
+/** Compute the canonical new-default events-root path for a given home. */
+function newDefaultRoot(home, path) {
+    return path.join(home, ".copilot", "autopilot", "runs");
 }
+
+// Process-level dedup for the $RALPH_EVENTS_DIR deprecation notice
+// (Decision B). Purely advisory — no disk sentinel; a second
+// invocation in the same process stays quiet. Tests re-arm via
+// `__test__.resetLegacyEnvNoticeForTests`.
+let legacyEnvNoticePrintedThisProcess = false;
 
 /**
  * Resolve the on-disk root for autopilot TUI run metadata.
  *
  *   $AUTOPILOT_EVENTS_DIR if set (absolute path expected; surfaced verbatim
  *   so users can pin a tmp dir in CI).
- *   else $RALPH_EVENTS_DIR if set (deprecated; one-time stderr notice).
- *   else `${HOME}/.copilot/autopilot/events` (new default).
- *   If new default doesn't exist but `${HOME}/.copilot/ralph/runs` does,
- *   falls back to the old path with a deprecation notice.
+ *   else $RALPH_EVENTS_DIR if set (deprecated; one-line stderr notice the
+ *   first time the fallback fires per process).
+ *   else `${HOME}/.copilot/autopilot/runs` (new default).
+ *   If the new default does not yet exist but `${HOME}/.copilot/ralph/runs`
+ *   does, returns the legacy path AND prints a one-line stderr migration
+ *   notice. The notice is gated by `<NEW_ROOT>/.migrated-from-ralph` so
+ *   it never reprints once the new root has been touched (see
+ *   `dropMigrationSentinel` — fired from createEventWriter on first write).
  */
 export function resolveRunsRoot({
     env = process.env,
@@ -61,27 +85,27 @@ export function resolveRunsRoot({
     sentinelPath: sentinelPathArg,
 } = {}) {
     const home = os.homedir();
-    const sentinelPath = sentinelPathArg ?? path.join(home, ".copilot", "autopilot", ".migration-notice-shown");
 
     // Primary: $AUTOPILOT_EVENTS_DIR
     const newOverride = env.AUTOPILOT_EVENTS_DIR;
     if (typeof newOverride === "string" && newOverride.length > 0) return newOverride;
 
-    // Legacy fallback: $RALPH_EVENTS_DIR (deprecated)
+    // Legacy fallback: $RALPH_EVENTS_DIR (deprecated; process-deduped notice)
     const legacyOverride = env.RALPH_EVENTS_DIR;
     if (typeof legacyOverride === "string" && legacyOverride.length > 0) {
-        emitDeprecationOnce({
-            key: "env:RALPH_EVENTS_DIR",
-            message: "[autopilot] note: env $RALPH_EVENTS_DIR is deprecated, please use $AUTOPILOT_EVENTS_DIR (still honored)\n",
-            sentinelPath,
-            fs,
-            stderr,
-        });
+        if (!legacyEnvNoticePrintedThisProcess) {
+            legacyEnvNoticePrintedThisProcess = true;
+            try {
+                stderr.write(
+                    "tui-writer: $RALPH_EVENTS_DIR is deprecated; please set $AUTOPILOT_EVENTS_DIR (still honored)\n",
+                );
+            } catch { /* swallow — advisory only */ }
+        }
         return legacyOverride;
     }
 
     // Default paths
-    const newDefault = path.join(home, ".copilot", "autopilot", "events");
+    const newDefault = newDefaultRoot(home, path);
     const oldDefault = path.join(home, ".copilot", "ralph", "runs");
 
     let newExists = false;
@@ -90,17 +114,34 @@ export function resolveRunsRoot({
     try { oldExists = fs.existsSync(oldDefault); } catch { /* swallow */ }
 
     if (!newExists && oldExists) {
-        emitDeprecationOnce({
-            key: `path:${oldDefault}`,
-            message: `[autopilot] note: reading from legacy ~/.copilot/ralph/runs (default is now ~/.copilot/autopilot/events)\n`,
-            sentinelPath,
-            fs,
-            stderr,
-        });
+        const sentinelPath = sentinelPathArg ?? path.join(newDefault, MIGRATION_SENTINEL);
+        let sentinelExists = false;
+        try { sentinelExists = fs.existsSync(sentinelPath); } catch { /* swallow */ }
+        if (!sentinelExists) {
+            try {
+                stderr.write(
+                    "tui-writer: reading runs from legacy ~/.copilot/ralph/runs; "
+                    + "will migrate writes to ~/.copilot/autopilot/runs on next emit\n",
+                );
+            } catch { /* swallow — advisory only */ }
+        }
         return oldDefault;
     }
 
     return newDefault;
+}
+
+// Best-effort sentinel drop on first write to the new root. Failures
+// are swallowed: losing the sentinel just means a re-print of the
+// migration notice on the next process — annoying, not broken.
+// `appendFileSync` with empty content is idempotent (creates the
+// file if missing, leaves it untouched if already present), so no
+// pre-check is needed.
+function dropMigrationSentinel({ root, fs, path }) {
+    try {
+        fs.mkdirSync(root, { recursive: true });
+        fs.appendFileSync(path.join(root, MIGRATION_SENTINEL), "");
+    } catch { /* swallow */ }
 }
 
 /**
@@ -229,16 +270,16 @@ export function createEventWriter({
     if (typeof runId !== "string" || !runId) {
         throw new TypeError("createEventWriter: runId must be a non-empty string");
     }
-    // Defensive symmetry with `resolveRunEventsPath` (line 47) and
-    // `pruneRuns` (line 361): production runIds come from `makeRunId`
-    // and only contain `[A-Za-z0-9_-]`, but createEventWriter is the
-    // primary write surface — letting a runId with `..` or `/` through
-    // here would let a future caller (or hostile test fixture) escape
-    // the runs sandbox via `path.join(root, runId, …)`. Guarding here
-    // keeps the read + write + delete paths in lockstep.
+    // Defensive symmetry with `resolveRunEventsPath` and `pruneRuns`:
+    // production runIds come from `makeRunId` and only contain
+    // `[A-Za-z0-9_-]`, but createEventWriter is the primary write
+    // surface — letting a runId with `..` or `/` through here would let
+    // a future caller (or hostile test fixture) escape the runs
+    // sandbox via `path.join(root, runId, …)`. Guarding here keeps the
+    // read + write + delete paths in lockstep.
     assertSafeRunId("createEventWriter", runId);
 
-    const root = resolveRunsRoot({ env, os, path });
+    const root = resolveRunsRoot({ env, os, path, fs });
     const runDir = path.join(root, runId);
     const eventsPath = path.join(runDir, "events.jsonl");
     const indexPath = path.join(root, "index.jsonl");
@@ -255,6 +296,15 @@ export function createEventWriter({
         onError(err);
     }
 
+    // Drop the migration sentinel on the first write to the new
+    // default root so subsequent resolveRunsRoot calls (this or any
+    // future process) stay quiet. We only do this when `root` IS the
+    // canonical new default — env-pinned or legacy paths have no
+    // semantic sentinel.
+    if (root === newDefaultRoot(os.homedir(), path)) {
+        dropMigrationSentinel({ root, fs, path });
+    }
+
     const writeLine = (line) => {
         if (closed) return;
         try {
@@ -265,7 +315,7 @@ export function createEventWriter({
     };
 
     const recordIndex = (ev) => {
-        // index.jsonl carries one line per `armed` event so `ralph-tui list`
+        // index.jsonl carries one line per `armed` event so `autopilot list`
         // can enumerate runs in reverse-chronological order without
         // recursing into every run dir. Replays do NOT add a row — only the
         // initial arm marks a run's existence.
@@ -335,12 +385,12 @@ export function createEventWriter({
 /**
  * Read the run index (created lazily by createEventWriter on first
  * `armed` event) and return the parsed entries newest-first. Used by
- * `ralph-tui list` and tests.
+ * `autopilot list` and tests.
  *
  * Missing index file → empty list (a fresh machine with no past runs).
  */
 export function readRunIndex({ fs = fsDefault, path = pathDefault, os = osDefault, env = process.env } = {}) {
-    const indexPath = path.join(resolveRunsRoot({ env, os, path }), "index.jsonl");
+    const indexPath = path.join(resolveRunsRoot({ env, os, path, fs }), "index.jsonl");
     let raw;
     try {
         raw = fs.readFileSync(indexPath, "utf8");
@@ -361,8 +411,13 @@ export { makeRunId };
 // iterator. Not part of the public surface (no `export` on the
 // declaration above) so consumers cannot couple to it; the
 // `__test__` bag is the project-wide convention for "tests can
-// reach in but library users should not".
-export const __test__ = { iterJsonlRows };
+// reach in but library users should not". Also exposes a
+// reset hook for the process-deduped legacy-env-var notice so
+// the test suite can re-arm it between cases.
+export const __test__ = {
+    iterJsonlRows,
+    resetLegacyEnvNoticeForTests() { legacyEnvNoticePrintedThisProcess = false; },
+};
 
 /**
  * Aggregate stats across all recorded runs. Returns:
@@ -379,7 +434,7 @@ export function aggregateRuns({
     env = process.env,
 } = {}) {
     const entries = readRunIndex({ fs, path, os, env });
-    const root = resolveRunsRoot({ env, os, path });
+    const root = resolveRunsRoot({ env, os, path, fs });
     const byTool = {};
     const byReason = {};
     const iterCounts = [];
@@ -397,7 +452,7 @@ export function aggregateRuns({
             // a huge numeric literal (e.g. `1e500`) parses as Infinity in
             // JS — without `Number.isFinite` it would propagate to
             // `iters.max = Infinity` and `iters.mean = NaN`/Infinity,
-            // silently breaking `ralph-tui stats`. The writer never emits
+            // silently breaking `autopilot stats`. The writer never emits
             // Infinity (JSON.stringify(Infinity) = "null"), so this only
             // bites for hand-edited rows; treat them like the other
             // malformed cases above and skip the iteration value.
@@ -416,7 +471,7 @@ export function aggregateRuns({
     // throws "Maximum call stack size exceeded" once iterCounts grows
     // past ~150k entries (Node's argument-count limit). A long-lived
     // user with daily self_improve runs would eventually hit that
-    // ceiling and `ralph-tui stats` would silently crash. Reduce
+    // ceiling and `autopilot stats` would silently crash. Reduce
     // handles arbitrary array sizes in O(n) without the spread.
     const max = iterCounts.length
         ? iterCounts.reduce((a, b) => (a > b ? a : b), 0)
@@ -469,7 +524,7 @@ export function pruneRuns({
     if (typeof olderThanMs !== "number" || !Number.isFinite(olderThanMs) || olderThanMs < 0) {
         throw new TypeError("pruneRuns: olderThanMs must be a non-negative number");
     }
-    const root = resolveRunsRoot({ env, os, path });
+    const root = resolveRunsRoot({ env, os, path, fs });
     const indexPath = path.join(root, "index.jsonl");
     const cutoff = now() - olderThanMs;
     const removed = [];

@@ -11,11 +11,12 @@ import {
     resolveRunsRoot,
     aggregateRuns,
     pruneRuns,
+    __test__ as writerInternals,
 } from "../src/writer.mjs";
 import { makeRunId } from "../src/events.mjs";
 
 function mkTmp() {
-    return fs.mkdtempSync(path.join(os.tmpdir(), "ralph-tui-writer-"));
+    return fs.mkdtempSync(path.join(os.tmpdir(), "autopilot-tui-writer-"));
 }
 
 function readLines(filePath) {
@@ -26,31 +27,32 @@ function readLines(filePath) {
         .map((l) => JSON.parse(l));
 }
 
-// Stage 3 (issue #49): writer.mjs's resolveRunsRoot now performs
-// sentinel-gated stderr deprecation notices when legacy
-// $AUTOPILOT_EVENTS_DIR or the legacy ~/.copilot/ralph/runs default
-// path is used. Tests inject a fake fs (which has no sentinel and
-// accepts mkdir/append silently) and a fake stderr (capturing
-// writes into an array). The sentinelPath points at a fake
-// location so deprecation writes never touch the real ~/.copilot.
-function makeFakeFs({ sentinel = "", existingPaths = new Set() } = {}) {
-    let written = "";
-    const fake = {
-        readFileSync: (p) => {
-            if (p === fake._sentinelPath) return sentinel + written;
-            const e = new Error("ENOENT");
-            e.code = "ENOENT";
-            throw e;
-        },
-        appendFileSync: (p, data) => {
-            if (p === fake._sentinelPath) written += data;
-        },
-        mkdirSync: () => {},
-        existsSync: (p) => existingPaths.has(p),
+// Issue #49 — Decisions A + B for the events-root resolver:
+//
+//  * Decision A (paths). New default `~/.copilot/autopilot/runs`. If
+//    the new default does not yet exist but the legacy
+//    `~/.copilot/ralph/runs` does, we read from the legacy path AND
+//    print a one-line stderr migration notice gated by a sentinel
+//    file under the new root (`<NEW_ROOT>/.migrated-from-ralph`). On
+//    the first write to the new root we mkdir -p it and drop the
+//    sentinel so subsequent processes stay quiet.
+//
+//  * Decision B (env vars). Prefer `AUTOPILOT_EVENTS_DIR`; fall back
+//    to legacy `RALPH_EVENTS_DIR` with a one-line stderr
+//    deprecation, deduped per-process (in-memory, not on disk —
+//    advisory only).
+//
+// Tests inject a fake fs (no real disk touched), a fake stderr
+// (writes captured into an array), and where appropriate an explicit
+// sentinelPath so resolution never reaches a real ~/.copilot.
+function makeFakeFs({ existingPaths = new Set() } = {}) {
+    const paths = new Set(existingPaths);
+    return {
+        appendFileSync: (p) => { paths.add(p); },
+        mkdirSync: (p) => { paths.add(p); },
+        existsSync: (p) => paths.has(p),
+        _addPath: (p) => { paths.add(p); },
     };
-    fake._sentinelPath = "/fake/sentinel";
-    fake.writtenSentinel = () => written;
-    return fake;
 }
 
 function makeFakeStderr() {
@@ -61,88 +63,136 @@ function makeFakeStderr() {
     };
 }
 
+// Re-arm the process-deduped legacy-env-var notice between tests so
+// resolution-order doesn't bleed state from one case to another. The
+// path-fallback notice is sentinel-gated (per fake fs), not
+// process-deduped, so it doesn't need this hook.
+function resetEnvNotice() {
+    writerInternals.resetLegacyEnvNoticeForTests();
+}
+
 test("resolveRunsRoot honours $AUTOPILOT_EVENTS_DIR (primary)", () => {
+    resetEnvNotice();
     assert.equal(resolveRunsRoot({ env: { AUTOPILOT_EVENTS_DIR: "/tmp/x" } }), "/tmp/x");
 });
 
 test("resolveRunsRoot honours $RALPH_EVENTS_DIR (legacy, with notice)", () => {
-    const fs = makeFakeFs();
+    resetEnvNotice();
+    const fakeFs = makeFakeFs();
     const stderr = makeFakeStderr();
     assert.equal(
-        resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "/tmp/x" }, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "/tmp/x" }, fs: fakeFs, stderr }),
         "/tmp/x",
     );
     assert.equal(stderr.messages.length, 1);
     assert.match(stderr.messages[0], /RALPH_EVENTS_DIR is deprecated/);
 });
 
-test("resolveRunsRoot defaults to $HOME/.copilot/autopilot/events", () => {
+test("resolveRunsRoot defaults to $HOME/.copilot/autopilot/runs", () => {
+    resetEnvNotice();
     const fakeOs = { homedir: () => "/h" };
-    const fs = makeFakeFs();
+    const fakeFs = makeFakeFs();
     const stderr = makeFakeStderr();
     assert.equal(
-        resolveRunsRoot({ env: {}, os: fakeOs, fs, stderr, sentinelPath: "/fake/sentinel" }),
-        "/h/.copilot/autopilot/events",
+        resolveRunsRoot({ env: {}, os: fakeOs, fs: fakeFs, stderr }),
+        "/h/.copilot/autopilot/runs",
     );
     assert.equal(stderr.messages.length, 0);
 });
 
 test("resolveRunsRoot: AUTOPILOT primary wins over RALPH legacy (no notice)", () => {
-    const fs = makeFakeFs();
+    resetEnvNotice();
+    const fakeFs = makeFakeFs();
     const stderr = makeFakeStderr();
     assert.equal(
         resolveRunsRoot({
             env: { AUTOPILOT_EVENTS_DIR: "/ap", RALPH_EVENTS_DIR: "/legacy" },
-            fs, stderr, sentinelPath: "/fake/sentinel",
+            fs: fakeFs, stderr,
         }),
         "/ap",
     );
     assert.equal(stderr.messages.length, 0);
 });
 
-test("resolveRunsRoot: legacy default path is honoured with deprecation notice", () => {
+test("resolveRunsRoot: read-from-legacy default emits sentinel-gated migration notice", () => {
+    resetEnvNotice();
     const fakeOs = { homedir: () => "/h" };
     const legacyDefault = "/h/.copilot/ralph/runs";
-    const fs = makeFakeFs({ existingPaths: new Set([legacyDefault]) });
+    const fakeFs = makeFakeFs({ existingPaths: new Set([legacyDefault]) });
     const stderr = makeFakeStderr();
     assert.equal(
-        resolveRunsRoot({ env: {}, os: fakeOs, fs, stderr, sentinelPath: "/fake/sentinel" }),
+        resolveRunsRoot({ env: {}, os: fakeOs, fs: fakeFs, stderr }),
         legacyDefault,
     );
     assert.equal(stderr.messages.length, 1);
-    assert.match(stderr.messages[0], /reading from legacy/);
+    assert.match(stderr.messages[0], /reading runs from legacy ~\/\.copilot\/ralph\/runs/);
+    assert.match(stderr.messages[0], /will migrate writes to ~\/\.copilot\/autopilot\/runs on next emit/);
 });
 
 test("resolveRunsRoot: when both default paths exist, primary wins (no notice)", () => {
+    resetEnvNotice();
     const fakeOs = { homedir: () => "/h" };
-    const fs = makeFakeFs({ existingPaths: new Set(["/h/.copilot/autopilot/events", "/h/.copilot/ralph/runs"]) });
+    const fakeFs = makeFakeFs({
+        existingPaths: new Set(["/h/.copilot/autopilot/runs", "/h/.copilot/ralph/runs"]),
+    });
     const stderr = makeFakeStderr();
     assert.equal(
-        resolveRunsRoot({ env: {}, os: fakeOs, fs, stderr, sentinelPath: "/fake/sentinel" }),
-        "/h/.copilot/autopilot/events",
+        resolveRunsRoot({ env: {}, os: fakeOs, fs: fakeFs, stderr }),
+        "/h/.copilot/autopilot/runs",
     );
     assert.equal(stderr.messages.length, 0);
 });
 
-test("resolveRunsRoot: deprecation notice is one-shot per process (sentinel-gated)", () => {
-    const fs = makeFakeFs();
+test("resolveRunsRoot: legacy env-var notice is one-shot per process (in-memory dedup)", () => {
+    resetEnvNotice();
+    const fakeFs = makeFakeFs();
     const stderr = makeFakeStderr();
-    const sentinelPath = "/fake/sentinel";
-    resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "/x" }, fs, stderr, sentinelPath });
-    resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "/x" }, fs, stderr, sentinelPath });
-    resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "/x" }, fs, stderr, sentinelPath });
-    assert.equal(stderr.messages.length, 1);
-    assert.match(fs.writtenSentinel(), /RALPH_EVENTS_DIR/);
+    resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "/x" }, fs: fakeFs, stderr });
+    resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "/x" }, fs: fakeFs, stderr });
+    resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "/x" }, fs: fakeFs, stderr });
+    assert.equal(stderr.messages.length, 1, "process-level dedup: only one notice");
 });
 
-test("resolveRunsRoot: pre-existing sentinel suppresses the notice", () => {
-    const fs = makeFakeFs({ sentinel: "env:RALPH_EVENTS_DIR\n" });
+test("resolveRunsRoot: path-fallback migration notice does NOT reprint when sentinel exists", () => {
+    resetEnvNotice();
+    // Sentinel-gated: a pre-existing `<NEW_ROOT>/.migrated-from-ralph`
+    // file means a prior process already announced the migration;
+    // the notice must stay quiet on subsequent runs even when we
+    // still resolve to the legacy path. The fake fs treats path
+    // strings independently so the sentinel can register as
+    // existing without the surrounding directory.
+    const fakeOs = { homedir: () => "/h" };
+    const legacyDefault = "/h/.copilot/ralph/runs";
+    const sentinelPath = "/h/.copilot/autopilot/runs/.migrated-from-ralph";
+    const fakeFs = makeFakeFs({ existingPaths: new Set([legacyDefault, sentinelPath]) });
     const stderr = makeFakeStderr();
     assert.equal(
-        resolveRunsRoot({ env: { RALPH_EVENTS_DIR: "/tmp/x" }, fs, stderr, sentinelPath: "/fake/sentinel" }),
-        "/tmp/x",
+        resolveRunsRoot({ env: {}, os: fakeOs, fs: fakeFs, stderr }),
+        legacyDefault,
     );
-    assert.equal(stderr.messages.length, 0);
+    assert.equal(stderr.messages.length, 0,
+        "sentinel under the new root must suppress the migration notice");
+});
+
+test("resolveRunsRoot: path-fallback notice prints once across multiple calls (sentinel created on first write)", () => {
+    resetEnvNotice();
+    // Simulate the lifecycle: first resolution prints the notice.
+    // Then the writer's first emit drops the sentinel under the new
+    // root — we model that by adding the sentinel path to the fake
+    // fs's existingPaths between the two calls. The second
+    // resolution must stay silent.
+    const fakeOs = { homedir: () => "/h" };
+    const legacyDefault = "/h/.copilot/ralph/runs";
+    const sentinelPath = "/h/.copilot/autopilot/runs/.migrated-from-ralph";
+    const fakeFs = makeFakeFs({ existingPaths: new Set([legacyDefault]) });
+    const stderr = makeFakeStderr();
+    resolveRunsRoot({ env: {}, os: fakeOs, fs: fakeFs, stderr });
+    assert.equal(stderr.messages.length, 1, "first resolution prints the notice");
+    // Simulate the writer's first-emit sentinel-drop.
+    fakeFs._addPath(sentinelPath);
+    resolveRunsRoot({ env: {}, os: fakeOs, fs: fakeFs, stderr });
+    assert.equal(stderr.messages.length, 1,
+        "second resolution must NOT reprint once sentinel is on disk");
 });
 
 test("resolveRunEventsPath joins runId under the runs root", () => {
@@ -286,6 +336,46 @@ test("createEventWriter: armed getter flips after first armed emit", () => {
     assert.equal(w.armed, false);
     w.emit({ type: "armed" });
     assert.equal(w.armed, true);
+});
+
+test("createEventWriter: drops `.migrated-from-ralph` sentinel on first write to the new default root", () => {
+    // Issue #49 lifecycle: when the writer's resolved root is the new
+    // default `~/.copilot/autopilot/runs`, the very first
+    // createEventWriter() call must mkdir -p that root and touch
+    // `<NEW_ROOT>/.migrated-from-ralph` so any later resolveRunsRoot
+    // call (in this or any future process) reading from a still-
+    // populated legacy `~/.copilot/ralph/runs` does NOT reprint the
+    // migration notice. We pin the home dir to a temp scratch
+    // directory so the test never touches the real ~/.copilot.
+    const fakeHome = mkTmp();
+    const newRoot = path.join(fakeHome, ".copilot", "autopilot", "runs");
+    const sentinelPath = path.join(newRoot, ".migrated-from-ralph");
+    const fakeOs = { homedir: () => fakeHome };
+    // env is empty so resolveRunsRoot picks the default new root.
+    createEventWriter({
+        runId: "ralph_loop-1",
+        env: {},
+        os: fakeOs,
+    });
+    assert.equal(fs.existsSync(newRoot), true, "new root must be mkdir -p'd");
+    assert.equal(fs.existsSync(sentinelPath), true,
+        "sentinel `.migrated-from-ralph` must exist after first writer construction");
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+});
+
+test("createEventWriter: does NOT drop the sentinel when resolving to a non-default root", () => {
+    // When AUTOPILOT_EVENTS_DIR pins a tmp dir (e.g. CI), the writer
+    // is NOT writing to the default new root, so dropping a
+    // sentinel there would be wrong (it has no semantic meaning
+    // outside the canonical migration target). Verify that the
+    // sentinel does NOT appear under an env-pinned root.
+    const root = mkTmp();
+    createEventWriter({
+        runId: "r-no-sentinel",
+        env: { AUTOPILOT_EVENTS_DIR: root },
+    });
+    assert.equal(fs.existsSync(path.join(root, ".migrated-from-ralph")), false,
+        "no sentinel under env-pinned root — it isn't the canonical new default");
 });
 
 test("readRunIndex: empty when index.jsonl is missing", () => {
@@ -783,8 +873,6 @@ test("pruneRuns: hand-edited ts=-Infinity row does NOT prematurely delete the ru
     assert.equal(result.removed.length, 0, "ts=-Infinity row must NOT be marked for removal — finite-ts guard");
     assert.equal(fs.existsSync(liveRunDir), true, "the legitimate run dir must survive a corrupted-ts row in the index");
 });
-
-import { __test__ as writerInternals } from "../src/writer.mjs";
 
 test("iterJsonlRows: empty / non-string / null / undefined input yields nothing (defensive)", () => {
     // Iter 166 — the helper centralises the JSONL row iteration

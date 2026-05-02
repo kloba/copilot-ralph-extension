@@ -36,6 +36,22 @@
   either value is caught at test time.
 
 ### Fixes
+- `events-emit.mjs` `clipExcerpt` no longer splits a UTF-16
+  surrogate pair when truncating a long excerpt at the
+  `MAX_EXCERPT_CHARS` (500) boundary. Previously, an emoji
+  or astral-plane char landing exactly at index 498/499
+  produced a lone high surrogate in the JSONL line —
+  technically valid UTF-16 but renders as a replacement
+  glyph in most terminals AND breaks any consumer doing
+  strict UTF-8 validation downstream (e.g. a Python tail
+  of `events.jsonl` with `errors='strict'`). The fix
+  mirrors `handler.mjs`'s `safeSliceEnd`: when the last
+  kept code unit is a high surrogate, back off by one so
+  the pair stays intact (we drop a single astral char
+  rather than emit a lone half). Pinned by a regression
+  test that constructs an excerpt with `💀` (U+1F480)
+  straddling the boundary and asserts every high surrogate
+  in the clipped output is followed by a low surrogate.
 - `install.sh` now surfaces a friendly diagnostic when
   `mkdir -p "$TARGET_DIR"` fails (parent is a regular file,
   parent is read-only, ENOSPC, etc) — the previous bare

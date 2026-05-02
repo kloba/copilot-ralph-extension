@@ -57,7 +57,21 @@ export function makeRunId(label, startedAt) {
 function clipExcerpt(s) {
     if (typeof s !== "string") return s;
     if (s.length <= MAX_EXCERPT_CHARS) return s;
-    return s.slice(0, MAX_EXCERPT_CHARS - 1) + "…";
+    // Surrogate-pair safety: a naïve `s.slice(0, MAX_EXCERPT_CHARS - 1)`
+    // can land inside a 4-byte char (emoji, astral plane symbol) and
+    // emit a lone high surrogate — which is technically valid UTF-16
+    // but renders as a replacement character in most terminals and
+    // breaks any consumer doing strict UTF-8 validation downstream
+    // (e.g. a Python tail of events.jsonl with `errors='strict'`).
+    // Mirror the `safeSliceEnd` helper in `handler.mjs`: if the last
+    // kept code unit is a high surrogate, back off by one so the pair
+    // stays intact (we drop a single astral char rather than emit a
+    // lone surrogate). Keeping events-emit.mjs zero-dep means we
+    // inline the four-line check rather than import from handler.mjs.
+    let cut = MAX_EXCERPT_CHARS - 1;
+    const code = s.charCodeAt(cut - 1);
+    if (code >= 0xD800 && code <= 0xDBFF) cut -= 1;
+    return s.slice(0, cut) + "…";
 }
 
 function serialize(ev) {

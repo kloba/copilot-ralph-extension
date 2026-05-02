@@ -309,3 +309,65 @@ test("resolveRunsRoot: trims surrounding whitespace from RALPH_EVENTS_DIR overri
     // is preserved — only the SURROUNDING whitespace is stripped.
     assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "  /Volumes/My Drive/runs  " }), "/Volumes/My Drive/runs");
 });
+
+// Iter 115 — clipExcerpt's slice boundary must not split a UTF-16
+// surrogate pair. A naïve `s.slice(0, MAX_EXCERPT_CHARS - 1)` lands
+// inside a 4-byte char (emoji / astral plane symbol) when the
+// boundary falls between the high+low surrogate halves and emits a
+// lone high surrogate — technically valid UTF-16 but renders as a
+// replacement character in most terminals AND breaks any consumer
+// doing strict UTF-8 validation downstream (e.g. a Python tail of
+// events.jsonl with errors='strict'). The fix backs off one code
+// unit when the last kept char is a high surrogate, dropping the
+// single astral char rather than emitting a lone half. Pin the
+// behaviour so a future "simplify clipExcerpt" PR can't regress it.
+test("createEventEmitter: clipExcerpt does not produce lone high surrogates at the truncation boundary", () => {
+    const captured = [];
+    const e = createEventEmitter({
+        label: "ralph_loop",
+        startedAt: 1,
+        env: { RALPH_EVENTS_DIR: "/tmp/r" },
+        fs: {
+            mkdirSync: () => {},
+            appendFileSync: (_, line) => captured.push(line),
+        },
+    });
+    // Build an excerpt where the surrogate-pair half lands EXACTLY at
+    // the truncation boundary. clipExcerpt cuts at MAX_EXCERPT_CHARS-1
+    // (=499) when length > 500. Place "💀" (U+1F480, two code units —
+    // 0xD83D + 0xDC80) at indices 498..499 so a naïve slice keeps the
+    // high surrogate at 498 and drops the low surrogate at 499.
+    const skull = String.fromCharCode(0xD83D, 0xDC80);
+    const excerpt = "x".repeat(498) + skull + skull.repeat(20);
+    assert.ok(excerpt.length > 500, "test setup: excerpt must trip clipExcerpt's truncation");
+    assert.equal(excerpt.charCodeAt(498), 0xD83D, "test setup: index 498 must be the high surrogate");
+    assert.equal(excerpt.charCodeAt(499), 0xDC80, "test setup: index 499 must be the low surrogate");
+    e.write({ type: "iteration_end", runId: "r", ts: 1, iteration: 1, excerpt });
+    assert.equal(captured.length, 1);
+    const parsed = JSON.parse(captured[0].trimEnd());
+    // The clipped excerpt must NOT end on a lone high surrogate. Walk
+    // every code unit of `parsed.excerpt`: every high surrogate must
+    // be immediately followed by a low surrogate. The trailing "…" is
+    // a BMP char so the check naturally terminates without false
+    // positives at the end.
+    for (let i = 0; i < parsed.excerpt.length; i++) {
+        const c = parsed.excerpt.charCodeAt(i);
+        if (c >= 0xD800 && c <= 0xDBFF) {
+            const next = parsed.excerpt.charCodeAt(i + 1);
+            assert.ok(
+                next >= 0xDC00 && next <= 0xDFFF,
+                `lone high surrogate at index ${i} (next code unit: 0x${(next || 0).toString(16)}) — clipExcerpt split a surrogate pair. Excerpt tail: ${JSON.stringify(parsed.excerpt.slice(-10))}`,
+            );
+            i += 1; // skip the matched low surrogate
+        } else {
+            assert.ok(
+                !(c >= 0xDC00 && c <= 0xDFFF),
+                `unmatched low surrogate at index ${i} — clipExcerpt produced an invalid UTF-16 string`,
+            );
+        }
+    }
+    // Length stays ≤ MAX_EXCERPT_CHARS (500); the existing length test
+    // is reinforced — backing off one code unit cannot grow the result.
+    assert.ok(parsed.excerpt.length <= 500, `clipped excerpt length must stay ≤ 500 (got ${parsed.excerpt.length})`);
+    assert.ok(parsed.excerpt.endsWith("…"), "clipped excerpt must still end with the ellipsis sentinel");
+});

@@ -345,12 +345,36 @@ export function warnDeprecatedFlagOnce(flag, mapping, sink = process.stderr) {
     sink.write?.(`autopilot run: --${flag} is deprecated; use --reset-on=${mapping} instead. ` +
         `--${flag} will be removed in a future release.\n`);
 }
+
+// One-shot stderr nudge when the user pairs --reset-on=iter (or its
+// deprecated --fresh alias) with one of the SDLC modes. Each iter
+// starts a fresh Copilot session and the SDLC prompts are
+// one-step-per-iter — without help, the agent can't tell what state
+// the cursor is in. The runner now injects a [CURSOR_STATE]
+// preamble to compensate, so this is no longer a bug; we still
+// warn because the default --reset-on=workitem is cheaper (the
+// preamble is best-effort and a continuous session is the
+// belt-and-suspenders choice for these multi-stage workflows).
+const _iterResetSelfImproveWarned = new Set();
+export function warnIterResetSelfImproveOnce(mode, sink = process.stderr) {
+    if (_iterResetSelfImproveWarned.has(mode)) return;
+    _iterResetSelfImproveWarned.add(mode);
+    sink.write?.(
+        `autopilot run: --reset-on=iter with --${mode} starts a fresh Copilot session every iter, `
+        + `which loses cursor memory between one-step-per-iter SDLC stages. The runner injects a `
+        + `[CURSOR_STATE] preamble to compensate, but the default --reset-on=workitem is recommended.\n`,
+    );
+}
+
 // Test-only hook so the bin.test.mjs cases for the deprecation
 // notice can run independently. The `__test__` bag is the
 // project-wide convention for "tests can reach in but library
 // users should not" — see also writer.mjs.
 export const __test__ = {
-    resetDeprecationWarnings: () => _deprecationWarned.clear(),
+    resetDeprecationWarnings: () => {
+        _deprecationWarned.clear();
+        _iterResetSelfImproveWarned.clear();
+    },
 };
 
 /** Format the user-visible message printed when the user requests
@@ -856,6 +880,15 @@ export async function cmdRun(flags) {
     // discussion in the runner's header comment for why this is
     // the right default.
     if (resetOn === null) resetOn = "workitem";
+
+    // Nudge users who paired --reset-on=iter with an SDLC mode.
+    // The runner now injects a [CURSOR_STATE] preamble derived from
+    // the run's events.jsonl to keep one-step-per-iter prompts
+    // resumable across fresh sessions, but the default
+    // --reset-on=workitem is still the recommended setup.
+    if (resetOn === "iter" && (mode === "self-improve" || mode === "grow-project")) {
+        warnIterResetSelfImproveOnce(mode);
+    }
 
     let max;
     if (flags.max !== undefined) {

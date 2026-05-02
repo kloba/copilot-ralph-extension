@@ -8,9 +8,49 @@
 
 ### Fixes
 - `autopilot run` now probes the Copilot CLI's `--version` output before starting the loop and prints a clear upgrade hint (`copilot CLI: 0.0.354 is older than 1.0.0 — upgrade with \`npm i -g @github/copilot\``) when the resolved binary is older than 1.0.0, missing, or non-executable. The same probe also surfaces in `autopilot doctor` as a `copilot CLI: …` status line so users can confirm the planned run will accept `--output-format json` before kicking off an iter. The check is warn-only (the loop still starts) and can be skipped with `AUTOPILOT_SKIP_CLI_VERSION_CHECK=1`. (#105)
+- `autopilot run --self-improve` / `--grow-project` no longer
+  silently stalls when paired with `--reset-on=iter` (or the
+  deprecated `--fresh` alias). Each iter spawns a fresh Copilot
+  session, so the one-step-per-iter SDLC prompts had no in-context
+  memory of the prior iter's `[WORKITEM_START]` / `[STAGE_PLAN]` /
+  `[TASK_LIST]` markers — the agent re-derived state 1 every
+  iter and re-emitted `[WORKITEM_START]` for the same issue
+  forever. The runner now reads its own `events.jsonl` between
+  iters and prepends a concise `[CURSOR_STATE]` block to the
+  per-iter prompt that names the active work item, the stage
+  plan, the active stage, and the next state in the SDLC table.
+  Injection runs for both `iter` and `workitem` reset modes
+  (the latter also drops the captured sessionId at every iter
+  exit) and is skipped on iter 1 / when no markers exist yet.
+  Pairing `--reset-on=iter` with `--self-improve` /
+  `--grow-project` now also prints a one-shot stderr nudge
+  recommending the default `--reset-on=workitem`.
 
 ### Internal
 - Startup sweep removes orphan worktrees from prior `terminated` runs (~200 ms budget). (#66)
+- New `summarizeCursor` / `formatCursorPreamble` /
+  `buildCursorPreamble` helpers in `packages/tui/src/runner.mjs`
+  fold a run's events.jsonl into a state-machine cursor for
+  the SDLC-prompt resume contract. Idempotence semantics are
+  intentionally stricter than the UI's `foldEvents`: a duplicate
+  same-ref `workitem_start` is a no-op (so the agent's
+  defensive re-emission doesn't reset progress) and a
+  different-ref one mid-stream marks the cursor corrupt and
+  suppresses the preamble. Auto-emitted iter-close `stage_end`
+  events are ignored (they fire even when the stage isn't
+  drained), so stage progression is derived purely from the
+  effective plan + `task_list` + `task_end` coverage.
+
+### Tests
+- `packages/tui/test/cursor-preamble.test.mjs` pins the cursor
+  reducer / preamble formatter / file-reader contract,
+  including the user-facing 9-iter / 9-duplicate-`workitem_start`
+  bug repro. `packages/tui/test/runner.test.mjs` adds three
+  spawn-mock cases that capture the per-iter prompt and assert
+  the `[CURSOR_STATE]` block lands on iter 2 of self-improve
+  (under both `iter` and `workitem` reset modes) and stays out
+  of `--prompt` runs. `packages/tui/test/bin.test.mjs` covers
+  the four-cell truth table for the new stderr nudge.
 
 ### Breaking
 - Issue #51 — Replaced `ralph-tui run --continue` / `--fresh` with

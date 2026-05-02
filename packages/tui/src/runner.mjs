@@ -311,6 +311,389 @@ export function composePrompt({ mode, prompt, focus }) {
     return base;
 }
 
+// ─── Cursor-state preamble (issue: one-step-per-iter cursor recovery)
+//
+// The baked SDLC prompts (`PROMPT_SELF_IMPROVE`, `PROMPT_GROW_PROJECT`)
+// promise the agent that "the runner persists the cursor between
+// iters". For `resetOn === "iter"` runs (and, in practice, `workitem`
+// too — see `runner.mjs:2397-2400` which drops the captured sessionId
+// at every iter exit) the agent has no in-conversation memory of
+// prior iters' markers, so without help it re-derives the cursor as
+// state 1 (orient + pick a work item) every iter and never advances.
+//
+// `summarizeCursor` is a pure reducer over the events stream (input is
+// the same JSONL the runner already writes to events.jsonl). It
+// returns a small descriptor naming the active work item, the
+// effective stage plan (with `stage_plan_amend` add/remove folded),
+// the active stage, and the per-task progress, plus the matching
+// state in the SDLC decision table (1..6 from PROMPT_SELF_IMPROVE).
+//
+// `buildCursorPreamble` is the I/O wrapper that locates events.jsonl,
+// parses it, calls `summarizeCursor`, and formats the result as a
+// concise `[CURSOR_STATE] … [/CURSOR_STATE]` block prepended to the
+// per-iter prompt.
+//
+// Why a separate reducer instead of `foldEvents` from `events.mjs`?
+// Two semantic differences for cursor recovery vs UI fold:
+//   1. A duplicate `workitem_start` for the same `(kind, ref)` while
+//      one is active is IGNORED (idempotent). The UI fold resets
+//      plan/task state on every workitem_start; the cursor reducer
+//      treats it as a no-op so a fresh-session iter that re-emits
+//      `[WORKITEM_START]` doesn't blow the cursor back to state 2.
+//   2. A different `(kind, ref)` mid-stream marks the cursor `corrupt`
+//      and suppresses the preamble so a corrupted stream can't
+//      mislead the agent.
+
+const CURSOR_END_STAGE = "END";
+
+/** Build the effective stage plan from a `stage_plan` event followed
+ *  by zero-or-more `stage_plan_amend` events. Mirrors the apply
+ *  semantics in `foldEvents` (events.mjs:1033-1066): `remove` deletes
+ *  the named stage; `add` inserts after the named anchor (or at the
+ *  tail when no anchor / anchor missing). Pure / no I/O. */
+function applyStagePlanAmendments(initialStages, amendments) {
+    let stages = Array.isArray(initialStages) ? [...initialStages] : [];
+    for (const a of amendments) {
+        const hasAdd = typeof a.add === "string" && a.add;
+        const hasRemove = typeof a.remove === "string" && a.remove;
+        if (!hasAdd && !hasRemove) continue;
+        if (hasRemove) {
+            const idx = stages.indexOf(a.remove);
+            if (idx !== -1) stages.splice(idx, 1);
+        }
+        if (hasAdd) {
+            let insertAt = stages.length;
+            if (typeof a.after === "string" && a.after) {
+                const anchor = stages.indexOf(a.after);
+                if (anchor !== -1) insertAt = anchor + 1;
+            }
+            stages.splice(insertAt, 0, a.add);
+        }
+    }
+    return stages;
+}
+
+/** Reduce an events.jsonl event array into a cursor-state descriptor.
+ *
+ *  Returns `null` when there's no useful preamble to emit (no active
+ *  work item, an unrecognised state, or a corrupted stream where two
+ *  different `(kind, ref)` work items both claim active without an
+ *  intervening `workitem_end`).
+ *
+ *  Returns `{ state, workItem, plan, activeStage, taskList,
+ *  pendingTasks, taskInFlight }` otherwise:
+ *   - `state` — 2..6 (state 1 returns null because there's nothing
+ *     prescriptive to inject; the agent's job in state 1 is to orient
+ *     fresh, which is exactly what the bare prompt already says).
+ *   - `workItem` — `{ kind, ref, title }` (`title` may be null).
+ *   - `plan` — string[] (effective plan with amendments applied).
+ *   - `activeStage` — first stage in `plan` whose task_list is missing
+ *     or has any incomplete task. null when state === 2.
+ *   - `taskList` — string[] for the active stage (null when state < 4).
+ *   - `pendingTasks` — `[{ sub, desc }]` for tasks not yet
+ *     `task_end`-ed (sub is 1-based ordinal in `taskList`).
+ *   - `taskInFlight` — `{ stage, sub, desc }` if the most recent
+ *     `task_start` has no matching `task_end`, else null. The active
+ *     iter MAY have been killed mid-task; the agent should resume the
+ *     SAME pending task on the next iter (don't advance).
+ *
+ *  Pure / no I/O. Exported for testing. */
+export function summarizeCursor(events) {
+    if (!Array.isArray(events)) return null;
+
+    let workItem = null;            // { kind, ref, title, key }
+    let workItemKey = null;         // `${kind}#${ref}` for idempotence
+    let stages = null;              // effective plan (string[]) or null
+    const taskListByStage = new Map();   // stage -> string[]
+    const taskEndsByStage = new Map();   // stage -> Set<sub>
+    let taskInFlight = null;        // { stage, sub, desc } or null
+    let corrupt = false;
+
+    const resetWorkItemState = () => {
+        workItem = null;
+        workItemKey = null;
+        stages = null;
+        taskListByStage.clear();
+        taskEndsByStage.clear();
+        taskInFlight = null;
+    };
+
+    for (const ev of events) {
+        if (!ev || typeof ev !== "object" || typeof ev.type !== "string") continue;
+        switch (ev.type) {
+            case "workitem_start": {
+                if (!WORKITEM_KIND_SET.has(ev.kind)) break;
+                if (!Number.isFinite(ev.ref)) break;
+                const key = `${ev.kind}#${ev.ref}`;
+                if (workItem && workItemKey === key) {
+                    // Same active workitem re-asserted — idempotent
+                    // no-op so a fresh-session iter that re-emits
+                    // `[WORKITEM_START]` doesn't reset plan/task state.
+                    break;
+                }
+                if (workItem && workItemKey !== key) {
+                    // Different ref while one is active without a
+                    // `workitem_end` between them → corrupt stream.
+                    // Suppress preamble so the agent isn't misled.
+                    corrupt = true;
+                    break;
+                }
+                workItem = {
+                    kind: ev.kind,
+                    ref: ev.ref,
+                    title: typeof ev.title === "string" && ev.title ? ev.title : null,
+                };
+                workItemKey = key;
+                stages = null;
+                taskListByStage.clear();
+                taskEndsByStage.clear();
+                taskInFlight = null;
+                break;
+            }
+            case "workitem_end": {
+                if (!WORKITEM_KIND_SET.has(ev.kind)) break;
+                resetWorkItemState();
+                break;
+            }
+            case "stage_plan": {
+                if (!workItem) break;
+                if (!Array.isArray(ev.stages)) break;
+                const cleaned = ev.stages.filter((s) => typeof s === "string" && s);
+                if (cleaned.length === 0) break;
+                stages = cleaned;
+                taskListByStage.clear();
+                taskEndsByStage.clear();
+                taskInFlight = null;
+                break;
+            }
+            case "stage_plan_amend": {
+                if (!workItem || !Array.isArray(stages)) break;
+                stages = applyStagePlanAmendments(stages, [ev]);
+                break;
+            }
+            case "task_list": {
+                if (!workItem || !Array.isArray(stages)) break;
+                if (typeof ev.stage !== "string" || !ev.stage) break;
+                if (!Array.isArray(ev.items)) break;
+                if (!stages.includes(ev.stage)) break;
+                const items = ev.items.filter((s) => typeof s === "string" && s);
+                taskListByStage.set(ev.stage, items);
+                if (!taskEndsByStage.has(ev.stage)) {
+                    taskEndsByStage.set(ev.stage, new Set());
+                }
+                break;
+            }
+            case "task_start": {
+                if (!workItem) break;
+                if (typeof ev.stage !== "string" || !ev.stage) break;
+                if (!Number.isFinite(ev.sub) || ev.sub < 1) break;
+                taskInFlight = {
+                    stage: ev.stage,
+                    sub: ev.sub,
+                    desc: typeof ev.desc === "string" ? ev.desc : "",
+                };
+                break;
+            }
+            case "task_end": {
+                if (!workItem) break;
+                if (typeof ev.stage !== "string" || !ev.stage) break;
+                if (!Number.isFinite(ev.sub) || ev.sub < 1) break;
+                if (!TASK_OUTCOME_SET.has(ev.outcome)) break;
+                if (!taskEndsByStage.has(ev.stage)) {
+                    taskEndsByStage.set(ev.stage, new Set());
+                }
+                taskEndsByStage.get(ev.stage).add(ev.sub);
+                if (taskInFlight && taskInFlight.stage === ev.stage && taskInFlight.sub === ev.sub) {
+                    taskInFlight = null;
+                }
+                break;
+            }
+            // Deliberately ignored: `stage_end` is auto-emitted by the
+            // runner at iter exit for the live stage even when the
+            // stage isn't drained (see runner.mjs:2280-2291), so it
+            // would falsely advance the cursor. Stage progression is
+            // derived purely from task_list + task_end coverage below.
+            default:
+                break;
+        }
+    }
+
+    if (corrupt) return null;
+    if (!workItem) return null;
+    if (!Array.isArray(stages) || stages.length === 0) {
+        return {
+            state: 2,
+            workItem,
+            plan: null,
+            activeStage: null,
+            taskList: null,
+            pendingTasks: null,
+            taskInFlight: null,
+        };
+    }
+
+    // Walk the effective plan and find the FIRST stage that isn't done.
+    // A stage is "done" when its task_list exists AND every task in it
+    // has a matching task_end. Stages without a task_list yet are
+    // never "done" — they need state 3 to land before they can advance.
+    for (const stage of stages) {
+        const list = taskListByStage.get(stage);
+        if (!list) {
+            return {
+                state: 3,
+                workItem,
+                plan: stages.slice(),
+                activeStage: stage,
+                taskList: null,
+                pendingTasks: null,
+                taskInFlight: taskInFlight && taskInFlight.stage === stage ? taskInFlight : null,
+            };
+        }
+        const ends = taskEndsByStage.get(stage) ?? new Set();
+        const pending = [];
+        for (let i = 0; i < list.length; i++) {
+            const sub = i + 1;
+            if (!ends.has(sub)) pending.push({ sub, desc: list[i] });
+        }
+        if (pending.length > 0) {
+            return {
+                state: 4,
+                workItem,
+                plan: stages.slice(),
+                activeStage: stage,
+                taskList: list.slice(),
+                pendingTasks: pending,
+                taskInFlight: taskInFlight && taskInFlight.stage === stage ? taskInFlight : null,
+            };
+        }
+        // Stage drained — continue to next stage in plan.
+    }
+
+    // Every stage drained. State 5 vs 6: the prompt is explicit that
+    // state 6 is keyed to the END stage, not "any final stage" (so
+    // grow-project plans like `… CLOSE → COMMIT → PUSH → END` only
+    // reach state 6 at END drained). The pinned-tail enforcement
+    // guarantees END is always last when present, so anchoring on the
+    // literal name is safe.
+    const lastStage = stages[stages.length - 1];
+    if (lastStage === CURSOR_END_STAGE) {
+        return {
+            state: 6,
+            workItem,
+            plan: stages.slice(),
+            activeStage: lastStage,
+            taskList: taskListByStage.get(lastStage)?.slice() ?? null,
+            pendingTasks: [],
+            taskInFlight: null,
+        };
+    }
+    // No END stage in plan but everything drained: fall back to state
+    // 5 with the last stage as active so the agent emits the next
+    // STAGE marker. Rare — only happens for plans the agent built
+    // without END (which the pinned-tail repair would normally fix).
+    return {
+        state: 5,
+        workItem,
+        plan: stages.slice(),
+        activeStage: lastStage,
+        taskList: taskListByStage.get(lastStage)?.slice() ?? null,
+        pendingTasks: [],
+        taskInFlight: null,
+    };
+}
+
+/** Format a cursor descriptor (from `summarizeCursor`) as a concise
+ *  `[CURSOR_STATE] … [/CURSOR_STATE]` block suitable for prepending
+ *  to the per-iter prompt. Pure / no I/O — exported for testing. */
+export function formatCursorPreamble(cursor) {
+    if (!cursor) return "";
+    if (!cursor.workItem) return "";
+    const lines = ["[CURSOR_STATE]"];
+    const wi = cursor.workItem;
+    const titlePart = wi.title ? ` — "${wi.title.replace(/"/g, "\\\"")}"` : "";
+    lines.push(`Active work item: ${wi.kind} #${wi.ref}${titlePart}`);
+    if (cursor.plan) {
+        lines.push(`Stage plan: ${cursor.plan.join(" → ")}`);
+        if (cursor.activeStage) {
+            const idx = cursor.plan.indexOf(cursor.activeStage);
+            const pos = idx >= 0 ? `${idx + 1}/${cursor.plan.length}` : "?";
+            lines.push(`Active stage: ${cursor.activeStage} (${pos})`);
+        }
+    }
+    if (cursor.taskList) {
+        const ends = cursor.taskList.length - (cursor.pendingTasks?.length ?? 0);
+        lines.push(`Tasks for ${cursor.activeStage}: ${ends}/${cursor.taskList.length} complete`);
+        if (cursor.pendingTasks && cursor.pendingTasks.length > 0) {
+            const next = cursor.pendingTasks[0];
+            lines.push(`Next pending task: #${next.sub} "${next.desc}"`);
+        }
+    }
+    if (cursor.taskInFlight) {
+        const tif = cursor.taskInFlight;
+        lines.push(`Task in flight (no task_end yet — RESUME this same task, do NOT advance): ${tif.stage}#${tif.sub} "${tif.desc}"`);
+    }
+    const stateActions = {
+        2: "STATE 2 — emit [STAGE_PLAN: {\"stages\":[…]}] for this work item, then end the iter.",
+        3: "STATE 3 — emit [TASK_LIST: {\"stage\":\"" + (cursor.activeStage ?? "") + "\",\"items\":[…]}] (2-6 concrete tasks for the active stage), then end the iter.",
+        4: "STATE 4 — pop and execute the next pending task: emit [TASK_START], do the work, emit [TASK_END]. Do exactly ONE task and stop.",
+        5: "STATE 5 — every task in the active stage is done; emit [STAGE: NEXT_STAGE_NAME] on its own line to advance, then end the iter.",
+        6: "STATE 6 — END stage drained; emit [WORKITEM_END: {\"kind\":\"" + wi.kind + "\",\"ref\":" + wi.ref + ",\"closesN\":N}] and then COMPLETE on its own line.",
+    };
+    const action = stateActions[cursor.state];
+    if (action) {
+        lines.push("");
+        lines.push(`Your next step: ${action}`);
+        lines.push("Do exactly that one step and end the iter — the runner advances the cursor.");
+    }
+    lines.push("[/CURSOR_STATE]");
+    return lines.join("\n");
+}
+
+/** Read events.jsonl for the given run, parse it, and return the
+ *  formatted `[CURSOR_STATE]` preamble — or `""` when there's nothing
+ *  prescriptive to inject (state 1 / no events / no work item /
+ *  corrupt stream / interior parse error / missing file).
+ *
+ *  Trailing partial lines (write-in-progress race) are silently
+ *  ignored. Interior malformed lines are treated as corruption and
+ *  suppress the preamble; the agent then falls back to bare-prompt
+ *  re-derivation, which is the pre-fix behaviour. */
+export function buildCursorPreamble({ runId, env, deps = {} } = {}) {
+    if (typeof runId !== "string" || !runId) return "";
+    const fs = deps.fs ?? { readFileSync };
+    let raw;
+    try {
+        const eventsPath = join(sharedResolveRunsRoot(env), runId, "events.jsonl");
+        raw = fs.readFileSync(eventsPath, "utf8");
+    } catch {
+        return "";
+    }
+    if (typeof raw !== "string" || raw === "") return "";
+    const lines = raw.split("\n");
+    // Drop the trailing element from split — the file always ends in
+    // `\n` for completed lines, so the last array slot is `""` for
+    // well-formed files and a partial JSON fragment when an in-flight
+    // append is racing with our read.
+    const trailingPartial = lines.pop();
+    const events = [];
+    for (const line of lines) {
+        if (line === "") continue;
+        try {
+            events.push(JSON.parse(line));
+        } catch {
+            // Interior malformed line — suppress preamble entirely
+            // so a corrupted stream can't lead the agent to a wrong
+            // cursor. Better to fall back to bare-prompt re-derive
+            // than to inject a partial / wrong cursor.
+            return "";
+        }
+    }
+    // Trailing partial is expected (write race) when non-empty; ignore.
+    void trailingPartial;
+    const cursor = summarizeCursor(events);
+    return formatCursorPreamble(cursor);
+}
+
 /** Mode → label used by the event emitter and the run directory name. */
 function labelForMode(mode) {
     if (mode === "self-improve") return "ralph-tui-self-improve";
@@ -1729,6 +2112,40 @@ export async function runRalphTui(opts) {
         const resumeSessionId = canResume ? capturedSessionId : null;
         const sessionNameForIter = (resetOn !== "iter" && !canResume) ? sessionName : null;
 
+        // Cursor-state preamble (one-step-per-iter recovery).
+        //
+        // The baked SDLC prompts promise that "the runner persists
+        // the cursor between iters", but in practice ALL reset modes
+        // except `never` drop the Copilot session at every iter exit
+        // (`iter` never captures; `workitem` clears at every iter
+        // boundary — see the post-iter cleanup at line ~2400). So
+        // the agent at iter N has zero in-conversation memory of
+        // iters 1..N-1's markers, re-derives the cursor as state 1,
+        // re-emits `[WORKITEM_START]`, and never advances.
+        //
+        // Fix: read events.jsonl, summarise the cursor (active work
+        // item, effective stage plan with amendments folded, active
+        // stage, per-task progress, in-flight task), and prepend a
+        // small `[CURSOR_STATE]` block to the per-iter prompt. Empty
+        // string when there's nothing prescriptive to inject (state
+        // 1, no work item, or a corrupted stream).
+        //
+        // Applied to all self-improve / grow-project iters regardless
+        // of `resetOn` — defense in depth even for `never` mode.
+        // `prompt` mode skips because the user's custom prompt has
+        // no fixed cursor invariant.
+        let iterPrompt = composedPrompt;
+        if (mode === "self-improve" || mode === "grow-project") {
+            try {
+                const preamble = buildCursorPreamble({ runId, env });
+                if (preamble) iterPrompt = `${preamble}\n\n${composedPrompt}`;
+            } catch {
+                // Defensive — any unexpected error in cursor recovery
+                // (filesystem race, shape change, etc.) falls back to
+                // the bare prompt rather than failing the iter.
+            }
+        }
+
         let result;
         // Issue #48 / streaming emission: extract `stage_start` /
         // `stage_end` / `substage` events LIVE as the agent's JSONL
@@ -2157,7 +2574,7 @@ export async function runRalphTui(opts) {
 
         try {
             result = await runOneIteration({
-                prompt: composedPrompt,
+                prompt: iterPrompt,
                 resumeSessionId,
                 sessionName: sessionNameForIter,
                 spawn,

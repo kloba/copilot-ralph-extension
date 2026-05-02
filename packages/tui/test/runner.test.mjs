@@ -3038,3 +3038,169 @@ test("runRalphTui: armed event carries minIterations: <min>", async () => {
     assert.equal(armed.minIterations, 3);
     assert.equal(armed.maxIterations, 5);
 });
+// ─── Cursor preamble injection ─────────────────────────────────────
+
+test("runRalphTui: --self-improve injects [CURSOR_STATE] preamble on iter 2 when iter 1 emitted [WORKITEM_START]", async () => {
+    // The structural fix for the one-step-per-iter cursor: iter 2
+    // must receive a [CURSOR_STATE] preamble derived from iter 1's
+    // events.jsonl, naming issue #99 and directing state 2 (emit
+    // STAGE_PLAN). Without this, every iter re-derives state 1
+    // and re-emits [WORKITEM_START] forever.
+    const promptByIter = [];
+    const spawn = function (_bin, args) {
+        const promptIdx = args.indexOf("-p");
+        promptByIter.push(args[promptIdx + 1]);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            // Iter 1 emits [WORKITEM_START]; iter 2 emits [STAGE_PLAN]
+            // and COMPLETE so we exit the loop fast.
+            const isFirst = promptByIter.length === 1;
+            const events = isFirst
+                ? [
+                    JSON.stringify({
+                        type: "assistant.message",
+                        data: { content: '[WORKITEM_START: {"kind":"issue","ref":99,"title":"fix the thing"}]' },
+                    }),
+                    JSON.stringify({ type: "result", success: true }),
+                ]
+                : [
+                    JSON.stringify({
+                        type: "assistant.message",
+                        data: {
+                            content: '[STAGE_PLAN: {"stages":["DESIGN","IMPLEMENT","END"]}]\nplan filed COMPLETE',
+                        },
+                    }),
+                    JSON.stringify({ type: "result", success: true }),
+                ];
+            for (const fn of handlers.stdout) fn(Buffer.from(events.join("\n") + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+
+    await runRalphTui({
+        mode: "self-improve",
+        worktree: false,
+        resetOn: "iter",
+        max: 5,
+        env: makeEnv(),
+        spawn,
+        stderr: { write: () => {} },
+    });
+
+    assert.equal(promptByIter.length, 2, "loop must have run two iters before COMPLETE");
+    // Iter 1: bare prompt (no prior markers to inject).
+    assert.ok(!promptByIter[0].includes("[CURSOR_STATE]"),
+        "iter 1 must NOT have a [CURSOR_STATE] preamble (no prior markers)");
+    // Iter 2: preamble injected directing state 2.
+    assert.ok(promptByIter[1].includes("[CURSOR_STATE]"),
+        "iter 2 must have a [CURSOR_STATE] preamble derived from iter 1's events");
+    assert.ok(promptByIter[1].includes("issue #99"),
+        "preamble must surface the active work item");
+    assert.ok(promptByIter[1].includes("STATE 2"),
+        "preamble must direct the agent to state 2 (emit STAGE_PLAN)");
+});
+
+test("runRalphTui: --self-improve preamble is also injected under --reset-on=workitem (defense in depth)", async () => {
+    // workitem mode also drops the captured sessionId at every iter
+    // exit (see runner.mjs:2397-2400), so even there iter 2 has no
+    // session memory of iter 1's markers. Cursor injection is
+    // applied uniformly across reset modes.
+    const promptByIter = [];
+    const spawn = function (_bin, args) {
+        const promptIdx = args.indexOf("-p");
+        promptByIter.push(args[promptIdx + 1]);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            const isFirst = promptByIter.length === 1;
+            const events = isFirst
+                ? [
+                    JSON.stringify({
+                        type: "assistant.message",
+                        data: { content: '[WORKITEM_START: {"kind":"issue","ref":7,"title":"x"}]' },
+                    }),
+                    JSON.stringify({ type: "result", success: true, result: { sessionId: "S1" } }),
+                ]
+                : [
+                    JSON.stringify({ type: "assistant.message", data: { content: "done COMPLETE" } }),
+                    JSON.stringify({ type: "result", success: true, result: { sessionId: "S1" } }),
+                ];
+            for (const fn of handlers.stdout) fn(Buffer.from(events.join("\n") + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+
+    await runRalphTui({
+        mode: "self-improve",
+        worktree: false,
+        resetOn: "workitem",
+        max: 3,
+        env: makeEnv(),
+        spawn,
+        stderr: { write: () => {} },
+    });
+
+    assert.ok(promptByIter[1].includes("[CURSOR_STATE]"),
+        "iter 2 must have a [CURSOR_STATE] preamble even under workitem reset");
+});
+
+test("runRalphTui: --prompt mode never injects [CURSOR_STATE] (no fixed cursor invariant)", async () => {
+    // User-defined prompts have no SDLC cursor — the runner must
+    // not inject anything that would confuse a custom prompt.
+    const promptByIter = [];
+    const spawn = function (_bin, args) {
+        const promptIdx = args.indexOf("-p");
+        promptByIter.push(args[promptIdx + 1]);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            const isFirst = promptByIter.length === 1;
+            const events = isFirst
+                ? [
+                    JSON.stringify({ type: "assistant.message", data: { content: "still going" } }),
+                    JSON.stringify({ type: "result", success: true }),
+                ]
+                : [
+                    JSON.stringify({ type: "assistant.message", data: { content: "done COMPLETE" } }),
+                    JSON.stringify({ type: "result", success: true }),
+                ];
+            for (const fn of handlers.stdout) fn(Buffer.from(events.join("\n") + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+
+    await runRalphTui({
+        mode: "prompt",
+        prompt: "do the thing then COMPLETE",
+        worktree: false,
+        resetOn: "iter",
+        max: 3,
+        env: makeEnv(),
+        spawn,
+        stderr: { write: () => {} },
+    });
+
+    for (const p of promptByIter) {
+        assert.ok(!p.includes("[CURSOR_STATE]"),
+            "prompt mode must never inject [CURSOR_STATE]");
+    }
+});

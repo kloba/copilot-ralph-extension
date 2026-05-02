@@ -61,6 +61,16 @@ export const PROMPT_SELF_IMPROVE = `You are running an autonomous backlog-draini
 STAGE MARKERS (emit on a line by itself as you enter each SDLC stage):
 \`[STAGE: ORIENT]\`, \`[STAGE: IDEATE]\`, \`[STAGE: CRITIQUE]\`, \`[STAGE: BASELINE]\`, \`[STAGE: IMPLEMENT]\`, \`[STAGE: TEST]\`, \`[STAGE: COMMIT]\`, \`[STAGE: PUSH]\`, \`[STAGE: END]\`. Emit each marker exactly once per iteration, in order, immediately before doing the work for that stage. The runner parses these markers from your response stream to drive the live progress UI; missing markers don't break the loop, but they hide your progress from the user. Do NOT invent stage names beyond this list.
 
+STRUCTURED MARKERS (3-level work hierarchy — additive over STAGE MARKERS, also one-per-line, JSON body on a single line, no prose before or after on the same line):
+- \`[WORKITEM_START: {"kind":"issue|pr|red_ci","ref":N,"title":"…"}]\` — once per work item picked in IDEATE / SELECT. \`kind\` MUST be one of \`issue\`, \`pr\`, \`red_ci\`. \`ref\` is the issue/PR number (or workflow run id for \`red_ci\`); \`title\` is a short label.
+- \`[STAGE_PLAN: {"stages":["NAME",…]}]\` — once per work item, immediately after \`WORKITEM_START\`. List the SDLC stages YOU intend to walk through for this work item, in order. Use UPPERCASE stage names. Do NOT include \`COMMIT\` / \`PUSH\` / \`END\` — the runner appends those automatically as the canonical pinned tail.
+- \`[STAGE_PLAN_AMEND: {"add":"NAME","after":"PREVIOUS","reason":"…"}]\` or \`{"remove":"NAME","reason":"…"}\` — emit ONLY when you discover mid-iter that the plan needs an extra or fewer stages (e.g. you split FIX into FIX + DOCS). The runner emits its own pinned-tail amendments with reason \`pinned-tail-enforcement\`; pick a different reason for yours.
+- \`[TASK_LIST: {"stage":"NAME","items":["…",…]}]\` — once on entering a stage, listing the concrete tasks you'll do in that stage. \`stage\` MUST match the active stage name.
+- \`[TASK_START: {"stage":"NAME","sub":N,"desc":"…"}]\` — emit before each task. \`sub\` is the 1-based ordinal within the stage; \`desc\` is a short label.
+- \`[TASK_END: {"stage":"NAME","sub":N,"outcome":"ok|fail|skip","durationMs":N}]\` — emit after each task. \`outcome\` MUST be \`ok\`, \`fail\`, or \`skip\`. \`durationMs\` is optional but the runner displays it when present.
+- \`[WORKITEM_END: {"kind":"…","ref":N,"closesN":N}]\` — once per work item, after \`STAGE: END\`. \`closesN\` is the count of GitHub issues this work item closed (omit when zero).
+These markers are PURELY ADDITIVE — they decorate the existing STAGE-marker workflow with a structured progress narrative. Missing or malformed markers are silently dropped by the runner; they don't affect the loop's termination logic. Do NOT emit STRUCTURED MARKERS inside fenced code blocks, prose, or quoted text — the runner only matches them when they occupy a whole line on their own.
+
 PER-ITERATION SDLC WORKFLOW (each iteration is a paid premium request — pack the turn; multiple atomic commits are encouraged when the work permits):
 
 1. ORIENT.
@@ -134,6 +144,15 @@ This loop's job is to GROW the project with new features. Bug fixes, hardening, 
 
 STAGE MARKERS (emit on a line by itself as you enter each SDLC stage):
 \`[STAGE: ORIENT]\`, \`[STAGE: IDEATE]\`, \`[STAGE: SELECT]\`, \`[STAGE: CRITIQUE]\`, \`[STAGE: BASELINE]\`, \`[STAGE: IMPLEMENT]\`, \`[STAGE: TEST]\`, \`[STAGE: ACCEPTANCE]\`, \`[STAGE: DEMO]\`, \`[STAGE: COMMIT]\`, \`[STAGE: PUSH]\`, \`[STAGE: CLOSE]\`, \`[STAGE: END]\`. Emit each marker exactly once per iteration, in order, immediately before doing the work for that stage. Skip IDEATE when the backlog is non-empty (no marker needed for a skipped stage). The runner parses these markers from your response stream to drive the live progress UI; missing markers don't break the loop, but they hide your progress from the user. Do NOT invent stage names beyond this list.
+
+STRUCTURED MARKERS (3-level work hierarchy — additive over STAGE MARKERS, also one-per-line, JSON body on a single line, no prose before or after on the same line):
+- \`[WORKITEM_START: {"kind":"issue|pr|red_ci","ref":N,"title":"…"}]\` — once per work item after SELECT. For this loop \`kind\` is almost always \`issue\` and \`ref\` is the issue number.
+- \`[STAGE_PLAN: {"stages":["NAME",…]}]\` — once per work item immediately after \`WORKITEM_START\`. UPPERCASE stage names; do NOT include \`COMMIT\` / \`PUSH\` / \`CLOSE\` / \`END\` (runner appends the canonical pinned tail automatically).
+- \`[STAGE_PLAN_AMEND: {"add":"NAME","after":"PREVIOUS","reason":"…"}]\` or \`{"remove":"NAME","reason":"…"}\` — emit ONLY when the plan changes mid-iter. The runner emits its own pinned-tail amendments with reason \`pinned-tail-enforcement\`; pick a different reason for yours.
+- \`[TASK_LIST: {"stage":"NAME","items":["…",…]}]\` — once on entering each stage; \`stage\` MUST match the active stage name.
+- \`[TASK_START: {"stage":"NAME","sub":N,"desc":"…"}]\` and \`[TASK_END: {"stage":"NAME","sub":N,"outcome":"ok|fail|skip","durationMs":N}]\` — emit one of each per task; \`sub\` is 1-based within the stage; \`outcome\` MUST be one of \`ok\`, \`fail\`, \`skip\`.
+- \`[WORKITEM_END: {"kind":"…","ref":N,"closesN":N}]\` — once per work item after \`STAGE: CLOSE\`. \`closesN\` is the count of GitHub issues this work item closed (almost always 1 for this loop).
+These markers are PURELY ADDITIVE — they decorate the existing STAGE-marker workflow with a structured progress narrative. Missing or malformed markers are silently dropped by the runner; they don't affect the loop's termination logic. Do NOT emit STRUCTURED MARKERS inside fenced code blocks, prose, or quoted text — the runner only matches them when they occupy a whole line on their own.
 
 PER-ITERATION SDLC WORKFLOW (each iteration is a paid premium request — ship complete features, multiple if independent and small):
 

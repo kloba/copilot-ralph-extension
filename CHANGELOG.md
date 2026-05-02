@@ -940,6 +940,28 @@
   invariant scan.
 
 ### Internal
+- `extension/prompts.mjs` — both baked SDLC prompts
+  (`PROMPT_SELF_IMPROVE` and `PROMPT_GROW_PROJECT`) gain a
+  `STRUCTURED MARKERS` preamble after the existing `STAGE
+  MARKERS` preamble, instructing the agent to additionally
+  emit the 7 structured markers
+  (`[WORKITEM_START|WORKITEM_END|STAGE_PLAN|STAGE_PLAN_AMEND|TASK_LIST|TASK_START|TASK_END: {…}]`)
+  one-per-line as it walks the work item → flex stage plan →
+  per-stage task list hierarchy specced by issue #48 slice 9.
+  Strictly additive over the existing SDLC body — the agent
+  still walks the full STAGE-marker workflow, the new markers
+  decorate the workflow with structured progress narration.
+  Explicitly states that `STAGE_PLAN.stages` must NOT include
+  `COMMIT` / `PUSH` / `END` (the runner appends those as the
+  canonical pinned tail), that JSON bodies must be on a single
+  line, that markers must not appear inside fenced code blocks
+  / quoted text, and that missing or malformed markers are
+  silently dropped (so the loop's termination logic is
+  unaffected). The load-time parity guards
+  (`PROMPT_*` must contain `COMPLETION_PROMISE` and the matching
+  abort token) and the leak guards (no internal extension tool
+  names in either prompt) continue to pass.
+
 - Extracted the baked SDLC prompts (`PROMPT_SELF_IMPROVE`,
   `PROMPT_GROW_PROJECT`) and their abort tokens
   (`BAKED_ABORT_TOKEN`, `BAKED_BACKLOG_ABORT_TOKEN`) plus the

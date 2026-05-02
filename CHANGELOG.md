@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Tests
+- Pin `extractUsage`'s edge-case rejection contract: NaN-from-string
+  (`input_tokens: "abc"`), Infinity, double-NaN, all-zero usage,
+  missing `usage` object, and non-object (`usage: "wat"`) usage
+  payloads must all be rejected silently — none of them may credit
+  tokens or push entries into `byIteration`. The negative-rejection
+  tests added in iter 63 covered the most likely upstream bug; these
+  tests pin the broader robustness of the helper so a future
+  "simplify extractUsage" PR (e.g. swapping `Number.isFinite` for a
+  loose truthiness check) trips immediately. Each test ends with a
+  positive sanity event to confirm the helper still credits real
+  usage after the malformed events were rejected.
+
 ### Documentation
 - Add `## Token tracking (issue #7)` section to
   `docs/ARCHITECTURE.md`. Token bookkeeping has been a significant

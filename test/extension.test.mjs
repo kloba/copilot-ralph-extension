@@ -7114,3 +7114,78 @@ test("docs/ARCHITECTURE.md documents the token-tracking model (issue #7)", () =>
     // max_tokens cap behavior must be documented.
     assert.match(arch, /max_tokens/);
 });
+
+test("extractUsage rejects NaN / Infinity / non-numeric usage values", async () => {
+    // Pin the Number.isFinite guards in extractUsage. A JSON payload
+    // could legitimately deliver `input_tokens: "abc"` (provider drift)
+    // or `input_tokens: Infinity` (serialization bug); both must be
+    // rejected silently rather than corrupting a.tokens.input with
+    // NaN or Infinity (which would poison every subsequent pct
+    // calculation: NaN >= threshold is always false → warnings break;
+    // Infinity always trips the 95% critical threshold spuriously).
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const a = controller.state.active;
+    emitUsage(session, { input: 100, output: 20, content: "iter 1 ok" });
+    const before = { input: a.tokens.input, output: a.tokens.output, len: a.tokens.byIteration.length };
+    // NaN-from-string: Number("abc") === NaN, Number.isFinite(NaN) === false.
+    session.emit("assistant.message", {
+        data: {
+            content: "garbled string usage",
+            usage: { input_tokens: "abc", output_tokens: 50, model: "claude-opus-4.7" },
+        },
+    });
+    assert.equal(a.tokens.input, before.input);
+    assert.equal(a.tokens.output, before.output);
+    assert.equal(a.tokens.byIteration.length, before.len);
+    // Infinity is finite-checked → false.
+    session.emit("assistant.message", {
+        data: {
+            content: "infinite usage",
+            usage: { input_tokens: Infinity, output_tokens: 50, model: "claude-opus-4.7" },
+        },
+    });
+    assert.equal(a.tokens.input, before.input);
+    // Both peers NaN.
+    session.emit("assistant.message", {
+        data: {
+            content: "double NaN",
+            usage: { input_tokens: NaN, output_tokens: NaN, model: "claude-opus-4.7" },
+        },
+    });
+    assert.equal(a.tokens.input, before.input);
+});
+
+test("extractUsage rejects all-zero usage and missing usage object", async () => {
+    // `(input > 0 || output > 0)` filter ensures genuinely empty
+    // usage payloads (a streaming partial that hasn't aggregated
+    // yet) don't push zero-credit rows into byIteration. And
+    // assistant.message events that omit `usage` entirely are
+    // common (the SDK emits intermediate text chunks without
+    // usage); they must be no-ops, not throws.
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const a = controller.state.active;
+    emitUsage(session, { input: 100, output: 20, content: "iter 1 ok" });
+    const before = { input: a.tokens.input, output: a.tokens.output, len: a.tokens.byIteration.length };
+    // All-zero usage → rejected (no byIteration row).
+    session.emit("assistant.message", {
+        data: {
+            content: "empty rollup",
+            usage: { input_tokens: 0, output_tokens: 0, model: "claude-opus-4.7" },
+        },
+    });
+    assert.equal(a.tokens.input, before.input);
+    assert.equal(a.tokens.byIteration.length, before.len,
+        "all-zero usage must NOT append a byIteration entry");
+    // Missing usage object → no-op.
+    session.emit("assistant.message", { data: { content: "no usage at all" } });
+    assert.equal(a.tokens.input, before.input);
+    assert.equal(a.tokens.byIteration.length, before.len);
+    // Malformed (non-object) usage → no-op.
+    session.emit("assistant.message", { data: { content: "wrong shape", usage: "wat" } });
+    assert.equal(a.tokens.input, before.input);
+    assert.equal(a.tokens.byIteration.length, before.len);
+    // Sanity: a real positive event after malformed events still credits.
+    emitUsage(session, { input: 50, output: 10, content: "iter N ok" });
+    assert.equal(a.tokens.input, before.input + 50);
+    assert.equal(a.tokens.byIteration.length, before.len + 1);
+});

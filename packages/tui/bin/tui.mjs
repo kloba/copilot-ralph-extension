@@ -262,6 +262,37 @@ function fail(msg, code = 2) {
     process.exit(code);
 }
 
+/** Format the user-visible message printed when the user requests
+ *  abort via `q` (or, in the future, any other voluntary stop
+ *  reason). Returns `null` for `signal_SIGINT` because the SIGINT
+ *  handler already prints its own line — printing twice would just
+ *  be noise.
+ *
+ *  Field bug from a real run: pressing `q` in `ralph-tui run` left
+ *  the static last Ink frame on screen with no further output, since
+ *  the runner only checks `stopRequested` between iters and won't
+ *  kill the in-flight copilot subprocess. Users perceived this as
+ *  "q is broken" and fell back to Ctrl-C. Printing an immediate
+ *  message to stderr (below the now-static Ink frame) makes the
+ *  effect visible: the keystroke WAS captured, the run will stop
+ *  at the next iter boundary, and the user knows to hit Ctrl-C if
+ *  they need a hard abort.
+ *
+ *  Pure / no I/O so the formatting contract can be unit-tested
+ *  without exercising the full TTY + Ink + runner pipeline.
+ *
+ *  @param {string} reason - "user_quit" | "signal_SIGINT" | other
+ *  @returns {string|null} Newline-delimited message ready for
+ *      stderr.write, or null if the caller should skip the print.
+ */
+export function formatAbortMessage(reason) {
+    // SIGINT already prints its own line via the signal handler
+    // installed in cmdRun — don't double up.
+    if (reason === "signal_SIGINT") return null;
+    const label = reason === "user_quit" ? "q" : reason;
+    return `\nralph-tui run: ${label} received — finishing current iteration, then stopping. Hit Ctrl-C to abort hard.\n`;
+}
+
 function cmdList(opts = {}) {
     let entries = readRunIndex();
     if (opts.limit !== undefined) {
@@ -647,6 +678,18 @@ export async function cmdRun(flags) {
     // and the parent process's default cooked-mode SIGINT handling is
     // sufficient. The handler routes to runner.stopRun (same path Ink's
     // useInput uses) so a double-fire (Ink first, then us) is harmless.
+    let abortMessagePrinted = false;
+    const printAbortMessage = (reason) => {
+        // Idempotent — fired by both Ink's useInput AND the keypress
+        // fallback for the same press, plus by the SIGINT signal
+        // handler when the user falls back to Ctrl-C. Printing the
+        // message twice is just noise.
+        if (abortMessagePrinted) return;
+        const msg = formatAbortMessage(reason);
+        if (msg === null) return;
+        abortMessagePrinted = true;
+        process.stderr.write(msg);
+    };
     const offStdinAbort = runUiMod
         ? installStdinAbortListener((reason) => {
             if (currentRunId) {
@@ -660,6 +703,14 @@ export async function cmdRun(flags) {
             if (runUiInstance) {
                 try { runUiInstance.unmount(); } catch { /* swallow */ }
             }
+            // Print AFTER unmount so the message lands below the
+            // (now-static) Ink frame instead of being painted over
+            // by the next render. Without this, the user sees no
+            // change after pressing q because Ink leaves its last
+            // frame on screen and the runner doesn't kill the
+            // in-flight copilot subprocess — it just sets the stop
+            // flag, which the runner only checks between iters.
+            printAbortMessage(reason);
         })
         : () => {};
     try {
@@ -706,6 +757,13 @@ export async function cmdRun(flags) {
                             onUserAbort: (reason) => {
                                 try { runner.stopRun(id, { reason }); }
                                 catch { /* swallow */ }
+                                // Idempotent with the keypress fallback
+                                // — printAbortMessage uses an internal
+                                // flag so the same press doesn't log
+                                // twice, regardless of which subscriber
+                                // (Ink's useInput vs the stdin fallback)
+                                // wins the byte.
+                                printAbortMessage(reason);
                             },
                         })
                             .then((inst) => { runUiInstance = inst; })

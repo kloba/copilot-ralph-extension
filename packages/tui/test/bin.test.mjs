@@ -775,7 +775,7 @@ test("run-ui module is importable and exports mountRunUi (no top-level Ink impor
 // alongside Ink so the q / Ctrl-C path stays live regardless of
 // whether Ink's hook fires.
 
-import { installStdinAbortListener } from "../bin/tui.mjs";
+import { installStdinAbortListener, formatAbortMessage } from "../bin/tui.mjs";
 
 test("installStdinAbortListener: returns a no-op cleanup when stdin is NOT a TTY (test environment)", () => {
     // In `node --test` runs, process.stdin.isTTY is undefined / false
@@ -793,4 +793,29 @@ test("installStdinAbortListener: returns a no-op cleanup when stdin is NOT a TTY
     cleanup(); // idempotent — must not throw on second call
     assert.equal(fired, 0,
         "no-op path must not invoke onAbort even when stdin emits arbitrary data");
+});
+
+test("formatAbortMessage: q press → user-visible 'q received' line on stderr", () => {
+    const msg = formatAbortMessage("user_quit");
+    assert.ok(typeof msg === "string", "user_quit must return a string");
+    assert.match(msg, /^\nralph-tui run: q received — finishing current iteration, then stopping\. Hit Ctrl-C to abort hard\.\n$/);
+});
+
+test("formatAbortMessage: SIGINT path returns null (signal handler prints its own line)", () => {
+    // The SIGINT signal handler already writes a "SIGINT received…"
+    // banner to stderr. If formatAbortMessage ALSO printed for
+    // SIGINT, the user would see the same message twice for one
+    // Ctrl-C press. Returning null tells the caller to skip the
+    // print — single source of truth for the SIGINT message.
+    assert.equal(formatAbortMessage("signal_SIGINT"), null);
+});
+
+test("formatAbortMessage: unknown reason still produces a message (don't silently drop)", () => {
+    // Defensive: a future stop reason (e.g. "tui_close") shouldn't
+    // accidentally land in the SIGINT skip path. The message uses
+    // the raw reason as the label so the user sees what triggered
+    // the stop instead of nothing.
+    const msg = formatAbortMessage("custom_reason");
+    assert.ok(typeof msg === "string");
+    assert.match(msg, /custom_reason received/);
 });

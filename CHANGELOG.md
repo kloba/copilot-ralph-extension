@@ -499,6 +499,28 @@
   either value is caught at test time.
 
 ### Fixes
+- `ralph-tui run`: pressing `q` now prints an immediate
+  user-visible message to stderr (`ralph-tui run: q received —
+  finishing current iteration, then stopping. Hit Ctrl-C to
+  abort hard.`) so the user sees that the keystroke was
+  captured. Field bug from issue #48 dogfooding: pressing q
+  during iter 1 of a self-improve run left the static last
+  Ink frame on screen with no further output, since the
+  runner only checks `stopRequested` between iters and won't
+  kill the in-flight copilot subprocess. Users perceived
+  this as "q is broken" and fell back to Ctrl-C (which DID
+  print a `SIGINT received…` banner via the signal handler).
+  The fix routes both Ink's `useInput` path AND the keypress
+  fallback through a single `printAbortMessage` closure
+  that's idempotent across double-fires (Ink + fallback both
+  fire for the same byte) and dedups against the SIGINT
+  banner so a Ctrl-C in the TUI doesn't print two
+  near-identical lines. Extracted `formatAbortMessage(reason)`
+  as a pure helper (returns `string|null`, exported from
+  `bin/tui.mjs`) so the formatting contract is
+  unit-testable without exercising the full TTY + Ink +
+  runner pipeline.
+
 - `ralph-tui run`: stage / substage / activity panes no longer
   show "(no active stage)" / "(no activity yet)" for the entire
   duration of an iter — the UI now updates LIVE as the agent

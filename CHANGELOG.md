@@ -77,6 +77,18 @@
   either value is caught at test time.
 
 ### Fixes
+- `ralph-tui replay` and `ralph-tui watch` now catch the
+  `TypeError` thrown by `resolveRunEventsPath` on path-traversal
+  runIds (e.g. `../etc/passwd`, runIds containing `\0`, `\\`, or
+  `..` segments) and route through the bin's `fail()` helper. Pre-
+  iter-167 a user supplying such a runId saw a raw stack trace
+  instead of the clean one-line `ralph-tui: replay: <reason>`
+  message + exit code 2 that every other input-validation path
+  emits. Production behaviour for legitimate runIds (those produced
+  by `makeRunId`) is unchanged. Two tests in
+  `packages/tui/test/bin.test.mjs` pin both the no-throw contract
+  and the user-visible message — mutation-verified by removing the
+  catch (2 failures).
 - `pruneRuns` (the engine behind `ralph-tui prune`) now also
   guards the `obj.ts < cutoff` deletion gate with
   `Number.isFinite(obj.ts)`. Pre-iter-163 the gate was

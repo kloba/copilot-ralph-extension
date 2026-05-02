@@ -150,7 +150,20 @@ export function cmdReplay(runId) {
         fail("replay: <runId> is required (try `ralph-tui list` first)");
         return 2;
     }
-    const path = resolveRunEventsPath(runId);
+    let path;
+    try {
+        path = resolveRunEventsPath(runId);
+    } catch (err) {
+        // Iter 167 — `resolveRunEventsPath` throws TypeError on path-
+        // traversal runIds (`../etc/passwd`, runIds with `\0`, etc).
+        // Without this catch the user sees a raw stack trace; route
+        // through `fail()` for a clean one-line error and exit code 2.
+        if (err instanceof TypeError) {
+            fail(`replay: ${err.message}`);
+            return 2;
+        }
+        throw err;
+    }
     const events = readEventsFile(path);
     if (!events.length) {
         process.stdout.write(`No events for run ${runId} (looked at ${path}).\n`);
@@ -172,7 +185,20 @@ async function cmdWatch(runId, opts) {
         }
         target = entries[0].runId;
     }
-    const path = resolveRunEventsPath(target);
+    let path;
+    try {
+        path = resolveRunEventsPath(target);
+    } catch (err) {
+        // Iter 167 — same fail-fast guard as `cmdReplay`. A user
+        // supplying a path-traversal runId via `ralph-tui watch
+        // ../etc/passwd` would otherwise see a raw TypeError stack
+        // instead of a clean error message.
+        if (err instanceof TypeError) {
+            fail(`watch: ${err.message}`);
+            return 2;
+        }
+        throw err;
+    }
     const plain = opts.plain || !isTTY();
     if (!plain) {
         // The Ink renderer (slice 5) lives behind a dynamic import so a

@@ -556,3 +556,67 @@ test("packages/tui/package.json carries repository/bugs/author metadata aligned 
         "TUI package.json must declare a non-empty keywords array",
     );
 });
+
+test("cmdReplay: path-traversal runId routes through fail() with clean error (no raw TypeError stack)", () => {
+    // Iter 167 — `resolveRunEventsPath` throws TypeError on
+    // path-traversal runIds (`../etc/passwd`, runIds with `\0`, runIds
+    // with `\\`, `.`, `..`). Pre-iter-167 `cmdReplay` and `cmdWatch`
+    // called the resolver without catching, so a user supplying
+    // `ralph-tui replay ../etc/passwd` saw a raw stack trace instead
+    // of a clean error message. The fix is to catch TypeError at the
+    // bin layer and route through `fail()` (clean stderr line + exit
+    // code 2). Pin both the no-throw contract and the user-visible
+    // message so a future "simplify" refactor can't quietly drop the
+    // catch.
+    const realExit = process.exit;
+    const realStderrWrite = process.stderr.write.bind(process.stderr);
+    let exitCode = null;
+    let captured = "";
+    process.exit = (code) => { exitCode = code; };
+    process.stderr.write = (chunk) => { captured += String(chunk); return true; };
+    try {
+        let result;
+        assert.doesNotThrow(
+            () => { result = cmdReplay("../etc/passwd"); },
+            "cmdReplay must catch TypeError from resolveRunEventsPath and return cleanly",
+        );
+        assert.equal(result, 2, "cmdReplay must return exit code 2 for traversal runId");
+        assert.equal(exitCode, 2, "fail() must request exit code 2");
+        assert.match(captured, /replay:/, "stderr line must be prefixed with the subcommand name");
+        assert.match(
+            captured,
+            /path separators or traversal segments/,
+            "stderr must surface the traversal-rejection message from resolveRunEventsPath",
+        );
+        assert.doesNotMatch(
+            captured,
+            /at assertSafeRunId|at resolveRunEventsPath/,
+            "stderr must NOT contain a raw stack frame — that's the bug we're pinning closed",
+        );
+    } finally {
+        process.exit = realExit;
+        process.stderr.write = realStderrWrite;
+    }
+});
+
+test("cmdReplay: NUL-byte runId is also rejected via fail() (defence-in-depth on assertSafeRunId clauses)", () => {
+    // The traversal predicate also rejects runIds containing `\0`
+    // (Node's path APIs throw on NUL bytes). Pin the catch handles
+    // every clause that `isPathTraversalRunId` rejects, not only `..`.
+    const realExit = process.exit;
+    const realStderrWrite = process.stderr.write.bind(process.stderr);
+    let exitCode = null;
+    let captured = "";
+    process.exit = (code) => { exitCode = code; };
+    process.stderr.write = (chunk) => { captured += String(chunk); return true; };
+    try {
+        let result;
+        assert.doesNotThrow(() => { result = cmdReplay("run\0id"); });
+        assert.equal(result, 2);
+        assert.equal(exitCode, 2);
+        assert.match(captured, /replay:/);
+    } finally {
+        process.exit = realExit;
+        process.stderr.write = realStderrWrite;
+    }
+});

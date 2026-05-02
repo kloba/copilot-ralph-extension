@@ -402,6 +402,21 @@ function boundedNoteForLog(text) {
     return collapseNote(truncateNote(text));
 }
 
+// Shared normalizer for the optional `reason` argument of ralph_pause +
+// ralph_stop. Returns the canonical single-line, length-capped form, or
+// `null` when the caller supplied nothing / a non-string / a value that
+// is empty after whitespace flattening. Centralising the logic prevents
+// drift between the two tools — both store `reason` on long-lived state
+// (active.pauseReason / result.note) and both render it back into single
+// -line surfaces (timeline log markers, JSON snapshot fields, terminal /
+// pause events). A multi-line paste would otherwise corrupt those
+// surfaces; coercing empty-after-flatten to `null` prevents the
+// user-facing success message from rendering a stray ` ()` suffix.
+function parseUserReason(raw) {
+    if (typeof raw !== "string") return null;
+    return boundedNoteForLog(raw) || null;
+}
+
 // Recursively freeze obj + nested values; skips already-frozen entries so
 // cycles terminate. Returns the input (for fluent `return deepFreeze(...)`).
 function deepFreeze(obj) {
@@ -1841,14 +1856,15 @@ export function createRalphController(opts = {}) {
                 const bad = validateOptionalArgShape("ralph_stop", args, RALPH_STOP_KEYS);
                 if (bad) return bad;
                 const { i, max, label } = state.active;
-                // truncateNote caps the stored value so a giant user-supplied
-                // reason can't pollute the LLM context.
-                const reason = typeof args?.reason === "string" ? args.reason.trim() : "";
-                const note = reason ? truncateNote(reason) : undefined;
-                finish("user_stopped", note);
+                // parseUserReason: shared with ralph_pause. Flattens
+                // multi-line input + caps length + coerces empty to
+                // null. result.note (single-line below) is consumed by
+                // collapseNote-driven additionalContext + terminal event.
+                const reason = parseUserReason(args?.reason);
+                finish("user_stopped", reason ?? undefined);
                 return success(
-                    `${label} stopped after ${i}/${max} iterations${note ? ` (${note})` : ""}.`,
-                    { iterations: i, note },
+                    `${label} stopped after ${i}/${max} iterations${reason ? ` (${reason})` : ""}.`,
+                    { iterations: i, note: reason ?? undefined },
                 );
             },
         },
@@ -1904,16 +1920,14 @@ export function createRalphController(opts = {}) {
                         { iterations: i, paused: true, reason: a.pauseReason ?? null },
                     );
                 }
-                // Flatten + truncate the user-supplied reason at entry so a
+                // parseUserReason: shared with ralph_stop. Flatten +
+                // truncate the user-supplied reason at entry so a
                 // multi-line paste (e.g. an Error stack, a blockquote, a
                 // CRLF-terminated input) cannot break the single-line
                 // timeline log marker, the `pause_reason` field rendered
                 // in the ralph_status JSON snapshot, or the `reason` on
-                // the emitted `pause` event. boundedNoteForLog applies
-                // both `collapseNote` (whitespace-flatten) and
-                // `truncateNote` (PREVIEW_CHARS surrogate-safe cap).
-                const reasonRaw = typeof args?.reason === "string" ? args.reason : "";
-                const reason = reasonRaw ? boundedNoteForLog(reasonRaw) || null : null;
+                // the emitted `pause` event.
+                const reason = parseUserReason(args?.reason);
                 a.paused = true;
                 a.pauseReason = reason;
                 a.pausedAt = Date.now();

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Refactor
+- Extract `parseUserReason(raw)` helper for the
+  optional `reason` argument shared by `ralph_pause`
+  and `ralph_stop`. Both tools now route raw input
+  through one place: type-guard ⇒ `boundedNoteForLog`
+  (collapse whitespace + PREVIEW_CHARS truncate) ⇒
+  coerce empty-after-flatten to `null`. Side effect:
+  `ralph_stop`'s `result.note` is now the canonical
+  single-line form (was raw-truncated), aligning
+  with `additionalContext` / terminal-event consumers
+  that already flattened on read. Whitespace-only
+  reasons now resolve to `undefined` on the result so
+  the success message no longer renders a stray
+  ` ()` suffix. Two new behaviour tests pin the
+  multi-line and whitespace-only paths.
+
 ### Fixes
 - `ralph_pause` now flattens user-supplied `reason`
   values at the entry point via `boundedNoteForLog`

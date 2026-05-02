@@ -5888,6 +5888,34 @@ test("ralph_resume: re-arms the loop and the next idle fires the next iteration"
     assert.ok(controller.state.active.i > before, "iteration counter must advance after resume");
 });
 
+test("ralph_stop: multi-line reason is flattened at entry (parallel ralph_pause)", async () => {
+    // Iter 36: parseUserReason now consolidates ralph_pause + ralph_stop
+    // reason normalization. ralph_stop's stored result.note is now the
+    // canonical single-line form so the textResultForLlm success message,
+    // the additionalContext line (`note=...`), and the terminal event
+    // payload all stay single-line — same downstream surfaces that
+    // motivated the ralph_pause fix in iter 35.
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const stop = controller.tools.find((t) => t.name === "ralph_stop");
+    runTurn(session, "boot");
+    const r = await stop.handler({ reason: "  user requested\n\twith newlines\r\nand   spaces  " });
+    assert.equal(r.resultType, "success");
+    const expected = "user requested with newlines and spaces";
+    assert.equal(r.note, expected, "result.note must be flattened canonical form");
+    assert.match(r.textResultForLlm, new RegExp(`\\(${expected}\\)`), "user-facing success message must embed the flattened reason");
+    assert.doesNotMatch(r.textResultForLlm, /\n|\r|\t|\f/, "success message must be single-line");
+});
+
+test("ralph_stop: whitespace-only reason resolves to undefined (no empty parens)", async () => {
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const stop = controller.tools.find((t) => t.name === "ralph_stop");
+    runTurn(session, "boot");
+    const r = await stop.handler({ reason: "   \n\t  " });
+    assert.equal(r.resultType, "success");
+    assert.equal(r.note, undefined, "all-whitespace reason must collapse to undefined");
+    assert.doesNotMatch(r.textResultForLlm, /\(\)/, "user-facing text must not render an empty `()` suffix");
+});
+
 test("ralph_stop while paused still works and tears the loop down", async () => {
     const { session, controller } = await arm({ max_iterations: 5 });
     const pause = controller.tools.find((t) => t.name === "ralph_pause");

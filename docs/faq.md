@@ -17,11 +17,11 @@ git checkout vX.Y.Z
 node packages/tui/bin/tui.mjs --help
 ```
 
-Tags are immutable, so a pinned checkout never silently shifts. A future release will publish `ralph-tui` to npm so `npm i -g ralph-tui@X.Y.Z` works.
+Tags are immutable, so a pinned checkout never silently shifts. A future release will publish `autopilot` to npm so `npm i -g autopilot@X.Y.Z` works.
 
 ### What happened to the `~/.copilot/extensions/ralph` install?
 
-The previous in-session Copilot CLI extension was retired — see [`CHANGELOG.md`](../CHANGELOG.md). If you still have `~/.copilot/extensions/ralph` from an older install, `rm -rf ~/.copilot/extensions/ralph` and switch to `ralph-tui run` as documented in the [README](../README.md#usage).
+The previous in-session Copilot CLI extension was retired — see [`CHANGELOG.md`](../CHANGELOG.md). If you still have `~/.copilot/extensions/ralph` from an older install, `rm -rf ~/.copilot/extensions/ralph` and switch to `autopilot run` as documented in the [README](../README.md#usage).
 
 ## Running a loop
 
@@ -39,7 +39,7 @@ Three frequent causes:
 
 ### How do I stop a loop that's running away?
 
-Run `ralph-tui run --stop <runId>` from another terminal — it sets `stopRequested` in `state.json`. The currently-running iteration finishes normally; the driver emits a terminal `abort` event with `reason: "user_stopped"` afterwards. `SIGINT` / `SIGTERM` at the driver process flips the same flag.
+Run `autopilot run --stop <runId>` from another terminal — it sets `stopRequested` in `state.json`. The currently-running iteration finishes normally; the driver emits a terminal `abort` event with `reason: "user_stopped"` afterwards. `SIGINT` / `SIGTERM` at the driver process flips the same flag.
 
 ### Pause / resume — what's the difference vs stop?
 
@@ -58,16 +58,16 @@ By default: `~/.copilot/ralph-tui/runs/<runId>/events.jsonl`. Override the runs 
 ### How do I tail a running loop's events?
 
 ```bash
-ralph-tui watch              # tail the most recent run
-ralph-tui watch <runId>      # tail a specific run
-ralph-tui list               # enumerate recorded runs newest-first
-ralph-tui replay <runId>     # print every event in a past run
+autopilot watch              # tail the most recent run
+autopilot watch <runId>      # tail a specific run
+autopilot list               # enumerate recorded runs newest-first
+autopilot replay <runId>     # print every event in a past run
 ```
 
 ### How do I get a structured snapshot of a live run?
 
 ```bash
-ralph-tui run --status <runId>
+autopilot run --status <runId>
 ```
 
 Reads the run's `state.json` and renders iter counter, pause/stop flags, and (in `--continue` mode) the captured Copilot session id.

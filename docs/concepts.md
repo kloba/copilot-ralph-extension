@@ -5,14 +5,14 @@
 
 Topics planned:
 
-- The arming → subprocess-per-iter model used by `ralph-tui run`
+- The arming → subprocess-per-iter model used by `autopilot run`
 - Completion / abort / stagnation finish reasons
 - Pause / resume semantics
 - Adaptive iteration budget
 
 ## Pause / resume semantics
 
-`ralph-tui run --pause <runId>` and `ralph-tui run --resume <runId>` let you stop the next iteration from firing without losing the iteration counter or the captured Copilot session id (in `--continue` mode). The currently-running `copilot -p` subprocess is **never killed mid-iter** — the driver waits for it to finish naturally before honoring the pause flag at the next iter boundary.
+`autopilot run --pause <runId>` and `autopilot run --resume <runId>` let you stop the next iteration from firing without losing the iteration counter or the captured Copilot session id (in `--continue` mode). The currently-running `copilot -p` subprocess is **never killed mid-iter** — the driver waits for it to finish naturally before honoring the pause flag at the next iter boundary.
 
 State writes are CAS-protected via a per-run lockfile so a concurrent `--pause` + `--stop` from two terminals do not lose updates.
 

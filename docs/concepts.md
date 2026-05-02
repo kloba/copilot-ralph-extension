@@ -8,7 +8,6 @@ Topics planned:
 - The arming → idle-driven iteration model
 - Completion / abort / stagnation finish reasons
 - Sub-agent isolation
-- Token tracking and context-window warnings
 - Pause / resume semantics
 - Adaptive iteration budget
 
@@ -99,3 +98,63 @@ In summary, the contract is:
 | `ralph_resume`    | Loop active **and** paused             | Clears `paused`, resets `streak` / `prev` / `lastAssistantContent`, adds elapsed pause to `total_paused_ms`. |
 | `ralph_stop`      | Loop active (paused or unpaused)       | Cancels the loop entirely. Pausing first is not required.                   |
 
+
+## Token tracking and context-window warnings
+
+The loop credits cumulative input and output tokens from every
+`assistant.message` event observed during an iteration, so you can
+both cap a long-running run with `max_tokens` and watch the context
+window pressure climb in real time.
+
+### What you observe
+
+- **Live cumulative totals** — `ralph_status.tokens` (added in
+  issue [#7](https://github.com/kloba/copilot-ralph-extension/issues/7))
+  exposes `{ input, output, total, max_tokens }` on the active
+  snapshot. Counts start at zero and grow with every credited
+  iteration. `max_tokens` echoes the configured cap, or is `null`
+  when no cap was armed.
+- **Post-finish summary** — `ralph_status.last.tokens` mirrors the
+  same `{ input, output, total }` shape on the prior-run summary so
+  a post-mortem `ralph_status` call after the loop exits still sees
+  how many tokens the run consumed. Omitted entirely when the run
+  credited zero tokens.
+- **Per-iteration breakdown** — the deep-frozen
+  `result.tokens.byIteration` and `result.tokens.byModel` (returned
+  on the loop's terminal value, not on the live snapshot) carry
+  per-iter and per-model rollups for callers that want detail. They
+  are intentionally **not** mirrored on `ralph_status` to keep that
+  payload cheap to serialise.
+
+### Two safety contracts
+
+The loop makes two promises about what it credits:
+
+1. **Negative / NaN / Infinity rejection.** `extractUsage` discards
+   any `assistant.message` whose `usage.input_tokens` or
+   `usage.output_tokens` is negative, NaN, Infinity, or non-numeric.
+   A flaky upstream usage payload cannot push `tokens.input` below
+   zero (which would silently mask a `max_tokens` cap by inflating
+   remaining budget) or generate an `Infinity` total that breaks
+   the context-window threshold maths.
+2. **Pause-time isolation.** While the loop is paused, no
+   `assistant.message` is credited to the running totals, no
+   per-iteration entry is appended, and no context-window warning
+   threshold is evaluated. See the [Pause / resume semantics
+   section](#pause--resume-semantics) above for the full isolation
+   contract.
+
+### Context-window warnings
+
+When the cumulative input pressure for the **current model** crosses
+`warn_at_pct` (default 80%) of that model's known total context
+window, the loop logs a one-time WARN. A second hard-coded warning
+fires at 95%. Each threshold fires at most once per loop run so a
+loop sitting at 81% does not spam the log on every iteration.
+Unknown models log a one-time INFO so the maintainer notices the
+gap without losing iteration progress.
+
+For the engineering-level walkthrough — how `extractUsage` and
+`creditUsage` thread together, where the rollups live, and which
+exact lines enforce the two contracts — see the
+[Token tracking section in `docs/ARCHITECTURE.md`](ARCHITECTURE.md).

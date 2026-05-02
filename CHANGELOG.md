@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Documentation
+- Add `## Token tracking and context-window warnings` section to
+  `docs/concepts.md`. The user-facing concepts page listed token
+  tracking under "Topics planned" but the section itself was missing
+  even though iters 67/68 had just shipped `ralph_status.tokens`
+  (live + `last`). The new section covers the live + post-finish
+  shapes, the two safety contracts (negative/NaN rejection + pause-
+  time isolation), and the two-threshold context-window warning
+  model — all from the user's perspective. Cross-links to the
+  engineering-level walkthrough already present in
+  `docs/ARCHITECTURE.md`. The "Topics planned" stub list no longer
+  pretends the section is missing. Drift-guard test pins the
+  heading, the four live-snapshot field names, the post-finish
+  mirror, the rejection contract, the pause-time-isolation cross
+  reference, the 80%/95% thresholds, and the ARCHITECTURE link — and
+  asserts the "Topics planned" block above the first section no
+  longer mentions Token tracking.
+
 ### Fixes
 - `ralph_status`'s `last` summary (returned when no loop is active)
   now surfaces a `tokens: { input, output, total }` block when the

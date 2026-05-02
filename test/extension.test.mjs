@@ -7277,3 +7277,34 @@ test("ralph_status: last.tokens omitted when run consumed zero tokens", async ()
     assert.equal(r.status.last.tokens, undefined,
         "last.tokens must be omitted when result.tokens was not set");
 });
+
+// Iter 69 — drift guard: docs/concepts.md must document the user-facing
+// token-tracking model added in iters 67/68 (live tokens block, post-finish
+// last.tokens, negative/NaN rejection, pause-time isolation, context-window
+// warnings). Pin the key terms so a future "trim concepts.md" PR cannot
+// silently drop the section that backs ralph_status's token visibility.
+test("docs/concepts.md documents the token-tracking model (issues #7 + iters 67/68)", () => {
+    const concepts = readFileSync(resolve(REPO_ROOT, "docs/concepts.md"), "utf8");
+    assert.match(concepts, /## Token tracking and context-window warnings/,
+        "concepts.md must include the Token tracking section heading");
+    // Live snapshot fields surfaced by ralph_status (iter 67).
+    assert.match(concepts, /ralph_status\.tokens/);
+    assert.match(concepts, /\binput\b.*\boutput\b.*\btotal\b.*\bmax_tokens\b/s,
+        "must list all four fields exposed on the live snapshot");
+    // Post-finish summary mirror (iter 68).
+    assert.match(concepts, /ralph_status\.last\.tokens/);
+    // Two reliability contracts.
+    assert.match(concepts, /Negative.*NaN.*Infinity.*reject/s,
+        "must document the extractUsage rejection contract (iters 63/65)");
+    assert.match(concepts, /[Pp]ause-time isolation/);
+    // Context-window thresholds.
+    assert.match(concepts, /warn_at_pct.*80%/s);
+    assert.match(concepts, /95%/);
+    // Cross-link to ARCHITECTURE for engineering detail.
+    assert.match(concepts, /ARCHITECTURE\.md/);
+    // The "Topics planned" stub must no longer mention token tracking
+    // — once the section exists, listing it as planned is drift.
+    const topicsPlannedBlock = concepts.split("## Pause")[0];
+    assert.doesNotMatch(topicsPlannedBlock, /Token tracking/,
+        "Token tracking must be removed from the 'Topics planned' stub list");
+});

@@ -170,11 +170,11 @@ test("copilot.resolveBin: legacy deprecation notice fires only once across multi
 
 // ─── Claude adapter ────────────────────────────────────────────────
 
-test("claude.spawnArgs: bare prompt produces canonical --dangerously-skip-permissions / --output-format stream-json argv", () => {
+test("claude.spawnArgs: bare prompt produces canonical --dangerously-skip-permissions / --output-format stream-json / --verbose argv", () => {
     const { args, env } = claude.spawnArgs("Do the thing", {});
     assert.deepEqual(
         args,
-        ["-p", "Do the thing", "--dangerously-skip-permissions", "--output-format", "stream-json"],
+        ["-p", "Do the thing", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"],
     );
     assert.equal(env, undefined);
 });

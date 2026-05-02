@@ -93,3 +93,56 @@ test("formatEventLine: caps long excerpt at 80 chars", () => {
     assert.ok(m, "excerpt segment present");
     assert.equal(m[1].length, 80);
 });
+
+test("formatEventLine: pause renders verb=pause + iteration + reason", () => {
+    // Issue #3: ralph_pause emits `{ type: "pause", runId, iteration,
+    // reason, ts }`. The plain renderer must surface verb / runId /
+    // iteration / reason so a `tail -f`'d stream of events lets a
+    // human (or `awk`) know which iteration paused and why. Pin the
+    // contract so a future renderer refactor doesn't accidentally
+    // drop the iteration or reason field.
+    const line = formatEventLine({
+        type: "pause",
+        ts: 3723456,
+        runId: "ralph_loop-7",
+        iteration: 4,
+        reason: "user requested",
+    });
+    assert.match(line, /^01:02:03\.456\s+pause\s+ralph_loop-7/);
+    assert.match(line, /iter=4/);
+    assert.match(line, /reason=user requested/);
+});
+
+test("formatEventLine: pause with null reason omits the reason segment", () => {
+    // ralph_pause without a reason emits `reason: null`. The renderer
+    // must skip the segment entirely (not render `reason=null`) so
+    // empty-reason pause lines stay tidy in the plain log.
+    const line = formatEventLine({
+        type: "pause",
+        ts: 0,
+        runId: "r-1",
+        iteration: 2,
+        reason: null,
+    });
+    assert.match(line, /pause/);
+    assert.match(line, /iter=2/);
+    assert.doesNotMatch(line, /reason=/);
+});
+
+test("formatEventLine: resume renders verb=resume + iteration", () => {
+    // ralph_resume emits `{ type: "resume", runId, iteration,
+    // pausedForMs, ts }`. The plain renderer surfaces verb / runId /
+    // iteration; pausedForMs is not currently rendered by
+    // formatEventLine — pin the present-day contract so any future
+    // change that adds pausedForMs to the line (or removes the
+    // resume verb mapping) shows up here loudly.
+    const line = formatEventLine({
+        type: "resume",
+        ts: 0,
+        runId: "ralph_loop-3",
+        iteration: 5,
+        pausedForMs: 1234,
+    });
+    assert.match(line, /resume\s+ralph_loop-3/);
+    assert.match(line, /iter=5/);
+});

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Tests
+- Pin TUI plain-mode rendering of `pause` and
+  `resume` events. The plain renderer's VERB map
+  already mapped both, but no test exercised the
+  full event shape (verb / runId / iteration /
+  reason). Adds three tests covering: pause with a
+  reason, pause with `reason: null` (must omit the
+  segment, not render `reason=null`), and resume
+  with `pausedForMs`. The pausedForMs assertion is
+  intentionally pinned to current behaviour (field
+  not rendered today) so any future renderer change
+  surfaces loudly in this test.
+
 ### Documentation
 - README's Installation section had two `### Option C`
   H3 headings (Option C — From source AND Option C —

@@ -308,6 +308,137 @@ export function extractStageMarkers(text, allowedStages) {
     return out;
 }
 
+/** Parse an ISO-8601 timestamp string to ms since epoch. Returns NaN
+ *  on missing / unparseable input so callers can fall back to wall
+ *  clock when a synthetic test fixture omits timestamps. */
+function parseAgentTsMs(timestamp) {
+    if (typeof timestamp !== "string") return NaN;
+    const t = Date.parse(timestamp);
+    return Number.isFinite(t) ? t : NaN;
+}
+
+/** Distill a tool-call arguments object into a one-line summary
+ *  (≤ 80 chars) suitable for the substage row. Per-verb shaping
+ *  pulls the most useful field for the most common tools (bash →
+ *  command, view/edit/create → path, grep/glob → pattern, task →
+ *  description); generic fallback picks the first string-valued
+ *  field. Returning empty string is fine — the renderer just shows
+ *  the verb. Pure / no I/O. */
+export function summarizeToolArgs(verb, args) {
+    if (!args || typeof args !== "object") return "";
+    const cap = 80;
+    const truncate = (s) => {
+        const str = String(s ?? "");
+        if (str.length <= cap) return str;
+        return str.slice(0, cap - 1) + "…";
+    };
+    if (verb === "bash") {
+        const cmd = String(args.command ?? "").trim().split("\n")[0];
+        return truncate(cmd);
+    }
+    if (verb === "view" || verb === "edit" || verb === "create" || verb === "show_file") {
+        return truncate(args.path);
+    }
+    if (verb === "grep" || verb === "glob") {
+        return truncate(args.pattern);
+    }
+    if (verb === "task") {
+        return truncate(args.description ?? args.name);
+    }
+    if (verb === "report_intent") {
+        return truncate(args.intent);
+    }
+    for (const k of Object.keys(args)) {
+        if (typeof args[k] === "string") return truncate(args[k]);
+    }
+    return "";
+}
+
+/** Walk a copilot JSONL event array and produce an ordered timeline of
+ *  stage markers and tool-completion records, preserving the natural
+ *  interleaving from the agent's response stream. Used by the runner
+ *  loop to emit stage_start/stage_end/substage events in the right
+ *  order so foldEvents attributes each substage to its containing
+ *  stage (substages reset on each stage_start).
+ *
+ *  Each timeline item is tagged with a `kind`:
+ *    - `{kind: "stage_marker", name, stage, ts}` — one per
+ *      `[STAGE: NAME]` line found in a (root-agent) `assistant.message`
+ *      event's content; only canonical-list names are emitted.
+ *    - `{kind: "tool_complete", verb, argsSummary, outcome,
+ *      durationMs, ts}` — one per `tool.execution_complete` event,
+ *      paired with the matching `tool.execution_start` (by
+ *      `toolCallId`) for verb / args / startTs.
+ *
+ *  `ts` is parsed from the JSONL `timestamp` field; if missing or
+ *  unparseable (e.g. synthetic test fixtures), `ts` is NaN and the
+ *  loop falls back to wall clock at emit time. `durationMs` is
+ *  null when either timestamp is missing. Sub-agent
+ *  `assistant.message` events (those carrying an `agentId`) are
+ *  ignored — only the root agent's stage markers count.
+ *
+ *  Pure / no I/O — exported for testing. */
+export function extractAgentTimeline(events, allowedStages) {
+    const out = [];
+    if (!Array.isArray(events)) return out;
+    const allowSet = (Array.isArray(allowedStages) && allowedStages.length)
+        ? new Set(allowedStages) : null;
+    const startsByCallId = new Map();
+    const stageMarkerRe = /^[ \t]*\[STAGE:[ \t]*([A-Z_][A-Z0-9_]*)[ \t]*\][ \t]*$/gm;
+
+    for (const ev of events) {
+        if (!ev || typeof ev !== "object") continue;
+        const tsMs = parseAgentTsMs(ev.timestamp);
+
+        if (ev.type === "assistant.message" && !ev.agentId
+            && ev.data && typeof ev.data.content === "string"
+            && allowSet) {
+            stageMarkerRe.lastIndex = 0;
+            let m;
+            while ((m = stageMarkerRe.exec(ev.data.content)) !== null) {
+                const name = m[1];
+                if (!allowSet.has(name)) continue;
+                out.push({
+                    kind: "stage_marker",
+                    name,
+                    stage: allowedStages.indexOf(name) + 1,
+                    ts: tsMs,
+                });
+            }
+        }
+
+        if (ev.type === "tool.execution_start" && ev.data && typeof ev.data.toolCallId === "string") {
+            startsByCallId.set(ev.data.toolCallId, {
+                tsMs,
+                toolName: typeof ev.data.toolName === "string" ? ev.data.toolName : "unknown",
+                arguments: ev.data.arguments,
+            });
+        }
+
+        if (ev.type === "tool.execution_complete" && ev.data && typeof ev.data.toolCallId === "string") {
+            const start = startsByCallId.get(ev.data.toolCallId);
+            const verb = start?.toolName ?? "unknown";
+            const argsSummary = summarizeToolArgs(verb, start?.arguments);
+            const outcome = ev.data.success === false
+                ? (ev.data.error && typeof ev.data.error.code === "string" ? ev.data.error.code : "error")
+                : "ok";
+            const startTs = start?.tsMs;
+            const durationMs = Number.isFinite(startTs) && Number.isFinite(tsMs)
+                ? Math.max(0, tsMs - startTs)
+                : null;
+            out.push({
+                kind: "tool_complete",
+                verb,
+                argsSummary,
+                outcome,
+                durationMs,
+                ts: tsMs,
+            });
+        }
+    }
+    return out;
+}
+
 /** Default abort token per mode. */
 function defaultAbortPromise(mode) {
     if (mode === "self-improve") return BAKED_ABORT_TOKEN;
@@ -622,23 +753,32 @@ export async function runRalphTui(opts) {
             updateState(runId, (s) => { s.sessionId = capturedSessionId; return s; }, env);
         }
 
-        // Issue #48 slice 4: parse `[STAGE: NAME]` markers from the
-        // agent's response and emit stage_start / stage_end events
-        // BEFORE iteration_end so the renderer's per-iter stage row
-        // and the event log both attribute stages to the correct
-        // iteration. Markers outside the canonical stage list (a
+        // Issue #48 slices 4+5: walk the agent's response stream as an
+        // ordered timeline of stage markers + tool completions, and
+        // emit stage_start / stage_end / substage events between
+        // iteration_start and iteration_end. Natural interleaving is
+        // preserved (substage events that fall between two stage
+        // markers attribute to the active stage by virtue of
+        // foldEvents resetting `currentStageSubstages` on each
+        // stage_start). Markers outside the canonical stage list (a
         // typo or hallucination) are silently dropped by
-        // extractStageMarkers — emitting an unknown stage would
-        // confuse the renderer.
+        // extractAgentTimeline. `tool.execution_complete` events
+        // produce substage records with a verb (toolName), a one-line
+        // arguments summary, an outcome (`ok` / error code), and a
+        // computed durationMs. All events use the agent's own
+        // `timestamp` when present, falling back to wall clock for
+        // synthetic test fixtures that omit it.
         const allowedStages = stagesForMode(mode);
-        if (allowedStages) {
-            const markers = extractStageMarkers(reduced.assistantContent, allowedStages);
-            let activeMarker = null;
-            for (const mk of markers) {
+        const timeline = extractAgentTimeline(result.events, allowedStages);
+        let activeMarker = null;
+        let substageIdx = 0;
+        for (const item of timeline) {
+            const itemTs = Number.isFinite(item.ts) ? item.ts : now();
+            if (item.kind === "stage_marker") {
                 if (activeMarker) {
                     emitter.write({
                         type: "stage_end",
-                        ts: now(),
+                        ts: itemTs,
                         runId,
                         label,
                         iteration: iter,
@@ -648,26 +788,41 @@ export async function runRalphTui(opts) {
                 }
                 emitter.write({
                     type: "stage_start",
-                    ts: now(),
+                    ts: itemTs,
                     runId,
                     label,
                     iteration: iter,
-                    stage: mk.stage,
-                    stageName: mk.name,
+                    stage: item.stage,
+                    stageName: item.name,
                 });
-                activeMarker = mk;
-            }
-            if (activeMarker) {
+                activeMarker = item;
+                substageIdx = 0;
+            } else if (item.kind === "tool_complete") {
+                substageIdx += 1;
                 emitter.write({
-                    type: "stage_end",
-                    ts: now(),
+                    type: "substage",
+                    ts: itemTs,
                     runId,
                     label,
                     iteration: iter,
-                    stage: activeMarker.stage,
-                    stageName: activeMarker.name,
+                    sub: substageIdx,
+                    verb: item.verb,
+                    argsSummary: item.argsSummary,
+                    outcome: item.outcome,
+                    durationMs: item.durationMs,
                 });
             }
+        }
+        if (activeMarker) {
+            emitter.write({
+                type: "stage_end",
+                ts: now(),
+                runId,
+                label,
+                iteration: iter,
+                stage: activeMarker.stage,
+                stageName: activeMarker.name,
+            });
         }
 
         const excerpt = lastAssistantContent.slice(0, 500);

@@ -787,3 +787,224 @@ test("runRalphTui: --prompt mode emits no stage events (no canonical stage list)
     const stageEvents = events.filter((e) => e.type === "stage_start" || e.type === "stage_end");
     assert.equal(stageEvents.length, 0, "prompt mode has no canonical stage list, so no stage events");
 });
+
+// ─── Issue #48 slice 5: substage capture (tool.execution_complete) ───
+
+import { extractAgentTimeline, summarizeToolArgs } from "../src/runner.mjs";
+
+test("summarizeToolArgs: bash → first line of command, ≤80 chars with ellipsis", () => {
+    assert.equal(summarizeToolArgs("bash", { command: "ls /tmp" }), "ls /tmp");
+    assert.equal(summarizeToolArgs("bash", { command: "ls /tmp\nrm -rf /" }), "ls /tmp",
+        "first line only — multi-line bash commands shouldn't expose the whole script");
+    const long = "x".repeat(100);
+    const got = summarizeToolArgs("bash", { command: long });
+    assert.equal(got.length, 80, "truncated to 80 chars");
+    assert.ok(got.endsWith("…"), "ellipsis marks truncation");
+});
+
+test("summarizeToolArgs: view/edit/create → path; grep/glob → pattern; task → description", () => {
+    assert.equal(summarizeToolArgs("view", { path: "/repo/src/foo.js" }), "/repo/src/foo.js");
+    assert.equal(summarizeToolArgs("edit", { path: "/p", old_str: "a", new_str: "b" }), "/p");
+    assert.equal(summarizeToolArgs("create", { path: "/repo/new.js", file_text: "..." }), "/repo/new.js");
+    assert.equal(summarizeToolArgs("grep", { pattern: "STAGE:", glob: "*.mjs" }), "STAGE:");
+    assert.equal(summarizeToolArgs("glob", { pattern: "**/*.test.mjs" }), "**/*.test.mjs");
+    assert.equal(summarizeToolArgs("task", { description: "Run tests", prompt: "..." }), "Run tests");
+});
+
+test("summarizeToolArgs: missing args / non-string fields → empty string", () => {
+    assert.equal(summarizeToolArgs("bash", null), "");
+    assert.equal(summarizeToolArgs("bash", undefined), "");
+    assert.equal(summarizeToolArgs("bash", "not an object"), "");
+    assert.equal(summarizeToolArgs("bash", {}), "", "empty args object → empty summary");
+});
+
+test("summarizeToolArgs: generic fallback picks first string-valued field", () => {
+    assert.equal(summarizeToolArgs("custom_tool", { count: 5, label: "hello" }), "hello",
+        "non-string fields skipped, first string field wins");
+});
+
+test("extractAgentTimeline: empty / non-array input → []", () => {
+    assert.deepEqual(extractAgentTimeline(null, ["ORIENT"]), []);
+    assert.deepEqual(extractAgentTimeline(undefined, ["ORIENT"]), []);
+    assert.deepEqual(extractAgentTimeline([], ["ORIENT"]), []);
+});
+
+test("extractAgentTimeline: pairs tool.execution_start with tool.execution_complete by toolCallId", () => {
+    const events = [
+        { type: "tool.execution_start", timestamp: "2026-01-01T00:00:00.000Z",
+          data: { toolCallId: "t1", toolName: "bash", arguments: { command: "ls" } } },
+        { type: "tool.execution_complete", timestamp: "2026-01-01T00:00:00.500Z",
+          data: { toolCallId: "t1", success: true } },
+    ];
+    const tl = extractAgentTimeline(events, []);
+    assert.equal(tl.length, 1);
+    assert.equal(tl[0].kind, "tool_complete");
+    assert.equal(tl[0].verb, "bash");
+    assert.equal(tl[0].argsSummary, "ls");
+    assert.equal(tl[0].outcome, "ok");
+    assert.equal(tl[0].durationMs, 500, "duration computed from start ts to complete ts");
+});
+
+test("extractAgentTimeline: failed tool.execution_complete → outcome = error.code (or 'error')", () => {
+    const events = [
+        { type: "tool.execution_start", timestamp: "2026-01-01T00:00:00.000Z",
+          data: { toolCallId: "t1", toolName: "bash", arguments: { command: "ls /nope" } } },
+        { type: "tool.execution_complete", timestamp: "2026-01-01T00:00:00.100Z",
+          data: { toolCallId: "t1", success: false, error: { code: "denied", message: "Permission denied" } } },
+    ];
+    const tl = extractAgentTimeline(events, []);
+    assert.equal(tl[0].outcome, "denied", "error.code wins when present");
+
+    const events2 = [
+        { type: "tool.execution_start", timestamp: "2026-01-01T00:00:00.000Z",
+          data: { toolCallId: "t1", toolName: "bash", arguments: {} } },
+        { type: "tool.execution_complete", timestamp: "2026-01-01T00:00:00.050Z",
+          data: { toolCallId: "t1", success: false } },
+    ];
+    const tl2 = extractAgentTimeline(events2, []);
+    assert.equal(tl2[0].outcome, "error", "fallback to 'error' when error.code missing");
+});
+
+test("extractAgentTimeline: tool_complete with missing/unparseable timestamp → durationMs null", () => {
+    const events = [
+        { type: "tool.execution_start", data: { toolCallId: "t1", toolName: "bash", arguments: { command: "ls" } } },
+        { type: "tool.execution_complete", data: { toolCallId: "t1", success: true } },
+    ];
+    const tl = extractAgentTimeline(events, []);
+    assert.equal(tl[0].durationMs, null, "no real timestamp → null duration; renderer shows '?'");
+});
+
+test("extractAgentTimeline: interleaves stage markers and tool completions in event order", () => {
+    // Realistic scenario: agent emits [STAGE: ORIENT], runs `git status`,
+    // then emits [STAGE: IDEATE], runs `grep`. The timeline preserves
+    // arrival order so foldEvents attributes each substage to the
+    // correct stage.
+    const events = [
+        { type: "assistant.message", timestamp: "2026-01-01T00:00:00.000Z",
+          data: { content: "[STAGE: ORIENT]\nstarting" } },
+        { type: "tool.execution_start", timestamp: "2026-01-01T00:00:01.000Z",
+          data: { toolCallId: "t1", toolName: "bash", arguments: { command: "git status" } } },
+        { type: "tool.execution_complete", timestamp: "2026-01-01T00:00:01.500Z",
+          data: { toolCallId: "t1", success: true } },
+        { type: "assistant.message", timestamp: "2026-01-01T00:00:02.000Z",
+          data: { content: "[STAGE: IDEATE]\nthinking" } },
+        { type: "tool.execution_start", timestamp: "2026-01-01T00:00:03.000Z",
+          data: { toolCallId: "t2", toolName: "grep", arguments: { pattern: "TODO" } } },
+        { type: "tool.execution_complete", timestamp: "2026-01-01T00:00:03.200Z",
+          data: { toolCallId: "t2", success: true } },
+    ];
+    const tl = extractAgentTimeline(events, ["ORIENT", "IDEATE"]);
+    assert.deepEqual(tl.map((it) => `${it.kind}:${it.name ?? it.verb}`),
+        ["stage_marker:ORIENT", "tool_complete:bash", "stage_marker:IDEATE", "tool_complete:grep"]);
+});
+
+test("extractAgentTimeline: sub-agent (agentId set) assistant.message events are ignored for stage markers", () => {
+    // An explore-agent's assistant.message could legitimately contain
+    // `[STAGE: ORIENT]` in its prose (e.g. quoting the prompt). Only
+    // the root agent's stage markers count.
+    const events = [
+        { type: "assistant.message", timestamp: "2026-01-01T00:00:00.000Z",
+          agentId: "explore",
+          data: { content: "[STAGE: ORIENT]\nshouldn't fire" } },
+        { type: "assistant.message", timestamp: "2026-01-01T00:00:01.000Z",
+          data: { content: "[STAGE: ORIENT]\nroot agent's marker" } },
+    ];
+    const tl = extractAgentTimeline(events, ["ORIENT"]);
+    assert.equal(tl.length, 1, "only the root agent's marker counts");
+});
+
+test("runRalphTui: emits substage events with sub index, verb, argsSummary, outcome, durationMs", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "substage-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const stdout = [
+        // [STAGE: ORIENT] then 2 tool calls then [STAGE: IDEATE] then COMPLETE
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:00.000Z",
+            data: { content: "[STAGE: ORIENT]\nlooking" } }),
+        JSON.stringify({ type: "tool.execution_start", timestamp: "2026-01-01T00:00:01.000Z",
+            data: { toolCallId: "c1", toolName: "bash", arguments: { command: "git status" } } }),
+        JSON.stringify({ type: "tool.execution_complete", timestamp: "2026-01-01T00:00:01.300Z",
+            data: { toolCallId: "c1", success: true } }),
+        JSON.stringify({ type: "tool.execution_start", timestamp: "2026-01-01T00:00:02.000Z",
+            data: { toolCallId: "c2", toolName: "view", arguments: { path: "/repo/foo.mjs" } } }),
+        JSON.stringify({ type: "tool.execution_complete", timestamp: "2026-01-01T00:00:02.100Z",
+            data: { toolCallId: "c2", success: true } }),
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:03.000Z",
+            data: { content: "[STAGE: IDEATE]\nCOMPLETE" } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    const subEvents = events.filter((e) => e.type === "substage");
+    assert.equal(subEvents.length, 2, "two tool.execution_complete events → two substage events");
+    assert.equal(subEvents[0].verb, "bash");
+    assert.equal(subEvents[0].argsSummary, "git status");
+    assert.equal(subEvents[0].outcome, "ok");
+    assert.equal(subEvents[0].durationMs, 300);
+    assert.equal(subEvents[0].sub, 1, "first substage in ORIENT is sub=1");
+    assert.equal(subEvents[1].verb, "view");
+    assert.equal(subEvents[1].argsSummary, "/repo/foo.mjs");
+    assert.equal(subEvents[1].sub, 2, "second substage in ORIENT is sub=2");
+    // Critical ordering: substages must sit BETWEEN stage_start ORIENT
+    // and stage_start IDEATE so foldEvents attributes them to ORIENT.
+    const types = events.map((e) => e.type);
+    const orientStartIdx = events.findIndex((e) => e.type === "stage_start" && e.stageName === "ORIENT");
+    const ideateStartIdx = events.findIndex((e) => e.type === "stage_start" && e.stageName === "IDEATE");
+    const sub1Idx = events.findIndex((e, i) => i > orientStartIdx && e.type === "substage");
+    assert.ok(orientStartIdx < sub1Idx, "substage must come AFTER ORIENT stage_start");
+    assert.ok(sub1Idx < ideateStartIdx, "substage must come BEFORE IDEATE stage_start (attribution to ORIENT)");
+    // Sub counter must reset on stage transition: IDEATE has no
+    // substages here, but if it did they'd start at sub=1 again.
+    assert.ok(types.includes("stage_end"), "stages must close so foldEvents bookkeeping is clean");
+});
+
+test("runRalphTui: substage sub-counter resets to 1 on each new stage_start", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "sub-reset-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const stdout = [
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:00.000Z",
+            data: { content: "[STAGE: ORIENT]" } }),
+        JSON.stringify({ type: "tool.execution_start", timestamp: "2026-01-01T00:00:01.000Z",
+            data: { toolCallId: "a1", toolName: "bash", arguments: { command: "echo a" } } }),
+        JSON.stringify({ type: "tool.execution_complete", timestamp: "2026-01-01T00:00:01.100Z",
+            data: { toolCallId: "a1", success: true } }),
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:02.000Z",
+            data: { content: "[STAGE: IDEATE]" } }),
+        JSON.stringify({ type: "tool.execution_start", timestamp: "2026-01-01T00:00:03.000Z",
+            data: { toolCallId: "b1", toolName: "bash", arguments: { command: "echo b" } } }),
+        JSON.stringify({ type: "tool.execution_complete", timestamp: "2026-01-01T00:00:03.100Z",
+            data: { toolCallId: "b1", success: true } }),
+        JSON.stringify({ type: "assistant.message", timestamp: "2026-01-01T00:00:04.000Z",
+            data: { content: "COMPLETE" } }),
+        JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+    ].join("\n") + "\n";
+    const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    const subs = events.filter((e) => e.type === "substage");
+    assert.equal(subs.length, 2);
+    assert.equal(subs[0].sub, 1, "first substage of ORIENT is sub=1");
+    assert.equal(subs[1].sub, 1, "first substage of IDEATE is also sub=1 (counter reset)");
+});

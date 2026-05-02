@@ -3,6 +3,22 @@
 ## Unreleased
 
 ### Features
+- `ralph-tui run` now emits `substage` events from each
+  `tool.execution_complete` JSONL frame in the agent's response
+  stream (issue #48 slice 5). Each substage carries the verb
+  (`bash` / `view` / `edit` / `grep` / …), a one-line arguments
+  summary (≤80 chars; per-tool shaping pulls the most useful
+  field), an outcome (`ok` or the error code), a computed
+  `durationMs` (or null when timestamps are missing), and a
+  `sub` counter that resets to 1 on each new stage. Substage
+  events sit between consecutive `stage_start` events so
+  `foldEvents` attributes each substage to its containing
+  stage. New exported helpers in `packages/tui/src/runner.mjs`:
+  `extractAgentTimeline(events, allowedStages)` (pure walker
+  that interleaves stage markers and tool completions in event
+  order) and `summarizeToolArgs(verb, args)` (one-line arg
+  distillation).
+
 - `ralph-tui run` now parses `[STAGE: NAME]` markers from the
   agent's response stream and emits `stage_start` / `stage_end`
   events for the renderer's per-iter stage row (issue #48 slice

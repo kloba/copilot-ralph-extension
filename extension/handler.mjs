@@ -2041,6 +2041,22 @@ export function createRalphController(opts = {}) {
                 a.pausedAt = 0;
                 a.streak = 0;
                 a.prev = null;
+                // Reliability fix: while paused the user can chat freely with the
+                // agent — every assistant.message during that conversation lands
+                // in `state.lastAssistantContent` (the buffer onIdle reads to
+                // evaluate completion_promise / abort_promise). Without this
+                // reset, the post-resume idle would inspect a buffer containing
+                // the original in-flight iter response PLUS arbitrary user-chat
+                // replies, so a casual mention of "COMPLETE" (or the configured
+                // abort token) in a pause-time conversation would spuriously
+                // terminate the loop. Clearing the buffer means the post-resume
+                // evaluation sees an empty string — no triggers fire, the loop
+                // simply advances to the next iteration. Trade-off: a genuine
+                // completion signal that landed in iter N's response right
+                // before the pause is forfeited, but the user already saw it
+                // via ralph_status.last_response_excerpt and can ralph_stop
+                // explicitly if they want to honor it.
+                state.lastAssistantContent = "";
                 log(`▶ ${a.label} resumed at ${a.i}/${a.max} (paused for ${pausedFor}ms)`);
                 safeEmit(a, { type: "resume", runId: a.runId, iteration: a.i, pausedForMs: pausedFor, ts: Date.now() });
                 return success(

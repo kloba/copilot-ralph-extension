@@ -6748,3 +6748,52 @@ test("README pins the corrected durationMs semantics (active runtime, not raw wa
     // latency" wording is gone (it's drift now).
     assert.doesNotMatch(readme, /the final `durationMs` measure time from arming, not per-turn latency/);
 });
+
+test("ralph_resume clears lastAssistantContent so user-chat during pause cannot trigger completion_promise", async () => {
+    // Reliability: while paused, the user chats freely with the agent.
+    // Each user-chat turn fires assistant.message events that accumulate
+    // into state.lastAssistantContent (the buffer onIdle reads to
+    // evaluate completion / abort). Without the resume-time reset, a
+    // pause-time conversation that happened to mention "COMPLETE" (or
+    // the configured abort token) would spuriously terminate the loop
+    // on the first post-resume idle. Pin the contract: resume MUST
+    // reset the buffer so post-resume evaluation starts clean.
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    runTurn(session, "boot");                 // fires iter 1
+    runTurn(session, "iter 1 normal output"); // fires iter 2
+    const iterBeforePause = controller.state.active.i;
+    await pause.handler({});
+    // User-chat during pause that contains the completion token verbatim.
+    runTurn(session, "I'll mark this COMPLETE when the refactor lands.");
+    runTurn(session, "Quick aside: the abort token isn't here, just COMPLETE.");
+    await resume.handler({});
+    // Post-condition 1: buffer reset.
+    assert.equal(controller.state.lastAssistantContent, "",
+        "ralph_resume must clear lastAssistantContent so chat-during-pause cannot leak into completion evaluation");
+    // Post-condition 2: loop survives the next idle and advances —
+    // it must NOT terminate on the chat content.
+    runTurn(session, "iter N+1 output");
+    assert.ok(controller.state.active, "loop must still be active after resume + idle");
+    assert.ok(controller.state.active.i > iterBeforePause,
+        "iteration must advance, not terminate on pause-time chat");
+    assert.equal(controller.state.lastResult, null, "no terminal result must have been recorded");
+});
+
+test("ralph_resume clears lastAssistantContent so user-chat during pause cannot trigger abort_promise either", async () => {
+    // Symmetric guard for abort_promise. Different code path inside
+    // onIdle (different terminator) so a future refactor that splits
+    // resume's reset by reason kind would still need both pinned.
+    const { session, controller } = await arm({ max_iterations: 5, abort_promise: "ABORT_NOW" });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    runTurn(session, "boot");
+    runTurn(session, "iter 1 output");
+    await pause.handler({});
+    runTurn(session, "user thinking out loud: ABORT_NOW would not be appropriate here");
+    await resume.handler({});
+    runTurn(session, "iter N+1 output");
+    assert.ok(controller.state.active, "abort token in pause-time chat must NOT abort the loop after resume");
+    assert.equal(controller.state.lastResult, null);
+});

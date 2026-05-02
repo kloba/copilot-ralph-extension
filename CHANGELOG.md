@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Fixes
+- `ralph_resume` now clears `state.lastAssistantContent`
+  before re-arming the idle handler. Previously,
+  every assistant.message that fired during the
+  paused conversation accumulated into the same
+  buffer that `onIdle` reads to evaluate
+  `completion_promise` / `abort_promise`. A casual
+  mention of the configured trigger phrase in the
+  user's pause-time chat (e.g. "I'll mark this
+  COMPLETE when the refactor lands") would
+  therefore spuriously terminate the loop on the
+  first post-resume idle. Now the buffer resets
+  at resume so the next iteration is evaluated
+  against a clean slate. Trade-off documented in
+  the inline comment: a genuine completion signal
+  that landed in the in-flight iter response right
+  before the pause is forfeited, but
+  `ralph_status.last_response_excerpt` exposes
+  that text for the user to inspect, and
+  `ralph_stop` is available to honor it
+  explicitly. Two tests pin the contract for both
+  completion and abort tokens.
+
 ### Documentation
 - Fix README drift introduced by the iter-52
   `durationMs` change. The "Limitations" bullet

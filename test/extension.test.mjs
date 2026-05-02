@@ -9403,3 +9403,31 @@ test("install.sh --dry-run: surfaces currently-installed version when target dir
         rmSync(sandboxHome, { recursive: true, force: true });
     }
 });
+
+test("install.sh: -h short flag is an alias for --help", () => {
+    // Iter 128 — `-h` lives in the `--help|-h)` case arm alongside
+    // `--version|-V`'s alias coverage (iter 123) but was never
+    // directly exercised. A future split of the case arm (e.g.
+    // moving `-h` to a separate handler that forgets to call
+    // `print_help`) would silently break short-flag users without
+    // any test catching it. Pin the alias the same way --version /
+    // -V are pinned: `-h` MUST exit 0 and emit the same leading
+    // header as `--help` so CI scripts and humans relying on the
+    // short form get identical output.
+    const longRun = spawnSync("bash", [resolve(REPO_ROOT, "install.sh"), "--help"], {
+        encoding: "utf8",
+    });
+    const shortRun = spawnSync("bash", [resolve(REPO_ROOT, "install.sh"), "-h"], {
+        encoding: "utf8",
+    });
+    assert.equal(longRun.status, 0, `--help exited ${longRun.status}; stderr=${longRun.stderr}`);
+    assert.equal(shortRun.status, 0, `-h exited ${shortRun.status}; stderr=${shortRun.stderr}`);
+    // Byte-equal: short flag is a pure alias, not a separate code path.
+    assert.equal(shortRun.stdout, longRun.stdout, "-h must produce byte-identical output to --help");
+    // Defence-in-depth: the canonical Usage line is present so a
+    // refactor that accidentally short-circuits `-h` to print only
+    // the version (or nothing) is caught even if both paths regress
+    // simultaneously.
+    assert.match(shortRun.stdout, /Usage: \.\/install\.sh/);
+    assert.equal(shortRun.stderr, "", `-h emitted unexpected stderr: ${shortRun.stderr}`);
+});

@@ -237,6 +237,16 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Pin `install.sh -h` short flag as a byte-identical
+  alias of `--help`. The case arm (`--help|-h)`) covers
+  both forms, but only the long form was directly
+  exercised — a future split that accidentally
+  short-circuits `-h` (e.g. moving it to a handler that
+  forgets to call `print_help`) would have shipped
+  silently. The new test asserts exit 0 + byte-equal
+  stdout + presence of the canonical `Usage:` line +
+  empty stderr, mirroring the `-V` alias coverage from
+  iter 123.
 - Pin that `ralph_pause` is idempotent on the JSONL emit
   side too — exactly ONE `pause` event written to the
   durable event stream per logical pause, regardless of

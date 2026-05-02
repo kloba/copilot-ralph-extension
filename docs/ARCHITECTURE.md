@@ -84,6 +84,19 @@ All tools share the `success(message, extra)` / `failure(message, extra)` envelo
 
 Opt-in. When the loop reaches `max_iterations`, `evaluateAdaptiveSignals(a, gitExec)` returns a non-null reason iff *either* `git diff --shortstat HEAD` or `git status --porcelain` reports working-tree changes, *or* the rolling 3-iteration content-hash window contains ≥ 2 distinct hashes. A positive signal grants `adaptive_extension` more iterations, capped at `adaptive_max_total`. Stagnation / completion / abort still win unconditionally because they're checked earlier in `onIdle`.
 
+## Token tracking (issue [#7](https://github.com/kloba/copilot-ralph-extension/issues/7))
+
+`assistant.message` events from the root agent are routed through two helpers in `handler.mjs`: `extractUsage(ev)` reads `data.usage.{input_tokens, output_tokens, model}` (or the flat `data.usage_input_tokens`/`usage_output_tokens`/`usage_model` form used by the SDK's events table); `creditUsage(a, usage)` accumulates the result onto `a.tokens.input` / `a.tokens.output`, appends a per-iteration breakdown to `byIteration` (`{iter, input, output, model}`), and folds per-model totals into `byModel`. Sub-agent events are filtered upstream by `isSubAgentEvent`, so token credit covers root-agent usage only.
+
+Two safety contracts the helpers enforce:
+
+- **Negative-rejection.** `extractUsage` requires both peers to be `>= 0` AND at least one positive. Malformed events with a negative peer (e.g. `{input_tokens: -500, output_tokens: 50}`) are returned as `null` instead of being credited — a negative credit would *decrease* the cumulative budget, silently masking a configured `max_tokens` cap and pushing the context-window pct calculation negative. Both the nested and flat paths share this contract.
+- **Pause-time isolation.** While `state.active.paused` is true, `onAssistantMessage` short-circuits before `creditUsage` runs, so pause-time chat does not credit tokens to the loop's budget. See [Concepts → Pause / resume semantics](./concepts.md#pause--resume-semantics) for the full contract.
+
+Two thresholds are derived from the running `tokens.input` total against `MODEL_CONTEXT_WINDOWS[model]`: the user-tunable `warn_at_pct` (default 80%) fires a single ⚠ "approaching" log line per loop, and a hard-coded 95% threshold fires a ⚠ "critical" line. Both dedupe via `tokens.warnedThresholds` so each threshold logs at most once. If `warn_at_pct >= 95`, the 80%-keyed branch is skipped to avoid duplicate warnings on the same usage spike. Unknown models log a one-time "no known context-window size; skipping window warnings" notice (`tokens.unknownModelLogged`) so the user knows the threshold checks are inert for that model.
+
+The `max_tokens` cap (set at arm time) is checked at the end of each iteration in `onIdle`; the running total — input + output — is compared against the cap, and the loop finishes with `reason: "max_tokens"` once it crosses. Because pause-time and rejected events do not credit, this cap is never tripped by chat-time activity or malformed events.
+
 ## Caffeinate integration (issue [#8](https://github.com/kloba/copilot-ralph-extension/issues/8))
 
 Opt-in via `RALPH_CAFFEINATE=1`. On macOS, `armLoop` spawns `caffeinate -i [-d] -w <pid>` to inhibit display/system sleep for the duration of the loop. `finish()` (and every error path) kills the caffeinate process. Tests inject a `spawnFn` stub via `createRalphController({ caffeinate: { spawnFn } })`.

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Documentation
+- Add `## Token tracking (issue #7)` section to
+  `docs/ARCHITECTURE.md`. Token bookkeeping has been a significant
+  reliability surface for many iterations (43, 48, 52, 59, 63 all
+  touched it) but ARCHITECTURE.md never described the model — leaving
+  contributors to reverse-engineer `extractUsage` / `creditUsage`,
+  the `byIteration` / `byModel` rollups, the dual-threshold warning
+  model (`warn_at_pct` plus the hard-coded 95% critical), the
+  unknown-model handling (`unknownModelLogged`), and the two safety
+  contracts (negative-rejection from iter 63; pause-time isolation
+  from iter 59) before changing anything. The new section captures
+  all of the above in the existing concise architecture-doc style,
+  links to `concepts.md` for the pause/resume contract, and is
+  pinned by a drift-guard test that asserts every key term remains
+  present.
+
 ### Fixes
 - `extractUsage` now rejects negative usage values from
   `assistant.message` events. The previous filter

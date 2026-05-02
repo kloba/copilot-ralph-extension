@@ -7084,3 +7084,33 @@ test("extractUsage rejects negative usage values (flat form)", async () => {
     assert.equal(a.tokens.output, before.output);
     assert.equal(a.tokens.byIteration.length, before.len);
 });
+
+test("docs/ARCHITECTURE.md documents the token-tracking model (issue #7)", () => {
+    // Drift guard: ARCHITECTURE.md previously had no token-tracking
+    // section despite issue #7 being a major reliability surface
+    // (extractUsage / creditUsage / max_tokens / warn_at_pct / pause-
+    // time isolation / negative rejection). Iter 64 added a "Token
+    // tracking" section. Pin its key claims so a future "trim arch"
+    // PR cannot silently strip them — they reflect real handler
+    // behavior that contributors need to understand before touching
+    // creditUsage / extractUsage.
+    const arch = readFileSync(resolve(REPO_ROOT, "docs/ARCHITECTURE.md"), "utf8");
+    assert.match(arch, /## Token tracking \(issue \[#7\]/);
+    // Both extraction paths must be mentioned by name.
+    assert.match(arch, /extractUsage/);
+    assert.match(arch, /creditUsage/);
+    assert.match(arch, /usage_input_tokens/);
+    assert.match(arch, /byIteration/);
+    assert.match(arch, /byModel/);
+    // Two safety contracts must be named explicitly.
+    assert.match(arch, /Negative-rejection/);
+    assert.match(arch, /Pause-time isolation/);
+    // Threshold model must be documented.
+    assert.match(arch, /MODEL_CONTEXT_WINDOWS/);
+    assert.match(arch, /warn_at_pct/);
+    assert.match(arch, /95%/);
+    assert.match(arch, /warnedThresholds/);
+    assert.match(arch, /unknownModelLogged/);
+    // max_tokens cap behavior must be documented.
+    assert.match(arch, /max_tokens/);
+});

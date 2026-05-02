@@ -370,6 +370,74 @@ test("bin --help: mentions where", () => {
     assert.match(r.stdout, /ralph-tui where/);
 });
 
+test("tui.mjs has no top-level await (Node 22+ unsettled-TLA warning regression guard)", async () => {
+    // Iter regression: the entry-point check used `await import("node:fs")`
+    // and `await import("node:url")` at the top level. On `ralph-tui run`,
+    // when main() resolved and the `.then(process.exit)` chain fired,
+    // Node 22+ printed `ExperimentalWarning: Detected unsettled top-level
+    // await at file://…/bin/tui.mjs:<EOF-line>` to stderr — a spurious
+    // warning emitted because process.exit short-circuits the implicit
+    // module-evaluation TLA settlement observation.
+    //
+    // Fix: realpathSync and pathToFileURL are now imported statically
+    // (line 47 imports `fs`, line 50 imports `pathToFileURL`), removing
+    // the dynamic-import await entirely. Pin the absence so a future
+    // refactor can't silently re-introduce a TLA in this hot path.
+    const fs = await import("node:fs");
+    const src = fs.readFileSync(BIN, "utf8");
+
+    // Strip line + block comments so a doc-block mentioning the word
+    // "await" can't false-positive. (We match `await` at any indentation
+    // followed by a space; that's the only spelling node uses for both
+    // `await foo` and `await import(...)`.)
+    const stripped = src
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+
+    // Find every `await` not nested inside a function. We do this by
+    // tracking brace depth from the start of the file: depth > 0 means
+    // we're inside `function`/arrow/method body or a class — i.e. NOT
+    // top-level. Top-level awaits are the ones at depth 0.
+    let depth = 0;
+    let parenDepth = 0;
+    const topLevelAwaits = [];
+    let lineNo = 1;
+    for (let i = 0; i < stripped.length; i++) {
+        const ch = stripped[i];
+        if (ch === "\n") lineNo++;
+        // Skip string contents — they can't host real await statements.
+        if (ch === '"' || ch === "'" || ch === "`") {
+            const quote = ch;
+            i++;
+            while (i < stripped.length && stripped[i] !== quote) {
+                if (stripped[i] === "\\") i++;
+                if (stripped[i] === "\n") lineNo++;
+                i++;
+            }
+            continue;
+        }
+        if (ch === "{") depth++;
+        else if (ch === "}") depth--;
+        else if (ch === "(") parenDepth++;
+        else if (ch === ")") parenDepth--;
+        // Match the keyword `await` at depth 0 (outside any block) and
+        // outside any parenthesised expression — the latter excludes
+        // `for await (…)` and `await` inside a `(async () => …)()` IIFE
+        // arg list, neither of which matters for this guard.
+        if (depth === 0 && parenDepth === 0
+            && stripped.slice(i, i + 6) === "await "
+            // Word boundary on the left: previous char must not be an
+            // identifier character (so `forawait` or `myawait` don't
+            // trip the check).
+            && (i === 0 || !/[a-zA-Z0-9_$]/.test(stripped[i - 1]))) {
+            topLevelAwaits.push({ lineNo, snippet: stripped.slice(i, i + 40).split("\n")[0] });
+        }
+    }
+
+    assert.deepEqual(topLevelAwaits, [],
+        `bin/tui.mjs must not contain top-level await — Node 22+ emits a spurious "Detected unsettled top-level await" warning during process.exit. Found: ${JSON.stringify(topLevelAwaits, null, 2)}`);
+});
+
 test("tui.mjs header comment lists every USAGE subcommand (drift guard)", async () => {
     // Iter 138 fix: the file's header comment used to list only 3
     // subcommands (list/replay/watch) while the USAGE constant in the

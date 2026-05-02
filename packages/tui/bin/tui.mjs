@@ -47,7 +47,7 @@ import process from "node:process";
 import fs from "node:fs";
 import nodePath from "node:path";
 import readline from "node:readline";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { readRunIndex, resolveRunsRoot, resolveRunEventsPath, parseDuration, pruneRuns, aggregateRuns } from "../src/writer.mjs";
 import { readEventsFile, tailEventsFile } from "../src/tail.mjs";
@@ -845,13 +845,15 @@ export async function main(argv = process.argv.slice(2)) {
 // Only run main() when invoked as a script (not when imported by tests).
 // `npm link` installs the bin as a symlink (e.g. /opt/homebrew/bin/ralph-tui
 // → …/packages/tui/bin/tui.mjs); resolve it through realpath so the
-// "is this the entry point?" check survives the indirection.
+// "is this the entry point?" check survives the indirection. Kept fully
+// synchronous so this module body has no top-level await — Node 22+ emits
+// "Detected unsettled top-level await" when `process.exit()` fires from
+// the main() promise chain before the implicit module-evaluation TLA is
+// observed as settled (issue: spurious warning in `ralph-tui run` exit).
 let isDirectRun = false;
 try {
-    const { realpathSync } = await import("node:fs");
-    const { pathToFileURL } = await import("node:url");
     if (process.argv[1]) {
-        const real = realpathSync(process.argv[1]);
+        const real = fs.realpathSync(process.argv[1]);
         isDirectRun = pathToFileURL(real).href === import.meta.url;
     }
 } catch {

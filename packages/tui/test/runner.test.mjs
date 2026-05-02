@@ -128,7 +128,66 @@ test("reduceCopilotEvents: empty stream returns empty content + null sessionId",
         assistantContent: "",
         sessionId: null,
         exitOk: null,
+        outputTokens: 0,
+        premiumRequests: null,
     });
+});
+
+// ───────────── Issue: TUI tokens / premium-request extraction ─────────────
+// `reduceCopilotEvents` must read `data.outputTokens` (per-message
+// delta from the Copilot CLI JSONL stream) and `result.usage.premiumRequests`
+// (per-iter cost-weighted count). Pre-fix it ignored both, so the
+// TUI Header rendered `tokens 0` for the whole run.
+
+test("reduceCopilotEvents: sums outputTokens across multiple root assistant.message events", () => {
+    const events = [
+        { type: "assistant.message", data: { content: "a", outputTokens: 190 } },
+        { type: "assistant.message", data: { content: "b", outputTokens: 88 } },
+        { type: "assistant.message", data: { content: "c", outputTokens: 50 } },
+    ];
+    const r = reduceCopilotEvents(events);
+    assert.equal(r.outputTokens, 190 + 88 + 50);
+});
+
+test("reduceCopilotEvents: skips outputTokens on sub-agent (agentId) events", () => {
+    const events = [
+        { type: "assistant.message", data: { content: "root", outputTokens: 100 } },
+        { type: "assistant.message", agentId: "explore", data: { content: "sub", outputTokens: 9999 } },
+        { type: "assistant.message", data: { content: "root2", outputTokens: 50 } },
+    ];
+    const r = reduceCopilotEvents(events);
+    assert.equal(r.outputTokens, 150);
+});
+
+test("reduceCopilotEvents: ignores malformed outputTokens (NaN, Infinity, negative, non-number)", () => {
+    const events = [
+        { type: "assistant.message", data: { content: "a", outputTokens: 100 } },
+        { type: "assistant.message", data: { content: "b", outputTokens: Number.NaN } },
+        { type: "assistant.message", data: { content: "c", outputTokens: Infinity } },
+        { type: "assistant.message", data: { content: "d", outputTokens: -50 } },
+        { type: "assistant.message", data: { content: "e", outputTokens: "200" } },
+        { type: "assistant.message", data: { content: "f", outputTokens: 30 } },
+    ];
+    const r = reduceCopilotEvents(events);
+    // Only the two finite, non-negative numeric values count: 100 + 30.
+    // String "200" and the malformed values are skipped.
+    assert.equal(r.outputTokens, 130);
+});
+
+test("reduceCopilotEvents: extracts premiumRequests from terminal result.usage", () => {
+    const events = [
+        { type: "assistant.message", data: { content: "hi", outputTokens: 10 } },
+        { type: "result", usage: { premiumRequests: 3 } },
+    ];
+    const r = reduceCopilotEvents(events);
+    assert.equal(r.premiumRequests, 3);
+});
+
+test("reduceCopilotEvents: premiumRequests is null when result is missing or malformed", () => {
+    assert.equal(reduceCopilotEvents([{ type: "result" }]).premiumRequests, null);
+    assert.equal(reduceCopilotEvents([{ type: "result", usage: {} }]).premiumRequests, null);
+    assert.equal(reduceCopilotEvents([{ type: "result", usage: { premiumRequests: -1 } }]).premiumRequests, null);
+    assert.equal(reduceCopilotEvents([{ type: "result", usage: { premiumRequests: Number.NaN } }]).premiumRequests, null);
 });
 
 // ───────────── State root + path ─────────────
@@ -581,6 +640,80 @@ test("runRalphTui: emits armed → iteration_start → iteration_end → termina
     assert.equal(events[0].contextMode, "fresh");
     assert.equal(events[0].mode, "self-improve");
     assert.equal(events[0].maxIterations, 1);
+});
+
+// Issue: TUI Header rendered `tokens 0` for entire run because the
+// runner emitted `iteration_end` without a `tokens` field. The fix
+// streams a `usage_update` event live (mid-iter) on each root-agent
+// `assistant.message` and on the terminal `result`, then includes
+// the same cumulative totals on `iteration_end` for replay
+// resilience. This test pins both halves of the contract.
+test("runRalphTui: emits usage_update mid-iter and cumulative tokens+premium on iteration_end", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "usage-test",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    // Two iterations with distinct token deltas + premium counts so
+    // we can verify the runner sums both across iters into a run total.
+    const spawn = makeMockSpawn([
+        {
+            stdout: [
+                JSON.stringify({ type: "assistant.message", data: { content: "iter1-a", outputTokens: 100 } }),
+                JSON.stringify({ type: "assistant.message", agentId: "explore", data: { content: "sub-agent", outputTokens: 9999 } }),
+                JSON.stringify({ type: "assistant.message", data: { content: "iter1-b", outputTokens: 50 } }),
+                JSON.stringify({ type: "result", success: true, usage: { premiumRequests: 2 }, result: { sessionId: "s1" } }),
+            ].join("\n") + "\n",
+            exitCode: 0,
+        },
+        {
+            stdout: [
+                JSON.stringify({ type: "assistant.message", data: { content: "iter2 COMPLETE", outputTokens: 30 } }),
+                JSON.stringify({ type: "result", success: true, usage: { premiumRequests: 1 }, result: { sessionId: "s1" } }),
+            ].join("\n") + "\n",
+            exitCode: 0,
+        },
+    ]);
+    await runRalphTui({
+        mode: "self-improve",
+        contextMode: "fresh",
+        max: 2,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    const usageUpdates = events.filter((e) => e.type === "usage_update");
+    // Must have at least one usage_update during iter 1 (mid-iter
+    // visibility — the screenshot's pain point) and one for the
+    // terminal result of each iter.
+    assert.ok(usageUpdates.length >= 3, `expected ≥3 usage_update events, got ${usageUpdates.length}`);
+    // Sub-agent message (agentId=explore) must NOT contribute to any
+    // usage_update tokens — totals stay capped by root-agent tokens.
+    for (const u of usageUpdates) {
+        assert.ok(u.tokens.output <= 100 + 50 + 30, `usage_update output=${u.tokens.output} exceeds root-only sum`);
+    }
+    // First mid-iter usage_update (after the 100-token message)
+    // should report cumulative tokens.output = 100, no premium yet.
+    const firstMid = usageUpdates[0];
+    assert.equal(firstMid.tokens.input, 0);
+    assert.equal(firstMid.tokens.output, 100);
+    assert.equal(firstMid.premiumRequests, undefined);
+    // The terminal `result` for iter 1 fires a usage_update with
+    // cumulative tokens (100+50=150) AND premium=2.
+    const iter1Result = usageUpdates.find(u => u.iteration === 1 && u.premiumRequests != null);
+    assert.equal(iter1Result.tokens.output, 150);
+    assert.equal(iter1Result.premiumRequests, 2);
+    // iteration_end events carry the post-iter reconciled cumulatives.
+    const iterEnds = events.filter((e) => e.type === "iteration_end");
+    assert.equal(iterEnds.length, 2);
+    assert.equal(iterEnds[0].iteration, 1);
+    assert.equal(iterEnds[0].tokens.output, 150);
+    assert.equal(iterEnds[0].premiumRequests, 2);
+    assert.equal(iterEnds[1].iteration, 2);
+    assert.equal(iterEnds[1].tokens.output, 150 + 30); // run total
+    assert.equal(iterEnds[1].premiumRequests, 2 + 1);  // run total
 });
 
 test("runRalphTui: emits abort (NOT 'aborted') for early-terminate", async () => {

@@ -95,6 +95,65 @@
   into a `{sha, subject, trailers[]}` triple, capping
   trailers at 8 to match the events.mjs serializer.
 
+### Features
+
+- `ralph-tui run` now surfaces output-token totals and
+  Copilot premium-request counts live in the Header (right
+  row picks up ` · premium <N>`) and DetailPane (a new
+  `premium req <N>` row below the existing tokens row). The
+  out-of-session driver in `packages/tui/src/runner.mjs` now
+  extracts `assistant.message.data.outputTokens` (per-message
+  delta, summed; sub-agent events skipped via the `agentId`
+  presence check) and `result.usage.premiumRequests` from
+  the JSONL stream `copilot -p --output-format json` writes,
+  emits a new `usage_update` event mid-iter so the snapshot
+  reflects in-progress totals (no more `tokens 0` for the
+  duration of an iteration), and backfills cumulative
+  `tokens` + `premiumRequests` on `iteration_end` for replay
+  resilience. Plain-mode (`ralph-tui plain`) renders a
+  matching 5-char `usage` verb and appends `premium=<N>`
+  alongside `tokens=I/O` so `awk` / `grep` consumers see the
+  same field. The `premiumRequests` counter is null until
+  the first `result` event lands, and the TUI hides both
+  surfaces while null so users don't see a confident
+  "premium 0" pre-iter-1.
+
+### Fixes
+- `ralph-tui run` no longer prints a spurious
+  `ExperimentalWarning: Detected unsettled top-level await at
+  …/packages/tui/bin/tui.mjs:<EOF>` line on exit. Root cause:
+  the symlink-aware direct-run check pulled `realpathSync` and
+  `pathToFileURL` in via two `await import(...)` statements at
+  module top level (added by the `npm link` symlink fix in
+  `8b2a98e`). On Node 22+, when `main()`'s
+  `.then(process.exit)` fires the implicit module-evaluation
+  TLA hadn't been observed as settled yet, so Node attached
+  the warning to the file's last line. Fix: promote both
+  imports to the existing static `import fs from "node:fs"` /
+  `import { fileURLToPath, pathToFileURL } from "node:url"`
+  lines and drop the dynamic `await import(...)`. New
+  regression test `tui.mjs has no top-level await (Node 22+
+  unsettled-TLA warning regression guard)` in
+  `packages/tui/test/bin.test.mjs` walks the file at brace-
+  and string-aware depth 0 to fail any future re-introduction
+  of a top-level `await`.
+
+- `ralph-tui run` no longer renders `tokens 0` for the
+  duration of a `--self-improve` / `--continue` / `--fresh`
+  run. Root cause: `reduceCopilotEvents` in
+  `packages/tui/src/runner.mjs` was not extracting
+  `assistant.message.data.outputTokens` from the
+  `copilot -p --output-format json` JSONL stream, so the
+  `iteration_end` event the runner emitted never carried a
+  `tokens` field — `foldEvents` therefore kept the snapshot
+  at `{input:0, output:0}` and Header rendered 0 even after
+  multiple iters had run. Fix is two-pronged: a new
+  `usage_update` event streams cumulative usage out of the
+  per-line callback so the snapshot updates while an iter
+  is still in-flight, and `iteration_end` now backfills the
+  same totals as a defensive line in case a tail loses some
+  live events.
+
 ### Documentation
 - Refs #49: drop "Ralph Wiggum"-style project-branding prose
   from package metadata, file headers, mkdocs site description,

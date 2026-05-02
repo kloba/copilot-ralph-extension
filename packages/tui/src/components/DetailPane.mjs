@@ -11,6 +11,7 @@ export default function DetailPane({ snapshot }) {
     const excerpt = snapshot?.lastExcerpt;
     const reason = snapshot?.reason;
     const tokens = snapshot?.tokens ?? { input: 0, output: 0 };
+    const premiumRequests = snapshot?.premiumRequests;
     const stagnation = snapshot?.stagnationStreak ?? 0;
     const status = snapshot?.status ?? "idle";
 
@@ -22,6 +23,16 @@ export default function DetailPane({ snapshot }) {
         stagnation > 0 ? h(Text, null, "  ") : null,
         stagnation > 0 ? h(Text, { color: "yellow" }, "streak=" + stagnation) : null,
     );
+
+    // Premium-request row — hidden until the first credible value
+    // arrives. Cumulative-for-the-run, cost-weighted (per
+    // result.usage.premiumRequests in the Copilot CLI JSONL stream).
+    const premiumRow = Number.isFinite(premiumRequests)
+        ? h(Box, { flexDirection: "row" },
+            h(Text, { dimColor: true }, "premium req "),
+            h(Text, null, String(premiumRequests)),
+          )
+        : null;
 
     const reasonRow = reason
         ? h(Box, { flexDirection: "row" },
@@ -43,6 +54,7 @@ export default function DetailPane({ snapshot }) {
     },
         h(Text, { bold: true, underline: true }, "Detail"),
         tokenRow,
+        premiumRow,
         reasonRow,
         excerptBlock,
     );

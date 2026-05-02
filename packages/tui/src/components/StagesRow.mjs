@@ -122,11 +122,18 @@ export default function StagesRow({ snapshot }) {
         }
     }
 
+    // Issue #54 slice 1 — heading "Stages" matches the inside-
+    // border convention used by the rest of the panes (Timeline /
+    // DetailPane / TasksPane).
+    const heading = h(Text, { bold: true, underline: true }, "Stages");
+
     return h(Box, {
         borderStyle: "single",
         borderColor: "gray",
         paddingX: 1,
-        flexDirection: "row",
-        flexWrap: "wrap",
-    }, ...pills);
+        flexDirection: "column",
+    },
+        heading,
+        h(Box, { flexDirection: "row", flexWrap: "wrap" }, ...pills),
+    );
 }

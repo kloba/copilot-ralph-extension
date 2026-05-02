@@ -731,6 +731,32 @@ export function foldEvents(events) {
                 if (Number.isFinite(ev.premiumRequests) && ev.premiumRequests >= 0) {
                     snap.premiumRequests = ev.premiumRequests;
                 }
+                // Issue #54 slice 2a — live Timeline excerpt. The
+                // runner streams root-agent `assistant.message`
+                // content into `usage_update` events whenever 80+
+                // new chars accumulate so the in-flight iter row
+                // shows live progress instead of `(working…)`. Both
+                // `snap.lastExcerpt` (run-scope) and
+                // `iterations[last].excerpt` (per-iter) are updated
+                // together, gated by the same `endedAt == null` +
+                // iter-match check so a late event landing after
+                // `iteration_end` (e.g. delayed delivery during the
+                // iter rollover) cannot regress either surface to a
+                // stale value. The closed iter's excerpt stays as
+                // the canonical post-iter reduction wrote it, and
+                // lastExcerpt stays on the most-recent observed
+                // iter — preserving Detail/Timeline parity.
+                if (typeof ev.excerpt === "string" && ev.excerpt) {
+                    const last = snap.iterations[snap.iterations.length - 1];
+                    if (
+                        last
+                        && last.endedAt == null
+                        && (!Number.isFinite(ev.iteration) || last.iteration === ev.iteration)
+                    ) {
+                        last.excerpt = ev.excerpt;
+                        snap.lastExcerpt = ev.excerpt;
+                    }
+                }
                 break;
             }
             case "pause":

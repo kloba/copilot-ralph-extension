@@ -161,10 +161,18 @@ export default function Header({ snapshot }) {
           )
         : null;
 
+    // Issue #54 slice 1 — heading "Run" sits as the first child
+    // inside the bordered Box, matching the existing inside-border
+    // heading convention used by Timeline / DetailPane / TasksPane.
+    // The status badge (RUN / DONE / PAUSE) lives in the topRow
+    // right of the heading, so the heading is the user-facing pane
+    // label rather than a duplicate of the status.
+    const heading = h(Text, { bold: true, underline: true }, "Run");
+
     return h(Box, {
         borderStyle: "round",
         borderColor: "blue",
         paddingX: 1,
         flexDirection: "column",
-    }, topRow, workItemRow, backlogRow);
+    }, heading, topRow, workItemRow, backlogRow);
 }

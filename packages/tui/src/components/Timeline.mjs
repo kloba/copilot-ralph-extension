@@ -64,12 +64,29 @@ export default function Timeline({ snapshot, limit = DEFAULT_LIMIT }) {
             : kind === "pending" ? "cyan"
             : kind === "stagnant" ? "yellow"
             : "red";
+        // Issue #54 slice 2a — surface live excerpt for in-flight
+        // iters. When the iter has an excerpt set (mid-iter
+        // streaming via `usage_update` excerpt field, or post-iter
+        // `iteration_end`), render it. When the iter is in-flight
+        // (endedAt == null) and no excerpt has streamed yet, show
+        // a `(working…)` placeholder so the row signals progress
+        // rather than looking broken with `(no excerpt)`. Finished
+        // iters with no excerpt fall back to the historical
+        // placeholder so replay-fidelity for old runs is intact.
+        let excerptCell;
+        if (it.excerpt) {
+            excerptCell = h(Text, { dimColor: true }, truncate(it.excerpt, 80));
+        } else if (it.endedAt == null) {
+            excerptCell = h(Text, { dimColor: true }, "(working…)");
+        } else {
+            excerptCell = h(Text, { dimColor: true }, "(no excerpt)");
+        }
         return h(Box, { key: it.iteration, flexDirection: "row" },
             h(Text, { color }, GLYPH[kind]),
             h(Text, null, " "),
             h(Text, null, "#" + pad(it.iteration, totalWidth)),
             h(Text, null, "  "),
-            h(Text, { dimColor: true }, it.excerpt ? truncate(it.excerpt, 80) : "(no excerpt)"),
+            excerptCell,
         );
     });
 

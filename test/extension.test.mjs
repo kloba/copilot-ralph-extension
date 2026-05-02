@@ -7658,3 +7658,28 @@ test("adaptive_budget=true: strict bounds checks are unchanged (regression guard
     const r2 = validateArgs({ prompt: "go", max_iterations: 50, adaptive_budget: true, adaptive_max_total: 5 });
     assert.match(r2.error, /adaptive_max_total must be an integer in \[max_iterations=50,/);
 });
+
+test("docs/concepts.md pins the ralph_status one-line summary format (drift guard)", async () => {
+    // Iter 71 added a `textResultForLlm` summary line on every
+    // `ralph_status` result. Iter 77 documented its exact slot
+    // layout in docs/concepts.md so callers can rely on a stable
+    // contract. Pin the doc here so a future refactor that renames
+    // a slot — `iteration` → `iter`, drops the trailing `ms` unit,
+    // moves the `, tokens X/Y` segment, etc. — is forced to update
+    // the documentation alongside the code.
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const url = await import("node:url");
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const concepts = await fs.readFile(path.join(here, "..", "docs", "concepts.md"), "utf8");
+    // Active-loop format must mention every slot the handler emits.
+    assert.match(concepts, /## `ralph_status` one-line summary/, "section heading must exist");
+    assert.match(concepts, /iteration \{N\}\/\{M\}, elapsed \{ms\}ms/, "active-loop summary template must list iteration + elapsed slots in order");
+    assert.match(concepts, /tokens \{X\}\/\{Y\}/, "active-loop summary must document the optional tokens segment");
+    assert.match(concepts, /PAUSED — \{reason\}, for \{ms\}ms/, "active-loop summary must document the optional pause segment");
+    // Inactive branches must both be documented so a caller
+    // reading the doc can distinguish "no loop ever ran" from "a
+    // prior loop finished".
+    assert.match(concepts, /no active loop; last \{label\} \{reason\} after \{N\} iterations/, "inactive-with-last summary must be documented");
+    assert.match(concepts, /no active loop and no prior run in this session/, "inactive-with-no-prior-run summary must be documented");
+});

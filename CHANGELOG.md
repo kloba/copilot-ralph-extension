@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Documentation
+- `docs/concepts.md` now pins the exact slot layout of the
+  `ralph_status` `textResultForLlm` one-line summary (added in
+  iter 71). Documents both active-loop and inactive-loop
+  variants, calls out that `, tokens X/Y` only appears when
+  `max_tokens` was armed, and clarifies that `elapsed Nms` is
+  wall-clock (pause time included). A drift-guard test reads
+  `docs/concepts.md` at runtime and asserts the documented
+  template strings still match the handler's emit format, so a
+  refactor that renames a slot is forced to update the doc.
+
 ### Fixes
 - `validateArgs` now honours the documented "accept-and-ignore"
   contract for `adaptive_extension` and `adaptive_max_total` when

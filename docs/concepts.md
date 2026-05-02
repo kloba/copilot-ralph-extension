@@ -158,3 +158,57 @@ For the engineering-level walkthrough — how `extractUsage` and
 `creditUsage` thread together, where the rollups live, and which
 exact lines enforce the two contracts — see the
 [Token tracking section in `docs/ARCHITECTURE.md`](ARCHITECTURE.md).
+
+
+## `ralph_status` one-line summary
+
+Every `ralph_status` invocation returns a structured snapshot **plus**
+a single-line `textResultForLlm` summary so a model that reads only
+the prose result still sees the loop's pulse. The shape is fixed and
+intended to be parsed (or grepped) by tooling.
+
+### Active loop
+
+```
+{label}: iteration {N}/{M}, elapsed {ms}ms[, tokens {X}/{Y}][ (PAUSED — {reason}, for {ms}ms)]
+```
+
+Slot-by-slot:
+
+- `{label}` — the loop's display name (`ralph_loop`,
+  `self_improve`, or `grow_project`).
+- `iteration {N}/{M}` — current iteration count vs. the configured
+  `max_iterations`. `N` is the number of completed iterations, so
+  `0/{M}` means the loop is armed but no iteration has fired yet.
+- `elapsed {ms}ms` — milliseconds since arm-time, rounded down.
+  Pause time is **included** here (wall-clock); subtract
+  `paused_for_ms` from the structured snapshot if you need
+  active-only time.
+- `, tokens {X}/{Y}` — appears **only when** `max_tokens` was armed
+  (issue [#7](https://github.com/kloba/copilot-ralph-extension/issues/7)).
+  `X` is the cumulative input+output total credited so far; `Y` is
+  the configured cap. Loops without a cap omit this segment so
+  consumers do not see a misleading `tokens X/null`.
+- ` (PAUSED — {reason}, for {ms}ms)` — appears only when the loop
+  is currently paused. The em-dash + reason are omitted when no
+  reason was provided, leaving ` (PAUSED, for {ms}ms)`.
+
+### Inactive — prior run summary
+
+```
+no active loop; last {label} {reason} after {N} iterations
+```
+
+`{reason}` is one of the canonical finish reasons (`completion_promise`,
+`max_iterations`, `abort_promise`, `aborted`, `stagnation`,
+`max_tokens`, `send_error`, `user_stopped`, `detached`).
+
+### Inactive — first call in a fresh session
+
+```
+no active loop and no prior run in this session
+```
+
+This is the only case where `ralph_status` returns neither an
+active snapshot nor a `last` block. It is safe to call from any
+session, including before any loop has been armed.

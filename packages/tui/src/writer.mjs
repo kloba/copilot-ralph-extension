@@ -83,6 +83,25 @@ function assertSafeRunId(fnName, runId) {
     }
 }
 
+// Iter 159 — `readRunIndex` and `pruneRuns` both filter rows from
+// `index.jsonl` with the same "is this a usable armed-row?" predicate
+// (must be a non-null object whose `type === "armed"` and whose `runId`
+// is a non-empty-ish string). Centralising the check eliminates a
+// drift vector identical to the iter-154/155 lesson: when a future
+// hardening pass adds another precondition (e.g. `Number.isFinite(
+// obj.ts)`), it can land here once instead of being added to one
+// site and forgotten on the other. `pruneRuns` keeps its inline
+// `isPathTraversalRunId` guard separately because that gate has a
+// different policy (survivor, not skip) and a different error mode
+// (defence in depth against destructive `rmSync`).
+function isValidArmedIndexRow(obj) {
+    return Boolean(obj)
+        && typeof obj === "object"
+        && obj.type === "armed"
+        && typeof obj.runId === "string"
+        && obj.runId.length > 0;
+}
+
 /**
  * Build an event writer for a single run.
  *
@@ -248,7 +267,7 @@ export function readRunIndex({ fs = fsDefault, path = pathDefault, os = osDefaul
         } catch {
             continue;
         }
-        if (obj && obj.type === "armed" && typeof obj.runId === "string") out.push(obj);
+        if (isValidArmedIndexRow(obj)) out.push(obj);
     }
     return out.reverse();
 }
@@ -381,7 +400,7 @@ export function pruneRuns({
         if (!trimmed) continue;
         let obj;
         try { obj = JSON.parse(trimmed); } catch { continue; }
-        if (!obj || obj.type !== "armed" || typeof obj.runId !== "string") continue;
+        if (!isValidArmedIndexRow(obj)) continue;
         // Defence in depth: an index.jsonl row whose `runId` contains a
         // path separator or traversal segment must NEVER reach rmSync —
         // `path.join(root, "../etc")` resolves outside the runs root and

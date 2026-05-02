@@ -556,3 +556,47 @@ test("aggregateRuns: hand-edited iteration=Infinity (1e500) row is skipped, not 
     assert.equal(r.iters.max, 4, "iters.max must reflect the highest FINITE iteration only");
     assert.equal(r.iters.mean, 4, "iters.mean must reflect the highest FINITE iteration only");
 });
+
+test("pruneRuns: hand-edited empty-runId row does NOT delete the runs root (data-loss guard)", () => {
+    // Iter 159 — pre-iter-159, `pruneRuns` filtered index.jsonl rows
+    // with `typeof obj.runId === "string"` (empty string passes), and
+    // `isPathTraversalRunId("")` returns false (no /, no \, no ".."),
+    // so an empty-runId row could reach `path.join(root, "")` which
+    // resolves to `root` — and `fs.rmSync(root, {recursive: true,
+    // force: true})` would wipe the entire runs directory along with
+    // every legitimately-recorded run's events.jsonl. The writer never
+    // emits an empty runId (`makeRunId` requires a non-empty label),
+    // but a hand-edited or corrupted index.jsonl CAN. This is a true
+    // data-loss bug, not a theoretical one — `ralph-tui prune
+    // --older-than 0d` against a corrupted index would silently
+    // destroy a contributor's entire run history. The fix added an
+    // `obj.runId.length > 0` clause to the centralised
+    // `isValidArmedIndexRow` helper now used by both `readRunIndex`
+    // and `pruneRuns`. Pin the contract end-to-end: write an index
+    // with an empty-runId row alongside legitimate runs, prune, and
+    // assert the root still exists with the legitimate run dir
+    // intact (root must be untouched).
+    const root = mkTmp();
+    // Legitimate run that should survive (ts in the future, well past cutoff).
+    const aliveTs = Date.now() + 60_000;
+    fs.mkdirSync(path.join(root, "alive-1"), { recursive: true });
+    fs.writeFileSync(path.join(root, "alive-1", "events.jsonl"),
+        JSON.stringify({ type: "armed", ts: aliveTs, runId: "alive-1", label: "ralph_loop" }) + "\n");
+    // The DANGEROUS hand-edited row: empty runId, ts deep in the past.
+    fs.writeFileSync(path.join(root, "index.jsonl"),
+        JSON.stringify({ type: "armed", ts: aliveTs, runId: "alive-1", label: "ralph_loop" }) + "\n"
+        + JSON.stringify({ type: "armed", ts: 1, runId: "", label: "ralph_loop" }) + "\n");
+    // A canary file at the runs root: if pruneRuns wipes the root, the
+    // canary disappears and the assertion below fires red.
+    const canary = path.join(root, "canary.txt");
+    fs.writeFileSync(canary, "do-not-delete");
+
+    pruneRuns({ olderThanMs: 0, env: { RALPH_EVENTS_DIR: root } });
+
+    assert.equal(fs.existsSync(root), true, "runs root must NOT be deleted by an empty-runId row");
+    assert.equal(fs.existsSync(canary), true, "sibling files at runs root must NOT be deleted by an empty-runId row");
+    assert.equal(fs.existsSync(path.join(root, "alive-1")), true,
+        "legitimate run dirs that are not 'older than cutoff' must survive");
+    assert.equal(fs.readFileSync(canary, "utf8"), "do-not-delete",
+        "canary file content must be untouched (no partial-rm scenario)");
+});

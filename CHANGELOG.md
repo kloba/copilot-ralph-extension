@@ -77,6 +77,34 @@
   either value is caught at test time.
 
 ### Fixes
+- `pruneRuns` (the engine behind `ralph-tui prune`) no longer
+  treats an empty-string `runId` as a valid armed-row to delete.
+  Pre-iter-159 the row filter at the top of the loop checked
+  only `typeof obj.runId === "string"`, which an empty string
+  passes; `isPathTraversalRunId("")` ALSO returns false (no `/`,
+  no `\`, not `"."`, not `".."`). With both gates green, an
+  index.jsonl row of the form `{"type":"armed","runId":"",
+  "ts":1}` reached `path.join(root, "")` — which Node resolves
+  to `root` itself — and `fs.rmSync(root, {recursive: true,
+  force: true})` would have silently wiped the entire runs
+  directory along with every legitimately-recorded run's
+  events.jsonl. The writer never emits an empty runId
+  (`makeRunId` requires a non-empty `label`), but a hand-edited
+  or corrupted index.jsonl CAN — and `ralph-tui prune
+  --older-than 0d` would have triggered the wipe immediately.
+  Fix: extracted a centralised `isValidArmedIndexRow` helper
+  used by BOTH `readRunIndex` and `pruneRuns`, with an explicit
+  `obj.runId.length > 0` clause so an empty-string row is
+  treated like the other malformed rows (skipped). The shared
+  helper also closes the iter-154/155-style drift vector where
+  a future hardening pass (e.g. an `obj.ts` finiteness guard)
+  could land on one site and silently miss the other. Pinned
+  by an end-to-end test in `packages/tui/test/writer.test.mjs`
+  that writes a canary file at the runs root, prunes against a
+  corrupted index containing an empty-runId row, and asserts
+  both the root and the canary survive untouched.
+  Mutation-verified: removing the `length > 0` clause fires
+  the test red with the canary deleted.
 - `aggregateRuns` (the engine behind `ralph-tui stats`) now
   guards `obj.iteration` with `Number.isFinite` before letting
   it advance the per-run `lastIter`. Pre-iter-158 the loop only

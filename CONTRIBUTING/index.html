@@ -603,7 +603,7 @@
 </code></pre></div>
 <h2 id="style-conventions">Style conventions<a class="headerlink" href="#style-conventions" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Source files</strong>: <code>extension/extension.mjs</code> (SDK glue, ~30 lines) and <code>extension/handler.mjs</code> (controller, ~1.3kLOC). Keep the SDK layer thin — all logic that needs unit-testing belongs in <code>handler.mjs</code> so it can be exercised against a fake session.</li>
+<li><strong>Source files</strong>: <code>extension/extension.mjs</code> (SDK glue, ~30 lines) and <code>extension/handler.mjs</code> (controller, ~2.5kLOC). Keep the SDK layer thin — all logic that needs unit-testing belongs in <code>handler.mjs</code> so it can be exercised against a fake session.</li>
 <li><strong>No third-party deps.</strong> New runtime dependencies require a strong justification (security review, zero-fork ecosystem cost, etc.). Prefer Node built-ins.</li>
 <li><strong>Comments</strong>: only where context is non-obvious. The codebase already uses comments to explain <em>why</em> (rationale, edge cases, prompt-injection guards) rather than <em>what</em>.</li>
 <li><strong>Formatting</strong>: 4-space indentation, trailing commas in multi-line literals, double-quoted strings.</li>

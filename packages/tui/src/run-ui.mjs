@@ -27,6 +27,7 @@ import process from "node:process";
 
 import { tailEventsFile } from "./tail.mjs";
 import { readTuiVersion } from "./version.mjs";
+import { detectCaffeinate } from "./caffeinate.mjs";
 
 /**
  * @param {Object} args
@@ -58,6 +59,11 @@ export async function mountRunUi({ runId, eventsPath, onUserAbort }) {
             events: [],
             eventStream,
             appVersion: readTuiVersion(),
+            // Issue #75 — one-shot caffeinate detection at mount.
+            // Returns false on non-darwin without spawning a
+            // subprocess; on darwin walks the ppid ancestry once
+            // and caches for the process lifetime.
+            caffeinateActive: detectCaffeinate(),
             onUserAbort,
         }),
         { exitOnCtrlC: false, patchConsole: false },

@@ -6828,3 +6828,81 @@ test("`npm run check` is wired to scripts/check.mjs and exits 0 on a clean tree"
     assert.match(out.stdout, /Syntax-checked \d+ \.mjs files\./,
         "success output must include the CI-compatible marker line");
 });
+
+test("ralph_pause: pause-time assistant.message tokens are NOT credited to the loop budget", async () => {
+    // Reliability symmetric to iter 57's lastAssistantContent reset
+    // (which fixed completion/abort contamination from pause-time chat).
+    // Issue: while paused, the user chats freely with the agent. Each
+    // chat turn fires assistant.message events that include usage data.
+    // Without a paused-guard in onAssistantMessage, that usage gets
+    // credited via creditUsage to a.tokens.input / a.tokens.output —
+    // polluting the loop's token budget, byIteration breakdown, and
+    // potentially triggering the max_tokens cap or warn_at_pct
+    // threshold spuriously on the first post-resume idle.
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    // Fire iter 1 with real usage.
+    emitUsage(session, { input: 100, output: 20, content: "iter 1 ok" });
+    const a = controller.state.active;
+    const inputBeforePause = a.tokens.input;
+    const outputBeforePause = a.tokens.output;
+    const byIterLengthBeforePause = a.tokens.byIteration.length;
+    assert.equal(inputBeforePause, 100, "iter 1 usage must have been credited normally");
+    assert.equal(outputBeforePause, 20);
+    // Now pause and emit pause-time chat with hefty usage.
+    await pause.handler({});
+    emitUsage(session, { input: 999999, output: 7777, content: "long chat reply during pause" });
+    emitUsage(session, { input: 5000, output: 1000, content: "another chat reply" });
+    // Token state must be unchanged from before-pause snapshot.
+    assert.equal(a.tokens.input, inputBeforePause,
+        "pause-time chat input_tokens must NOT inflate the loop input budget");
+    assert.equal(a.tokens.output, outputBeforePause,
+        "pause-time chat output_tokens must NOT inflate the loop output budget");
+    assert.equal(a.tokens.byIteration.length, byIterLengthBeforePause,
+        "pause-time chat must NOT add entries to byIteration");
+    await resume.handler({});
+    // Sanity: post-resume usage is credited normally.
+    emitUsage(session, { input: 50, output: 10, content: "iter N+1 ok" });
+    assert.equal(a.tokens.input, inputBeforePause + 50,
+        "post-resume usage must be credited normally");
+});
+
+test("ralph_pause: pause-time chat with `max_tokens` would-be-exceeded does NOT terminate the loop", async () => {
+    // Concrete consequence of the byIteration/cumulative pollution test
+    // above: without the guard, a long pause-time conversation would
+    // push a.tokens past max_tokens and finish("max_tokens") would fire
+    // on the first post-resume idle. This pins the practical user-
+    // facing outcome.
+    const { session, controller } = await arm({ max_iterations: 10, max_tokens: 1000, min_iterations: 1 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    emitUsage(session, { input: 100, output: 10, content: "iter 1 ok" });
+    assert.ok(controller.state.active, "iter 1 must NOT trip the cap");
+    await pause.handler({});
+    // Burn way past the cap during pause.
+    emitUsage(session, { input: 5000, output: 5000, content: "extensive chat" });
+    emitUsage(session, { input: 5000, output: 5000, content: "more chat" });
+    await resume.handler({});
+    // Next post-resume iter advances normally — pause-time tokens did
+    // not push the cumulative total past max_tokens.
+    emitUsage(session, { input: 50, output: 5, content: "iter N+1 ok" });
+    assert.ok(controller.state.active, "loop must NOT have terminated on max_tokens from pause-time chat");
+    assert.notEqual(controller.state.lastResult?.reason, "max_tokens");
+});
+
+test("ralph_pause: pause-time content does NOT accumulate into state.lastAssistantContent", async () => {
+    // Iter 57 fix mitigated this via a resume-time reset; iter 59's
+    // top-of-handler paused-guard is the root-cause defense. Both
+    // should cooperate so even a partial future refactor that drops
+    // one still keeps the contract: pause-time content is invisible
+    // to the next iteration's evaluation.
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    runTurn(session, "iter 1 normal output");
+    await pause.handler({});
+    const beforePauseContent = controller.state.lastAssistantContent;
+    runTurn(session, "loud user-chat reply during pause that contains COMPLETE verbatim");
+    assert.equal(controller.state.lastAssistantContent, beforePauseContent,
+        "pause-time assistant.message content must NOT accumulate into lastAssistantContent");
+});

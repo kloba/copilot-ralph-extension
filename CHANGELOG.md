@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Fixes
+- `onAssistantMessage` now short-circuits when the
+  loop is paused, preventing pause-time chat from
+  polluting the loop's token budget. Iter 57 fixed
+  the completion/abort contamination via a resume-
+  time `lastAssistantContent` reset; iter 59
+  addresses the symmetric token pollution at the
+  root: while paused the user chats freely with
+  the agent, and each chat turn's usage data was
+  being credited via `creditUsage` to
+  `a.tokens.input` / `a.tokens.output` /
+  `byIteration` / `byModel` — inflating the loop's
+  cumulative budget and (for loops armed with a
+  `max_tokens` cap) potentially terminating the
+  loop on the first post-resume idle. The new
+  guard skips both token credit AND content
+  accumulation while paused; `observedMessageThis-
+  Fire` is still set so the post-resume idle isn't
+  stuck on queue-bloat protection when pause
+  happened between fire and first agent response.
+  Three tests pin: (1) token budget unchanged
+  across pause-time chat, (2) `max_tokens` cap
+  doesn't trip on pause-time usage, (3) pause-
+  time content doesn't reach `lastAssistantCont-
+  ent` (root-cause defense in addition to the
+  iter-57 resume-time reset).
+
 ### Internal
 - Add `npm run check` — a portable, zero-dep
   Node script (`scripts/check.mjs`) that walks

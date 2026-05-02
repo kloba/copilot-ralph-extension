@@ -1441,6 +1441,25 @@ export function createRalphController(opts = {}) {
         // Ignore sub-agent messages — see isSubAgentEvent() rationale.
         // Otherwise their content would be checked for completion/abort tokens.
         if (isSubAgentEvent(ev)) return;
+        // Issue #3 reliability: while paused, the user is chatting freely
+        // with the agent — those messages MUST NOT mutate loop state.
+        // The companion ralph_resume reset of lastAssistantContent (iter
+        // 57) only addressed the completion/abort contamination via
+        // content accumulation; this guard additionally prevents pause-
+        // time token usage from being credited to the loop's budget
+        // (a.tokens.input/output, byIteration, byModel — feeds the
+        // max_tokens cap and the warn_at_pct thresholds), and pause-
+        // time content from accumulating into state.lastAssistantContent
+        // in the first place. observedMessageThisFire is still set
+        // when applicable so the post-resume idle isn't stuck on
+        // queue-bloat protection (line 1505) when pause happened
+        // between fire and first agent response.
+        if (state.active?.paused) {
+            if (state.active.fireInFlight) {
+                state.active.observedMessageThisFire = true;
+            }
+            return;
+        }
         // Issue #7: credit token usage on this event (if any) before we
         // touch the rest of the state. Sub-agent events are excluded by
         // the guard above.

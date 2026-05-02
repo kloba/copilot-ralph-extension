@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Refactor
+- Extract `validateOptionalReasonField(toolName,
+  args)` shared between `ralph_stop` and
+  `ralph_pause`. The two handlers had byte-
+  identical type-guards inlined after the
+  iter-53 fix; centralising the check prevents
+  drift if a third loop-mutating tool ever
+  takes a `reason` field, and shrinks each
+  handler back to a one-line guard call. Pure
+  refactor — all 492 existing tests cover the
+  shared helper from both call sites.
+
 ### Fixes
 - `ralph_stop` and `ralph_pause` now reject a
   non-string `reason` with a clear typed error

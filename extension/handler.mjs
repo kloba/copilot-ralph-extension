@@ -815,6 +815,23 @@ function validateOptionalArgShape(label, args, knownKeys) {
     return shape ? failure(shape.error) : null;
 }
 
+// Shared `reason` type-guard for ralph_stop / ralph_pause. Both tools
+// expose an identical optional `reason: string` parameter that
+// parseUserReason silently coerces non-strings to null. Without this
+// guard a buggy caller passing `reason: 42` (or `reason: false`, or a
+// `reason: ["x"]` from a malformed array literal) saw success with the
+// note vanished — the buggy input was invisible. Returning a typed
+// failure preserves state.active untouched so the caller can retry.
+// `null` is intentionally accepted as the SDK's "not supplied"
+// sentinel; only non-null, non-string values trigger the rejection.
+function validateOptionalReasonField(toolName, args) {
+    const raw = args?.reason;
+    if (raw !== undefined && raw !== null && typeof raw !== "string") {
+        return failure(`${toolName}: reason must be a string (got ${describeArgType(raw)}).`);
+    }
+    return null;
+}
+
 // Single source of truth for the "no active loop" failure surfaced by
 // ralph_stop / ralph_pause / ralph_resume (and any future loop-mutating
 // tool). Centralising the wording prevents drift across handlers — every
@@ -1912,16 +1929,8 @@ export function createRalphController(opts = {}) {
                 // gate as ralph_loop so typos surface loudly.
                 const bad = validateOptionalArgShape("ralph_stop", args, RALPH_STOP_KEYS);
                 if (bad) return bad;
-                // Type-guard `reason` BEFORE parseUserReason silently
-                // coerces non-strings to null. Without this guard, a
-                // caller passing `reason: 123` (bug or templating
-                // accident) saw success with no recorded note — the
-                // original input vanished into a silent drop. Now the
-                // failure is loud, matching how ralph_loop validates
-                // every other typed field.
-                if (args?.reason !== undefined && args.reason !== null && typeof args.reason !== "string") {
-                    return failure(`ralph_stop: reason must be a string (got ${describeArgType(args.reason)}).`);
-                }
+                const reasonBad = validateOptionalReasonField("ralph_stop", args);
+                if (reasonBad) return reasonBad;
                 const { i, max, label } = state.active;
                 // parseUserReason: shared with ralph_pause. Flattens
                 // multi-line input + caps length + coerces empty to
@@ -1979,14 +1988,8 @@ export function createRalphController(opts = {}) {
                 if (!state.active) return noActiveLoopFailure("ralph_pause");
                 const bad = validateOptionalArgShape("ralph_pause", args, RALPH_PAUSE_KEYS);
                 if (bad) return bad;
-                // Type-guard `reason` BEFORE parseUserReason silently
-                // coerces non-strings to null. See ralph_stop for the
-                // same guard + rationale; both handlers pin the
-                // identical contract so the user gets a consistent
-                // error regardless of which tool they hit first.
-                if (args?.reason !== undefined && args.reason !== null && typeof args.reason !== "string") {
-                    return failure(`ralph_pause: reason must be a string (got ${describeArgType(args.reason)}).`);
-                }
+                const reasonBad = validateOptionalReasonField("ralph_pause", args);
+                if (reasonBad) return reasonBad;
                 const a = state.active;
                 const { i, max, label } = a;
                 if (a.paused) {

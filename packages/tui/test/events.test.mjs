@@ -59,6 +59,13 @@ test("EVENT_TYPES is the closed set documented in the issue", () => {
         // replay through this reader unchanged; the panel just shows
         // its "(waiting for session)" empty state.
         "session_attached",
+        // Issue #66 — per-iter git worktree lifecycle. Strictly
+        // additive (appended below the slice-3 / slice-9 / #57
+        // entries above); historical events.jsonl files keep
+        // replaying through this reader unchanged.
+        "worktree_created",
+        "worktree_removed",
+        "worktree_kept",
     ]);
 });
 
@@ -1495,4 +1502,135 @@ test("foldEvents: malformed session_attached (empty sessionId) is a no-op", () =
     ];
     const snap = foldEvents(events);
     assert.equal(snap.sessionId, "good");
+});
+
+// ─── Issue #66 — per-iter git worktree events ──────────────────────
+
+test("serializeEvent: worktree_created round-trips through parseEventLine with path / branch / baseRef", () => {
+    const ev = {
+        type: "worktree_created",
+        ts: 100,
+        runId: "r-1",
+        label: "ralph-tui-self-improve",
+        iteration: 3,
+        path: "/runs/r-1/worktrees/iter-3",
+        branch: "autopilot/r-1/iter-3",
+        baseRef: "main",
+    };
+    const back = parseEventLine(serializeEvent(ev));
+    assert.deepEqual(back, ev);
+});
+
+test("serializeEvent: worktree_removed round-trips with path / branch (no baseRef)", () => {
+    const ev = {
+        type: "worktree_removed",
+        ts: 200,
+        runId: "r-1",
+        iteration: 3,
+        path: "/runs/r-1/worktrees/iter-3",
+        branch: "autopilot/r-1/iter-3",
+    };
+    const back = parseEventLine(serializeEvent(ev));
+    assert.deepEqual(back, ev);
+});
+
+test("serializeEvent: worktree_kept round-trips with path / branch", () => {
+    const ev = {
+        type: "worktree_kept",
+        ts: 300,
+        runId: "r-1",
+        iteration: 4,
+        path: "/runs/r-1/worktrees/iter-4",
+        branch: "autopilot/r-1/iter-4",
+    };
+    const back = parseEventLine(serializeEvent(ev));
+    assert.deepEqual(back, ev);
+});
+
+test("serializeEvent: worktree_created rejects missing path / branch", () => {
+    assert.throws(
+        () => serializeEvent({ type: "worktree_created", ts: 1, runId: "r", branch: "b" }),
+        /requires a non-empty path/,
+    );
+    assert.throws(
+        () => serializeEvent({ type: "worktree_created", ts: 1, runId: "r", path: "/p" }),
+        /requires a non-empty branch/,
+    );
+});
+
+test("serializeEvent: worktree events truncate oversized path/branch", () => {
+    const longPath = "/" + "x".repeat(2000);
+    const longBranch = "y".repeat(500);
+    const line = serializeEvent({
+        type: "worktree_kept",
+        ts: 1,
+        runId: "r",
+        path: longPath,
+        branch: longBranch,
+    });
+    const obj = JSON.parse(line);
+    assert.equal(obj.path.length, 1024);
+    assert.equal(obj.branch.length, 200);
+});
+
+test("foldEvents: worktree_created sets activeWorktree, worktree_removed clears it", () => {
+    const events = [
+        { type: "armed", ts: 1, runId: "r", label: "a", maxIterations: 1 },
+        { type: "worktree_created", ts: 2, runId: "r", iteration: 1, path: "/p1", branch: "b1", baseRef: "main" },
+    ];
+    let snap = foldEvents(events);
+    assert.deepEqual(snap.activeWorktree, {
+        path: "/p1",
+        branch: "b1",
+        baseRef: "main",
+        iteration: 1,
+        startedAt: 2,
+    });
+    events.push({ type: "worktree_removed", ts: 3, runId: "r", iteration: 1, path: "/p1", branch: "b1" });
+    snap = foldEvents(events);
+    assert.equal(snap.activeWorktree, null);
+    // No keptWorktree entry — removed iters don't get kept.
+    assert.equal(snap.keptWorktrees.length, 0);
+});
+
+test("foldEvents: worktree_kept appends to keptWorktrees AND clears activeWorktree", () => {
+    const events = [
+        { type: "armed", ts: 1, runId: "r", label: "a", maxIterations: 2 },
+        { type: "worktree_created", ts: 2, runId: "r", iteration: 1, path: "/p1", branch: "b1", baseRef: "main" },
+        { type: "worktree_kept", ts: 3, runId: "r", iteration: 1, path: "/p1", branch: "b1" },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.activeWorktree, null);
+    assert.equal(snap.keptWorktrees.length, 1);
+    assert.deepEqual(snap.keptWorktrees[0], {
+        path: "/p1",
+        branch: "b1",
+        iteration: 1,
+        ts: 3,
+    });
+});
+
+test("foldEvents: a fresh `armed` resets activeWorktree + keptWorktrees", () => {
+    const events = [
+        { type: "armed", ts: 1, runId: "r1", label: "a", maxIterations: 1 },
+        { type: "worktree_created", ts: 2, runId: "r1", iteration: 1, path: "/p1", branch: "b1", baseRef: "main" },
+        { type: "worktree_kept", ts: 3, runId: "r1", iteration: 1, path: "/p1", branch: "b1" },
+        { type: "armed", ts: 10, runId: "r2", label: "a", maxIterations: 1 },
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.activeWorktree, null);
+    assert.deepEqual(snap.keptWorktrees, []);
+});
+
+test("foldEvents: malformed worktree_created (missing fields) is a no-op", () => {
+    // Defence in depth: the serializer rejects malformed events but
+    // a hand-edited events.jsonl could carry them. The fold silently
+    // skips rather than poisoning the snapshot.
+    const events = [
+        { type: "armed", ts: 1, runId: "r", label: "a", maxIterations: 1 },
+        { type: "worktree_created", ts: 2, runId: "r", iteration: 1, branch: "b1" }, // no path
+        { type: "worktree_created", ts: 3, runId: "r", iteration: 1, path: "/p1" },  // no branch
+    ];
+    const snap = foldEvents(events);
+    assert.equal(snap.activeWorktree, null);
 });

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Features
+- Runner now executes each iter in a per-iter git worktree under `$RALPH_TUI_RUNS_DIR/<runId>/worktrees/iter-<N>/` for `--self-improve` and `--grow-project` (`--worktree` opts in for `--prompt`); merged iters tear down on END, unmerged ones are preserved on disk and emit a `worktree_kept` event with the absolute path. (#66)
+
+### Internal
+- Startup sweep removes orphan worktrees from prior `terminated` runs (~200 ms budget). (#66)
+
 ### Breaking
 - Binary renamed `ralph-tui` → `autopilot`. Bare invocation now starts `run --self-improve --fresh` (was: print help). Use `autopilot --help` for the previous help output. (#65)
 - Issue #50 — Removed the in-session Copilot CLI extension.

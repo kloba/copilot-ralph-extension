@@ -107,6 +107,20 @@
   `1 character.` and `N characters.`.
 
 ### Internal
+- `packages/tui/src/events.mjs`'s `serializeEvent` now uses
+  a surrogate-safe truncation helper (`safeSlice500`) for
+  the `excerpt` and `note` fields rather than a naïve
+  `s.slice(0, 500)`. Mirrors iter 115's
+  `extension/events-emit.mjs` `clipExcerpt` fix so every
+  disk writer in the workspace is surrogate-safe — defence
+  in depth: the production writer pre-truncates already,
+  but a future TUI-emitted event or a third-party consumer
+  of `serializeEvent` reaching this boundary cannot produce
+  a lone high surrogate. Pinned by two regression tests
+  (one for `excerpt`, one for `note`) in
+  `packages/tui/test/events.test.mjs` that walk every code
+  unit of the truncated output asserting every high
+  surrogate is paired with a low surrogate.
 - `install.sh` reorders the `FILES=(…)` array so the entry
   point `extension.mjs` is moved LAST (was first). The
   Copilot CLI loads `extension.mjs` and that file imports

@@ -70,6 +70,27 @@ export function makeRunId(label, startedAt) {
 }
 
 /**
+ * Truncate `s` to at most 500 characters without splitting a UTF-16
+ * surrogate pair. A naïve `s.slice(0, 500)` can land between the
+ * high+low halves of a 4-byte char (emoji / astral plane) and emit a
+ * lone surrogate — technically valid UTF-16 but renders as a
+ * replacement glyph in most terminals AND breaks any consumer doing
+ * strict UTF-8 validation downstream. When the last kept code unit
+ * is a high surrogate (0xD800..0xDBFF), back off by one so the pair
+ * stays intact (we drop a single astral char rather than emit a lone
+ * half). Mirrors the inline guard in extension/events-emit.mjs's
+ * `clipExcerpt` and the `safeSliceEnd` helper in extension/handler.mjs.
+ *
+ * @param {string} s
+ * @returns {string}
+ */
+function safeSlice500(s) {
+    if (s.length <= 500) return s;
+    const code = s.charCodeAt(499);
+    return s.slice(0, code >= 0xD800 && code <= 0xDBFF ? 499 : 500);
+}
+
+/**
  * Serialize a LoopEvent to a single JSONL line (no trailing newline; the
  * writer appends one). Throws if the resulting payload exceeds
  * MAX_EVENT_LINE_BYTES so a runaway `excerpt` can't blow up the events file.
@@ -99,14 +120,14 @@ export function serializeEvent(ev) {
     if (Number.isFinite(ev.maxIterations)) out.maxIterations = ev.maxIterations;
     if (Number.isFinite(ev.minIterations)) out.minIterations = ev.minIterations;
     if (typeof ev.reason === "string") out.reason = ev.reason;
-    if (typeof ev.excerpt === "string") out.excerpt = ev.excerpt.slice(0, 500);
+    if (typeof ev.excerpt === "string") out.excerpt = safeSlice500(ev.excerpt);
     if (Number.isFinite(ev.streak)) out.streak = ev.streak;
     if (ev.tokens && typeof ev.tokens === "object") {
         const input = Number.isFinite(ev.tokens.input) ? ev.tokens.input : 0;
         const output = Number.isFinite(ev.tokens.output) ? ev.tokens.output : 0;
         out.tokens = { input, output };
     }
-    if (typeof ev.note === "string") out.note = ev.note.slice(0, 500);
+    if (typeof ev.note === "string") out.note = safeSlice500(ev.note);
 
     const line = JSON.stringify(out);
     if (Buffer.byteLength(line, "utf8") > MAX_EVENT_LINE_BYTES) {

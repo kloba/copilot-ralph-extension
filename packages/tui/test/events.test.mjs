@@ -172,3 +172,76 @@ test("foldEvents: a fresh `armed` resets iterations array (replay-with-multiple-
 test("foldEvents: rejects non-array input", () => {
     assert.throws(() => foldEvents(null), /must be an array/);
 });
+
+// Iter 117 — serializeEvent's excerpt/note truncation must not split a
+// UTF-16 surrogate pair at the 500-char boundary. Mirrors iter 115's
+// fix on the writer side (extension/events-emit.mjs's clipExcerpt) so
+// every disk writer in the workspace is surrogate-safe — defence in
+// depth: events-emit.mjs already pre-truncates, but a malicious or
+// malformed >500-char `excerpt`/`note` reaching this serializer (e.g.
+// via a future TUI-emitted event or a third-party consumer of
+// serializeEvent) must not produce a lone high surrogate.
+test("serializeEvent: excerpt truncation does not split a surrogate pair at the 500-char boundary", () => {
+    // Place 💀 (U+1F480, two code units 0xD83D + 0xDC80) at indices
+    // 499..500 so a naïve `s.slice(0, 500)` would keep the high
+    // surrogate at 499 and drop the low surrogate at 500.
+    const skull = String.fromCharCode(0xD83D, 0xDC80);
+    const excerpt = "x".repeat(499) + skull + skull.repeat(20);
+    assert.equal(excerpt.charCodeAt(499), 0xD83D, "test setup: index 499 must be the high surrogate");
+    assert.equal(excerpt.charCodeAt(500), 0xDC80, "test setup: index 500 must be the low surrogate");
+    const line = serializeEvent({
+        type: "iteration_end",
+        ts: 1,
+        runId: "r",
+        iteration: 1,
+        excerpt,
+    });
+    const parsed = JSON.parse(line);
+    // Walk every code unit of `parsed.excerpt`: every high surrogate
+    // must be immediately followed by a low surrogate.
+    for (let i = 0; i < parsed.excerpt.length; i++) {
+        const c = parsed.excerpt.charCodeAt(i);
+        if (c >= 0xD800 && c <= 0xDBFF) {
+            const next = parsed.excerpt.charCodeAt(i + 1);
+            assert.ok(
+                next >= 0xDC00 && next <= 0xDFFF,
+                `lone high surrogate at index ${i} (next code unit: 0x${(next || 0).toString(16)}) — serializeEvent split a surrogate pair`,
+            );
+            i += 1;
+        } else {
+            assert.ok(
+                !(c >= 0xDC00 && c <= 0xDFFF),
+                `unmatched low surrogate at index ${i} — serializeEvent produced an invalid UTF-16 string`,
+            );
+        }
+    }
+    // Length stays ≤ 500 (the guard can only ever shrink the result).
+    assert.ok(parsed.excerpt.length <= 500, `clipped excerpt length must stay ≤ 500 (got ${parsed.excerpt.length})`);
+});
+
+test("serializeEvent: note truncation is also surrogate-safe", () => {
+    // Same construction targeting `note` rather than `excerpt`. Both
+    // fields share the truncation helper, so the guard applies to both.
+    const skull = String.fromCharCode(0xD83D, 0xDC80);
+    const note = "y".repeat(499) + skull + skull.repeat(10);
+    const line = serializeEvent({
+        type: "abort",
+        ts: 1,
+        runId: "r",
+        reason: "user_stop",
+        iteration: 1,
+        note,
+    });
+    const parsed = JSON.parse(line);
+    for (let i = 0; i < parsed.note.length; i++) {
+        const c = parsed.note.charCodeAt(i);
+        if (c >= 0xD800 && c <= 0xDBFF) {
+            const next = parsed.note.charCodeAt(i + 1);
+            assert.ok(next >= 0xDC00 && next <= 0xDFFF, `lone high surrogate in note at index ${i}`);
+            i += 1;
+        } else {
+            assert.ok(!(c >= 0xDC00 && c <= 0xDFFF), `unmatched low surrogate in note at index ${i}`);
+        }
+    }
+    assert.ok(parsed.note.length <= 500);
+});

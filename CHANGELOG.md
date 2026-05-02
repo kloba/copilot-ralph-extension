@@ -553,6 +553,25 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Behavioural coverage for `readRunIndex`'s rejection of
+  empty-runId / missing-runId / non-string-runId rows in
+  `packages/tui/test/writer.test.mjs`. The iter-159 fix
+  centralised the row-validation predicate into
+  `isValidArmedIndexRow` (used by BOTH `readRunIndex` and
+  `pruneRuns`), but iter 159 only pinned the new
+  `obj.runId.length > 0` clause end-to-end via the pruneRuns
+  data-loss canary test. Without a matching read-path pin, a
+  future maintainer who re-inlines the helper "because it
+  looks redundant" — or who refactors it into per-clause
+  checks — could silently drop the empty-runId rejection on
+  the read side; the TUI's `list` / `watch` / `replay`
+  commands would then start trying to render `{runId: ""}`
+  entries and fail in increasingly opaque ways. New test
+  writes index.jsonl with four invalid shapes (empty string,
+  missing field, number, null) plus one legitimate row and
+  asserts only the legitimate row survives. Mutation-
+  verified: dropping the `length > 0` clause fires both this
+  test AND the iter-159 pruneRuns canary red.
 - Pin `formatEventLine`'s `min=N` segment as type-gated to
   `armed` events in `packages/tui/test/plain.test.mjs`. The
   defensive `&& ev.type === "armed"` clause in plain.mjs

@@ -600,3 +600,42 @@ test("pruneRuns: hand-edited empty-runId row does NOT delete the runs root (data
     assert.equal(fs.readFileSync(canary, "utf8"), "do-not-delete",
         "canary file content must be untouched (no partial-rm scenario)");
 });
+
+test("readRunIndex: empty-runId / missing-runId / non-string-runId rows are skipped (iter-159 helper)", () => {
+    // Iter 160 — the iter-159 isValidArmedIndexRow helper is shared
+    // between `readRunIndex` and `pruneRuns`. Iter 159 pinned the
+    // empty-string case end-to-end through pruneRuns (the data-loss
+    // path), but the matching readRunIndex behaviour was only
+    // implicitly exercised by the existing `skips malformed lines`
+    // test which covers "not json" / `type === "weird"` / blank
+    // lines — three shapes the OLD predicate already rejected. The
+    // NEW shapes that iter 159's helper introduced (or made stricter)
+    // need their own behavioural pin so a future maintainer who
+    // refactors the helper into per-clause checks (or re-inlines
+    // it because "the helper looks redundant") can't silently
+    // regress the rejection contract on the read path. Without
+    // this test, dropping `obj.runId.length > 0` from the helper
+    // would only fire the pruneRuns canary test red — readRunIndex
+    // would happily start emitting `{runId: ""}` entries, which
+    // the TUI's `list` / `watch` / `replay` commands would then
+    // try to render (and fail at, in increasingly opaque ways).
+    const root = mkTmp();
+    const indexPath = path.join(root, "index.jsonl");
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(indexPath, [
+        // Empty-string runId: rejected by `obj.runId.length > 0`.
+        JSON.stringify({ type: "armed", ts: 1, runId: "", label: "ralph_loop" }),
+        // Missing runId entirely: rejected by `typeof obj.runId === "string"`.
+        JSON.stringify({ type: "armed", ts: 2, label: "ralph_loop" }),
+        // Non-string runId (number): rejected by typeof check.
+        JSON.stringify({ type: "armed", ts: 3, runId: 42, label: "ralph_loop" }),
+        // Null runId: rejected by typeof check (typeof null === "object").
+        JSON.stringify({ type: "armed", ts: 4, runId: null, label: "ralph_loop" }),
+        // The one legitimate row — must survive to prove the filter
+        // isn't accidentally rejecting valid input.
+        JSON.stringify({ type: "armed", ts: 5, runId: "real-1", label: "ralph_loop" }),
+    ].join("\n") + "\n");
+    const entries = readRunIndex({ env: { RALPH_EVENTS_DIR: root } });
+    assert.equal(entries.length, 1, "only the legitimate row should survive (4 invalid shapes rejected)");
+    assert.equal(entries[0].runId, "real-1", "the surviving row must be the one with the non-empty string runId");
+});

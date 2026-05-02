@@ -10,6 +10,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 let render, React, App, Header, Timeline, LiveOutputPane, Controls, truncateTimeline, formatElapsed;
+let formatDuration, formatTokenDelta, computeTokenDelta, computePremiumDelta;
 let inkAvailable = false;
 try {
     ({ render } = await import("ink-testing-library"));
@@ -21,6 +22,10 @@ try {
     const TimelineMod = await import("../src/components/Timeline.mjs");
     Timeline = TimelineMod.default;
     truncateTimeline = TimelineMod.truncate;
+    formatDuration = TimelineMod.formatDuration;
+    formatTokenDelta = TimelineMod.formatTokenDelta;
+    computeTokenDelta = TimelineMod.computeTokenDelta;
+    computePremiumDelta = TimelineMod.computePremiumDelta;
     LiveOutputPane = (await import("../src/components/LiveOutputPane.mjs")).default;
     Controls = (await import("../src/components/Controls.mjs")).default;
     inkAvailable = true;
@@ -1186,4 +1191,200 @@ test("Issue #54 slice 2a: Timeline shows live-streamed excerpt on the in-flight 
     assert.match(out, /ORIENT: scanning the backlog/);
     assert.doesNotMatch(out, /working…/);
     assert.doesNotMatch(out, /no excerpt/);
+});
+
+// ─── Issue #56 — per-iter stats cells on Timeline rows ────────────
+
+test("Issue #56 slice 1: formatDuration < 60s renders one decimal seconds", { skip }, () => {
+    assert.equal(formatDuration(0), "0.0s");
+    assert.equal(formatDuration(4200), "4.2s");
+    assert.equal(formatDuration(59999), "60.0s");
+});
+
+test("Issue #56 slice 1: formatDuration >= 60s renders MmSSs", { skip }, () => {
+    assert.equal(formatDuration(60000), "1m0s");
+    assert.equal(formatDuration(83000), "1m23s");
+    assert.equal(formatDuration(3600000), "60m0s");
+});
+
+test("Issue #56 slice 1: formatDuration NaN / negative renders dash", { skip }, () => {
+    assert.equal(formatDuration(NaN), "—");
+    assert.equal(formatDuration(undefined), "—");
+    assert.equal(formatDuration(null), "—");
+    assert.equal(formatDuration(-1), "—");
+});
+
+test("Issue #56 slice 1: Timeline closed iter renders duration cell from endedAt - startedAt", { skip }, () => {
+    const snapshot = {
+        iterations: [
+            { iteration: 1, startedAt: 1000, endedAt: 5200, excerpt: "ok" },
+        ],
+    };
+    const out = render(React.createElement(Timeline, { snapshot })).lastFrame();
+    assert.match(out, /4\.2s/);
+});
+
+test("Issue #56 slice 1: Timeline in-flight iter ticks live elapsed against `now`", { skip }, () => {
+    const snapshot = {
+        iterations: [
+            { iteration: 1, startedAt: 0, endedAt: null, excerpt: null },
+        ],
+    };
+    // Pass a deterministic `now` so the elapsed cell renders 5.0s.
+    const out = render(React.createElement(Timeline, { snapshot, now: 5000 })).lastFrame();
+    assert.match(out, /5\.0s/);
+});
+
+test("Issue #56 slice 1: Timeline 0-ms iter renders 0.0s (not NaN / -0)", { skip }, () => {
+    const snapshot = {
+        iterations: [
+            { iteration: 1, startedAt: 1000, endedAt: 1000, excerpt: "instant" },
+        ],
+    };
+    const out = render(React.createElement(Timeline, { snapshot })).lastFrame();
+    assert.match(out, /0\.0s/);
+    assert.doesNotMatch(out, /NaN/);
+});
+
+test("Issue #56 slice 2: formatTokenDelta renders 1.2k for >= 1000, raw int otherwise", { skip }, () => {
+    assert.equal(formatTokenDelta(0), "0");
+    assert.equal(formatTokenDelta(42), "42");
+    assert.equal(formatTokenDelta(999), "999");
+    assert.equal(formatTokenDelta(1000), "1.0k");
+    assert.equal(formatTokenDelta(1234), "1.2k");
+    assert.equal(formatTokenDelta(12500), "12.5k");
+});
+
+test("Issue #56 slice 2: formatTokenDelta null/non-finite renders dash", { skip }, () => {
+    assert.equal(formatTokenDelta(null), "—");
+    assert.equal(formatTokenDelta(undefined), "—");
+    assert.equal(formatTokenDelta(NaN), "—");
+});
+
+test("Issue #56 slice 2: computeTokenDelta sums input+output minus tokensAtStart", { skip }, () => {
+    const iter = { tokensAtStart: { input: 100, output: 200 } };
+    const snap = { tokens: { input: 150, output: 1450 } };
+    // (150+1450) - (100+200) = 1300
+    assert.equal(computeTokenDelta(iter, snap), 1300);
+});
+
+test("Issue #56 slice 2: computeTokenDelta returns null when tokensAtStart missing (replay-safe)", { skip }, () => {
+    const iter = { iteration: 1 };  // old iter without tokensAtStart
+    const snap = { tokens: { input: 100, output: 200 } };
+    assert.equal(computeTokenDelta(iter, snap), null);
+});
+
+test("Issue #56 slice 2: Timeline renders '1.2k tok' for a closed iter with token delta >= 1000", { skip }, () => {
+    const snapshot = {
+        iterations: [
+            { iteration: 1, startedAt: 0, endedAt: 1000,
+              tokensAtStart: { input: 0, output: 0 }, excerpt: "ok" },
+        ],
+        tokens: { input: 0, output: 1234 },
+    };
+    const out = render(React.createElement(Timeline, { snapshot })).lastFrame();
+    assert.match(out, /1\.2k tok/);
+});
+
+test("Issue #56 slice 2: Timeline renders dash for old iter without tokensAtStart (replay-safety)", { skip }, () => {
+    const snapshot = {
+        iterations: [
+            { iteration: 1, startedAt: 0, endedAt: 1000, excerpt: "ok" }, // no tokensAtStart
+        ],
+        tokens: { input: 0, output: 1234 },
+    };
+    const out = render(React.createElement(Timeline, { snapshot })).lastFrame();
+    // The token cell renders `—` standalone (not `— tok`) for missing data.
+    assert.match(out, /—/);
+    assert.doesNotMatch(out, /1\.2k/);
+});
+
+test("Issue #56 slice 2: Timeline in-flight iter ticks token delta from live snap.tokens", { skip }, () => {
+    const snapshot = {
+        iterations: [
+            { iteration: 1, startedAt: 0, endedAt: null,
+              tokensAtStart: { input: 0, output: 0 }, excerpt: "working" },
+        ],
+        tokens: { input: 0, output: 500 },  // 500 tok delta live
+    };
+    const out = render(React.createElement(Timeline, { snapshot, now: 1000 })).lastFrame();
+    assert.match(out, /500 tok/);
+});
+
+test("Issue #56 slice 3: computePremiumDelta returns null when both null (hidden cell)", { skip }, () => {
+    const iter = { premiumAtStart: null };
+    const snap = { premiumRequests: null };
+    assert.equal(computePremiumDelta(iter, snap), null);
+});
+
+test("Issue #56 slice 3: computePremiumDelta returns delta when both present", { skip }, () => {
+    const iter = { premiumAtStart: 5 };
+    const snap = { premiumRequests: 8 };
+    assert.equal(computePremiumDelta(iter, snap), 3);
+});
+
+test("Issue #56 slice 3: Timeline renders ⊕N for premium delta when data present", { skip }, () => {
+    const snapshot = {
+        iterations: [
+            { iteration: 1, startedAt: 0, endedAt: 1000,
+              tokensAtStart: { input: 0, output: 0 },
+              premiumAtStart: 0, excerpt: "ok" },
+        ],
+        tokens: { input: 0, output: 0 },
+        premiumRequests: 2,
+    };
+    const out = render(React.createElement(Timeline, { snapshot })).lastFrame();
+    assert.match(out, /⊕2/);
+});
+
+test("Issue #56 slice 3: Timeline hides premium cell when both snap and iter values null", { skip }, () => {
+    const snapshot = {
+        iterations: [
+            { iteration: 1, startedAt: 0, endedAt: 1000,
+              tokensAtStart: { input: 0, output: 0 },
+              premiumAtStart: null, excerpt: "ok" },
+        ],
+        tokens: { input: 0, output: 0 },
+        premiumRequests: null,
+    };
+    const out = render(React.createElement(Timeline, { snapshot })).lastFrame();
+    assert.doesNotMatch(out, /⊕/);
+});
+
+test("Issue #56 slice 4: Timeline renders 📁N for filesChanged when present", { skip }, () => {
+    const snapshot = {
+        iterations: [
+            { iteration: 1, startedAt: 0, endedAt: 1000,
+              tokensAtStart: { input: 0, output: 0 },
+              filesChanged: 3, excerpt: "ok" },
+        ],
+        tokens: { input: 0, output: 0 },
+    };
+    const out = render(React.createElement(Timeline, { snapshot })).lastFrame();
+    assert.match(out, /📁3/);
+});
+
+test("Issue #56 slice 4: Timeline hides files-changed cell when filesChanged absent (replay-safety)", { skip }, () => {
+    const snapshot = {
+        iterations: [
+            { iteration: 1, startedAt: 0, endedAt: 1000,
+              tokensAtStart: { input: 0, output: 0 }, excerpt: "ok" }, // no filesChanged
+        ],
+        tokens: { input: 0, output: 0 },
+    };
+    const out = render(React.createElement(Timeline, { snapshot })).lastFrame();
+    assert.doesNotMatch(out, /📁/);
+});
+
+test("Issue #56 slice 4: Timeline renders 📁0 (dim) when filesChanged is 0", { skip }, () => {
+    const snapshot = {
+        iterations: [
+            { iteration: 1, startedAt: 0, endedAt: 1000,
+              tokensAtStart: { input: 0, output: 0 },
+              filesChanged: 0, excerpt: "ok" },
+        ],
+        tokens: { input: 0, output: 0 },
+    };
+    const out = render(React.createElement(Timeline, { snapshot })).lastFrame();
+    assert.match(out, /📁0/);
 });

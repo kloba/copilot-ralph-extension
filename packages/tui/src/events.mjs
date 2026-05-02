@@ -352,6 +352,13 @@ export function serializeEvent(ev) {
     if (Number.isFinite(ev.premiumRequests) && ev.premiumRequests >= 0) {
         out.premiumRequests = ev.premiumRequests;
     }
+    // Per-iter file-change count (committed delta + uncommitted
+    // churn). Strictly opt-in: emitted only when finite and
+    // non-negative so a missing field on old runs renders dim (`—`)
+    // in the Timeline rather than `0` (which would be a lie).
+    if (Number.isFinite(ev.filesChanged) && ev.filesChanged >= 0) {
+        out.filesChanged = ev.filesChanged;
+    }
     if (typeof ev.note === "string") out.note = safeSliceChars(ev.note, 500);
 
     // Stage-level fields (issue #48 slice 1). Strictly opt-in: only
@@ -784,6 +791,13 @@ export function foldEvents(events) {
                         startedAt: ev.ts,
                         endedAt: null,
                         excerpt: null,
+                        // Snapshot cumulative-for-the-run counters at
+                        // iter open so the Timeline can derive
+                        // per-iter deltas (tokens, premium). The
+                        // `filesChanged` field is set later on
+                        // `iteration_end`.
+                        tokensAtStart: { ...snap.tokens },
+                        premiumAtStart: snap.premiumRequests,
                     });
                 }
                 snap.status = "running";
@@ -800,6 +814,12 @@ export function foldEvents(events) {
                 if (last && (!Number.isFinite(ev.iteration) || last.iteration === ev.iteration)) {
                     last.endedAt = ev.ts;
                     if (typeof ev.excerpt === "string") last.excerpt = ev.excerpt;
+                    // Strictly opt-in: missing on old runs leaves
+                    // the iter without a `filesChanged` field so
+                    // the Timeline cell stays hidden (replay-safe).
+                    if (Number.isFinite(ev.filesChanged) && ev.filesChanged >= 0) {
+                        last.filesChanged = ev.filesChanged;
+                    }
                 }
                 if (typeof ev.excerpt === "string") snap.lastExcerpt = ev.excerpt;
                 if (ev.tokens) {

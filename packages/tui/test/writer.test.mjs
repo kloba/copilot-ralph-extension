@@ -513,3 +513,46 @@ test("traversal-guard error message prefixes the calling function name (assertSa
         "createEventWriter must prefix its own name (NOT resolveRunEventsPath's) in the traversal-guard TypeError",
     );
 });
+
+test("aggregateRuns: hand-edited iteration=Infinity (1e500) row is skipped, not propagated to iters.max/mean", () => {
+    // Iter 158 — JSON.parse('{"iteration": 1e500}') yields
+    // `{iteration: Infinity}` because the literal overflows IEEE-754
+    // double precision. Pre-iter-158, aggregateRuns' inner loop guarded
+    // only `typeof obj.iteration === "number"` (Infinity passes), so the
+    // value propagated to lastIter → iterCounts → `iters.max = Infinity`
+    // and `iters.mean = NaN`/Infinity (Infinity participates in the sum;
+    // dividing by length stays Infinity, but a mix of Infinity + finite
+    // values yields NaN paths). The fix added a `Number.isFinite` guard.
+    // Pin the contract so a future "simplify the conditional" refactor
+    // that drops the guard fires this test red.
+    //
+    // The writer never emits Infinity (`JSON.stringify(Infinity)` → "null"),
+    // but a hand-edited or corrupted events.jsonl row CAN reach
+    // aggregateRuns through `readEventsFile`; the function is best-effort
+    // and must not let a single malformed row poison the whole stats
+    // output for `ralph-tui stats`.
+    const root = mkTmp();
+    fs.mkdirSync(path.join(root, "evil-1"), { recursive: true });
+    // Hand-write the events.jsonl directly (writeRun would JSON.stringify
+    // and lose the literal). The sane-row + crazy-row combination pins
+    // that the OTHER row's iteration (a finite 4) wins.
+    const lines = [
+        JSON.stringify({ type: "armed", ts: 1, runId: "evil-1", label: "ralph_loop" }),
+        JSON.stringify({ type: "iteration_end", ts: 2, runId: "evil-1", iteration: 4 }),
+        // Hand-injected literal — Number.MAX_VALUE * 2 → Infinity in JS.
+        '{"type": "iteration_end", "ts": 3, "runId": "evil-1", "iteration": 1e500}',
+        JSON.stringify({ type: "complete", ts: 4, runId: "evil-1", reason: "max_iterations", iteration: 4 }),
+    ];
+    fs.writeFileSync(path.join(root, "evil-1", "events.jsonl"), lines.join("\n") + "\n");
+    fs.writeFileSync(path.join(root, "index.jsonl"),
+        JSON.stringify({ type: "armed", ts: 1, runId: "evil-1", label: "ralph_loop" }) + "\n");
+    const r = aggregateRuns({ env: { RALPH_EVENTS_DIR: root } });
+    assert.equal(Number.isFinite(r.iters.max), true,
+        "iters.max must stay finite even with a hand-edited 1e500 iteration row");
+    assert.equal(Number.isFinite(r.iters.mean), true,
+        "iters.mean must stay finite even with a hand-edited 1e500 iteration row");
+    // The crazy row was skipped, so the surviving max comes from the
+    // sane finite rows (iteration=4 in two events).
+    assert.equal(r.iters.max, 4, "iters.max must reflect the highest FINITE iteration only");
+    assert.equal(r.iters.mean, 4, "iters.mean must reflect the highest FINITE iteration only");
+});

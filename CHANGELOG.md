@@ -77,6 +77,26 @@
   either value is caught at test time.
 
 ### Fixes
+- `aggregateRuns` (the engine behind `ralph-tui stats`) now
+  guards `obj.iteration` with `Number.isFinite` before letting
+  it advance the per-run `lastIter`. Pre-iter-158 the loop only
+  checked `typeof obj.iteration === "number"`, which `Infinity`
+  passes — and `JSON.parse('{"iteration": 1e500}')` yields
+  `{iteration: Infinity}` because the literal overflows IEEE-754
+  double precision. A hand-edited or corrupted events.jsonl row
+  with such a literal would propagate into `iters.max =
+  Infinity` and `iters.mean = NaN`/Infinity, silently breaking
+  the stats output for the entire index. The writer never emits
+  Infinity (`JSON.stringify(Infinity)` → `"null"`), so this only
+  bites for hand-edits, but `aggregateRuns` is best-effort by
+  contract: the surrounding `try/catch` already silently skips
+  malformed JSON rows, so skipping a non-finite iteration value
+  is the consistent behaviour. Pinned by a regression test in
+  `packages/tui/test/writer.test.mjs` that hand-writes a
+  `1e500` row alongside finite rows and asserts both `iters.max`
+  and `iters.mean` stay finite (and reflect the surviving
+  finite values). Mutation-verified: dropping the
+  `Number.isFinite` guard fires the test red.
 - `ralph_resume` now clamps `pausedFor` to `>= 0` symmetric
   with the `Math.max(0, …)` guard `finish()` already uses on
   the same window. Pre-iter-154 a system-clock rewind during

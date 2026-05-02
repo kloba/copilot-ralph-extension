@@ -288,7 +288,15 @@ export function aggregateRuns({
             let obj;
             try { obj = JSON.parse(t); } catch { continue; }
             if (!obj || typeof obj.type !== "string") continue;
-            if (typeof obj.iteration === "number" && obj.iteration > lastIter) lastIter = obj.iteration;
+            // Reliability: a hand-edited or corrupted events.jsonl row with
+            // a huge numeric literal (e.g. `1e500`) parses as Infinity in
+            // JS — without `Number.isFinite` it would propagate to
+            // `iters.max = Infinity` and `iters.mean = NaN`/Infinity,
+            // silently breaking `ralph-tui stats`. The writer never emits
+            // Infinity (JSON.stringify(Infinity) = "null"), so this only
+            // bites for hand-edited rows; treat them like the other
+            // malformed cases above and skip the iteration value.
+            if (typeof obj.iteration === "number" && Number.isFinite(obj.iteration) && obj.iteration > lastIter) lastIter = obj.iteration;
             if (obj.type === "complete" || obj.type === "abort") terminal = obj;
         }
         if (terminal) {

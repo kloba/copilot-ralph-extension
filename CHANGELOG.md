@@ -411,6 +411,19 @@
   invariant scan.
 
 ### Internal
+- Aligned `packages/tui/package.json` metadata with the root
+  package: added the missing `repository` (with
+  `directory: "packages/tui"` so npm's monorepo subdir hint
+  points at the right path), `bugs`, `homepage`, `author`, and
+  `keywords` fields. The TUI is shipped via the dogfood install
+  path and documented as `npx ralph-tui` in `docs/faq.md`; if
+  the `private: true` flag is ever flipped on a release branch,
+  registry/source links would have silently degraded without
+  these fields. A drift-guard test in
+  `packages/tui/test/bin.test.mjs` pins the TUI's
+  `repository.url`, `bugs.url`, and `author` to match the root
+  `package.json` — a future edit to either side forces a
+  matching edit to the other.
 - Added the missing `"author": "Taras Kloba"` field to
   `package.json`, matching the canonical copyright holder
   declared in `LICENSE` since the repo was created. Tooling

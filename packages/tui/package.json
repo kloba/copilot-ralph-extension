@@ -4,6 +4,25 @@
   "private": true,
   "type": "module",
   "description": "Terminal UI for visualizing live ralph_loop / self_improve / grow_project runs (issue #22).",
+  "author": "Taras Kloba",
+  "keywords": [
+    "github-copilot",
+    "copilot-cli",
+    "extension",
+    "ralph-wiggum",
+    "tui",
+    "ink",
+    "observability"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kloba/copilot-ralph-extension.git",
+    "directory": "packages/tui"
+  },
+  "bugs": {
+    "url": "https://github.com/kloba/copilot-ralph-extension/issues"
+  },
+  "homepage": "https://github.com/kloba/copilot-ralph-extension#readme",
   "bin": {
     "ralph-tui": "./bin/tui.mjs"
   },

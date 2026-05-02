@@ -497,3 +497,62 @@ test("packages/tui/README.md Subcommands block lists every shipped subcommand + 
         );
     }
 });
+
+test("packages/tui/package.json carries repository/bugs/author metadata aligned with the root package.json", () => {
+    // Iter 162 — packages/tui/package.json was missing the
+    // `repository`, `bugs`, `author`, and `keywords` fields that
+    // the root package.json carries (iter 151 added the missing
+    // root `author`, but the workspace package was forgotten).
+    // For a sub-package shipped via the dogfood install path AND
+    // documented as `npx ralph-tui` in docs/faq.md, the missing
+    // metadata silently degrades the registry listing if the
+    // `private: true` flag is ever flipped (e.g. a future release
+    // branch that publishes the TUI to npm separately). Adding
+    // `repository.directory: "packages/tui"` is the canonical npm
+    // hint for monorepo subdir packages and lets registry/source
+    // links point at the right path.
+    //
+    // Pin the contract: a future contributor that bumps the repo
+    // URL or author in the root MUST also bump it here, OR a CI
+    // failure surfaces the drift. Keeping the assertion narrow
+    // (URL substring + author equality) avoids brittleness on
+    // legitimate `keywords` evolution.
+    const tuiPkg = JSON.parse(readFileSync2(resolve(REPO_ROOT, "package.json"), "utf8"));
+    const rootPkg = JSON.parse(readFileSync2(resolve(REPO_ROOT, "..", "..", "package.json"), "utf8"));
+
+    assert.equal(typeof tuiPkg.repository, "object",
+        "TUI package.json must declare a repository object (npm metadata hygiene)");
+    assert.equal(tuiPkg.repository.type, "git", "repository.type must be 'git'");
+    assert.ok(
+        typeof tuiPkg.repository.url === "string"
+            && tuiPkg.repository.url.includes("kloba/copilot-ralph-extension"),
+        "TUI repository.url must reference the canonical kloba/copilot-ralph-extension repo",
+    );
+    assert.equal(
+        tuiPkg.repository.directory,
+        "packages/tui",
+        "TUI repository.directory must point at the workspace subdir for npm monorepo metadata",
+    );
+    // The TUI's repo URL must match the root's so a registry listing
+    // and the GitHub source view land on the same canonical URL.
+    assert.equal(
+        tuiPkg.repository.url,
+        rootPkg.repository.url,
+        "TUI repository.url must match root package.json (drift kills registry/source links)",
+    );
+    assert.equal(typeof tuiPkg.bugs, "object", "TUI package.json must declare a bugs object");
+    assert.equal(
+        tuiPkg.bugs.url,
+        rootPkg.bugs.url,
+        "TUI bugs.url must match root package.json (so issue links are consistent)",
+    );
+    assert.equal(
+        tuiPkg.author,
+        rootPkg.author,
+        "TUI author must match root package.json (single attribution source of truth)",
+    );
+    assert.ok(
+        Array.isArray(tuiPkg.keywords) && tuiPkg.keywords.length > 0,
+        "TUI package.json must declare a non-empty keywords array",
+    );
+});

@@ -7235,3 +7235,45 @@ test("ralph_status: tokens.max_tokens is null when no cap was armed", async () =
     assert.equal(r.status.tokens.output, 0);
     assert.equal(r.status.tokens.total, 0);
 });
+
+// Iter 68 — issue #7: ralph_status's `last` summary mirrors the live
+// `tokens` block so a post-finish status call surfaces the run's token
+// totals without forcing the caller to parse the terminal result.
+test("ralph_status: last summary surfaces tokens block (input/output/total)", async () => {
+    const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
+    const { ralph, status, session } = await armStatusable({ git });
+    await ralph.handler({ prompt: "go", max_iterations: 3, stagnation_limit: 0 });
+    // Credit some real tokens before completion so result.tokens is set.
+    emitUsage(session, { input: 5000, output: 2500 });
+    runTurn(session, "iter 2");
+    runTurn(session, "now COMPLETE");
+    const r = await status.handler({});
+    assert.equal(r.status.active, false);
+    assert.ok(r.status.last, "post-finish snapshot must include last summary");
+    assert.ok(r.status.last.tokens, "last summary must surface tokens block");
+    assert.equal(r.status.last.tokens.input, 5000);
+    assert.equal(r.status.last.tokens.output, 2500);
+    assert.equal(r.status.last.tokens.total, 7500);
+    // Per iter-67 minimalism, byIteration / byModel stay on state.lastResult,
+    // not on the snapshot.last.tokens block.
+    assert.equal(r.status.last.tokens.byIteration, undefined,
+        "byIteration must NOT bloat the snapshot's last.tokens block");
+    assert.equal(r.status.last.tokens.byModel, undefined,
+        "byModel must NOT bloat the snapshot's last.tokens block");
+});
+
+test("ralph_status: last.tokens omitted when run consumed zero tokens", async () => {
+    const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
+    const { ralph, status, session } = await armStatusable({ git });
+    await ralph.handler({ prompt: "go", max_iterations: 3, stagnation_limit: 0 });
+    runTurn(session, "iter 1 no usage");
+    runTurn(session, "iter 2 COMPLETE no usage");
+    const r = await status.handler({});
+    assert.equal(r.status.active, false);
+    assert.ok(r.status.last);
+    // result.tokens is only attached when input>0 || output>0 (per the
+    // existing finish() guard) — last.tokens must mirror that omission so
+    // the snapshot doesn't pretend to know what it doesn't.
+    assert.equal(r.status.last.tokens, undefined,
+        "last.tokens must be omitted when result.tokens was not set");
+});

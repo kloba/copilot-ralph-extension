@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Fixes
+- `ralph_status`'s `last` summary (returned when no loop is active)
+  now surfaces a `tokens: { input, output, total }` block when the
+  prior run actually credited tokens, mirroring the live `tokens`
+  block added to the active snapshot in iter 67. Previously the data
+  was reachable only by parsing the terminal `result.tokens` from the
+  loop's return value — a post-mortem `ralph_status` call could see
+  iteration count / reason / duration but had no view of how many
+  tokens the run consumed. Skips `byIteration` / `byModel` for
+  snapshot-size parity with the live block (those stay on
+  `state.lastResult.tokens` for callers that want per-iter or per-
+  model detail). Omitted entirely when the run consumed zero tokens
+  so the snapshot doesn't pretend to know what it doesn't. Two tests
+  pin the new shape — one with credited tokens, one with the zero-
+  usage omission contract.
+
 ### Features
 - `ralph_status` now surfaces a `tokens` block on the live snapshot
   (`{ input, output, total, max_tokens }`) so the user can monitor

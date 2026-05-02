@@ -1777,6 +1777,20 @@ export function createRalphController(opts = {}) {
                     preview: r.preview,
                 };
                 if (r.note) out.last.note = r.note;
+                // Issue #7: mirror the live `tokens` block on the
+                // post-finish summary so a user calling ralph_status after
+                // the loop ends can still see how many tokens the run
+                // consumed without parsing the terminal result. Skip
+                // byIteration / byModel to match the live snapshot's
+                // minimalism — those stay on state.lastResult.tokens for
+                // callers who want per-iter / per-model detail.
+                if (r.tokens) {
+                    out.last.tokens = {
+                        input: r.tokens.input,
+                        output: r.tokens.output,
+                        total: r.tokens.total,
+                    };
+                }
             }
             return out;
         }

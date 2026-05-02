@@ -6,7 +6,7 @@
 ## Install
 
 ```bash
-git clone https://github.com/kloba/copilot-ralph-extension
+git clone https://github.com/kloba/autopilot
 cd copilot-ralph-extension
 node packages/tui/bin/tui.mjs --help
 ```
@@ -38,4 +38,4 @@ Stop early:
 node packages/tui/bin/tui.mjs run --stop <runId>
 ```
 
-See the project [README](https://github.com/kloba/copilot-ralph-extension#readme) for the full reference until these pages are filled in.
+See the project [README](https://github.com/kloba/autopilot#readme) for the full reference until these pages are filled in.

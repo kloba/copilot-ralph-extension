@@ -4,7 +4,7 @@
 
 If you believe you've found a security issue in `copilot-ralph-extension` — such as a prompt-injection vector, a path-traversal in the JSONL writer/reader, an unsafe shell construction in a baked prompt, or any other credential / data-exposure risk — please report it **privately** rather than opening a public issue.
 
-Use GitHub's [private vulnerability reporting](https://github.com/kloba/copilot-ralph-extension/security/advisories/new) form to file a confidential security advisory. We'll triage and respond as soon as we can. Public-issue reports for credible vulnerabilities will be redacted on request.
+Use GitHub's [private vulnerability reporting](https://github.com/kloba/autopilot/security/advisories/new) form to file a confidential security advisory. We'll triage and respond as soon as we can. Public-issue reports for credible vulnerabilities will be redacted on request.
 
 When reporting, please include:
 

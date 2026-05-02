@@ -5,7 +5,7 @@ Thanks for your interest in `copilot-ralph-extension`! This page is the entry po
 ## Local development setup
 
 ```bash
-git clone https://github.com/kloba/copilot-ralph-extension.git
+git clone https://github.com/kloba/autopilot.git
 cd copilot-ralph-extension
 npm test    # runs the node:test suite under packages/*/test (no install needed for the non-render layer)
 ```

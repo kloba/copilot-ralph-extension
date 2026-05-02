@@ -2,7 +2,7 @@
 
 > Ralph Wiggum-style autonomous iterative loop for **GitHub Copilot CLI**, packaged as the `ralph-tui` standalone TUI app.
 
-[![CI](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/kloba/copilot-ralph-extension/actions/workflows/ci.yml)
+[![CI](https://github.com/kloba/autopilot/actions/workflows/ci.yml/badge.svg)](https://github.com/kloba/autopilot/actions/workflows/ci.yml)
 [![Inspired by](https://img.shields.io/badge/inspired_by-Anthropic_Ralph_Wiggum-blue)](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)
 
 **Contents:** [What is Ralph?](#what-is-ralph-wiggum) · [Install](#install) · [Usage](#usage) · [Subcommands](#subcommands) · [Self-improve](#self-improve) · [Grow-project](#grow-project) · [Pause / resume / stop / status](#pause--resume--stop--status) · [Adaptive budget](#adaptive-iteration-budget) · [Commit attribution](#commit-attribution) · [Keep system awake](#keep-system-awake-caffeinate-macos) · [Limitations](#limitations) · [Requirements](#requirements) · [Development](#development) · [Documentation](#documentation) · [Changelog](#changelog) · [License](#license)
@@ -13,12 +13,12 @@ Ralph Wiggum is an iterative-agent technique: re-feed the same prompt to a codin
 
 This project ships **`ralph-tui`** — a terminal app that drives the Copilot CLI in a Ralph loop by spawning each iteration as a fresh `copilot -p ...` subprocess and tailing the JSONL event stream live. Three baked SDLC prompts (`--prompt` / `--self-improve` / `--grow-project`) cover the common shapes; pause / resume / stop / status are out-of-band against a per-run state file so a long run can be checkpointed without losing context.
 
-> **Heads up — breaking change in this branch.** The previous in-session Copilot CLI extension (`ralph_loop` / `self_improve` / `grow_project` / `ralph_status` / `ralph_pause` / `ralph_resume` / `ralph_stop` tools, installed at `~/.copilot/extensions/ralph`) was retired. If you still have `~/.copilot/extensions/ralph` from an older install, `rm -rf ~/.copilot/extensions/ralph` and switch to the TUI driver below. See [`CHANGELOG.md`](CHANGELOG.md) for the full migration note.
+> **Migrating from an older install?** The previous in-session Copilot CLI extension (`ralph_loop` / `self_improve` / `grow_project` / `ralph_status` / `ralph_pause` / `ralph_resume` / `ralph_stop` tools, installed at `~/.copilot/extensions/ralph`) was retired. If you still have `~/.copilot/extensions/ralph` from an older install, `rm -rf ~/.copilot/extensions/ralph` and switch to the TUI driver below. See [`CHANGELOG.md`](CHANGELOG.md) for the full migration note.
 
 ## Install
 
 ```bash
-git clone https://github.com/kloba/copilot-ralph-extension
+git clone https://github.com/kloba/autopilot
 cd copilot-ralph-extension
 
 # Plain mode works straight from a fresh checkout — no install needed.
@@ -111,7 +111,7 @@ When `--self-improve` reaches `--max` and progress signals are positive (the wor
 
 ## Commit attribution
 
-The baked `--self-improve` and `--grow-project` SDLC prompts instruct the agent to add `Co-authored-by:` trailers to every commit so loop-driven changes are attributable. By default every loop-driven commit ships **two** trailers (per [issue #1](https://github.com/kloba/copilot-ralph-extension/issues/1)):
+The baked `--self-improve` and `--grow-project` SDLC prompts instruct the agent to add `Co-authored-by:` trailers to every commit so loop-driven changes are attributable. By default every loop-driven commit ships **two** trailers (per [issue #1](https://github.com/kloba/autopilot/issues/1)):
 
 ```
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

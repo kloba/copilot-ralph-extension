@@ -3,7 +3,7 @@
 A Ralph Wiggum-style autonomous loop for the GitHub Copilot CLI, packaged as the `ralph-tui` standalone TUI app.
 
 !!! warning "Stub documentation site"
-    This site is the v0 scaffold for [issue #2](https://github.com/kloba/copilot-ralph-extension/issues/2). The pages below mirror the planned navigation but are intentionally short — they will be filled in by follow-up PRs.
+    This site is the v0 scaffold for [issue #2](https://github.com/kloba/autopilot/issues/2). The pages below mirror the planned navigation but are intentionally short — they will be filled in by follow-up PRs.
 
 ## What is this?
 
@@ -17,6 +17,6 @@ The loop is the simplest possible form of agentic autonomy: one prompt, repeated
 
 ## Repository
 
-- [Source on GitHub](https://github.com/kloba/copilot-ralph-extension)
-- [Issue tracker](https://github.com/kloba/copilot-ralph-extension/issues)
-- [Releases](https://github.com/kloba/copilot-ralph-extension/releases)
+- [Source on GitHub](https://github.com/kloba/autopilot)
+- [Issue tracker](https://github.com/kloba/autopilot/issues)
+- [Releases](https://github.com/kloba/autopilot/releases)

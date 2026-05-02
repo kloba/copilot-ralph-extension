@@ -133,5 +133,5 @@ straight from a fresh source checkout with no `npm install`.
   Live TUI walkthrough + asciinema recipe.
 * [packages/tui/package.json](../packages/tui/package.json) — current
   pinned versions.
-* [Issue #22](https://github.com/kloba/copilot-ralph-extension/issues/22) —
+* [Issue #22](https://github.com/kloba/autopilot/issues/22) —
   TUI design discussion.

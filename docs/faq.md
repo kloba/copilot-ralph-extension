@@ -1,6 +1,6 @@
 # FAQ
 
-Short answers to the questions that come up most often when running Ralph in anger. Most of these point at a deeper section in the [README](https://github.com/kloba/copilot-ralph-extension#readme) or at [`docs/concepts.md`](concepts.md) — keep this page narrow and link out rather than duplicating prose.
+Short answers to the questions that come up most often when running Ralph in anger. Most of these point at a deeper section in the [README](https://github.com/kloba/autopilot#readme) or at [`docs/concepts.md`](concepts.md) — keep this page narrow and link out rather than duplicating prose.
 
 ## Setup
 
@@ -27,7 +27,7 @@ The previous in-session Copilot CLI extension was retired — see [`CHANGELOG.md
 
 ### Why did my loop stop after exactly one iteration?
 
-The most common cause is an early `--completion-promise` match. Both `--completion-promise` and `--abort-promise` use plain substring matching against the assistant's response — if the agent quotes the trigger phrase mid-thought (e.g. *"I'll mark this COMPLETE when done"*), the loop finishes. Pick a phrase the agent is unlikely to mention casually; `RALPH_DONE_42` and similar unusual tokens work well. See README → [Limitations](https://github.com/kloba/copilot-ralph-extension#limitations).
+The most common cause is an early `--completion-promise` match. Both `--completion-promise` and `--abort-promise` use plain substring matching against the assistant's response — if the agent quotes the trigger phrase mid-thought (e.g. *"I'll mark this COMPLETE when done"*), the loop finishes. Pick a phrase the agent is unlikely to mention casually; `RALPH_DONE_42` and similar unusual tokens work well. See README → [Limitations](https://github.com/kloba/autopilot#limitations).
 
 ### Why does my loop never finish?
 
@@ -76,7 +76,7 @@ Reads the run's `state.json` and renders iter counter, pause/stop flags, and (in
 
 ### How are loop-driven commits attributed?
 
-Every commit produced inside a loop carries two `Co-authored-by:` trailers — one for the `Copilot` GitHub identity, one for the dedicated `copilot-ralph` bot account. The dual-trailer convention is baked into the SDLC prompts (`--self-improve`, `--grow-project`). See README → [Commit attribution](https://github.com/kloba/copilot-ralph-extension#commit-attribution).
+Every commit produced inside a loop carries two `Co-authored-by:` trailers — one for the `Copilot` GitHub identity, one for the dedicated `copilot-ralph` bot account. The dual-trailer convention is baked into the SDLC prompts (`--self-improve`, `--grow-project`). See README → [Commit attribution](https://github.com/kloba/autopilot#commit-attribution).
 
 ### How do I opt out of the second `copilot-ralph` trailer?
 
@@ -84,4 +84,4 @@ Set `RALPH_NO_ATTRIBUTION=1` in the environment before running the loop. The opt
 
 ## Anything else?
 
-If your question isn't answered here, open an issue or skim the [README](https://github.com/kloba/copilot-ralph-extension#readme) Limitations section — it covers the long-tail edge cases this page intentionally elides.
+If your question isn't answered here, open an issue or skim the [README](https://github.com/kloba/autopilot#readme) Limitations section — it covers the long-tail edge cases this page intentionally elides.

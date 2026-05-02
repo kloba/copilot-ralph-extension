@@ -1,7 +1,7 @@
-// `ralph-tui run` interactive entry point (issue #48 slice 8).
+// `autopilot run` interactive entry point (issue #48 slice 8).
 //
 // Mounts the Ink-rendered <App /> against the events.jsonl file that
-// runRalphTui is concurrently writing to. Imported dynamically by
+// runAutopilot is concurrently writing to. Imported dynamically by
 // bin/tui.mjs so a fresh checkout without `npm install` falls back to
 // plain (headless) mode rather than crashing on the `ink` import.
 //

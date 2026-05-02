@@ -31,8 +31,8 @@ const skip = inkAvailable ? false : "ink-testing-library not installed (cd packa
 test("Header shows status badge, label, run id and iter counter", { skip }, () => {
     const snapshot = {
         status: "running",
-        label: "ralph_loop",
-        runId: "ralph_loop-1700000000000",
+        label: "ap_loop",
+        runId: "ap_loop-1700000000000",
         iteration: 3,
         maxIterations: 100,
         minIterations: 5,
@@ -41,7 +41,7 @@ test("Header shows status badge, label, run id and iter counter", { skip }, () =
     const { lastFrame } = render(React.createElement(Header, { snapshot }));
     const out = lastFrame();
     assert.match(out, /RUN/);
-    assert.match(out, /ralph_loop/);
+    assert.match(out, /ap_loop/);
     assert.match(out, /1700000000000/);
     assert.match(out, /iter/);
     assert.match(out, /3/);
@@ -98,8 +98,8 @@ test("DetailPane shows tokens, reason, and last excerpt", { skip }, () => {
 
 test("Header: shows premium counter when snapshot.premiumRequests is set", { skip }, () => {
     const snapshot = {
-        status: "running", label: "ralph_loop",
-        runId: "ralph_loop-1700000000000",
+        status: "running", label: "ap_loop",
+        runId: "ap_loop-1700000000000",
         iteration: 2, maxIterations: 10,
         tokens: { input: 0, output: 415 },
         premiumRequests: 7,
@@ -110,8 +110,8 @@ test("Header: shows premium counter when snapshot.premiumRequests is set", { ski
 
 test("Header: hides premium counter when premiumRequests is null", { skip }, () => {
     const snapshot = {
-        status: "running", label: "ralph_loop",
-        runId: "ralph_loop-1700000000000",
+        status: "running", label: "ap_loop",
+        runId: "ap_loop-1700000000000",
         iteration: 1, maxIterations: 10,
         tokens: { input: 0, output: 0 },
         premiumRequests: null,
@@ -155,13 +155,13 @@ test("Controls hint row shows idle indicator when not running", { skip }, () => 
 
 test("App renders all four panes from a static event log", { skip }, () => {
     const events = [
-        { type: "armed", runId: "r1", label: "ralph_loop", maxIterations: 10, minIterations: 1, ts: 1 },
+        { type: "armed", runId: "r1", label: "ap_loop", maxIterations: 10, minIterations: 1, ts: 1 },
         { type: "iteration_start", runId: "r1", iteration: 1, ts: 2 },
         { type: "iteration_end", runId: "r1", iteration: 1, excerpt: "did some work", tokens: { input: 3, output: 4 }, ts: 3 },
         { type: "iteration_start", runId: "r1", iteration: 2, ts: 4 },
     ];
     const out = render(React.createElement(App, { events, runId: "r1" })).lastFrame();
-    assert.match(out, /ralph_loop/);
+    assert.match(out, /ap_loop/);
     assert.match(out, /Timeline/);
     assert.match(out, /Detail/);
     assert.match(out, /quit/);
@@ -273,7 +273,7 @@ test("Header renders backlog row when snapshot.backlog is present", { skip }, ()
 test("Header omits backlog row when snapshot.backlog is null", { skip }, () => {
     const snapshot = {
         status: "running",
-        label: "ralph_loop",
+        label: "ap_loop",
         runId: "abc",
         iteration: 1,
         maxIterations: 100,
@@ -302,7 +302,7 @@ test("Header renders ∞ when maxIterations equals runaway-guard ceiling", { ski
 test("Header still shows literal max when below the runaway-guard ceiling", { skip }, () => {
     const snapshot = {
         status: "running",
-        label: "ralph_loop",
+        label: "ap_loop",
         runId: "abc",
         iteration: 3,
         maxIterations: 50,
@@ -510,10 +510,10 @@ test("App.onUserAbort fires on Ctrl-C with 'signal_SIGINT' reason (issue #48 sli
 });
 
 test("App without onUserAbort still exits on q (read-only watch mode)", { skip }, async () => {
-    // ralph-tui watch supplies no onUserAbort — the App must still
+    // autopilot watch supplies no onUserAbort — the App must still
     // tear down cleanly without throwing on the missing callback.
     const inst = render(React.createElement(App, {
-        events: [{ type: "armed", runId: "r1", label: "ralph_loop", maxIterations: 100, ts: 1 }],
+        events: [{ type: "armed", runId: "r1", label: "ap_loop", maxIterations: 100, ts: 1 }],
         runId: "r1",
     }));
     await new Promise((r) => setImmediate(r));

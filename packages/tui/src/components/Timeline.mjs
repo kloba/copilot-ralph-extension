@@ -1,4 +1,4 @@
-// <Timeline> — scrolling iteration list for `ralph-tui watch` (issue #22).
+// <Timeline> — scrolling iteration list for `autopilot watch` (issue #22).
 //
 // Renders the most recent N iterations newest-first. Pure component;
 // uses React.createElement (no JSX) so it runs in plain Node ESM.

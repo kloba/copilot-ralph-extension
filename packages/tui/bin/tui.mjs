@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Stdlib-only CLI entry for the ralph TUI (issue #22).
+// Stdlib-only CLI entry for the autopilot TUI (issue #22).
 //
 // Subcommands (keep in sync with the USAGE constant below — pinned by
 // `tui.mjs header comment lists every USAGE subcommand` in
@@ -21,7 +21,7 @@
 //                                durations, top SDLC tools).
 //   where                      — print the resolved runs root path so
 //                                a contributor can `cd` into it.
-//   run                        — drive a ralph_loop / self_improve /
+//   run                        — drive an ap_loop / self_improve /
 //                                grow_project loop OUT-OF-SESSION by
 //                                spawning each iter as a fresh
 //                                `copilot -p ...` subprocess. Choose
@@ -54,25 +54,25 @@ import { readEventsFile, tailEventsFile } from "../src/tail.mjs";
 import { formatEventLine } from "../src/plain.mjs";
 
 const USAGE = `\
-ralph-tui — terminal visualizer for ralph_loop runs (issue #22).
+autopilot — terminal visualizer for ap_loop runs (issue #22).
 
 USAGE
-  ralph-tui list [--json] [--limit N]
-  ralph-tui replay <runId>
-  ralph-tui watch [runId] [--plain]
-  ralph-tui doctor
-  ralph-tui prune [--older-than 30d] [--dry-run]
-  ralph-tui stats
-  ralph-tui where
-  ralph-tui run (--self-improve | --grow-project | --prompt TEXT)
+  autopilot list [--json] [--limit N]
+  autopilot replay <runId>
+  autopilot watch [runId] [--plain]
+  autopilot doctor
+  autopilot prune [--older-than 30d] [--dry-run]
+  autopilot stats
+  autopilot where
+  autopilot run (--self-improve | --grow-project | --prompt TEXT)
                 (--continue | --fresh)
                 [--max N] [--focus TEXT] [--headless | --plain]
                 [--completion-promise TOKEN] [--abort-promise TOKEN]
-  ralph-tui run --pause <runId>
-  ralph-tui run --resume <runId>
-  ralph-tui run --stop <runId>
-  ralph-tui run --status <runId>
-  ralph-tui --help | -h
+  autopilot run --pause <runId>
+  autopilot run --resume <runId>
+  autopilot run --stop <runId>
+  autopilot run --status <runId>
+  autopilot --help | -h
 
 OPTIONS
   --plain     Emit log lines instead of an interactive UI (auto-enabled
@@ -86,7 +86,7 @@ OPTIONS
   --dry-run   For \`prune\`: list what would be removed; delete nothing.
   --self-improve  For \`run\`: drive the baked self_improve SDLC prompt.
   --grow-project  For \`run\`: drive the baked grow_project SDLC prompt.
-  --prompt TEXT   For \`run\`: drive a ralph_loop-style custom prompt.
+  --prompt TEXT   For \`run\`: drive an ap_loop-style custom prompt.
   --continue  For \`run\`: every iter resumes the same Copilot session
               (in-extension parity; context grows monotonically).
   --fresh     For \`run\`: every iter starts a brand-new Copilot session
@@ -103,16 +103,16 @@ OPTIONS
               an early abort. Defaults to the baked abort token of the
               chosen prompt mode (or none for --prompt).
   --help, -h  Show this help.
-  --version, -V  Print the ralph-tui package version and exit.
+  --version, -V  Print the autopilot package version and exit.
 
 ENV
   AUTOPILOT_EVENTS_DIR  Override the runs root (default ~/.copilot/autopilot/events).
                     Legacy: RALPH_EVENTS_DIR still honored (deprecated).
   AUTOPILOT_RUNS_DIR  Override the run-state root used by
-                    \`ralph-tui run\` (default ~/.copilot/autopilot/runs).
+                    \`autopilot run\` (default ~/.copilot/autopilot/runs).
                     Legacy: RALPH_TUI_RUNS_DIR still honored (deprecated).
   AUTOPILOT_COPILOT_BIN  Override the \`copilot\` executable used by
-                    \`ralph-tui run\` (default \`copilot\` on $PATH).
+                    \`autopilot run\` (default \`copilot\` on $PATH).
                     Legacy: RALPH_TUI_COPILOT_BIN still honored (deprecated).
 `;
 
@@ -124,10 +124,10 @@ ENV
  *  --completion-promise, --abort-promise, --pause, --resume, --stop,
  *  --status). When adding a new value flag, append it to
  *  `VALUE_FLAGS` AND update the USAGE block above so
- *  `ralph-tui --help` keeps matching the parser. */
+ *  `autopilot --help` keeps matching the parser. */
 const VALUE_FLAGS = new Set(["older-than", "limit", "max", "focus", "prompt", "completion-promise", "abort-promise", "pause", "resume", "stop", "status"]);
 
-/** Default `--max` iterations per loop mode for `ralph-tui run`.
+/** Default `--max` iterations per loop mode for `autopilot run`.
  *
  *  `self-improve` has no fixed scope: the agent's job is to drain the
  *  entire backlog (failing CI runs, stale PRs, open issues, latent
@@ -261,7 +261,7 @@ export function installStdinAbortListener(onAbort) {
 }
 
 function fail(msg, code = 2) {
-    process.stderr.write(`ralph-tui: ${msg}\n`);
+    process.stderr.write(`autopilot: ${msg}\n`);
     process.exit(code);
 }
 
@@ -271,7 +271,7 @@ function fail(msg, code = 2) {
  *  handler already prints its own line — printing twice would just
  *  be noise.
  *
- *  Field bug from a real run: pressing `q` in `ralph-tui run` left
+ *  Field bug from a real run: pressing `q` in `autopilot run` left
  *  the static last Ink frame on screen with no further output, since
  *  the runner only checks `stopRequested` between iters and won't
  *  kill the in-flight copilot subprocess. Users perceived this as
@@ -293,7 +293,7 @@ export function formatAbortMessage(reason) {
     // installed in cmdRun — don't double up.
     if (reason === "signal_SIGINT") return null;
     const label = reason === "user_quit" ? "q" : reason;
-    return `\nralph-tui run: ${label} received — finishing current iteration, then stopping. Hit Ctrl-C to abort hard.\n`;
+    return `\nautopilot run: ${label} received — finishing current iteration, then stopping. Hit Ctrl-C to abort hard.\n`;
 }
 
 function cmdList(opts = {}) {
@@ -320,7 +320,7 @@ function cmdList(opts = {}) {
     if (!entries.length) {
         process.stdout.write(
             `No runs found.\nRoot: ${resolveRunsRoot()}\n`
-            + `Arm a ralph_loop / self_improve / grow_project run, then re-run \`ralph-tui list\`.\n`,
+            + `Arm an ap_loop / self_improve / grow_project run, then re-run \`autopilot list\`.\n`,
         );
         return 0;
     }
@@ -357,7 +357,7 @@ function safeResolveEventsPath(label, runId) {
 
 export function cmdReplay(runId) {
     if (!runId) {
-        fail("replay: <runId> is required (try `ralph-tui list` first)");
+        fail("replay: <runId> is required (try `autopilot list` first)");
         return 2;
     }
     const path = safeResolveEventsPath("replay", runId);
@@ -463,7 +463,7 @@ export function cmdDoctor() {
     process.stdout.write(lines.join("\n") + "\n");
     if (!healthy) {
         process.stderr.write(
-            `ralph-tui doctor: critical problem detected (root=${root}). `
+            `autopilot doctor: critical problem detected (root=${root}). `
             + `Check filesystem permissions and AUTOPILOT_EVENTS_DIR.\n`,
         );
         return 1;
@@ -532,7 +532,7 @@ export function cmdWhere() {
     return 0;
 }
 
-// `ralph-tui run` dispatcher. Splits into:
+// `autopilot run` dispatcher. Splits into:
 //   sibling sub-commands: --pause / --resume / --stop / --status <runId>
 //                         (mutate or read state.json of an existing run)
 //   driver:               --self-improve / --grow-project / --prompt
@@ -540,7 +540,7 @@ export function cmdWhere() {
 //                          process, with SIGINT/SIGTERM mapped to a
 //                          graceful stop request)
 export async function cmdRun(flags) {
-    // Lazy-imported so a `ralph-tui list` invocation doesn't pay the
+    // Lazy-imported so a `autopilot list` invocation doesn't pay the
     // child_process / runner-module init cost.
     const runner = await import("../src/runner.mjs");
 
@@ -551,7 +551,7 @@ export async function cmdRun(flags) {
     if (sibling) {
         const runId = flags[sibling];
         if (!runId || runId === true) {
-            fail(`run --${sibling}: <runId> is required (e.g. --${sibling} ralph-tui-self-improve-1700000000000)`);
+            fail(`run --${sibling}: <runId> is required (e.g. --${sibling} autopilot-self-improve-1700000000000)`);
             return 2;
         }
         try {
@@ -633,12 +633,12 @@ export async function cmdRun(flags) {
     const installSignal = (sig) => {
         const handler = () => {
             if (stopOnce) {
-                process.stderr.write(`\nralph-tui run: second ${sig} — aborting hard.\n`);
+                process.stderr.write(`\nautopilot run: second ${sig} — aborting hard.\n`);
                 process.exit(130);
             }
             stopOnce = true;
-            process.stderr.write(`\nralph-tui run: ${sig} received — finishing current iteration, then stopping. Hit ${sig} again to abort hard.\n`);
-            // We don't yet know the runId until runRalphTui has emitted
+            process.stderr.write(`\nautopilot run: ${sig} received — finishing current iteration, then stopping. Hit ${sig} again to abort hard.\n`);
+            // We don't yet know the runId until runAutopilot has emitted
             // it; the runner reads state.json each iter so flipping the
             // file is sufficient. We resolve the runId via the running
             // promise's bookkeeping below.
@@ -717,7 +717,7 @@ export async function cmdRun(flags) {
         })
         : () => {};
     try {
-        const result = await runner.runRalphTui({
+        const result = await runner.runAutopilot({
             mode,
             contextMode,
             prompt: promptText,
@@ -726,7 +726,7 @@ export async function cmdRun(flags) {
             completionPromise,
             abortPromise: abortPromise ?? undefined,
             // When the TUI is mounted, Ink owns the terminal — any
-            // `runRalphTui` writes to stdout (e.g. the `# iter N/M`
+            // `runAutopilot` writes to stdout (e.g. the `# iter N/M`
             // banner) interleave with Ink's frames and corrupt the
             // render. Pipe runner stdout to a no-op sink in TUI
             // mode; stderr stays attached so unrecoverable errors
@@ -771,7 +771,7 @@ export async function cmdRun(flags) {
                         })
                             .then((inst) => { runUiInstance = inst; })
                             .catch((err) => {
-                                process.stderr.write(`ralph-tui run: TUI mount failed (${err?.message ?? err}); continuing in headless mode.\n`);
+                                process.stderr.write(`autopilot run: TUI mount failed (${err?.message ?? err}); continuing in headless mode.\n`);
                             });
                     }
                 }
@@ -823,7 +823,7 @@ export async function cmdRun(flags) {
 export async function main(argv = process.argv.slice(2)) {
     const { cmd, positional, flags } = parseArgv(argv);
     if (flags.version) {
-        process.stdout.write(`ralph-tui ${readTuiVersion()}\n`);
+        process.stdout.write(`autopilot ${readTuiVersion()}\n`);
         return 0;
     }
     if (flags.help || cmd === "help" || (!cmd && !positional.length)) {
@@ -846,13 +846,13 @@ export async function main(argv = process.argv.slice(2)) {
 }
 
 // Only run main() when invoked as a script (not when imported by tests).
-// `npm link` installs the bin as a symlink (e.g. /opt/homebrew/bin/ralph-tui
+// `npm link` installs the bin as a symlink (e.g. /opt/homebrew/bin/autopilot
 // → …/packages/tui/bin/tui.mjs); resolve it through realpath so the
 // "is this the entry point?" check survives the indirection. Kept fully
 // synchronous so this module body has no top-level await — Node 22+ emits
 // "Detected unsettled top-level await" when `process.exit()` fires from
 // the main() promise chain before the implicit module-evaluation TLA is
-// observed as settled (issue: spurious warning in `ralph-tui run` exit).
+// observed as settled (issue: spurious warning in `autopilot run` exit).
 let isDirectRun = false;
 try {
     if (process.argv[1]) {
@@ -873,10 +873,10 @@ if (isDirectRun) {
         // sees the actionable error, not a stack trace. Genuinely
         // unexpected failures keep the full stack for debuggability.
         if (err instanceof TypeError) {
-            process.stderr.write(`ralph-tui: ${err.message}\n`);
+            process.stderr.write(`autopilot: ${err.message}\n`);
             process.exit(2);
         }
-        process.stderr.write(`ralph-tui: ${err?.stack ?? err}\n`);
+        process.stderr.write(`autopilot: ${err?.stack ?? err}\n`);
         process.exit(1);
     });
 }

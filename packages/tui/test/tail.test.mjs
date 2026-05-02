@@ -8,7 +8,7 @@ import { readEventsFile, splitAndParse, tailEventsFile } from "../src/tail.mjs";
 import { serializeEvent } from "../src/events.mjs";
 
 function tmp() {
-    return mkdtempSync(join(tmpdir(), "ralph-tail-"));
+    return mkdtempSync(join(tmpdir(), "autopilot-tail-"));
 }
 
 function evLine(ev) {

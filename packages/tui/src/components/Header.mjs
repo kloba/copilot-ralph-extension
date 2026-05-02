@@ -1,4 +1,4 @@
-// <Header> — top status banner for `ralph-tui watch` (issue #22).
+// <Header> — top status banner for `autopilot watch` (issue #22).
 //
 // Issue #48 slice 7: extended with a backlog row (open issues / open
 // PRs / red CI runs) so the user can see the loop's external scope at

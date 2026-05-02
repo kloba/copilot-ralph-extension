@@ -55,7 +55,7 @@ test("EVENT_TYPES is the closed set documented in the issue", () => {
 });
 
 test("makeRunId combines label + startedAt", () => {
-    assert.equal(makeRunId("ralph_loop", 1700000000000), "ralph_loop-1700000000000");
+    assert.equal(makeRunId("ap_loop", 1700000000000), "ap_loop-1700000000000");
 });
 
 test("makeRunId rejects bad input", () => {
@@ -64,7 +64,7 @@ test("makeRunId rejects bad input", () => {
 });
 
 test("serializeEvent: minimal happy path round-trips through parseEventLine", () => {
-    const ev = { type: "armed", ts: 1, runId: "r-1", label: "ralph_loop", maxIterations: 20, minIterations: 5 };
+    const ev = { type: "armed", ts: 1, runId: "r-1", label: "ap_loop", maxIterations: 20, minIterations: 5 };
     const line = serializeEvent(ev);
     const back = parseEventLine(line);
     assert.deepEqual(back, ev);
@@ -126,7 +126,7 @@ test("parseEventLine: bad input type throws (programmer error, not data error)",
 
 test("foldEvents: armed → iteration_start/end → complete produces expected snapshot", () => {
     const events = [
-        { type: "armed", ts: 100, runId: "r1", label: "ralph_loop", maxIterations: 20, minIterations: 5 },
+        { type: "armed", ts: 100, runId: "r1", label: "ap_loop", maxIterations: 20, minIterations: 5 },
         { type: "iteration_start", ts: 110, runId: "r1", iteration: 1 },
         { type: "iteration_end", ts: 120, runId: "r1", iteration: 1, excerpt: "hello", tokens: { input: 100, output: 50 } },
         { type: "iteration_start", ts: 130, runId: "r1", iteration: 2 },
@@ -135,7 +135,7 @@ test("foldEvents: armed → iteration_start/end → complete produces expected s
     ];
     const snap = foldEvents(events);
     assert.equal(snap.runId, "r1");
-    assert.equal(snap.label, "ralph_loop");
+    assert.equal(snap.label, "ap_loop");
     assert.equal(snap.status, "complete");
     assert.equal(snap.reason, "completion_promise");
     assert.equal(snap.iteration, 2);
@@ -169,7 +169,7 @@ test("foldEvents: pause / resume toggle status without losing progress", () => {
 
 test("foldEvents: stagnation event records streak", () => {
     const snap = foldEvents([
-        { type: "armed", ts: 1, runId: "r", label: "ralph_loop" },
+        { type: "armed", ts: 1, runId: "r", label: "ap_loop" },
         { type: "iteration_start", ts: 2, runId: "r", iteration: 1 },
         { type: "stagnation", ts: 3, runId: "r", streak: 3 },
     ]);
@@ -187,7 +187,7 @@ test("foldEvents: abort sets status + reason", () => {
 
 test("foldEvents: a fresh `armed` resets iterations array (replay-with-multiple-runs case)", () => {
     const snap = foldEvents([
-        { type: "armed", ts: 1, runId: "r1", label: "ralph_loop" },
+        { type: "armed", ts: 1, runId: "r1", label: "ap_loop" },
         { type: "iteration_start", ts: 2, runId: "r1", iteration: 1 },
         { type: "iteration_end", ts: 3, runId: "r1", iteration: 1, excerpt: "old" },
         { type: "complete", ts: 4, runId: "r1", reason: "max_iterations" },
@@ -370,7 +370,7 @@ test("serializeEvent: reason field is capped at 500 chars (defensive symmetry wi
     const lineOver = serializeEvent({
         type: "abort",
         ts: 1_000_000,
-        runId: "ralph_loop-cap",
+        runId: "ap_loop-cap",
         reason: overflow,
     });
     const parsedOver = JSON.parse(lineOver);
@@ -384,7 +384,7 @@ test("serializeEvent: reason field is capped at 500 chars (defensive symmetry wi
     const lineSmall = serializeEvent({
         type: "abort",
         ts: 1_000_000,
-        runId: "ralph_loop-cap",
+        runId: "ap_loop-cap",
         reason: small,
     });
     const parsedSmall = JSON.parse(lineSmall);
@@ -402,7 +402,7 @@ test("serializeEvent: reason field is capped at 500 chars (defensive symmetry wi
     const lineTricky = serializeEvent({
         type: "abort",
         ts: 1_000_000,
-        runId: "ralph_loop-cap",
+        runId: "ap_loop-cap",
         reason: tricky,
     });
     const parsedTricky = JSON.parse(lineTricky);
@@ -589,7 +589,7 @@ test("SDLC_STAGES_GROW_PROJECT: every stage name appears in PROMPT_GROW_PROJECT"
 test("stagesForLabel: maps labels to their canonical lists; unknown → null", () => {
     assert.equal(stagesForLabel("self_improve"), SDLC_STAGES_SELF_IMPROVE);
     assert.equal(stagesForLabel("grow_project"), SDLC_STAGES_GROW_PROJECT);
-    assert.equal(stagesForLabel("ralph_loop"), null, "ralph_loop / custom-prompt mode has no fixed stage list");
+    assert.equal(stagesForLabel("ap_loop"), null, "ap_loop / custom-prompt mode has no fixed stage list");
     assert.equal(stagesForLabel(undefined), null);
     assert.equal(stagesForLabel(""), null);
 });

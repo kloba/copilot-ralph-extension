@@ -1,5 +1,5 @@
-// `ralph-tui run` driver — out-of-session sibling of the in-extension
-// ralph_loop / self_improve / grow_project tools.
+// `autopilot run` driver — out-of-session sibling of the in-extension
+// ap_loop / self_improve / grow_project tools.
 //
 // Why a separate driver? Because the in-extension loop runs as part of
 // the user's current Copilot session — so the LLM context grows
@@ -7,7 +7,7 @@
 // in-session loop (the user sees every iter inline, and pause/resume
 // mid-session lets the user chat with the agent), but it also creates
 // a context-rot failure mode where late iterations are dominated by
-// early-iteration noise. The `ralph-tui run` driver runs each
+// early-iteration noise. The `autopilot run` driver runs each
 // iteration as a fresh `copilot -p ...` subprocess so:
 //
 //   --continue   resume the same Copilot session every iter (parity
@@ -28,7 +28,7 @@
 //     iter 1 and reused via `--resume=<sessionId>` for iter 2+ when
 //     the driver is in --continue mode.
 //
-// Pause/resume/stop are out-of-band: a sibling `ralph-tui run --pause
+// Pause/resume/stop are out-of-band: a sibling `autopilot run --pause
 // <runId>` flips a flag in the run's state.json (CAS-protected via
 // lockfile so concurrent pause+stop don't lose updates), and the
 // driver re-reads state at each iter boundary. The current child
@@ -72,7 +72,7 @@ export { PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, COMPLETION_PROMISE, BAKED_ABO
 // would be rejected by handler.mjs is also rejected here.
 export const MAX_FOCUS_CHARS = 2000;
 
-// Cap on the user-supplied --prompt string for ralph_loop-style runs.
+// Cap on the user-supplied --prompt string for ap_loop-style runs.
 // Mirrors the in-extension MAX_PROMPT_CHARS.
 export const MAX_PROMPT_CHARS = 65536;
 
@@ -350,9 +350,9 @@ export function composePrompt({ mode, prompt, focus }) {
 
 /** Mode → label used by the event emitter and the run directory name. */
 function labelForMode(mode) {
-    if (mode === "self-improve") return "ralph-tui-self-improve";
-    if (mode === "grow-project") return "ralph-tui-grow-project";
-    if (mode === "prompt") return "ralph-tui-prompt";
+    if (mode === "self-improve") return "autopilot-self-improve";
+    if (mode === "grow-project") return "autopilot-grow-project";
+    if (mode === "prompt") return "autopilot-prompt";
     throw new TypeError(`labelForMode: unknown mode "${mode}"`);
 }
 
@@ -637,7 +637,7 @@ export function looksLikeGitCommit(command) {
  *  invocation) and runs at most once per observed `git commit`.
  *
  *  Tests inject their own `gitExec` to stub repo state without
- *  shelling out — see `runRalphTui({ gitExec, … })`. */
+ *  shelling out — see `runAutopilot({ gitExec, … })`. */
 function defaultGitExec({ args, cwd, env }) {
     try {
         const r = nodeSpawnSync("git", args, {
@@ -1078,7 +1078,7 @@ export function runOneIteration({
         });
 
         // Expose the child handle to the caller for SIGINT plumbing
-        // via the resolve hook; runRalphTui registers a stop-watcher
+        // via the resolve hook; runAutopilot registers a stop-watcher
         // before awaiting.
         if (typeof onLine === "function" && onLine.__captureChild) {
             onLine.__captureChild(child, () => { killed = true; });
@@ -1118,7 +1118,7 @@ export function runOneIteration({
  *   onIteration         Callback fired between iters with state.
  *   stdout, stderr      Stream sinks for human-readable output.
  */
-export async function runRalphTui(opts) {
+export async function runAutopilot(opts) {
     const {
         mode,
         contextMode,
@@ -1148,22 +1148,22 @@ export async function runRalphTui(opts) {
     } = opts;
 
     if (mode !== "self-improve" && mode !== "grow-project" && mode !== "prompt") {
-        throw new TypeError(`runRalphTui: invalid mode "${mode}"`);
+        throw new TypeError(`runAutopilot: invalid mode "${mode}"`);
     }
     if (contextMode !== "continue" && contextMode !== "fresh") {
-        throw new TypeError(`runRalphTui: contextMode must be "continue" or "fresh"`);
+        throw new TypeError(`runAutopilot: contextMode must be "continue" or "fresh"`);
     }
     if (mode === "prompt" && (!prompt || typeof prompt !== "string")) {
-        throw new TypeError(`runRalphTui: --prompt requires a non-empty string when mode === "prompt"`);
+        throw new TypeError(`runAutopilot: --prompt requires a non-empty string when mode === "prompt"`);
     }
     if (mode === "prompt" && prompt.length > MAX_PROMPT_CHARS) {
-        throw new TypeError(`runRalphTui: prompt exceeds ${MAX_PROMPT_CHARS} characters`);
+        throw new TypeError(`runAutopilot: prompt exceeds ${MAX_PROMPT_CHARS} characters`);
     }
     if (!Number.isInteger(max) || max < 1 || max > MAX_ALLOWED_ITERATIONS) {
-        throw new TypeError(`runRalphTui: max must be an integer in [1, ${MAX_ALLOWED_ITERATIONS}], got ${max}`);
+        throw new TypeError(`runAutopilot: max must be an integer in [1, ${MAX_ALLOWED_ITERATIONS}], got ${max}`);
     }
     const focusCheck = validateFocus(focus);
-    if (focusCheck.error) throw new TypeError(`runRalphTui: ${focusCheck.error}`);
+    if (focusCheck.error) throw new TypeError(`runAutopilot: ${focusCheck.error}`);
 
     const startedAt = now();
     const label = labelForMode(mode);
@@ -1190,7 +1190,7 @@ export async function runRalphTui(opts) {
         totalPausedMs: 0,
     }, env);
 
-    // Emit the canonical `armed` event so `ralph-tui list/stats`
+    // Emit the canonical `armed` event so `autopilot list/stats`
     // pick up this run.
     emitter.write({
         type: "armed",
@@ -1703,7 +1703,7 @@ export async function runRalphTui(opts) {
         } catch (err) {
             terminationReason = "error";
             terminationNote = err?.message ?? String(err);
-            stderr.write?.(`ralph-tui run: subprocess error: ${terminationNote}\n`);
+            stderr.write?.(`autopilot run: subprocess error: ${terminationNote}\n`);
             // Even on subprocess error, fold in any iter-live usage
             // counters (the child may have emitted some
             // assistant.message events before crashing) so the final
@@ -1833,7 +1833,7 @@ export async function runRalphTui(opts) {
         if (result.exitCode !== 0) {
             terminationReason = "subprocess_failed";
             terminationNote = `copilot exited with code ${result.exitCode}: ${result.stderr.slice(0, 500)}`;
-            stderr.write?.(`ralph-tui run: ${terminationNote}\n`);
+            stderr.write?.(`autopilot run: ${terminationNote}\n`);
             break;
         }
 

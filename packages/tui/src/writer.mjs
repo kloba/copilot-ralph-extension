@@ -1,9 +1,9 @@
-// JSONL event writer for the ralph TUI (issue #22).
+// JSONL event writer for the autopilot TUI (issue #22).
 //
 // The loop handler in extension/handler.mjs imports createEventWriter() and
 // calls writer.emit(ev) at iteration boundaries. The writer keeps a single
 // append-mode file descriptor open per run and maintains a sibling
-// `runs/index.jsonl` so `ralph-tui list` can enumerate past runs without
+// `runs/index.jsonl` so `autopilot list` can enumerate past runs without
 // scanning every per-run directory.
 //
 // Design constraints:
@@ -265,7 +265,7 @@ export function createEventWriter({
     };
 
     const recordIndex = (ev) => {
-        // index.jsonl carries one line per `armed` event so `ralph-tui list`
+        // index.jsonl carries one line per `armed` event so `autopilot list`
         // can enumerate runs in reverse-chronological order without
         // recursing into every run dir. Replays do NOT add a row — only the
         // initial arm marks a run's existence.
@@ -335,7 +335,7 @@ export function createEventWriter({
 /**
  * Read the run index (created lazily by createEventWriter on first
  * `armed` event) and return the parsed entries newest-first. Used by
- * `ralph-tui list` and tests.
+ * `autopilot list` and tests.
  *
  * Missing index file → empty list (a fresh machine with no past runs).
  */
@@ -397,7 +397,7 @@ export function aggregateRuns({
             // a huge numeric literal (e.g. `1e500`) parses as Infinity in
             // JS — without `Number.isFinite` it would propagate to
             // `iters.max = Infinity` and `iters.mean = NaN`/Infinity,
-            // silently breaking `ralph-tui stats`. The writer never emits
+            // silently breaking `autopilot stats`. The writer never emits
             // Infinity (JSON.stringify(Infinity) = "null"), so this only
             // bites for hand-edited rows; treat them like the other
             // malformed cases above and skip the iteration value.
@@ -416,7 +416,7 @@ export function aggregateRuns({
     // throws "Maximum call stack size exceeded" once iterCounts grows
     // past ~150k entries (Node's argument-count limit). A long-lived
     // user with daily self_improve runs would eventually hit that
-    // ceiling and `ralph-tui stats` would silently crash. Reduce
+    // ceiling and `autopilot stats` would silently crash. Reduce
     // handles arbitrary array sizes in O(n) without the spread.
     const max = iterCounts.length
         ? iterCounts.reduce((a, b) => (a > b ? a : b), 0)

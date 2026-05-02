@@ -18,11 +18,11 @@ test("formatEventLine: armed includes max/min", () => {
     const line = formatEventLine({
         type: "armed",
         ts: 0,
-        runId: "ralph_loop-0",
+        runId: "ap_loop-0",
         maxIterations: 5,
         minIterations: 2,
     });
-    assert.match(line, /00:00:00\.000\s+armed\s+ralph_loop-0/);
+    assert.match(line, /00:00:00\.000\s+armed\s+ap_loop-0/);
     assert.match(line, /min=2/);
 });
 
@@ -95,7 +95,7 @@ test("formatEventLine: caps long excerpt at 80 chars", () => {
 });
 
 test("formatEventLine: pause renders verb=pause + iteration + reason", () => {
-    // Issue #3: ralph_pause emits `{ type: "pause", runId, iteration,
+    // Issue #3: ap_pause emits `{ type: "pause", runId, iteration,
     // reason, ts }`. The plain renderer must surface verb / runId /
     // iteration / reason so a `tail -f`'d stream of events lets a
     // human (or `awk`) know which iteration paused and why. Pin the
@@ -104,11 +104,11 @@ test("formatEventLine: pause renders verb=pause + iteration + reason", () => {
     const line = formatEventLine({
         type: "pause",
         ts: 3723456,
-        runId: "ralph_loop-7",
+        runId: "ap_loop-7",
         iteration: 4,
         reason: "user requested",
     });
-    assert.match(line, /^01:02:03\.456\s+pause\s+ralph_loop-7/);
+    assert.match(line, /^01:02:03\.456\s+pause\s+ap_loop-7/);
     assert.match(line, /iter=4/);
     // Multi-word user reasons are JSON-quoted so a `tail -f` consumer
     // (awk / grep -o columns) sees one token after `reason=` instead
@@ -117,7 +117,7 @@ test("formatEventLine: pause renders verb=pause + iteration + reason", () => {
 });
 
 test("formatEventLine: pause with null reason omits the reason segment", () => {
-    // ralph_pause without a reason emits `reason: null`. The renderer
+    // ap_pause without a reason emits `reason: null`. The renderer
     // must skip the segment entirely (not render `reason=null`) so
     // empty-reason pause lines stay tidy in the plain log.
     const line = formatEventLine({
@@ -133,7 +133,7 @@ test("formatEventLine: pause with null reason omits the reason segment", () => {
 });
 
 test("formatEventLine: resume renders verb=resume + iteration + pausedForMs", () => {
-    // ralph_resume emits `{ type: "resume", runId, iteration,
+    // ap_resume emits `{ type: "resume", runId, iteration,
     // pausedForMs, ts }`. The plain renderer surfaces verb / runId /
     // iteration / pausedForMs so a `tail -f`'d log of events lets a
     // human (or `awk`) see exactly how long the loop slept — without
@@ -143,11 +143,11 @@ test("formatEventLine: resume renders verb=resume + iteration + pausedForMs", ()
     const line = formatEventLine({
         type: "resume",
         ts: 0,
-        runId: "ralph_loop-3",
+        runId: "ap_loop-3",
         iteration: 5,
         pausedForMs: 1234,
     });
-    assert.match(line, /resume\s+ralph_loop-3/);
+    assert.match(line, /resume\s+ap_loop-3/);
     assert.match(line, /iter=5/);
     assert.match(line, /pausedForMs=1234/);
 });
@@ -254,11 +254,11 @@ test("formatEventLine: iteration_start renders verb=iter+ + iter=", () => {
     const line = formatEventLine({
         type: "iteration_start",
         ts: 0,
-        runId: "ralph_loop-7",
+        runId: "ap_loop-7",
         iteration: 7,
         maxIterations: 100,
     });
-    assert.match(line, /\biter\+\s+ralph_loop-7\b/);
+    assert.match(line, /\biter\+\s+ap_loop-7\b/);
     assert.match(line, /iter=7\/100/);
     // No tokens / excerpt on iteration_start — those land on the
     // matching iteration_end.
@@ -281,12 +281,12 @@ test("formatEventLine: abort verb renders + reason= + note=", () => {
     const line = formatEventLine({
         type: "abort",
         ts: 0,
-        runId: "ralph_loop-9",
+        runId: "ap_loop-9",
         iterations: 12,
         reason: "stagnation",
         note: "3 identical responses",
     });
-    assert.match(line, /\babort\s+ralph_loop-9\b/);
+    assert.match(line, /\babort\s+ap_loop-9\b/);
     assert.match(line, /reason=stagnation/);
     assert.match(line, /note="3 identical responses"/);
     assert.doesNotMatch(line, /\biter=/, "abort events do not carry per-iter index");
@@ -302,18 +302,18 @@ test("formatEventLine: abort with abort_promise reason renders cleanly", () => {
     const line = formatEventLine({
         type: "abort",
         ts: 0,
-        runId: "ralph_loop-1",
+        runId: "ap_loop-1",
         iterations: 5,
         reason: "abort_promise",
     });
-    assert.match(line, /\babort\s+ralph_loop-1\b/);
+    assert.match(line, /\babort\s+ap_loop-1\b/);
     assert.match(line, /reason=abort_promise/);
     assert.doesNotMatch(line, /note=/, "absent note must not render an empty segment");
 });
 
 test("formatEventLine: reason= field quotes whitespace-bearing user reasons but not baked tokens", () => {
     // Iter 137 fix: pause/stop events with a user-supplied reason
-    // (via ralph_pause / ralph_stop) routinely contain spaces — the
+    // (via ap_pause / ap_stop) routinely contain spaces — the
     // user types "lunch break", "context-window pressure", or
     // similar. Pre-iter-137 the renderer emitted them unquoted, so
     // the line collapsed multiple tokens after `reason=` and
@@ -333,7 +333,7 @@ test("formatEventLine: reason= field quotes whitespace-bearing user reasons but 
     const baked = formatEventLine({
         type: "abort",
         ts: 1_000_000,
-        runId: "ralph_loop-baked",
+        runId: "ap_loop-baked",
         iterations: 3,
         reason: "completion_promise",
     });
@@ -345,7 +345,7 @@ test("formatEventLine: reason= field quotes whitespace-bearing user reasons but 
     const userText = formatEventLine({
         type: "pause",
         ts: 1_000_000,
-        runId: "ralph_loop-user",
+        runId: "ap_loop-user",
         iteration: 7,
         reason: "context window pressure",
     });
@@ -365,7 +365,7 @@ test("formatEventLine: reason= field quotes whitespace-bearing user reasons but 
     const tabbed = formatEventLine({
         type: "pause",
         ts: 1_000_000,
-        runId: "ralph_loop-tab",
+        runId: "ap_loop-tab",
         iteration: 1,
         reason: "lunch\tbreak",
     });

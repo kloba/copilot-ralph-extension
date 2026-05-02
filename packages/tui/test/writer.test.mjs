@@ -15,7 +15,7 @@ import {
 import { makeRunId } from "../src/events.mjs";
 
 function mkTmp() {
-    return fs.mkdtempSync(path.join(os.tmpdir(), "ralph-tui-writer-"));
+    return fs.mkdtempSync(path.join(os.tmpdir(), "autopilot-writer-"));
 }
 
 function readLines(filePath) {
@@ -146,8 +146,8 @@ test("resolveRunsRoot: pre-existing sentinel suppresses the notice", () => {
 });
 
 test("resolveRunEventsPath joins runId under the runs root", () => {
-    const p = resolveRunEventsPath("ralph_loop-1", { env: { AUTOPILOT_EVENTS_DIR: "/tmp/r" } });
-    assert.equal(p, "/tmp/r/ralph_loop-1/events.jsonl");
+    const p = resolveRunEventsPath("ap_loop-1", { env: { AUTOPILOT_EVENTS_DIR: "/tmp/r" } });
+    assert.equal(p, "/tmp/r/ap_loop-1/events.jsonl");
 });
 
 test("resolveRunEventsPath rejects empty runId", () => {
@@ -168,17 +168,17 @@ test("resolveRunEventsPath rejects path-traversal runIds", () => {
 test("resolveRunEventsPath accepts legitimately-shaped runIds", () => {
     const env = { AUTOPILOT_EVENTS_DIR: "/tmp/r" };
     // Emitter-produced shape: [A-Za-z0-9_-]+
-    for (const ok of ["ralph_loop-1", "self_improve-1700000000000", "grow_project-42", "a-b_c-1"]) {
+    for (const ok of ["ap_loop-1", "self_improve-1700000000000", "grow_project-42", "a-b_c-1"]) {
         assert.doesNotThrow(() => resolveRunEventsPath(ok, { env }));
     }
 });
 
 test("createEventWriter: emits a valid armed line and creates the run dir", () => {
     const root = mkTmp();
-    const runId = makeRunId("ralph_loop", 1700000000000);
+    const runId = makeRunId("ap_loop", 1700000000000);
     const w = createEventWriter({
         runId,
-        label: "ralph_loop",
+        label: "ap_loop",
         env: { AUTOPILOT_EVENTS_DIR: root },
         now: () => 1700000000000,
     });
@@ -187,7 +187,7 @@ test("createEventWriter: emits a valid armed line and creates the run dir", () =
     assert.equal(lines.length, 1);
     assert.equal(lines[0].type, "armed");
     assert.equal(lines[0].runId, runId);
-    assert.equal(lines[0].label, "ralph_loop");
+    assert.equal(lines[0].label, "ap_loop");
     assert.equal(lines[0].maxIterations, 20);
     assert.equal(lines[0].ts, 1700000000000);
 });
@@ -295,7 +295,7 @@ test("readRunIndex: empty when index.jsonl is missing", () => {
 
 test("readRunIndex: returns entries newest-first", () => {
     const root = mkTmp();
-    const w1 = createEventWriter({ runId: "r-1", label: "ralph_loop", env: { AUTOPILOT_EVENTS_DIR: root }, now: () => 100 });
+    const w1 = createEventWriter({ runId: "r-1", label: "ap_loop", env: { AUTOPILOT_EVENTS_DIR: root }, now: () => 100 });
     w1.emit({ type: "armed" });
     const w2 = createEventWriter({ runId: "r-2", label: "self_improve", env: { AUTOPILOT_EVENTS_DIR: root }, now: () => 200 });
     w2.emit({ type: "armed" });
@@ -312,10 +312,10 @@ test("readRunIndex: skips malformed lines, keeps good ones", () => {
     fs.mkdirSync(root, { recursive: true });
     fs.writeFileSync(indexPath, [
         "{not json}",
-        JSON.stringify({ type: "armed", ts: 1, runId: "ok-1", label: "ralph_loop" }),
+        JSON.stringify({ type: "armed", ts: 1, runId: "ok-1", label: "ap_loop" }),
         "",
         JSON.stringify({ type: "weird", ts: 2, runId: "skip" }),
-        JSON.stringify({ type: "armed", ts: 3, runId: "ok-2", label: "ralph_loop" }),
+        JSON.stringify({ type: "armed", ts: 3, runId: "ok-2", label: "ap_loop" }),
     ].join("\n") + "\n");
     const entries = readRunIndex({ env: { AUTOPILOT_EVENTS_DIR: root } });
     assert.deepEqual(entries.map((e) => e.runId), ["ok-2", "ok-1"]);
@@ -342,14 +342,14 @@ test("aggregateRuns: empty index yields zero totals", () => {
 
 test("aggregateRuns: run with no terminal event counts toward total + byTool but not byReason", () => {
     const root = mkTmp();
-    writeRun(root, "ralph_loop-1", "ralph_loop", [
-        { type: "armed", ts: 1, runId: "ralph_loop-1", label: "ralph_loop" },
-        { type: "iteration_start", ts: 2, runId: "ralph_loop-1", iteration: 1 },
-        { type: "iteration_end", ts: 3, runId: "ralph_loop-1", iteration: 1 },
+    writeRun(root, "ap_loop-1", "ap_loop", [
+        { type: "armed", ts: 1, runId: "ap_loop-1", label: "ap_loop" },
+        { type: "iteration_start", ts: 2, runId: "ap_loop-1", iteration: 1 },
+        { type: "iteration_end", ts: 3, runId: "ap_loop-1", iteration: 1 },
     ]);
     const r = aggregateRuns({ env: { AUTOPILOT_EVENTS_DIR: root } });
     assert.equal(r.total, 1);
-    assert.deepEqual(r.byTool, { ralph_loop: 1 });
+    assert.deepEqual(r.byTool, { ap_loop: 1 });
     assert.deepEqual(r.byReason, {});
     assert.equal(r.iters.max, 1);
     assert.equal(r.iters.mean, 1);
@@ -373,10 +373,10 @@ test("aggregateRuns: skips runs whose events.jsonl is missing", () => {
     const root = mkTmp();
     // Index claims a run exists, but no events.jsonl on disk.
     fs.writeFileSync(path.join(root, "index.jsonl"),
-        JSON.stringify({ type: "armed", ts: 1, runId: "ghost-1", label: "ralph_loop" }) + "\n");
+        JSON.stringify({ type: "armed", ts: 1, runId: "ghost-1", label: "ap_loop" }) + "\n");
     const r = aggregateRuns({ env: { AUTOPILOT_EVENTS_DIR: root } });
     assert.equal(r.total, 1);
-    assert.deepEqual(r.byTool, { ralph_loop: 1 });
+    assert.deepEqual(r.byTool, { ap_loop: 1 });
     assert.deepEqual(r.byReason, {});
     assert.equal(r.iters.max, 0);
 });
@@ -385,14 +385,14 @@ test("aggregateRuns: malformed JSONL lines are skipped silently", () => {
     const root = mkTmp();
     fs.mkdirSync(path.join(root, "rl-1"), { recursive: true });
     fs.writeFileSync(path.join(root, "rl-1", "events.jsonl"), [
-        JSON.stringify({ type: "armed", ts: 1, runId: "rl-1", label: "ralph_loop" }),
+        JSON.stringify({ type: "armed", ts: 1, runId: "rl-1", label: "ap_loop" }),
         "{not-json",
         "",
         JSON.stringify({ type: "iteration_end", ts: 2, runId: "rl-1", iteration: 4 }),
         JSON.stringify({ type: "complete", ts: 3, runId: "rl-1", reason: "completion_promise", iteration: 4 }),
     ].join("\n") + "\n");
     fs.writeFileSync(path.join(root, "index.jsonl"),
-        JSON.stringify({ type: "armed", ts: 1, runId: "rl-1", label: "ralph_loop" }) + "\n");
+        JSON.stringify({ type: "armed", ts: 1, runId: "rl-1", label: "ap_loop" }) + "\n");
     const r = aggregateRuns({ env: { AUTOPILOT_EVENTS_DIR: root } });
     assert.equal(r.total, 1);
     assert.deepEqual(r.byReason, { "complete:completion_promise": 1 });
@@ -401,8 +401,8 @@ test("aggregateRuns: malformed JSONL lines are skipped silently", () => {
 
 test("aggregateRuns: terminal event without reason buckets under bare type", () => {
     const root = mkTmp();
-    writeRun(root, "rl-2", "ralph_loop", [
-        { type: "armed", ts: 1, runId: "rl-2", label: "ralph_loop" },
+    writeRun(root, "rl-2", "ap_loop", [
+        { type: "armed", ts: 1, runId: "rl-2", label: "ap_loop" },
         { type: "abort", ts: 2, runId: "rl-2", iteration: 2 },
     ]);
     const r = aggregateRuns({ env: { AUTOPILOT_EVENTS_DIR: root } });
@@ -411,12 +411,12 @@ test("aggregateRuns: terminal event without reason buckets under bare type", () 
 
 test("aggregateRuns: mean is arithmetic over runs with iterations", () => {
     const root = mkTmp();
-    writeRun(root, "a-1", "ralph_loop", [
-        { type: "armed", ts: 1, runId: "a-1", label: "ralph_loop" },
+    writeRun(root, "a-1", "ap_loop", [
+        { type: "armed", ts: 1, runId: "a-1", label: "ap_loop" },
         { type: "complete", ts: 2, runId: "a-1", reason: "completion_promise", iteration: 2 },
     ]);
-    writeRun(root, "a-2", "ralph_loop", [
-        { type: "armed", ts: 3, runId: "a-2", label: "ralph_loop" },
+    writeRun(root, "a-2", "ap_loop", [
+        { type: "armed", ts: 3, runId: "a-2", label: "ap_loop" },
         { type: "complete", ts: 4, runId: "a-2", reason: "completion_promise", iteration: 8 },
     ]);
     const r = aggregateRuns({ env: { AUTOPILOT_EVENTS_DIR: root } });
@@ -431,11 +431,11 @@ test("aggregateRuns: handles >150k recorded runs without blowing the call stack"
     // call stack size exceeded" once iterCounts crosses Node's
     // argument-count limit (~150k on V8). A long-lived user with
     // daily self_improve runs would eventually hit that ceiling and
-    // `ralph-tui stats` would crash silently. We pump 200_001
+    // `autopilot stats` would crash silently. We pump 200_001
     // synthetic entries through aggregateRuns via an in-memory fs
     // stub and assert it returns the expected aggregates.
     const N = 200_001;
-    const armedLine = '{"type":"armed","runId":"r","label":"ralph_loop"}';
+    const armedLine = '{"type":"armed","runId":"r","label":"ap_loop"}';
     const completeLine = '{"type":"complete","runId":"r","reason":"completion_promise","iteration":42}';
     const indexContent = (armedLine + "\n").repeat(N);
     const eventsContent = completeLine + "\n";
@@ -452,7 +452,7 @@ test("aggregateRuns: handles >150k recorded runs without blowing the call stack"
     assert.equal(r.total, N);
     assert.equal(r.iters.max, 42);
     assert.equal(r.iters.mean, 42);
-    assert.equal(r.byTool.ralph_loop, N);
+    assert.equal(r.byTool.ap_loop, N);
 });
 
 test("pruneRuns: refuses to delete entries whose runId contains traversal segments", () => {
@@ -463,7 +463,7 @@ test("pruneRuns: refuses to delete entries whose runId contains traversal segmen
     // path.join. The hostile sibling directory is a sentinel we set
     // up OUTSIDE the runs root and assert is still present after the
     // prune.
-    const sentinel = fs.mkdtempSync(path.join(os.tmpdir(), "ralph-tui-sentinel-"));
+    const sentinel = fs.mkdtempSync(path.join(os.tmpdir(), "autopilot-sentinel-"));
     const sentinelMarker = path.join(sentinel, "do-not-delete.txt");
     fs.writeFileSync(sentinelMarker, "keep me\n");
     const goodId = "good-run-id";
@@ -571,7 +571,7 @@ test("createEventWriter: rejects path-traversal runIds (sandbox-escape guard)", 
         { runId: "a\\b", label: "embedded backslash" },
         { runId: ".", label: "current-dir literal" },
         { runId: "..", label: "parent-dir literal" },
-        { runId: "ralph_loop-1/../etc", label: "valid prefix + traversal" },
+        { runId: "ap_loop-1/../etc", label: "valid prefix + traversal" },
         { runId: "with\0null", label: "null byte" },
     ];
     for (const { runId, label } of cases) {
@@ -587,7 +587,7 @@ test("createEventWriter: rejects path-traversal runIds (sandbox-escape guard)", 
     const tmp = mkTmp();
     try {
         const w = createEventWriter({
-            runId: "ralph_loop-deadbeef",
+            runId: "ap_loop-deadbeef",
             env: { AUTOPILOT_EVENTS_DIR: tmp },
         });
         assert.equal(typeof w.emit, "function", "legitimate runIds must still construct successfully");
@@ -640,14 +640,14 @@ test("aggregateRuns: hand-edited iteration=Infinity (1e500) row is skipped, not 
     // but a hand-edited or corrupted events.jsonl row CAN reach
     // aggregateRuns through `readEventsFile`; the function is best-effort
     // and must not let a single malformed row poison the whole stats
-    // output for `ralph-tui stats`.
+    // output for `autopilot stats`.
     const root = mkTmp();
     fs.mkdirSync(path.join(root, "evil-1"), { recursive: true });
     // Hand-write the events.jsonl directly (writeRun would JSON.stringify
     // and lose the literal). The sane-row + crazy-row combination pins
     // that the OTHER row's iteration (a finite 4) wins.
     const lines = [
-        JSON.stringify({ type: "armed", ts: 1, runId: "evil-1", label: "ralph_loop" }),
+        JSON.stringify({ type: "armed", ts: 1, runId: "evil-1", label: "ap_loop" }),
         JSON.stringify({ type: "iteration_end", ts: 2, runId: "evil-1", iteration: 4 }),
         // Hand-injected literal — Number.MAX_VALUE * 2 → Infinity in JS.
         '{"type": "iteration_end", "ts": 3, "runId": "evil-1", "iteration": 1e500}',
@@ -655,7 +655,7 @@ test("aggregateRuns: hand-edited iteration=Infinity (1e500) row is skipped, not 
     ];
     fs.writeFileSync(path.join(root, "evil-1", "events.jsonl"), lines.join("\n") + "\n");
     fs.writeFileSync(path.join(root, "index.jsonl"),
-        JSON.stringify({ type: "armed", ts: 1, runId: "evil-1", label: "ralph_loop" }) + "\n");
+        JSON.stringify({ type: "armed", ts: 1, runId: "evil-1", label: "ap_loop" }) + "\n");
     const r = aggregateRuns({ env: { AUTOPILOT_EVENTS_DIR: root } });
     assert.equal(Number.isFinite(r.iters.max), true,
         "iters.max must stay finite even with a hand-edited 1e500 iteration row");
@@ -677,7 +677,7 @@ test("pruneRuns: hand-edited empty-runId row does NOT delete the runs root (data
     // every legitimately-recorded run's events.jsonl. The writer never
     // emits an empty runId (`makeRunId` requires a non-empty label),
     // but a hand-edited or corrupted index.jsonl CAN. This is a true
-    // data-loss bug, not a theoretical one — `ralph-tui prune
+    // data-loss bug, not a theoretical one — `autopilot prune
     // --older-than 0d` against a corrupted index would silently
     // destroy a contributor's entire run history. The fix added an
     // `obj.runId.length > 0` clause to the centralised
@@ -691,11 +691,11 @@ test("pruneRuns: hand-edited empty-runId row does NOT delete the runs root (data
     const aliveTs = Date.now() + 60_000;
     fs.mkdirSync(path.join(root, "alive-1"), { recursive: true });
     fs.writeFileSync(path.join(root, "alive-1", "events.jsonl"),
-        JSON.stringify({ type: "armed", ts: aliveTs, runId: "alive-1", label: "ralph_loop" }) + "\n");
+        JSON.stringify({ type: "armed", ts: aliveTs, runId: "alive-1", label: "ap_loop" }) + "\n");
     // The DANGEROUS hand-edited row: empty runId, ts deep in the past.
     fs.writeFileSync(path.join(root, "index.jsonl"),
-        JSON.stringify({ type: "armed", ts: aliveTs, runId: "alive-1", label: "ralph_loop" }) + "\n"
-        + JSON.stringify({ type: "armed", ts: 1, runId: "", label: "ralph_loop" }) + "\n");
+        JSON.stringify({ type: "armed", ts: aliveTs, runId: "alive-1", label: "ap_loop" }) + "\n"
+        + JSON.stringify({ type: "armed", ts: 1, runId: "", label: "ap_loop" }) + "\n");
     // A canary file at the runs root: if pruneRuns wipes the root, the
     // canary disappears and the assertion below fires red.
     const canary = path.join(root, "canary.txt");
@@ -734,16 +734,16 @@ test("readRunIndex: empty-runId / missing-runId / non-string-runId rows are skip
     fs.mkdirSync(root, { recursive: true });
     fs.writeFileSync(indexPath, [
         // Empty-string runId: rejected by `obj.runId.length > 0`.
-        JSON.stringify({ type: "armed", ts: 1, runId: "", label: "ralph_loop" }),
+        JSON.stringify({ type: "armed", ts: 1, runId: "", label: "ap_loop" }),
         // Missing runId entirely: rejected by `typeof obj.runId === "string"`.
-        JSON.stringify({ type: "armed", ts: 2, label: "ralph_loop" }),
+        JSON.stringify({ type: "armed", ts: 2, label: "ap_loop" }),
         // Non-string runId (number): rejected by typeof check.
-        JSON.stringify({ type: "armed", ts: 3, runId: 42, label: "ralph_loop" }),
+        JSON.stringify({ type: "armed", ts: 3, runId: 42, label: "ap_loop" }),
         // Null runId: rejected by typeof check (typeof null === "object").
-        JSON.stringify({ type: "armed", ts: 4, runId: null, label: "ralph_loop" }),
+        JSON.stringify({ type: "armed", ts: 4, runId: null, label: "ap_loop" }),
         // The one legitimate row — must survive to prove the filter
         // isn't accidentally rejecting valid input.
-        JSON.stringify({ type: "armed", ts: 5, runId: "real-1", label: "ralph_loop" }),
+        JSON.stringify({ type: "armed", ts: 5, runId: "real-1", label: "ap_loop" }),
     ].join("\n") + "\n");
     const entries = readRunIndex({ env: { AUTOPILOT_EVENTS_DIR: root } });
     assert.equal(entries.length, 1, "only the legitimate row should survive (4 invalid shapes rejected)");
@@ -764,14 +764,14 @@ test("pruneRuns: hand-edited ts=-Infinity row does NOT prematurely delete the ru
     // class of bug on the index.jsonl side.
     const root = mkTmp();
     const indexPath = path.join(root, "index.jsonl");
-    const liveRunId = "ralph_loop-1700000000000";
+    const liveRunId = "ap_loop-1700000000000";
     const liveRunDir = path.join(root, liveRunId);
     fs.mkdirSync(liveRunDir, { recursive: true });
     fs.writeFileSync(path.join(liveRunDir, "events.jsonl"), "{}\n", "utf8");
     // Forge a row whose ts JSON.parses to -Infinity. We cannot just
     // use the literal `-1e500` — JSON.stringify would emit "null".
     // Construct the line by hand to mimic a corrupted writer dump.
-    const corruptedRow = '{"type":"armed","runId":"' + liveRunId + '","label":"ralph_loop","startedAt":1700000000000,"ts":-1e500}\n';
+    const corruptedRow = '{"type":"armed","runId":"' + liveRunId + '","label":"ap_loop","startedAt":1700000000000,"ts":-1e500}\n';
     fs.writeFileSync(indexPath, corruptedRow, "utf8");
     // Sanity check: parsing this row indeed yields -Infinity (so the
     // bug it pins is the actually-reachable one, not theoretical).

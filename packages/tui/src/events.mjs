@@ -1,4 +1,4 @@
-// Event contract for the ralph TUI (issue #22).
+// Event contract for the autopilot TUI (issue #22).
 //
 // The loop handler (extension/handler.mjs) writes one JSON object per line
 // to ~/.copilot/session-state/<id>/events.jsonl. The TUI tails that file,
@@ -26,7 +26,7 @@
  * @property {EventType} type
  * @property {number} ts            Epoch ms when the event was emitted.
  * @property {string} runId         Stable per-loop identifier (label + startedAt).
- * @property {string} [label]       "ralph_loop" | "self_improve" | "grow_project".
+ * @property {string} [label]       "ap_loop" | "self_improve" | "grow_project".
  * @property {number} [iteration]   1-indexed iteration counter.
  * @property {number} [maxIterations]
  * @property {number} [minIterations]

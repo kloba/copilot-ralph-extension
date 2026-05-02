@@ -1,4 +1,4 @@
-// Stdlib-only JSONL file reader / tailer for the ralph TUI (issue #22).
+// Stdlib-only JSONL file reader / tailer for the autopilot TUI (issue #22).
 //
 // readEventsFile() reads a complete events.jsonl synchronously — used by
 // `replay` for fixed historical runs and by tests.

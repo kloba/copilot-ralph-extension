@@ -1,4 +1,4 @@
-// Tests for `ralph-tui run` driver (packages/tui/src/runner.mjs).
+// Tests for `autopilot run` driver (packages/tui/src/runner.mjs).
 //
 // Strategy:
 //   - Pure helpers (validateFocus, composePrompt, reduceCopilotEvents)
@@ -32,7 +32,7 @@ import {
     resumeRun,
     stopRun,
     statusRun,
-    runRalphTui,
+    runAutopilot,
     runOneIteration,
     PROMPT_SELF_IMPROVE,
     PROMPT_GROW_PROJECT,
@@ -48,7 +48,7 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "
 const FAKE_COPILOT = resolve(dirname(fileURLToPath(import.meta.url)), "fixtures", "fake-copilot.mjs");
 
 function tmp() {
-    return mkdtempSync(join(tmpdir(), "ralph-tui-runner-"));
+    return mkdtempSync(join(tmpdir(), "autopilot-runner-"));
 }
 
 function makeEnv(extra = {}) {
@@ -430,26 +430,26 @@ test("updateState: increments version monotonically under sequential writes", ()
 
 // ───────────── Validation ─────────────
 
-test("runRalphTui: rejects invalid mode", async () => {
-    await assert.rejects(runRalphTui({ mode: "bogus", contextMode: "fresh" }), /invalid mode/);
+test("runAutopilot: rejects invalid mode", async () => {
+    await assert.rejects(runAutopilot({ mode: "bogus", contextMode: "fresh" }), /invalid mode/);
 });
 
-test("runRalphTui: rejects missing prompt for prompt mode", async () => {
-    await assert.rejects(runRalphTui({ mode: "prompt", contextMode: "fresh" }), /requires a non-empty string/);
+test("runAutopilot: rejects missing prompt for prompt mode", async () => {
+    await assert.rejects(runAutopilot({ mode: "prompt", contextMode: "fresh" }), /requires a non-empty string/);
 });
 
-test("runRalphTui: rejects max out of range", async () => {
-    await assert.rejects(runRalphTui({ mode: "self-improve", contextMode: "fresh", max: 0 }), /max must be an integer/);
-    await assert.rejects(runRalphTui({ mode: "self-improve", contextMode: "fresh", max: MAX_ALLOWED_ITERATIONS + 1 }), /max must be an integer/);
+test("runAutopilot: rejects max out of range", async () => {
+    await assert.rejects(runAutopilot({ mode: "self-improve", contextMode: "fresh", max: 0 }), /max must be an integer/);
+    await assert.rejects(runAutopilot({ mode: "self-improve", contextMode: "fresh", max: MAX_ALLOWED_ITERATIONS + 1 }), /max must be an integer/);
 });
 
-test("runRalphTui: rejects bad contextMode", async () => {
-    await assert.rejects(runRalphTui({ mode: "self-improve", contextMode: "weird" }), /contextMode must be/);
+test("runAutopilot: rejects bad contextMode", async () => {
+    await assert.rejects(runAutopilot({ mode: "self-improve", contextMode: "weird" }), /contextMode must be/);
 });
 
-test("runRalphTui: rejects oversize focus", async () => {
+test("runAutopilot: rejects oversize focus", async () => {
     const focus = "x".repeat(MAX_FOCUS_CHARS + 1);
-    await assert.rejects(runRalphTui({ mode: "self-improve", contextMode: "fresh", focus }), /exceeds 2000 characters/);
+    await assert.rejects(runAutopilot({ mode: "self-improve", contextMode: "fresh", focus }), /exceeds 2000 characters/);
 });
 
 // ───────────── End-to-end with fake-copilot shim ─────────────
@@ -467,7 +467,7 @@ function makeShimEnv(scenario) {
     };
 }
 
-test("runRalphTui: --self-improve --continue iter 1 emits COMPLETE → reason=complete, sessionId captured", async () => {
+test("runAutopilot: --self-improve --continue iter 1 emits COMPLETE → reason=complete, sessionId captured", async () => {
     const { env } = makeShimEnv({
         iters: [
             {
@@ -479,7 +479,7 @@ test("runRalphTui: --self-improve --continue iter 1 emits COMPLETE → reason=co
             },
         ],
     });
-    const result = await runRalphTui({
+    const result = await runAutopilot({
         mode: "self-improve",
         contextMode: "continue",
         max: 5,
@@ -531,7 +531,7 @@ function makeMockSpawn(scripts) {
     };
 }
 
-test("runRalphTui: --continue resumes via --resume=<sessionId> on iter 2", async () => {
+test("runAutopilot: --continue resumes via --resume=<sessionId> on iter 2", async () => {
     const argLog = [];
     const spawn = function (bin, args, opts) {
         argLog.push([...args]);
@@ -559,7 +559,7 @@ test("runRalphTui: --continue resumes via --resume=<sessionId> on iter 2", async
         return child;
     };
 
-    const result = await runRalphTui({
+    const result = await runAutopilot({
         mode: "self-improve",
         contextMode: "continue",
         max: 5,
@@ -576,7 +576,7 @@ test("runRalphTui: --continue resumes via --resume=<sessionId> on iter 2", async
     assert.ok(!argLog[1].some((a) => a === "-n"), "iter 2 must not pass -n");
 });
 
-test("runRalphTui: --fresh never resumes and never reuses sessionId", async () => {
+test("runAutopilot: --fresh never resumes and never reuses sessionId", async () => {
     const argLog = [];
     const spawn = function (bin, args) {
         argLog.push([...args]);
@@ -599,7 +599,7 @@ test("runRalphTui: --fresh never resumes and never reuses sessionId", async () =
         return child;
     };
 
-    await runRalphTui({
+    await runAutopilot({
         mode: "grow-project",
         contextMode: "fresh",
         max: 5,
@@ -612,7 +612,7 @@ test("runRalphTui: --fresh never resumes and never reuses sessionId", async () =
     }
 });
 
-test("runRalphTui: ABORT_NO_IMPROVEMENTS triggers abort termination", async () => {
+test("runAutopilot: ABORT_NO_IMPROVEMENTS triggers abort termination", async () => {
     const spawn = makeMockSpawn([
         {
             stdout: [
@@ -622,7 +622,7 @@ test("runRalphTui: ABORT_NO_IMPROVEMENTS triggers abort termination", async () =
             exitCode: 0,
         },
     ]);
-    const result = await runRalphTui({
+    const result = await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 5,
@@ -633,7 +633,7 @@ test("runRalphTui: ABORT_NO_IMPROVEMENTS triggers abort termination", async () =
     assert.match(result.terminationNote, /ABORT_NO_IMPROVEMENTS/);
 });
 
-test("runRalphTui: ABORT_NO_BACKLOG default abort for grow-project", async () => {
+test("runAutopilot: ABORT_NO_BACKLOG default abort for grow-project", async () => {
     const spawn = makeMockSpawn([
         {
             stdout: [
@@ -643,7 +643,7 @@ test("runRalphTui: ABORT_NO_BACKLOG default abort for grow-project", async () =>
             exitCode: 0,
         },
     ]);
-    const result = await runRalphTui({
+    const result = await runAutopilot({
         mode: "grow-project",
         contextMode: "fresh",
         max: 5,
@@ -653,7 +653,7 @@ test("runRalphTui: ABORT_NO_BACKLOG default abort for grow-project", async () =>
     assert.equal(result.terminationReason, "abort");
 });
 
-test("runRalphTui: max-iter cap fires when no terminator is emitted", async () => {
+test("runAutopilot: max-iter cap fires when no terminator is emitted", async () => {
     let n = 0;
     const spawn = function () {
         n++;
@@ -674,7 +674,7 @@ test("runRalphTui: max-iter cap fires when no terminator is emitted", async () =
         });
         return child;
     };
-    const result = await runRalphTui({
+    const result = await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 3,
@@ -685,11 +685,11 @@ test("runRalphTui: max-iter cap fires when no terminator is emitted", async () =
     assert.equal(n, 3);
 });
 
-test("runRalphTui: subprocess exit code != 0 ends loop with subprocess_failed", async () => {
+test("runAutopilot: subprocess exit code != 0 ends loop with subprocess_failed", async () => {
     const spawn = makeMockSpawn([
         { stdout: "", stderr: "auth error\n", exitCode: 1 },
     ]);
-    const result = await runRalphTui({
+    const result = await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 5,
@@ -699,7 +699,7 @@ test("runRalphTui: subprocess exit code != 0 ends loop with subprocess_failed", 
     assert.equal(result.terminationReason, "subprocess_failed");
 });
 
-test("runRalphTui: stopRun mid-loop ends with terminationReason=stopped", async () => {
+test("runAutopilot: stopRun mid-loop ends with terminationReason=stopped", async () => {
     let runIdSeen = null;
     let envSeen = null;
     const spawn = function () {
@@ -726,7 +726,7 @@ test("runRalphTui: stopRun mid-loop ends with terminationReason=stopped", async 
     };
     const env = makeEnv();
     envSeen = env;
-    const result = await runRalphTui({
+    const result = await runAutopilot({
         mode: "prompt",
         prompt: "hi",
         contextMode: "fresh",
@@ -742,7 +742,7 @@ test("runRalphTui: stopRun mid-loop ends with terminationReason=stopped", async 
     assert.equal(s.terminationReason, "stopped");
 });
 
-test("runRalphTui: emits armed → iteration_start → iteration_end → terminal sequence", async () => {
+test("runAutopilot: emits armed → iteration_start → iteration_end → terminal sequence", async () => {
     const events = [];
     const eventEmitter = {
         runId: "test-run-fixed",
@@ -759,7 +759,7 @@ test("runRalphTui: emits armed → iteration_start → iteration_end → termina
             exitCode: 0,
         },
     ]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -775,7 +775,7 @@ test("runRalphTui: emits armed → iteration_start → iteration_end → termina
     // regress every time we tweak live-emission cadence.
     const skeleton = events.map((e) => e.type).filter((t) => t !== "usage_update");
     assert.deepEqual(skeleton, ["armed", "iteration_start", "iteration_end", "complete"]);
-    // armed event must carry contextMode + mode + maxIterations for ralph-tui list.
+    // armed event must carry contextMode + mode + maxIterations for autopilot list.
     assert.equal(events[0].contextMode, "fresh");
     assert.equal(events[0].mode, "self-improve");
     assert.equal(events[0].maxIterations, 1);
@@ -787,7 +787,7 @@ test("runRalphTui: emits armed → iteration_start → iteration_end → termina
 // `assistant.message` and on the terminal `result`, then includes
 // the same cumulative totals on `iteration_end` for replay
 // resilience. This test pins both halves of the contract.
-test("runRalphTui: emits usage_update mid-iter and cumulative tokens+premium on iteration_end", async () => {
+test("runAutopilot: emits usage_update mid-iter and cumulative tokens+premium on iteration_end", async () => {
     const events = [];
     const eventEmitter = {
         runId: "usage-test",
@@ -815,7 +815,7 @@ test("runRalphTui: emits usage_update mid-iter and cumulative tokens+premium on 
             exitCode: 0,
         },
     ]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 2,
@@ -855,7 +855,7 @@ test("runRalphTui: emits usage_update mid-iter and cumulative tokens+premium on 
     assert.equal(iterEnds[1].premiumRequests, 2 + 1);  // run total
 });
 
-test("runRalphTui: emits abort (NOT 'aborted') for early-terminate", async () => {
+test("runAutopilot: emits abort (NOT 'aborted') for early-terminate", async () => {
     const events = [];
     const eventEmitter = {
         runId: "x",
@@ -872,7 +872,7 @@ test("runRalphTui: emits abort (NOT 'aborted') for early-terminate", async () =>
             exitCode: 0,
         },
     ]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -959,7 +959,7 @@ test("extractStageMarkers: handles every grow_project stage, including SELECT an
     assert.deepEqual(got.map((m) => m.stage), SDLC_STAGES_GROW_PROJECT.map((_, i) => i + 1));
 });
 
-test("runRalphTui: parses [STAGE: NAME] markers from agent stdout and emits stage_start/stage_end pairs in order", async () => {
+test("runAutopilot: parses [STAGE: NAME] markers from agent stdout and emits stage_start/stage_end pairs in order", async () => {
     const events = [];
     const eventEmitter = {
         runId: "stage-test",
@@ -973,7 +973,7 @@ test("runRalphTui: parses [STAGE: NAME] markers from agent stdout and emits stag
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -1002,7 +1002,7 @@ test("runRalphTui: parses [STAGE: NAME] markers from agent stdout and emits stag
     assert.ok(lastStageIdx < iterEndIdx, "stage events must come BEFORE iteration_end so the iter scope is right");
 });
 
-test("runRalphTui: hallucinated [STAGE: REVIEW] marker is silently dropped (no event emitted)", async () => {
+test("runAutopilot: hallucinated [STAGE: REVIEW] marker is silently dropped (no event emitted)", async () => {
     const events = [];
     const eventEmitter = {
         runId: "stage-bad",
@@ -1015,7 +1015,7 @@ test("runRalphTui: hallucinated [STAGE: REVIEW] marker is silently dropped (no e
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -1030,7 +1030,7 @@ test("runRalphTui: hallucinated [STAGE: REVIEW] marker is silently dropped (no e
         ["stage_start:ORIENT", "stage_end:ORIENT"]);
 });
 
-test("runRalphTui: --prompt mode emits no stage events (no canonical stage list)", async () => {
+test("runAutopilot: --prompt mode emits no stage events (no canonical stage list)", async () => {
     const events = [];
     const eventEmitter = {
         runId: "stage-prompt",
@@ -1047,7 +1047,7 @@ test("runRalphTui: --prompt mode emits no stage events (no canonical stage list)
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "prompt",
         contextMode: "fresh",
         prompt: "drive the loop yourself",
@@ -1066,7 +1066,7 @@ import { extractAgentTimeline, summarizeToolArgs } from "../src/runner.mjs";
 
 // ─── Issue #48: live event streaming (regression for the
 // "(no active stage) / (no activity yet)" empty-pane bug
-// reported on `ralph-tui run --self-improve --fresh`).
+// reported on `autopilot run --self-improve --fresh`).
 //
 // Pre-fix, the runner buffered every child JSONL event in
 // memory and emitted the synthetic stage_start / substage
@@ -1084,7 +1084,7 @@ import { extractAgentTimeline, summarizeToolArgs } from "../src/runner.mjs";
 // BEFORE the close gate is released. The pre-fix runner
 // would not emit stage_start until close fired, so the
 // assertion `stageStartBeforeClose === true` would fail.
-test("runRalphTui: stage_start emits LIVE during the iter, not in a post-close batch (issue #48)", async () => {
+test("runAutopilot: stage_start emits LIVE during the iter, not in a post-close batch (issue #48)", async () => {
     const events = [];
     const eventEmitter = {
         runId: "stream-live",
@@ -1134,7 +1134,7 @@ test("runRalphTui: stage_start emits LIVE during the iter, not in a post-close b
         return child;
     };
 
-    const runPromise = runRalphTui({
+    const runPromise = runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -1177,11 +1177,11 @@ test("runRalphTui: stage_start emits LIVE during the iter, not in a post-close b
 // post-fix runner would silently drop the last
 // tool.execution_complete (or final `[STAGE: ]` marker) and the
 // TUI's last-iter snapshot would be subtly wrong. The
-// streaming + suffix-replay design in `runRalphTui` defends
+// streaming + suffix-replay design in `runAutopilot` defends
 // against this in two ways (onLine-on-drain + suffix replay
 // against result.events), so even if only one path were
 // somehow broken, this assertion still holds.
-test("runRalphTui: final un-newline-terminated JSONL line is captured live (close-drain → onLine)", async () => {
+test("runAutopilot: final un-newline-terminated JSONL line is captured live (close-drain → onLine)", async () => {
     const events = [];
     const eventEmitter = {
         runId: "drain-live",
@@ -1217,7 +1217,7 @@ test("runRalphTui: final un-newline-terminated JSONL line is captured live (clos
         return child;
     };
 
-    const result = await runRalphTui({
+    const result = await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -1353,7 +1353,7 @@ test("extractAgentTimeline: sub-agent (agentId set) assistant.message events are
     assert.equal(tl.length, 1, "only the root agent's marker counts");
 });
 
-test("runRalphTui: emits substage events with sub index, verb, argsSummary, outcome, durationMs", async () => {
+test("runAutopilot: emits substage events with sub index, verb, argsSummary, outcome, durationMs", async () => {
     const events = [];
     const eventEmitter = {
         runId: "substage-test",
@@ -1378,7 +1378,7 @@ test("runRalphTui: emits substage events with sub index, verb, argsSummary, outc
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -1409,7 +1409,7 @@ test("runRalphTui: emits substage events with sub index, verb, argsSummary, outc
     assert.ok(types.includes("stage_end"), "stages must close so foldEvents bookkeeping is clean");
 });
 
-test("runRalphTui: substage sub-counter resets to 1 on each new stage_start", async () => {
+test("runAutopilot: substage sub-counter resets to 1 on each new stage_start", async () => {
     const events = [];
     const eventEmitter = {
         runId: "sub-reset-test",
@@ -1435,7 +1435,7 @@ test("runRalphTui: substage sub-counter resets to 1 on each new stage_start", as
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -1677,7 +1677,7 @@ test("extractAgentTimeline: structured markers from sub-agents (agentId set) are
     assert.deepEqual(tl[0].payload.stages, ["B"]);
 });
 
-test("runRalphTui: STAGE_PLAN marker → emits stage_plan event followed by pinned-tail amendments", async () => {
+test("runAutopilot: STAGE_PLAN marker → emits stage_plan event followed by pinned-tail amendments", async () => {
     const events = [];
     const eventEmitter = {
         runId: "stage-plan-test",
@@ -1693,7 +1693,7 @@ test("runRalphTui: STAGE_PLAN marker → emits stage_plan event followed by pinn
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -1715,7 +1715,7 @@ test("runRalphTui: STAGE_PLAN marker → emits stage_plan event followed by pinn
     assert.ok(planIdx >= 0 && planIdx < firstAmendIdx, "stage_plan precedes amends");
 });
 
-test("runRalphTui: bash 'git commit' substage → emits commit_observed with sha+subject+trailers", async () => {
+test("runAutopilot: bash 'git commit' substage → emits commit_observed with sha+subject+trailers", async () => {
     const events = [];
     const eventEmitter = {
         runId: "commit-observed-test",
@@ -1755,7 +1755,7 @@ test("runRalphTui: bash 'git commit' substage → emits commit_observed with sha
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -1777,7 +1777,7 @@ test("runRalphTui: bash 'git commit' substage → emits commit_observed with sha
     assert.equal(cos[1].trailers.length, 1);
 });
 
-test("runRalphTui: failed git commit substage does NOT trigger commit_observed", async () => {
+test("runAutopilot: failed git commit substage does NOT trigger commit_observed", async () => {
     const events = [];
     const eventEmitter = {
         runId: "commit-fail-test",
@@ -1805,7 +1805,7 @@ test("runRalphTui: failed git commit substage does NOT trigger commit_observed",
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -1821,7 +1821,7 @@ test("runRalphTui: failed git commit substage does NOT trigger commit_observed",
     assert.equal(gitExecCalls, 1, "gitExec called once at arm-time replay (rev-parse), short-circuits on null");
 });
 
-test("runRalphTui: non-bash tool with 'git commit' in argsSummary does NOT fire commit_observed", async () => {
+test("runAutopilot: non-bash tool with 'git commit' in argsSummary does NOT fire commit_observed", async () => {
     const events = [];
     const eventEmitter = {
         runId: "non-bash-test",
@@ -1841,7 +1841,7 @@ test("runRalphTui: non-bash tool with 'git commit' in argsSummary does NOT fire 
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -1855,7 +1855,7 @@ test("runRalphTui: non-bash tool with 'git commit' in argsSummary does NOT fire 
 
 // ─── Issue #54 slice 2c: arm-time HEAD replay-on-mount ──────────────
 
-test("Issue #54 slice 2c: runRalphTui emits commit_observed at arm time when HEAD exists, even if iter makes no commits", async () => {
+test("Issue #54 slice 2c: runAutopilot emits commit_observed at arm time when HEAD exists, even if iter makes no commits", async () => {
     const events = [];
     const eventEmitter = {
         runId: "arm-replay-test",
@@ -1878,7 +1878,7 @@ test("Issue #54 slice 2c: runRalphTui emits commit_observed at arm time when HEA
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -1911,7 +1911,7 @@ test("Issue #54 slice 2c: arm-time replay is silent when gitExec returns null (n
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -1924,7 +1924,7 @@ test("Issue #54 slice 2c: arm-time replay is silent when gitExec returns null (n
         "no commit_observed emitted when gitExec returns null");
 });
 
-test("runRalphTui: WORKITEM_START + WORKITEM_END markers emit workitem events", async () => {
+test("runAutopilot: WORKITEM_START + WORKITEM_END markers emit workitem events", async () => {
     const events = [];
     const eventEmitter = {
         runId: "wi-test",
@@ -1942,7 +1942,7 @@ test("runRalphTui: WORKITEM_START + WORKITEM_END markers emit workitem events", 
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -1960,7 +1960,7 @@ test("runRalphTui: WORKITEM_START + WORKITEM_END markers emit workitem events", 
     assert.equal(end.closesN, 1);
 });
 
-test("runRalphTui: TASK_LIST + TASK_START + TASK_END markers emit task events", async () => {
+test("runAutopilot: TASK_LIST + TASK_START + TASK_END markers emit task events", async () => {
     const events = [];
     const eventEmitter = {
         runId: "task-test",
@@ -1980,7 +1980,7 @@ test("runRalphTui: TASK_LIST + TASK_START + TASK_END markers emit task events", 
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -1999,7 +1999,7 @@ test("runRalphTui: TASK_LIST + TASK_START + TASK_END markers emit task events", 
     assert.equal(end.durationMs, 500);
 });
 
-test("runRalphTui: malformed marker payload (missing required field) is silently dropped", async () => {
+test("runAutopilot: malformed marker payload (missing required field) is silently dropped", async () => {
     const events = [];
     const eventEmitter = {
         runId: "bad-marker-test",
@@ -2022,7 +2022,7 @@ test("runRalphTui: malformed marker payload (missing required field) is silently
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -2170,7 +2170,7 @@ test("extractBacklogFromEvents: non-array input → null", () => {
     assert.equal(extractBacklogFromEvents("not events"), null);
 });
 
-test("runRalphTui: emits backlog_snapshot when the agent runs gh probes during ORIENT", async () => {
+test("runAutopilot: emits backlog_snapshot when the agent runs gh probes during ORIENT", async () => {
     const events = [];
     const eventEmitter = {
         runId: "backlog-test",
@@ -2203,7 +2203,7 @@ test("runRalphTui: emits backlog_snapshot when the agent runs gh probes during O
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
@@ -2224,7 +2224,7 @@ test("runRalphTui: emits backlog_snapshot when the agent runs gh probes during O
     assert.ok(snapIdx < iterEndIdx, "backlog_snapshot must precede iteration_end");
 });
 
-test("runRalphTui: no backlog_snapshot when the agent ran no gh probes (e.g. --prompt mode)", async () => {
+test("runAutopilot: no backlog_snapshot when the agent ran no gh probes (e.g. --prompt mode)", async () => {
     const events = [];
     const eventEmitter = {
         runId: "no-backlog-test",
@@ -2238,7 +2238,7 @@ test("runRalphTui: no backlog_snapshot when the agent ran no gh probes (e.g. --p
         JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
     ].join("\n") + "\n";
     const spawn = makeMockSpawn([{ stdout, exitCode: 0 }]);
-    await runRalphTui({
+    await runAutopilot({
         mode: "prompt",
         contextMode: "fresh",
         prompt: "do something",
@@ -2253,7 +2253,7 @@ test("runRalphTui: no backlog_snapshot when the agent ran no gh probes (e.g. --p
 
 // ─── Issue #48 slice 9 commit 4: smoke test — full marker stream ────────
 //
-// Drives runRalphTui end-to-end with a single iter that emits the
+// Drives runAutopilot end-to-end with a single iter that emits the
 // complete marker hierarchy:
 //   workitem_start → stage_plan → task_list → task_start →
 //   tool_complete (git commit) → commit_observed (runner side) →
@@ -2265,7 +2265,7 @@ test("runRalphTui: no backlog_snapshot when the agent ran no gh probes (e.g. --p
 
 import { foldEvents } from "../src/events.mjs";
 
-test("runRalphTui smoke: full marker stream surfaces stage_plan + task_list + task_start/end + commit_observed + workitem_start/end", async () => {
+test("runAutopilot smoke: full marker stream surfaces stage_plan + task_list + task_start/end + commit_observed + workitem_start/end", async () => {
     const events = [];
     const eventEmitter = {
         runId: "smoke-r-48",
@@ -2331,7 +2331,7 @@ test("runRalphTui smoke: full marker stream surfaces stage_plan + task_list + ta
         }
         return null;
     };
-    const result = await runRalphTui({
+    const result = await runAutopilot({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,

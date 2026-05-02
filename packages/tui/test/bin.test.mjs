@@ -13,7 +13,7 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = resolve(REPO_ROOT, "bin", "tui.mjs");
 
 function tmp() {
-    return mkdtempSync(join(tmpdir(), "ralph-bin-"));
+    return mkdtempSync(join(tmpdir(), "autopilot-bin-"));
 }
 
 function runBin(args, env) {
@@ -29,9 +29,9 @@ test("parseArgv: --help short-circuits", () => {
 });
 
 test("parseArgv: subcommand and positional", () => {
-    const r = parseArgv(["replay", "ralph_loop-1"]);
+    const r = parseArgv(["replay", "ap_loop-1"]);
     assert.equal(r.cmd, "replay");
-    assert.deepEqual(r.positional, ["ralph_loop-1"]);
+    assert.deepEqual(r.positional, ["ap_loop-1"]);
 });
 
 test("parseArgv: --plain flag", () => {
@@ -45,7 +45,7 @@ test("bin --help: prints USAGE and exits 0", () => {
     const r = runBin(["--help"]);
     assert.equal(r.status, 0);
     assert.match(r.stdout, /USAGE/);
-    assert.match(r.stdout, /ralph-tui list/);
+    assert.match(r.stdout, /autopilot list/);
 });
 
 test("bin list: empty runs root prints helpful message", () => {
@@ -60,7 +60,7 @@ test("bin list: enumerates seeded runs newest-first", () => {
     const dir = tmp();
     const idx = join(dir, "index.jsonl");
     writeFileSync(idx,
-        JSON.stringify({ type: "armed", ts: 1000, runId: "ralph_loop-1000", label: "ralph_loop", maxIterations: 5, minIterations: 1 }) + "\n"
+        JSON.stringify({ type: "armed", ts: 1000, runId: "ap_loop-1000", label: "ap_loop", maxIterations: 5, minIterations: 1 }) + "\n"
         + JSON.stringify({ type: "armed", ts: 2000, runId: "self_improve-2000", label: "self_improve", maxIterations: 100, minIterations: 5 }) + "\n",
     );
     const r = runBin(["list"], { RALPH_EVENTS_DIR: dir });
@@ -69,7 +69,7 @@ test("bin list: enumerates seeded runs newest-first", () => {
     // Header + 2 runs.
     assert.equal(lines.length, 3);
     assert.match(lines[1], /self_improve-2000/, "newest first");
-    assert.match(lines[2], /ralph_loop-1000/);
+    assert.match(lines[2], /ap_loop-1000/);
     rmSync(dir, { recursive: true, force: true });
 });
 
@@ -86,7 +86,7 @@ test("bin list --json: emits parseable run index newest-first", () => {
     const dir = tmp();
     const idx = join(dir, "index.jsonl");
     writeFileSync(idx,
-        JSON.stringify({ type: "armed", ts: 1000, runId: "ralph_loop-1000", label: "ralph_loop", maxIterations: 5, minIterations: 1 }) + "\n"
+        JSON.stringify({ type: "armed", ts: 1000, runId: "ap_loop-1000", label: "ap_loop", maxIterations: 5, minIterations: 1 }) + "\n"
         + JSON.stringify({ type: "armed", ts: 2000, runId: "self_improve-2000", label: "self_improve", maxIterations: 100, minIterations: 5 }) + "\n",
     );
     const r = runBin(["list", "--json"], { RALPH_EVENTS_DIR: dir });
@@ -95,7 +95,7 @@ test("bin list --json: emits parseable run index newest-first", () => {
     assert.ok(Array.isArray(parsed));
     assert.equal(parsed.length, 2);
     assert.equal(parsed[0].runId, "self_improve-2000", "newest first");
-    assert.equal(parsed[1].runId, "ralph_loop-1000");
+    assert.equal(parsed[1].runId, "ap_loop-1000");
     for (const e of parsed) {
         assert.ok(typeof e.runId === "string");
         assert.ok(typeof e.ts === "number");
@@ -105,19 +105,19 @@ test("bin list --json: emits parseable run index newest-first", () => {
 
 test("bin replay: prints all events for a run", () => {
     const dir = tmp();
-    const runDir = join(dir, "ralph_loop-1");
+    const runDir = join(dir, "ap_loop-1");
     mkdirSync(runDir);
     const ev = join(runDir, "events.jsonl");
     writeFileSync(ev,
-        JSON.stringify({ type: "armed", ts: 1, runId: "ralph_loop-1", maxIterations: 3, minIterations: 1 }) + "\n"
-        + JSON.stringify({ type: "iteration_start", ts: 2, runId: "ralph_loop-1", iteration: 1 }) + "\n"
-        + JSON.stringify({ type: "complete", ts: 3, runId: "ralph_loop-1", reason: "completion_promise", iteration: 1 }) + "\n",
+        JSON.stringify({ type: "armed", ts: 1, runId: "ap_loop-1", maxIterations: 3, minIterations: 1 }) + "\n"
+        + JSON.stringify({ type: "iteration_start", ts: 2, runId: "ap_loop-1", iteration: 1 }) + "\n"
+        + JSON.stringify({ type: "complete", ts: 3, runId: "ap_loop-1", reason: "completion_promise", iteration: 1 }) + "\n",
     );
-    const r = runBin(["replay", "ralph_loop-1"], { RALPH_EVENTS_DIR: dir });
+    const r = runBin(["replay", "ap_loop-1"], { RALPH_EVENTS_DIR: dir });
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /armed\s+ralph_loop-1/);
+    assert.match(r.stdout, /armed\s+ap_loop-1/);
     assert.match(r.stdout, /iter\+/);
-    assert.match(r.stdout, /done\s+ralph_loop-1.*reason=completion_promise/);
+    assert.match(r.stdout, /done\s+ap_loop-1.*reason=completion_promise/);
     rmSync(dir, { recursive: true, force: true });
 });
 
@@ -182,18 +182,18 @@ function seedRun(root, runId, ts) {
     const runDir = join(root, runId);
     mkSync2(runDir, { recursive: true });
     writeFileSync(join(runDir, "events.jsonl"), JSON.stringify({ type: "armed", ts, runId }) + "\n");
-    return JSON.stringify({ type: "armed", ts, runId, label: "ralph_loop", maxIterations: 5, minIterations: 1 });
+    return JSON.stringify({ type: "armed", ts, runId, label: "ap_loop", maxIterations: 5, minIterations: 1 });
 }
 
 test("bin prune --dry-run: lists would-remove without deleting", () => {
     const dir = tmp();
-    const old = seedRun(dir, "ralph_loop-old", 1);  // ts=1ms epoch ⇒ very old
-    const fresh = seedRun(dir, "ralph_loop-fresh", Date.now());
+    const old = seedRun(dir, "ap_loop-old", 1);  // ts=1ms epoch ⇒ very old
+    const fresh = seedRun(dir, "ap_loop-fresh", Date.now());
     writeFileSync(join(dir, "index.jsonl"), old + "\n" + fresh + "\n");
     const r = runBin(["prune", "--older-than", "365d", "--dry-run"], { RALPH_EVENTS_DIR: dir });
     assert.equal(r.status, 0);
     assert.match(r.stdout, /dry-run.*would remove 1/);
-    assert.match(r.stdout, /would remove ralph_loop-old/);
+    assert.match(r.stdout, /would remove ap_loop-old/);
     // file still present
     const list = runBin(["list", "--json"], { RALPH_EVENTS_DIR: dir });
     assert.equal(JSON.parse(list.stdout).length, 2);
@@ -202,8 +202,8 @@ test("bin prune --dry-run: lists would-remove without deleting", () => {
 
 test("bin prune --older-than 0m: removes every run", () => {
     const dir = tmp();
-    const a = seedRun(dir, "ralph_loop-a", Date.now() - 1000);
-    const b = seedRun(dir, "ralph_loop-b", Date.now() - 2000);
+    const a = seedRun(dir, "ap_loop-a", Date.now() - 1000);
+    const b = seedRun(dir, "ap_loop-b", Date.now() - 2000);
     writeFileSync(join(dir, "index.jsonl"), a + "\n" + b + "\n");
     const r = runBin(["prune", "--older-than", "0m"], { RALPH_EVENTS_DIR: dir });
     assert.equal(r.status, 0);
@@ -241,13 +241,13 @@ test("bin stats: empty index prints No runs found", () => {
 
 test("bin stats: aggregates by tool, reason and iterations", () => {
     const dir = tmp();
-    // Two runs: one ralph_loop completing, one self_improve aborting.
-    const r1 = "ralph_loop-100";
+    // Two runs: one ap_loop completing, one self_improve aborting.
+    const r1 = "ap_loop-100";
     const r2 = "self_improve-200";
     mkdirSync(join(dir, r1), { recursive: true });
     mkdirSync(join(dir, r2), { recursive: true });
     writeFileSync(join(dir, r1, "events.jsonl"),
-        JSON.stringify({ type: "armed", ts: 100, runId: r1, label: "ralph_loop" }) + "\n"
+        JSON.stringify({ type: "armed", ts: 100, runId: r1, label: "ap_loop" }) + "\n"
         + JSON.stringify({ type: "iteration_start", ts: 101, runId: r1, iteration: 1 }) + "\n"
         + JSON.stringify({ type: "iteration_end", ts: 102, runId: r1, iteration: 1 }) + "\n"
         + JSON.stringify({ type: "complete", ts: 103, runId: r1, reason: "completion_promise", iteration: 3 }) + "\n",
@@ -257,7 +257,7 @@ test("bin stats: aggregates by tool, reason and iterations", () => {
         + JSON.stringify({ type: "abort", ts: 201, runId: r2, reason: "max_tokens", iteration: 7 }) + "\n",
     );
     writeFileSync(join(dir, "index.jsonl"),
-        JSON.stringify({ type: "armed", ts: 100, runId: r1, label: "ralph_loop", maxIterations: 5, minIterations: 1 }) + "\n"
+        JSON.stringify({ type: "armed", ts: 100, runId: r1, label: "ap_loop", maxIterations: 5, minIterations: 1 }) + "\n"
         + JSON.stringify({ type: "armed", ts: 200, runId: r2, label: "self_improve", maxIterations: 100, minIterations: 5 }) + "\n",
     );
     const r = runBin(["stats"], { RALPH_EVENTS_DIR: dir });
@@ -267,7 +267,7 @@ test("bin stats: aggregates by tool, reason and iterations", () => {
     assert.match(r.stdout, /By reason/);
     assert.match(r.stdout, /Iterations/);
     assert.match(r.stdout, /runs: 2/);
-    assert.match(r.stdout, /ralph_loop: 1/);
+    assert.match(r.stdout, /ap_loop: 1/);
     assert.match(r.stdout, /self_improve: 1/);
     assert.match(r.stdout, /complete:completion_promise: 1/);
     assert.match(r.stdout, /abort:max_tokens: 1/);
@@ -286,13 +286,13 @@ test("bin --version: prints version matching package.json", () => {
     const r = runBin(["--version"]);
     assert.equal(r.status, 0);
     const pkg = JSON.parse(readFileSync2(resolve(REPO_ROOT, "package.json"), "utf8"));
-    assert.equal(r.stdout.trim(), `ralph-tui ${pkg.version}`);
+    assert.equal(r.stdout.trim(), `autopilot ${pkg.version}`);
 });
 
 test("bin -V: same as --version", () => {
     const r = runBin(["-V"]);
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /^ralph-tui \d/);
+    assert.match(r.stdout, /^autopilot \d/);
 });
 
 test("bin --help: mentions --version", () => {
@@ -302,7 +302,7 @@ test("bin --help: mentions --version", () => {
 
 function seedThreeRuns(dir) {
     writeFileSync(join(dir, "index.jsonl"),
-        JSON.stringify({ type: "armed", ts: 1000, runId: "ralph_loop-1000", label: "ralph_loop", maxIterations: 5, minIterations: 1 }) + "\n"
+        JSON.stringify({ type: "armed", ts: 1000, runId: "ap_loop-1000", label: "ap_loop", maxIterations: 5, minIterations: 1 }) + "\n"
         + JSON.stringify({ type: "armed", ts: 2000, runId: "self_improve-2000", label: "self_improve", maxIterations: 100, minIterations: 5 }) + "\n"
         + JSON.stringify({ type: "armed", ts: 3000, runId: "grow_project-3000", label: "grow_project", maxIterations: 50, minIterations: 1 }) + "\n",
     );
@@ -367,12 +367,12 @@ test("bin where: works even when directory does not exist", () => {
 
 test("bin --help: mentions where", () => {
     const r = runBin(["--help"]);
-    assert.match(r.stdout, /ralph-tui where/);
+    assert.match(r.stdout, /autopilot where/);
 });
 
 test("tui.mjs has no top-level await (Node 22+ unsettled-TLA warning regression guard)", async () => {
     // Iter regression: the entry-point check used `await import("node:fs")`
-    // and `await import("node:url")` at the top level. On `ralph-tui run`,
+    // and `await import("node:url")` at the top level. On `autopilot run`,
     // when main() resolved and the `.then(process.exit)` chain fired,
     // Node 22+ printed `ExperimentalWarning: Detected unsettled top-level
     // await at file://…/bin/tui.mjs:<EOF-line>` to stderr — a spurious
@@ -459,13 +459,13 @@ test("tui.mjs header comment lists every USAGE subcommand (drift guard)", async 
         [...headerBlock[0].matchAll(/^\/\/\s{3}([a-z]+)\b/gm)].map((m) => m[1])
     );
 
-    // USAGE subcommands: lines beginning `  ralph-tui <cmd>` inside the
+    // USAGE subcommands: lines beginning `  autopilot <cmd>` inside the
     // `const USAGE = \`…\`;` template literal. Skip the `--help` /
     // `--version` lines.
     const usageBlock = src.match(/const USAGE = `([\s\S]+?)`;/);
     assert.ok(usageBlock, "could not locate the USAGE constant in tui.mjs");
     const usageCmds = new Set(
-        [...usageBlock[1].matchAll(/^\s{2}ralph-tui\s+([a-z]+)\b/gm)].map((m) => m[1])
+        [...usageBlock[1].matchAll(/^\s{2}autopilot\s+([a-z]+)\b/gm)].map((m) => m[1])
     );
 
     // Pin: every USAGE subcommand must appear in the header. (We allow
@@ -543,13 +543,13 @@ test("packages/tui/README.md Subcommands block lists every shipped subcommand + 
     // forcing the test to track exact byte offsets.
     const slice = readme.slice(i, i + 4000);
     const required = [
-        "ralph-tui list",
-        "ralph-tui replay",
-        "ralph-tui watch",
-        "ralph-tui doctor",
-        "ralph-tui prune",
-        "ralph-tui stats",
-        "ralph-tui where",
+        "autopilot list",
+        "autopilot replay",
+        "autopilot watch",
+        "autopilot doctor",
+        "autopilot prune",
+        "autopilot stats",
+        "autopilot where",
         "--help",
         "--version",
         "--json",
@@ -572,7 +572,7 @@ test("packages/tui/package.json carries repository/bugs/author metadata aligned 
     // the root package.json carries (iter 151 added the missing
     // root `author`, but the workspace package was forgotten).
     // For a sub-package shipped via the dogfood install path AND
-    // documented as `npx ralph-tui` in docs/faq.md, the missing
+    // documented as `npx autopilot` in docs/faq.md, the missing
     // metadata silently degrades the registry listing if the
     // `private: true` flag is ever flipped (e.g. a future release
     // branch that publishes the TUI to npm separately). Adding
@@ -630,7 +630,7 @@ test("cmdReplay: path-traversal runId routes through fail() with clean error (no
     // path-traversal runIds (`../etc/passwd`, runIds with `\0`, runIds
     // with `\\`, `.`, `..`). Pre-iter-167 `cmdReplay` and `cmdWatch`
     // called the resolver without catching, so a user supplying
-    // `ralph-tui replay ../etc/passwd` saw a raw stack trace instead
+    // `autopilot replay ../etc/passwd` saw a raw stack trace instead
     // of a clean error message. The fix is to catch TypeError at the
     // bin layer and route through `fail()` (clean stderr line + exit
     // code 2). Pin both the no-throw contract and the user-visible
@@ -762,7 +762,7 @@ test("VALUE_FLAGS JSDoc comment lists every flag actually in the set (drift guar
     }
 });
 
-// ─── Issue #48 slice 3: scope-driven default for `ralph-tui run --max` ──
+// ─── Issue #48 slice 3: scope-driven default for `autopilot run --max` ──
 
 import { defaultMaxIterationsFor } from "../bin/tui.mjs";
 import * as __runner from "../src/runner.mjs";
@@ -835,7 +835,7 @@ test("run-ui module is importable and exports mountRunUi (no top-level Ink impor
 
 // ─── Issue #48 / user-bug: q keypress fallback ─────────────────────
 //
-// Field bug from a real run: pressing `q` in `ralph-tui run` echoed
+// Field bug from a real run: pressing `q` in `autopilot run` echoed
 // to the terminal as cooked-mode characters instead of unmounting
 // the Ink App — meaning Ink's useInput silently failed to enter raw
 // mode for that environment. installStdinAbortListener is the
@@ -866,7 +866,7 @@ test("installStdinAbortListener: returns a no-op cleanup when stdin is NOT a TTY
 test("formatAbortMessage: q press → user-visible 'q received' line on stderr", () => {
     const msg = formatAbortMessage("user_quit");
     assert.ok(typeof msg === "string", "user_quit must return a string");
-    assert.match(msg, /^\nralph-tui run: q received — finishing current iteration, then stopping\. Hit Ctrl-C to abort hard\.\n$/);
+    assert.match(msg, /^\nautopilot run: q received — finishing current iteration, then stopping\. Hit Ctrl-C to abort hard\.\n$/);
 });
 
 test("formatAbortMessage: SIGINT path returns null (signal handler prints its own line)", () => {

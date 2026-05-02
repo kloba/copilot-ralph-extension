@@ -585,22 +585,26 @@
 
 
 <h1 id="contributing">Contributing<a class="headerlink" href="#contributing" title="Permanent link">&para;</a></h1>
-<p>Thanks for your interest in <code>copilot-ralph-extension</code>! This page is the entry point for contributors. End-user docs live in the <a href="../README.md">README</a>.</p>
+<p>Thanks for your interest in autopilot! This page is the entry point for contributors. End-user docs live in the <a href="../README.md">README</a>.</p>
 <h2 id="local-development-setup">Local development setup<a class="headerlink" href="#local-development-setup" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/kloba/autopilot.git
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>copilot-ralph-extension
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>autopilot
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>npm<span class="w"> </span><span class="nb">test</span><span class="w">    </span><span class="c1"># runs the node:test suite under packages/*/test (no install needed for the non-render layer)</span>
 </code></pre></div>
 <p>The repository has <strong>zero npm runtime dependencies</strong> for the non-render layer (<code>prompts.mjs</code>, <code>runner.mjs</code>, <code>events*.mjs</code>, <code>writer.mjs</code>, <code>tail.mjs</code>, <code>plain.mjs</code>, <code>bin/tui.mjs</code>). <code>npm install</code> is only required when developing the Ink-rendered watch / run UI:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">cd</span><span class="w"> </span>packages/tui<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>install<span class="w">   </span><span class="c1"># pulls Ink + React + Yoga + Commander</span>
 </code></pre></div>
 <h2 id="running-autopilot-locally">Running autopilot locally<a class="headerlink" href="#running-autopilot-locally" title="Permanent link">&para;</a></h2>
-<p>For day-to-day iteration:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># From the repo root, no install needed for plain mode:</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>run<span class="w"> </span>--self-improve<span class="w"> </span>--fresh<span class="w"> </span>--max<span class="w"> </span><span class="m">5</span>
+<p>For day-to-day iteration (after <code>npm link</code> puts <code>autopilot</code> on your <code>$PATH</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># From any directory:</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>autopilot<span class="w"> </span>run<span class="w"> </span>--self-improve<span class="w"> </span>--fresh<span class="w"> </span>--max<span class="w"> </span><span class="m">5</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Watch the live timeline in another terminal:</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>watch
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>autopilot<span class="w"> </span>watch
+</code></pre></div>
+<p>If you'd rather not <code>npm link</code>, invoke the bin script directly:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>run<span class="w"> </span>--self-improve<span class="w"> </span>--fresh<span class="w"> </span>--max<span class="w"> </span><span class="m">5</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>watch
 </code></pre></div>
 <h2 id="style-conventions">Style conventions<a class="headerlink" href="#style-conventions" title="Permanent link">&para;</a></h2>
 <ul>
@@ -612,10 +616,10 @@
 </ul>
 <h2 id="commit-trailer-rules">Commit trailer rules<a class="headerlink" href="#commit-trailer-rules" title="Permanent link">&para;</a></h2>
 <p>Every commit MUST include both <code>Co-authored-by</code> trailers in this order:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Co-authored-by: Copilot &lt;223556219+Copilot@users.noreply.github.com&gt;
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>Co-authored-by: copilot-ralph &lt;noreply+copilot-ralph@github.com&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Co-authored-by: Copilot &lt;223556219+Copilot@users.noreply.github.com&gt;
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>Co-authored-by: copilot-ralph &lt;copilot-ralph@users.noreply.github.com&gt;
 </code></pre></div>
-<p>The first attributes the underlying Copilot model; the second attributes the loop that executed the iteration. Order matters — GitHub surfaces the first co-author more prominently. See the <a href="../README.md#commit-attribution">README "Commit attribution" section</a> and <a href="../CHANGELOG.md">CHANGELOG</a> for full rationale and opt-out (<code>RALPH_NO_ATTRIBUTION=1</code>).</p>
+<p>The first attributes the underlying Copilot model; the second attributes the loop that executed the iteration. Order matters — GitHub surfaces the first co-author more prominently. See the <a href="../README.md#commit-attribution">README "Commit attribution" section</a> and <a href="../CHANGELOG.md">CHANGELOG</a> for full rationale and opt-out (<code>AUTOPILOT_NO_ATTRIBUTION=1</code>, with legacy <code>RALPH_NO_ATTRIBUTION=1</code> still recognized as fallback).</p>
 <h2 id="pull-request-expectations">Pull request expectations<a class="headerlink" href="#pull-request-expectations" title="Permanent link">&para;</a></h2>
 <ul>
 <li><code>npm test</code> is green locally and in CI.</li>

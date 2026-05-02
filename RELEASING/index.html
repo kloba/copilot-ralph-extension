@@ -558,7 +558,7 @@
 
 
 <h1 id="releasing">Releasing<a class="headerlink" href="#releasing" title="Permanent link">&para;</a></h1>
-<p><code>copilot-ralph-extension</code> ships as the <code>autopilot</code> standalone TUI app. There is <strong>no npm publish</strong> today; releases are tagged commits on <code>main</code> plus an annotated GitHub Release page. The auto-attached source zipball / tarball is the canonical download.</p>
+<p><code>autopilot</code> ships as a standalone TUI app for autonomous Copilot CLI loops. There is <strong>no npm publish</strong> today; releases are tagged commits on <code>main</code> plus an annotated GitHub Release page. The auto-attached source zipball / tarball is the canonical download.</p>
 <p>A tag-driven release-automation workflow ships at <a href="../.github/workflows/release.yml"><code>.github/workflows/release.yml</code></a> (see issue <a href="https://github.com/kloba/autopilot/issues/10">#10</a> for the rationale). Pushing a <code>vX.Y.Z</code> tag verifies <code>package.json</code> matches the tag, asserts a matching <code>CHANGELOG.md</code> section exists, runs <code>npm test</code> + <code>npm run check</code>, and creates the GitHub Release with the matching changelog section as the body. The manual checklist below is the fallback when the workflow is unavailable or you need to cut a release out-of-band.</p>
 <h2 id="manual-release-checklist">Manual release checklist<a class="headerlink" href="#manual-release-checklist" title="Permanent link">&para;</a></h2>
 <ol>
@@ -590,13 +590,15 @@
 <li><strong>MINOR</strong> — new subcommand, new flag, new opt-in feature.</li>
 <li><strong>PATCH</strong> — bug fix, doc-only change, internal refactor with no user-visible behavior change.</li>
 </ul>
+<p><strong>Pre-1.0 caveat:</strong> while the project is on <code>0.x.y</code>, a MINOR bump <em>may</em> include a breaking change, but only if it is explicitly called out under a <code>### Breaking</code> subheading in the relevant <code>CHANGELOG.md</code> section. Once we ship <code>1.0.0</code>, breaking changes require a MAJOR bump.</p>
 <p>The non-render layer has zero runtime dependencies, so dependency-driven version bumps don't apply there. The Ink renderer's package-lock churn falls under PATCH unless a major Ink/React/Yoga upgrade changes user-visible rendering.</p>
 <h2 id="pinning-a-specific-version-for-end-users">Pinning a specific version (for end users)<a class="headerlink" href="#pinning-a-specific-version-for-end-users" title="Permanent link">&para;</a></h2>
-<p>Once a release exists, end users can pin a specific revision by checking out the matching tag:</p>
+<p>The <code>packages/tui/</code> workspace is marked <code>private</code>, so <code>npm i -g @autopilot/tui@X.Y.Z</code> is <strong>not</strong> available. Pin a specific revision by checking out the matching tag from source:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/kloba/autopilot
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nb">cd</span><span class="w"> </span>copilot-ralph-extension
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>git<span class="w"> </span>checkout<span class="w"> </span>vX.Y.Z
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>--help
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nb">cd</span><span class="w"> </span>autopilot
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>git<span class="w"> </span>checkout<span class="w"> </span>vX.Y.Z<span class="w">          </span><span class="c1"># e.g. v0.7.0</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nb">cd</span><span class="w"> </span>packages/tui<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>install<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>link
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>autopilot<span class="w"> </span>--help
 </code></pre></div>
 <p>A future release will publish <code>autopilot</code> to npm so <code>npm i -g autopilot@X.Y.Z</code> works; until then the source checkout above is the supported install path.</p>
 <h2 id="hotfix-branches">Hotfix branches<a class="headerlink" href="#hotfix-branches" title="Permanent link">&para;</a></h2>

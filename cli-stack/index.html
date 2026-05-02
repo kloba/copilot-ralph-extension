@@ -626,14 +626,14 @@
 <h1 id="cli-stack-ink-yoga-commander">CLI Stack: Ink + Yoga + Commander<a class="headerlink" href="#cli-stack-ink-yoga-commander" title="Permanent link">&para;</a></h1>
 <blockquote>
 <p>Stack-verification reference for <code>packages/tui/</code> (issue #22).</p>
-<p>The ralph TUI is built on the same proven trio used by today's leading
-agentic-CLI tools: <strong>Ink</strong> (React for terminal UIs), <strong>Yoga</strong>
-(Facebook's Flexbox engine that Ink uses for layout), and <strong>Commander</strong>
-(the de-facto Node.js CLI argument parser). This document captures
-<em>why</em> we picked each piece and <em>where</em> the same choice shows up in
-Anthropic's Claude Code CLI and GitHub Copilot CLI, so future
-contributors can ground design decisions in real-world precedent
-rather than internet folklore.</p>
+<p>The autopilot TUI under <code>packages/tui/</code> is built on the same proven
+trio used by today's leading agentic-CLI tools: <strong>Ink</strong> (React for
+terminal UIs), <strong>Yoga</strong> (Facebook's Flexbox engine that Ink uses for
+layout), and <strong>Commander</strong> (the de-facto Node.js CLI argument parser).
+This document captures <em>why</em> we picked each piece and <em>where</em> the same
+choice shows up in Anthropic's Claude Code CLI and GitHub Copilot CLI,
+so future contributors can ground design decisions in real-world
+precedent rather than internet folklore.</p>
 </blockquote>
 <h2 id="tldr">TL;DR<a class="headerlink" href="#tldr" title="Permanent link">&para;</a></h2>
 <table>
@@ -649,7 +649,7 @@ rather than internet folklore.</p>
 <tr>
 <td>Render</td>
 <td><code>ink</code></td>
-<td><code>^5.0.1</code></td>
+<td><code>^7.0.1</code></td>
 <td>React-based renderer for terminal UIs.</td>
 </tr>
 <tr>
@@ -661,14 +661,20 @@ rather than internet folklore.</p>
 <tr>
 <td>Argv</td>
 <td><code>commander</code></td>
-<td><code>^12.1.0</code></td>
-<td>Subcommands (<code>watch</code>, <code>replay</code>, <code>list</code>) + <code>--plain</code>.</td>
+<td><code>^14.0.3</code></td>
+<td>Subcommands (<code>watch</code>, <code>replay</code>, <code>list</code>, <code>run</code>) + flags.</td>
 </tr>
 <tr>
 <td>Spinners / glyphs</td>
 <td><code>ink-spinner</code></td>
 <td><code>^5.0.0</code></td>
 <td>Status indicators in <code>&lt;Header&gt;</code> and <code>&lt;Controls&gt;</code>.</td>
+</tr>
+<tr>
+<td>(Test only)</td>
+<td><code>ink-testing-library</code></td>
+<td><code>^4.0.0</code></td>
+<td>Snapshot the Ink tree to a string buffer.</td>
 </tr>
 </tbody>
 </table>

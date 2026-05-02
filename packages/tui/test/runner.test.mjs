@@ -1,4 +1,4 @@
-// Tests for `ralph-tui run` driver (packages/tui/src/runner.mjs).
+// Tests for `autopilot run` driver (packages/tui/src/runner.mjs).
 //
 // Strategy:
 //   - Pure helpers (validateFocus, composePrompt, reduceCopilotEvents)
@@ -641,7 +641,7 @@ test("runRalphTui: emits armed → iteration_start → iteration_end → termina
     // regress every time we tweak live-emission cadence.
     const skeleton = events.map((e) => e.type).filter((t) => t !== "usage_update");
     assert.deepEqual(skeleton, ["armed", "iteration_start", "iteration_end", "complete"]);
-    // armed event must carry contextMode + mode + maxIterations for ralph-tui list.
+    // armed event must carry contextMode + mode + maxIterations for autopilot list.
     assert.equal(events[0].contextMode, "fresh");
     assert.equal(events[0].mode, "self-improve");
     assert.equal(events[0].maxIterations, 1);
@@ -932,7 +932,7 @@ import { extractAgentTimeline, summarizeToolArgs } from "../src/runner.mjs";
 
 // ─── Issue #48: live event streaming (regression for the
 // "(no active stage) / (no activity yet)" empty-pane bug
-// reported on `ralph-tui run --self-improve --fresh`).
+// reported on `autopilot run --self-improve --fresh`).
 //
 // Pre-fix, the runner buffered every child JSONL event in
 // memory and emitted the synthetic stage_start / substage

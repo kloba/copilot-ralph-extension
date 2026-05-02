@@ -24,7 +24,7 @@
   },
   "homepage": "https://github.com/kloba/autopilot#readme",
   "bin": {
-    "ralph-tui": "./bin/tui.mjs"
+    "autopilot": "./bin/tui.mjs"
   },
   "main": "./src/events.mjs",
   "exports": {

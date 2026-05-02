@@ -703,7 +703,7 @@ test("App.onUserAbort fires on Ctrl-C with 'signal_SIGINT' reason (issue #48 sli
 });
 
 test("App without onUserAbort still exits on q (read-only watch mode)", { skip }, async () => {
-    // ralph-tui watch supplies no onUserAbort — the App must still
+    // autopilot watch supplies no onUserAbort — the App must still
     // tear down cleanly without throwing on the missing callback.
     const inst = render(React.createElement(App, {
         events: [{ type: "armed", runId: "r1", label: "ralph_loop", maxIterations: 100, ts: 1 }],

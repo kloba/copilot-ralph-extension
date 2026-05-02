@@ -524,9 +524,9 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#why-doesnt-extensions-list-ralph-after-install" class="md-nav__link">
+  <a href="#do-i-need-any-npm-dependencies" class="md-nav__link">
     <span class="md-ellipsis">
-      Why doesn't /extensions list ralph after install?
+      Do I need any npm dependencies?
     </span>
   </a>
   
@@ -542,9 +542,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#do-i-need-any-npm-dependencies" class="md-nav__link">
+  <a href="#what-happened-to-the-copilotextensionsralph-install" class="md-nav__link">
     <span class="md-ellipsis">
-      Do I need any npm dependencies?
+      What happened to the ~/.copilot/extensions/ralph install?
     </span>
   </a>
   
@@ -564,15 +564,6 @@
   
     <nav class="md-nav" aria-label="Running a loop">
       <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#why-does-arming-fail-with-owner-is-already-armedrunningpaused" class="md-nav__link">
-    <span class="md-ellipsis">
-      Why does arming fail with &lt;owner&gt; is already armed/running/paused?
-    </span>
-  </a>
-  
-</li>
         
           <li class="md-nav__item">
   <a href="#why-did-my-loop-stop-after-exactly-one-iteration" class="md-nav__link">
@@ -602,9 +593,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#pause-and-resume-whats-the-difference-vs-stop" class="md-nav__link">
+  <a href="#pause-resume-whats-the-difference-vs-stop" class="md-nav__link">
     <span class="md-ellipsis">
-      Pause and resume — what's the difference vs stop?
+      Pause / resume — what's the difference vs stop?
     </span>
   </a>
   
@@ -644,9 +635,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#why-is-pausedforms-zero-on-a-resume-event" class="md-nav__link">
+  <a href="#how-do-i-get-a-structured-snapshot-of-a-live-run" class="md-nav__link">
     <span class="md-ellipsis">
-      Why is pausedForMs zero on a resume event?
+      How do I get a structured snapshot of a live run?
     </span>
   </a>
   
@@ -744,9 +735,9 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#why-doesnt-extensions-list-ralph-after-install" class="md-nav__link">
+  <a href="#do-i-need-any-npm-dependencies" class="md-nav__link">
     <span class="md-ellipsis">
-      Why doesn't /extensions list ralph after install?
+      Do I need any npm dependencies?
     </span>
   </a>
   
@@ -762,9 +753,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#do-i-need-any-npm-dependencies" class="md-nav__link">
+  <a href="#what-happened-to-the-copilotextensionsralph-install" class="md-nav__link">
     <span class="md-ellipsis">
-      Do I need any npm dependencies?
+      What happened to the ~/.copilot/extensions/ralph install?
     </span>
   </a>
   
@@ -784,15 +775,6 @@
   
     <nav class="md-nav" aria-label="Running a loop">
       <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#why-does-arming-fail-with-owner-is-already-armedrunningpaused" class="md-nav__link">
-    <span class="md-ellipsis">
-      Why does arming fail with &lt;owner&gt; is already armed/running/paused?
-    </span>
-  </a>
-  
-</li>
         
           <li class="md-nav__item">
   <a href="#why-did-my-loop-stop-after-exactly-one-iteration" class="md-nav__link">
@@ -822,9 +804,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#pause-and-resume-whats-the-difference-vs-stop" class="md-nav__link">
+  <a href="#pause-resume-whats-the-difference-vs-stop" class="md-nav__link">
     <span class="md-ellipsis">
-      Pause and resume — what's the difference vs stop?
+      Pause / resume — what's the difference vs stop?
     </span>
   </a>
   
@@ -864,9 +846,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#why-is-pausedforms-zero-on-a-resume-event" class="md-nav__link">
+  <a href="#how-do-i-get-a-structured-snapshot-of-a-live-run" class="md-nav__link">
     <span class="md-ellipsis">
-      Why is pausedForMs zero on a resume event?
+      How do I get a structured snapshot of a live run?
     </span>
   </a>
   
@@ -938,147 +920,57 @@
 
 
 <h1 id="faq">FAQ<a class="headerlink" href="#faq" title="Permanent link">&para;</a></h1>
-<p>Short answers to the questions that come up most often when running
-Ralph in anger. Most of these point at a deeper section in the
-<a href="https://github.com/kloba/copilot-ralph-extension#readme">README</a> or
-at <a href="../concepts/"><code>docs/concepts.md</code></a> — keep this page narrow and
-link out rather than duplicating prose.</p>
+<p>Short answers to the questions that come up most often when running Ralph in anger. Most of these point at a deeper section in the <a href="https://github.com/kloba/copilot-ralph-extension#readme">README</a> or at <a href="../concepts/"><code>docs/concepts.md</code></a> — keep this page narrow and link out rather than duplicating prose.</p>
 <h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h2>
-<h3 id="why-doesnt-extensions-list-ralph-after-install">Why doesn't <code>/extensions</code> list <code>ralph</code> after install?<a class="headerlink" href="#why-doesnt-extensions-list-ralph-after-install" title="Permanent link">&para;</a></h3>
-<p>The Copilot CLI loads extensions at startup (and on <code>/extensions
-reload</code>). Confirm every shipped <code>.mjs</code> is present in the install
-target:</p>
-<ul>
-<li>User-scoped: <code>~/.copilot/extensions/ralph/</code> — visible from any cwd.</li>
-<li>Project-scoped: <code>&lt;git-root&gt;/.github/extensions/ralph/</code> — only
-  visible when you launch Copilot CLI from inside that repo.</li>
-</ul>
-<p>Currently shipped files are <code>extension.mjs</code>, <code>handler.mjs</code>, and
-<code>events-emit.mjs</code>. A partial install crashes at module-load with
-<code>Cannot find module './events-emit.mjs'</code>. Re-run <code>./install.sh</code>
-from a fresh source checkout — it <code>node --check</code>s every file
-before writing and verifies each post-copy file is byte-identical
-to the source via <code>cmp -s</code>.</p>
-<h3 id="how-do-i-install-a-specific-tagged-release">How do I install a specific tagged release?<a class="headerlink" href="#how-do-i-install-a-specific-tagged-release" title="Permanent link">&para;</a></h3>
-<p>See README → <a href="https://github.com/kloba/copilot-ralph-extension#option-d--pin-a-specific-tagged-release">Option D — Pin a specific tagged
-release</a>.
-Tags are immutable; release tarballs are SHA-pinned by GitHub,
-so a pinned install never silently shifts under you.</p>
 <h3 id="do-i-need-any-npm-dependencies">Do I need any npm dependencies?<a class="headerlink" href="#do-i-need-any-npm-dependencies" title="Permanent link">&para;</a></h3>
-<p>No. The extension is zero-dep at runtime — only the Copilot CLI's
-bundled Node runtime is required. The test suite uses <code>node:test</code>
-(built-in) and runs with <code>npm test</code>. Node ≥ 20 is required for the
-test suite; the installed extension itself runs on whichever Node
-version Copilot CLI ships with.</p>
+<p>Not for plain mode. The non-render layer (<code>prompts.mjs</code>, <code>runner.mjs</code>, <code>events*.mjs</code>, <code>writer.mjs</code>, <code>tail.mjs</code>, <code>plain.mjs</code>, <code>bin/tui.mjs</code>) is zero-dep — only Node ≥ 20 is required. The interactive Ink-rendered <code>watch</code> / <code>run</code> UI pulls Ink + React + Yoga + Commander via <code>cd packages/tui &amp;&amp; npm install</code>.</p>
+<h3 id="how-do-i-install-a-specific-tagged-release">How do I install a specific tagged release?<a class="headerlink" href="#how-do-i-install-a-specific-tagged-release" title="Permanent link">&para;</a></h3>
+<p>Check out the matching tag in your clone:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>checkout<span class="w"> </span>vX.Y.Z
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>--help
+</code></pre></div>
+<p>Tags are immutable, so a pinned checkout never silently shifts. A future release will publish <code>ralph-tui</code> to npm so <code>npm i -g ralph-tui@X.Y.Z</code> works.</p>
+<h3 id="what-happened-to-the-copilotextensionsralph-install">What happened to the <code>~/.copilot/extensions/ralph</code> install?<a class="headerlink" href="#what-happened-to-the-copilotextensionsralph-install" title="Permanent link">&para;</a></h3>
+<p>The previous in-session Copilot CLI extension was retired — see <a href="../CHANGELOG.md"><code>CHANGELOG.md</code></a>. If you still have <code>~/.copilot/extensions/ralph</code> from an older install, <code>rm -rf ~/.copilot/extensions/ralph</code> and switch to <code>ralph-tui run</code> as documented in the <a href="../README.md#usage">README</a>.</p>
 <h2 id="running-a-loop">Running a loop<a class="headerlink" href="#running-a-loop" title="Permanent link">&para;</a></h2>
-<h3 id="why-does-arming-fail-with-owner-is-already-armedrunningpaused">Why does arming fail with <code>&lt;owner&gt; is already armed/running/paused</code>?<a class="headerlink" href="#why-does-arming-fail-with-owner-is-already-armedrunningpaused" title="Permanent link">&para;</a></h3>
-<p>Only one loop runs per session at a time. The leading word of the
-refusal — <code>ralph_loop</code>, <code>self_improve</code>, or <code>grow_project</code> — names
-whichever tool armed the <em>currently active</em> loop. Call <code>ralph_stop</code>
-first, then arm the new one.</p>
-<p>If the active loop is paused you'll see <code>is already paused
-(iteration N/M) — call ralph_stop first.</code> Despite the wording,
-<code>ralph_resume</code> is also valid if you wanted the original loop to
-continue rather than be cleared.</p>
 <h3 id="why-did-my-loop-stop-after-exactly-one-iteration">Why did my loop stop after exactly one iteration?<a class="headerlink" href="#why-did-my-loop-stop-after-exactly-one-iteration" title="Permanent link">&para;</a></h3>
-<p>The most common cause is an early <code>completion_promise</code> match. Both
-<code>completion_promise</code> and <code>abort_promise</code> use plain substring matching
-against the assistant's accumulated turn output — if the agent quotes
-the trigger phrase mid-thought (e.g. <em>"I'll mark this COMPLETE when
-done"</em>), the loop finishes. Pick a phrase the agent is unlikely to
-mention casually; <code>RALPH_DONE_42</code> and similar unusual tokens work
-well. See README → <a href="https://github.com/kloba/copilot-ralph-extension#limitations">Limitations</a>.</p>
+<p>The most common cause is an early <code>--completion-promise</code> match. Both <code>--completion-promise</code> and <code>--abort-promise</code> use plain substring matching against the assistant's response — if the agent quotes the trigger phrase mid-thought (e.g. <em>"I'll mark this COMPLETE when done"</em>), the loop finishes. Pick a phrase the agent is unlikely to mention casually; <code>RALPH_DONE_42</code> and similar unusual tokens work well. See README → <a href="https://github.com/kloba/copilot-ralph-extension#limitations">Limitations</a>.</p>
 <h3 id="why-does-my-loop-never-finish">Why does my loop never finish?<a class="headerlink" href="#why-does-my-loop-never-finish" title="Permanent link">&para;</a></h3>
 <p>Three frequent causes:</p>
 <ol>
-<li>The prompt doesn't actually instruct the agent to emit the
-   <code>completion_promise</code> literally. With a quoted/paraphrased
-   completion phrase, only <code>max_iterations</code> (or <code>max_tokens</code>,
-   <code>stagnation_limit</code>, <code>ralph_stop</code>) ends the loop.</li>
-<li>Stagnation guard is disabled (<code>stagnation_limit: 0</code>) and the
-   agent oscillates indefinitely. Re-enable with the default
-   <code>stagnation_limit: 3</code> or higher.</li>
-<li><code>min_iterations</code> is high and the agent emits the completion
-   promise too early — the runtime ignores the promise until
-   <code>min_iterations</code> is reached. This is by design.</li>
+<li>The prompt doesn't actually instruct the agent to emit the <code>--completion-promise</code> literally. With a quoted/paraphrased completion phrase, only <code>--max</code> (or <code>--stagnation-limit</code>, <code>--stop</code>) ends the loop.</li>
+<li>Stagnation guard is disabled (<code>--stagnation-limit 0</code>) and the agent oscillates indefinitely. Re-enable with the default <code>--stagnation-limit 3</code> or higher.</li>
+<li><code>min_iterations</code> is high and the agent emits the completion promise too early — the runtime ignores the promise until <code>min_iterations</code> is reached. This is by design.</li>
 </ol>
 <h3 id="how-do-i-stop-a-loop-thats-running-away">How do I stop a loop that's running away?<a class="headerlink" href="#how-do-i-stop-a-loop-thats-running-away" title="Permanent link">&para;</a></h3>
-<p>Call <code>ralph_stop</code> — it returns immediately with the iteration count
-at the moment of the call. The currently-running iteration finishes
-normally; the loop simply doesn't fire on the next <code>session.idle</code>.
-You can pass an optional <code>reason</code> string that gets recorded on the
-result for later forensics.</p>
-<h3 id="pause-and-resume-whats-the-difference-vs-stop">Pause and resume — what's the difference vs stop?<a class="headerlink" href="#pause-and-resume-whats-the-difference-vs-stop" title="Permanent link">&para;</a></h3>
+<p>Run <code>ralph-tui run --stop &lt;runId&gt;</code> from another terminal — it sets <code>stopRequested</code> in <code>state.json</code>. The currently-running iteration finishes normally; the driver emits a terminal <code>abort</code> event with <code>reason: "user_stopped"</code> afterwards. <code>SIGINT</code> / <code>SIGTERM</code> at the driver process flips the same flag.</p>
+<h3 id="pause-resume-whats-the-difference-vs-stop">Pause / resume — what's the difference vs stop?<a class="headerlink" href="#pause-resume-whats-the-difference-vs-stop" title="Permanent link">&para;</a></h3>
 <ul>
-<li><code>ralph_stop</code> clears the active loop. The iteration counter is
-  gone afterwards.</li>
-<li><code>ralph_pause</code> keeps the loop alive but skips subsequent
-  <code>session.idle</code> triggers. You can chat freely with the agent
-  without consuming iterations.</li>
-<li><code>ralph_resume</code> un-pauses. The iteration counter resumes where
-  it left off; the stagnation streak is reset (manual chat
-  almost always changes context).</li>
+<li><code>--stop</code> clears the active loop after the in-flight iter finishes.</li>
+<li><code>--pause</code> keeps the loop alive but skips subsequent iter triggers. The driver re-reads <code>state.json</code> at every iter boundary.</li>
+<li><code>--resume</code> un-pauses. The iteration counter resumes where it left off; the stagnation streak is reset.</li>
 </ul>
-<p><code>ralph_pause</code> is idempotent (pausing an already-paused loop is a
-no-op). <code>ralph_resume</code> is <strong>not</strong> idempotent — calling it without
-a paused loop returns a failure. See <a href="../concepts/#pause--resume-semantics"><code>docs/concepts.md</code> → Pause /
-resume semantics</a> for the full
-state-machine writeup.</p>
+<p>See <a href="../concepts/#pause--resume-semantics"><code>docs/concepts.md</code> → Pause / resume semantics</a> for the state-machine writeup.</p>
 <h2 id="output-and-observability">Output and observability<a class="headerlink" href="#output-and-observability" title="Permanent link">&para;</a></h2>
 <h3 id="where-does-a-running-loops-event-log-live">Where does a running loop's event log live?<a class="headerlink" href="#where-does-a-running-loops-event-log-live" title="Permanent link">&para;</a></h3>
-<p>By default: <code>~/.copilot/ralph/runs/&lt;runId&gt;/events.jsonl</code>. Override
-the runs root with the <code>RALPH_EVENTS_DIR</code> environment variable. The
-<code>&lt;runId&gt;</code> shape is <code>${label}-${startedAt}</code> — sortable,
-filesystem-safe, and surfaced in the <code>armed</code> event so the TUI can
-locate it.</p>
+<p>By default: <code>~/.copilot/ralph-tui/runs/&lt;runId&gt;/events.jsonl</code>. Override the runs root with <code>RALPH_TUI_RUNS_DIR</code>. The <code>&lt;runId&gt;</code> shape is <code>${label}-${startedAt}</code> — sortable, filesystem-safe, and surfaced in the <code>armed</code> event.</p>
 <h3 id="how-do-i-tail-a-running-loops-events">How do I tail a running loop's events?<a class="headerlink" href="#how-do-i-tail-a-running-loops-events" title="Permanent link">&para;</a></h3>
-<p>Use the bundled TUI: <code>npx ralph-tui watch &lt;runId&gt;</code> to follow events
-live, or <code>ralph-tui list</code> to see runs the index knows about. See
-README → <a href="https://github.com/kloba/copilot-ralph-extension#inspecting-a-running-loop-ralph_status-tool">Inspecting a running loop</a>
-for the snapshot tool that returns a structured live snapshot
-without leaving the chat.</p>
-<h3 id="why-is-pausedforms-zero-on-a-resume-event">Why is <code>pausedForMs</code> zero on a <code>resume</code> event?<a class="headerlink" href="#why-is-pausedforms-zero-on-a-resume-event" title="Permanent link">&para;</a></h3>
-<p>A resume reports <code>pausedForMs = max(0, now - pausedAt)</code>, where
-<code>pausedAt</code> is the wall-clock millisecond timestamp captured by the
-last <code>ralph_pause</code>. Two cases produce a zero:</p>
-<ul>
-<li><strong>Same-millisecond resume.</strong> If you fire <code>ralph_resume</code> in the
-  same millisecond as the pause (vanishingly rare in practice, but
-  easy to hit in fast tests), <code>now - pausedAt</code> rounds to <code>0</code>.</li>
-<li><strong>Backward clock skew.</strong> If the system clock moves backward
-  during the pause window (NTP correction, manual clock change,
-  daylight savings on a host without monotonic-time backing),
-  <code>now - pausedAt</code> would compute negative — the runtime clamps it
-  to <code>0</code> rather than crediting a negative duration to
-  <code>total_paused_ms</code>. Without the clamp, the run's reported
-  <code>durationMs</code> would be inflated past the true wall-clock elapsed
-  time. The same <code>Math.max(0, …)</code> guard runs in <code>finish()</code> and
-  <code>ralph_status.paused_for_ms</code> for symmetry; all three call sites
-  share a single helper so the contract cannot drift.</li>
-</ul>
-<p>The <code>total_paused_ms</code> accumulated across multiple pause/resume
-cycles is what gets deducted from the final <code>durationMs</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>ralph-tui<span class="w"> </span>watch<span class="w">              </span><span class="c1"># tail the most recent run</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>ralph-tui<span class="w"> </span>watch<span class="w"> </span>&lt;runId&gt;<span class="w">      </span><span class="c1"># tail a specific run</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>ralph-tui<span class="w"> </span>list<span class="w">               </span><span class="c1"># enumerate recorded runs newest-first</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>ralph-tui<span class="w"> </span>replay<span class="w"> </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># print every event in a past run</span>
+</code></pre></div>
+<h3 id="how-do-i-get-a-structured-snapshot-of-a-live-run">How do I get a structured snapshot of a live run?<a class="headerlink" href="#how-do-i-get-a-structured-snapshot-of-a-live-run" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ralph-tui<span class="w"> </span>run<span class="w"> </span>--status<span class="w"> </span>&lt;runId&gt;
+</code></pre></div>
+<p>Reads the run's <code>state.json</code> and renders iter counter, pause/stop flags, and (in <code>--continue</code> mode) the captured Copilot session id.</p>
 <h2 id="commit-attribution">Commit attribution<a class="headerlink" href="#commit-attribution" title="Permanent link">&para;</a></h2>
 <h3 id="how-are-loop-driven-commits-attributed">How are loop-driven commits attributed?<a class="headerlink" href="#how-are-loop-driven-commits-attributed" title="Permanent link">&para;</a></h3>
-<p>Every commit produced inside a loop carries two <code>Co-authored-by:</code>
-trailers — one for the <code>Copilot</code> GitHub identity, one for the
-dedicated <code>copilot-ralph</code> bot account. The dual-trailer convention
-is baked into the SDLC prompts (<code>self_improve</code>, <code>grow_project</code>)
-and appended as a rider to the user-supplied prompt for
-<code>ralph_loop</code>. See README → <a href="https://github.com/kloba/copilot-ralph-extension#commit-attribution">Commit attribution</a>.</p>
+<p>Every commit produced inside a loop carries two <code>Co-authored-by:</code> trailers — one for the <code>Copilot</code> GitHub identity, one for the dedicated <code>copilot-ralph</code> bot account. The dual-trailer convention is baked into the SDLC prompts (<code>--self-improve</code>, <code>--grow-project</code>). See README → <a href="https://github.com/kloba/copilot-ralph-extension#commit-attribution">Commit attribution</a>.</p>
 <h3 id="how-do-i-opt-out-of-the-second-copilot-ralph-trailer">How do I opt out of the second <code>copilot-ralph</code> trailer?<a class="headerlink" href="#how-do-i-opt-out-of-the-second-copilot-ralph-trailer" title="Permanent link">&para;</a></h3>
-<p>Set <code>RALPH_NO_ATTRIBUTION=1</code> in the environment before arming the
-loop. The opt-out suppresses <strong>only</strong> the second
-<code>copilot-ralph</code> trailer; the first <code>Copilot</code> trailer always ships.
-Note that the opt-out is honored by the prompt, not enforced by
-the runtime — if a sub-agent ignores <code>process.env</code> (or can't read
-it), the trailer can still appear. Audit afterwards with
-<code>git log -1 --pretty=%B</code> to confirm.</p>
+<p>Set <code>RALPH_NO_ATTRIBUTION=1</code> in the environment before running the loop. The opt-out suppresses <strong>only</strong> the second <code>copilot-ralph</code> trailer; the first <code>Copilot</code> trailer always ships. Note that the opt-out is honored by the prompt, not enforced by the runtime — if a sub-agent ignores <code>process.env</code>, the trailer can still appear. Audit afterwards with <code>git log -1 --pretty=%B</code> to confirm.</p>
 <h2 id="anything-else">Anything else?<a class="headerlink" href="#anything-else" title="Permanent link">&para;</a></h2>
-<p>If your question isn't answered here, open an issue or skim the
-<a href="https://github.com/kloba/copilot-ralph-extension#readme">README</a>
-Troubleshooting and Limitations sections — they cover the
-long-tail edge cases this page intentionally elides.</p>
+<p>If your question isn't answered here, open an issue or skim the <a href="https://github.com/kloba/copilot-ralph-extension#readme">README</a> Limitations section — it covers the long-tail edge cases this page intentionally elides.</p>
 
 
 

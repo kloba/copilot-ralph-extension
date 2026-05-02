@@ -620,13 +620,13 @@
 
 
 <h1 id="ralph">Ralph<a class="headerlink" href="#ralph" title="Permanent link">&para;</a></h1>
-<p>A Ralph Wiggum-style autonomous loop for the GitHub Copilot CLI.</p>
+<p>A Ralph Wiggum-style autonomous loop for the GitHub Copilot CLI, packaged as the <code>ralph-tui</code> standalone TUI app.</p>
 <div class="admonition warning">
 <p class="admonition-title">Stub documentation site</p>
 <p>This site is the v0 scaffold for <a href="https://github.com/kloba/copilot-ralph-extension/issues/2">issue #2</a>. The pages below mirror the planned navigation but are intentionally short — they will be filled in by follow-up PRs.</p>
 </div>
 <h2 id="what-is-this">What is this?<a class="headerlink" href="#what-is-this" title="Permanent link">&para;</a></h2>
-<p>Ralph turns the Copilot CLI into a self-driving iteration engine. You arm it with a prompt, and it re-fires that prompt every time the agent goes idle until either the agent emits a "done" phrase, you call <code>ralph_stop</code>, or a hard cap is reached.</p>
+<p>Ralph turns the Copilot CLI into a self-driving iteration engine. You arm it with a prompt (or pick one of the baked SDLC modes — <code>--self-improve</code>, <code>--grow-project</code>), and the driver re-spawns <code>copilot -p ...</code> every iteration until either the agent emits a "done" phrase, you call <code>ralph-tui run --stop</code>, or a hard cap is reached.</p>
 <p>See the <a href="quickstart/">Quickstart</a> to get going in under a minute.</p>
 <h2 id="why-ralph">Why "Ralph"?<a class="headerlink" href="#why-ralph" title="Permanent link">&para;</a></h2>
 <p>The loop is the simplest possible form of agentic autonomy: one prompt, repeated, until done. Like Ralph Wiggum eating glue — single-minded, persistent, surprisingly effective.</p>

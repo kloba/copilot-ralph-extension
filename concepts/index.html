@@ -465,86 +465,29 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#token-tracking-and-context-window-warnings" class="md-nav__link">
+  <a href="#completion-abort-triggers" class="md-nav__link">
     <span class="md-ellipsis">
-      Token tracking and context-window warnings
+      Completion / abort triggers
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Token tracking and context-window warnings">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#what-you-observe" class="md-nav__link">
-    <span class="md-ellipsis">
-      What you observe
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#two-safety-contracts" class="md-nav__link">
-    <span class="md-ellipsis">
-      Two safety contracts
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#context-window-warnings" class="md-nav__link">
-    <span class="md-ellipsis">
-      Context-window warnings
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#ralph_status-one-line-summary" class="md-nav__link">
+  <a href="#stagnation-detection" class="md-nav__link">
     <span class="md-ellipsis">
-      ralph_status one-line summary
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="ralph_status one-line summary">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#active-loop" class="md-nav__link">
-    <span class="md-ellipsis">
-      Active loop
+      Stagnation detection
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#inactive-prior-run-summary" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#adaptive-iteration-budget" class="md-nav__link">
     <span class="md-ellipsis">
-      Inactive — prior run summary
+      Adaptive iteration budget
     </span>
   </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#inactive-first-call-in-a-fresh-session" class="md-nav__link">
-    <span class="md-ellipsis">
-      Inactive — first call in a fresh session
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -652,86 +595,29 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#token-tracking-and-context-window-warnings" class="md-nav__link">
+  <a href="#completion-abort-triggers" class="md-nav__link">
     <span class="md-ellipsis">
-      Token tracking and context-window warnings
+      Completion / abort triggers
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Token tracking and context-window warnings">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#what-you-observe" class="md-nav__link">
-    <span class="md-ellipsis">
-      What you observe
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#two-safety-contracts" class="md-nav__link">
-    <span class="md-ellipsis">
-      Two safety contracts
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#context-window-warnings" class="md-nav__link">
-    <span class="md-ellipsis">
-      Context-window warnings
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#ralph_status-one-line-summary" class="md-nav__link">
+  <a href="#stagnation-detection" class="md-nav__link">
     <span class="md-ellipsis">
-      ralph_status one-line summary
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="ralph_status one-line summary">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#active-loop" class="md-nav__link">
-    <span class="md-ellipsis">
-      Active loop
+      Stagnation detection
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#inactive-prior-run-summary" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#adaptive-iteration-budget" class="md-nav__link">
     <span class="md-ellipsis">
-      Inactive — prior run summary
+      Adaptive iteration budget
     </span>
   </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#inactive-first-call-in-a-fresh-session" class="md-nav__link">
-    <span class="md-ellipsis">
-      Inactive — first call in a fresh session
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -760,220 +646,26 @@
 </div>
 <p>Topics planned:</p>
 <ul>
-<li>The arming → idle-driven iteration model</li>
+<li>The arming → subprocess-per-iter model used by <code>ralph-tui run</code></li>
 <li>Completion / abort / stagnation finish reasons</li>
-<li>Sub-agent isolation</li>
 <li>Pause / resume semantics</li>
 <li>Adaptive iteration budget</li>
 </ul>
 <h2 id="pause-resume-semantics">Pause / resume semantics<a class="headerlink" href="#pause-resume-semantics" title="Permanent link">&para;</a></h2>
-<p><code>ralph_pause</code> and <code>ralph_resume</code> let you stop the next iteration from
-firing without losing the iteration counter, the conversation context,
-or the arm-time git snapshot. The iteration in flight at the moment
-you call <code>ralph_pause</code> is not interrupted — it runs to completion and
-emits its <code>iteration_end</code> event. Pause only takes effect on the
-<strong>next</strong> <code>session.idle</code>: the on-idle handler short-circuits when
-<code>active.paused</code> is <code>true</code>, and the iteration counter stays at the
-value it reached.</p>
-<p>While paused, you may chat freely with the agent. Those turns are
-real conversation turns, but they do <strong>not</strong> consume iterations and
-they do <strong>not</strong> count toward the stagnation streak (see below). The
-loop also <strong>isolates</strong> its bookkeeping from the pause-time chat:</p>
+<p><code>ralph-tui run --pause &lt;runId&gt;</code> and <code>ralph-tui run --resume &lt;runId&gt;</code> let you stop the next iteration from firing without losing the iteration counter or the captured Copilot session id (in <code>--continue</code> mode). The currently-running <code>copilot -p</code> subprocess is <strong>never killed mid-iter</strong> — the driver waits for it to finish naturally before honoring the pause flag at the next iter boundary.</p>
+<p>State writes are CAS-protected via a per-run lockfile so a concurrent <code>--pause</code> + <code>--stop</code> from two terminals do not lose updates.</p>
+<p><code>--resume</code> flips <code>pauseRequested</code> back to <code>false</code>. <code>--stop</code> sets <code>stopRequested</code> and the driver emits a terminal <code>abort</code> event with <code>reason: "user_stopped"</code> after the in-flight iter exits.</p>
+<h2 id="completion-abort-triggers">Completion / abort triggers<a class="headerlink" href="#completion-abort-triggers" title="Permanent link">&para;</a></h2>
+<p>The driver scans each iter's response (root <code>assistant.message.data.content</code> — sub-agent content is filtered out) for two configurable substrings:</p>
 <ul>
-<li><strong>Token budget isolation.</strong> <code>assistant.message</code> events that arrive
-  while paused are not credited to <code>tokens.input</code> / <code>tokens.output</code> /
-  <code>byIteration</code> / <code>byModel</code>. A long pause-time conversation cannot
-  push the loop's cumulative usage past a configured <code>max_tokens</code>
-  cap (so the loop will not finish with <code>reason="max_tokens"</code> on the
-  first post-resume idle as a side-effect of you reading a diff with
-  the agent), and it cannot trip the <code>warn_at_pct</code> context-window
-  threshold either.</li>
-<li><strong>Completion / abort isolation.</strong> Pause-time chat content does not
-  accumulate into the rolling buffer that <code>onIdle</code> inspects for the
-  configured <code>completion_promise</code> / <code>abort_promise</code> substrings. A
-  casual mention of the trigger phrase in your pause-time chat — e.g.
-  <em>"I'll mark this COMPLETE when the refactor lands"</em> — will <strong>not</strong>
-  terminate the loop. Trade-off: a genuine completion / abort signal
-  that landed in the in-flight iteration's response right before you
-  paused is forfeited; you can still read it via
-  <code>ralph_status.last_response_excerpt</code> and <code>ralph_stop</code> the loop
-  explicitly if you want to honor it.</li>
+<li><strong><code>--completion-promise</code></strong> (default <code>COMPLETE</code>) — terminates with <code>reason: "completion_promise"</code>.</li>
+<li><strong><code>--abort-promise</code></strong> — terminates with <code>reason: "abort_promise"</code>. Defaults to the baked prompt's abort token in <code>--self-improve</code> mode (<code>ABORT_NO_IMPROVEMENTS</code>) and <code>--grow-project</code> mode (<code>ABORT_NO_BACKLOG</code>); no default in <code>--prompt</code> mode.</li>
 </ul>
-<p><code>ralph_pause</code> is idempotent: calling it on an already-paused loop is
-a no-op and returns success. <strong>First reason wins</strong> — a redundant
-<code>ralph_pause({reason: "newer"})</code> against an already-paused loop
-returns the FIRST committed reason in both the success payload's
-<code>reason</code> field and the rendered <code>textResultForLlm</code> (<code>&lt;label&gt;
-already paused at i/max (firstReason).</code>). Automation polling pause
-state to confirm it has stuck will not see its own input echoed
-back rather than the original committed reason. The two failure
-modes are:</p>
-<ol>
-<li>No loop is currently active (<code>{ active: false }</code>).</li>
-<li>The <code>reason</code> argument exceeds 500 chars (validation rejection).</li>
-</ol>
-<p><code>ralph_resume</code> flips <code>paused</code> back to <code>false</code> and resets three
-pieces of state that would otherwise leak pause-time context into
-the next iteration's evaluation:</p>
-<ul>
-<li>The <strong>stagnation streak</strong> (<code>streak = 0</code>, <code>prev = null</code>). The
-  comment in the code spells out why: <em>"manual intervention almost
-  always changes context"</em>. Without this reset, a paused →
-  user-tweaks-source → resumed loop would carry a stale <code>prev</code>
-  response and a non-zero <code>streak</code>, so the very next iteration
-  could trip the stagnation guard even though the conversation
-  context has changed substantially.</li>
-<li>The <strong>last-assistant-content buffer</strong> (<code>state.lastAssistantContent
-  = ""</code>). Even though <code>ralph_pause</code> itself stops new pause-time
-  content from being appended (see "Completion / abort isolation"
-  above), the in-flight iteration's response that arrived <strong>before</strong>
-  the pause is still sitting in that buffer at resume time. Clearing
-  it on resume guarantees the post-resume idle evaluates an empty
-  string for completion / abort triggers — same defense-in-depth
-  reasoning as the streak reset.</li>
-</ul>
-<p><code>ralph_resume</code> returns failure if the loop is <strong>not</strong> currently
-paused — the error message is
-<code>ralph_resume: &lt;label&gt; is not paused. Use ralph_pause first, or
-ralph_stop to cancel.</code> So unlike <code>ralph_pause</code>, <code>ralph_resume</code> is
-<strong>not</strong> idempotent.</p>
-<p>Pause time is tracked in two places visible via <code>ralph_status</code>:</p>
-<ul>
-<li><code>paused_for_ms</code> — the duration of the <strong>current</strong> pause (zero when
-  the loop is not paused).</li>
-<li><code>total_paused_ms</code> — cumulative pause time across <strong>all</strong> prior
-  pause/resume cycles in this run.</li>
-</ul>
-<p><code>total_paused_ms</code> is deducted from <code>durationMs</code> so the wall-clock
-elapsed time reported by the loop reflects active execution time
-only, not any time the user spent inspecting state with the loop
-paused.</p>
-<p>In summary, the contract is:</p>
-<table>
-<thead>
-<tr>
-<th>Operation</th>
-<th>When it succeeds</th>
-<th>What it does</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>ralph_pause</code></td>
-<td>Loop active (paused or unpaused)</td>
-<td>Sets <code>paused = true</code>. Currently-running iteration finishes normally. Pause-time <code>assistant.message</code> events are not credited to the loop's token budget and do not accumulate into the completion/abort buffer.</td>
-</tr>
-<tr>
-<td><code>ralph_resume</code></td>
-<td>Loop active <strong>and</strong> paused</td>
-<td>Clears <code>paused</code>, resets <code>streak</code> / <code>prev</code> / <code>lastAssistantContent</code>, adds elapsed pause to <code>total_paused_ms</code>.</td>
-</tr>
-<tr>
-<td><code>ralph_stop</code></td>
-<td>Loop active (paused or unpaused)</td>
-<td>Cancels the loop entirely. Pausing first is not required.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="token-tracking-and-context-window-warnings">Token tracking and context-window warnings<a class="headerlink" href="#token-tracking-and-context-window-warnings" title="Permanent link">&para;</a></h2>
-<p>The loop credits cumulative input and output tokens from every
-<code>assistant.message</code> event observed during an iteration, so you can
-both cap a long-running run with <code>max_tokens</code> and watch the context
-window pressure climb in real time.</p>
-<h3 id="what-you-observe">What you observe<a class="headerlink" href="#what-you-observe" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Live cumulative totals</strong> — <code>ralph_status.tokens</code> (added in
-  issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/7">#7</a>)
-  exposes <code>{ input, output, total, max_tokens }</code> on the active
-  snapshot. Counts start at zero and grow with every credited
-  iteration. <code>max_tokens</code> echoes the configured cap, or is <code>null</code>
-  when no cap was armed.</li>
-<li><strong>Post-finish summary</strong> — <code>ralph_status.last.tokens</code> mirrors the
-  same <code>{ input, output, total }</code> shape on the prior-run summary so
-  a post-mortem <code>ralph_status</code> call after the loop exits still sees
-  how many tokens the run consumed. Omitted entirely when the run
-  credited zero tokens.</li>
-<li><strong>Per-iteration breakdown</strong> — the deep-frozen
-  <code>result.tokens.byIteration</code> and <code>result.tokens.byModel</code> (returned
-  on the loop's terminal value, not on the live snapshot) carry
-  per-iter and per-model rollups for callers that want detail. They
-  are intentionally <strong>not</strong> mirrored on <code>ralph_status</code> to keep that
-  payload cheap to serialise.</li>
-</ul>
-<h3 id="two-safety-contracts">Two safety contracts<a class="headerlink" href="#two-safety-contracts" title="Permanent link">&para;</a></h3>
-<p>The loop makes two promises about what it credits:</p>
-<ol>
-<li><strong>Negative / NaN / Infinity / zero-zero rejection.</strong>
-   <code>extractUsage</code> discards any <code>assistant.message</code> whose
-   <code>usage.input_tokens</code> or <code>usage.output_tokens</code> is negative, NaN,
-   Infinity, or non-numeric. It also discards a <code>{input: 0,
-   output: 0}</code> pair — a zero/zero event carries no information and
-   would pollute the per-iteration breakdown with empty rows. The
-   contract is therefore: both peers finite and <code>&gt;= 0</code>, and at
-   least one of them strictly positive. A flaky upstream usage
-   payload cannot push <code>tokens.input</code> below zero (which would
-   silently mask a <code>max_tokens</code> cap by inflating remaining budget)
-   or generate an <code>Infinity</code> total that breaks the context-window
-   threshold maths.</li>
-<li><strong>Pause-time isolation.</strong> While the loop is paused, no
-   <code>assistant.message</code> is credited to the running totals, no
-   per-iteration entry is appended, and no context-window warning
-   threshold is evaluated. See the <a href="#pause--resume-semantics">Pause / resume semantics
-   section</a> above for the full isolation
-   contract.</li>
-</ol>
-<h3 id="context-window-warnings">Context-window warnings<a class="headerlink" href="#context-window-warnings" title="Permanent link">&para;</a></h3>
-<p>When the cumulative input pressure for the <strong>current model</strong> crosses
-<code>warn_at_pct</code> (default 80%) of that model's known total context
-window, the loop logs a one-time WARN. A second hard-coded warning
-fires at 95%. Each threshold fires at most once per loop run so a
-loop sitting at 81% does not spam the log on every iteration.
-Unknown models log a one-time INFO so the maintainer notices the
-gap without losing iteration progress.</p>
-<p>For the engineering-level walkthrough — how <code>extractUsage</code> and
-<code>creditUsage</code> thread together, where the rollups live, and which
-exact lines enforce the two contracts — see the
-<a href="../ARCHITECTURE/">Token tracking section in <code>docs/ARCHITECTURE.md</code></a>.</p>
-<h2 id="ralph_status-one-line-summary"><code>ralph_status</code> one-line summary<a class="headerlink" href="#ralph_status-one-line-summary" title="Permanent link">&para;</a></h2>
-<p>Every <code>ralph_status</code> invocation returns a structured snapshot <strong>plus</strong>
-a single-line <code>textResultForLlm</code> summary so a model that reads only
-the prose result still sees the loop's pulse. The shape is fixed and
-intended to be parsed (or grepped) by tooling.</p>
-<h3 id="active-loop">Active loop<a class="headerlink" href="#active-loop" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>{label}: iteration {N}/{M}, elapsed {ms}ms[, tokens {X}/{Y}][ (PAUSED — {reason}, for {ms}ms)]
-</code></pre></div>
-<p>Slot-by-slot:</p>
-<ul>
-<li><code>{label}</code> — the loop's display name (<code>ralph_loop</code>,
-  <code>self_improve</code>, or <code>grow_project</code>).</li>
-<li><code>iteration {N}/{M}</code> — current iteration count vs. the configured
-  <code>max_iterations</code>. <code>N</code> is the number of completed iterations, so
-  <code>0/{M}</code> means the loop is armed but no iteration has fired yet.</li>
-<li><code>elapsed {ms}ms</code> — milliseconds since arm-time, rounded down.
-  Pause time is <strong>included</strong> here (wall-clock); subtract
-  <code>paused_for_ms</code> from the structured snapshot if you need
-  active-only time.</li>
-<li><code>, tokens {X}/{Y}</code> — appears <strong>only when</strong> <code>max_tokens</code> was armed
-  (issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/7">#7</a>).
-  <code>X</code> is the cumulative input+output total credited so far; <code>Y</code> is
-  the configured cap. Loops without a cap omit this segment so
-  consumers do not see a misleading <code>tokens X/null</code>.</li>
-<li><code>(PAUSED — {reason}, for {ms}ms)</code> — appears only when the loop
-  is currently paused. The em-dash + reason are omitted when no
-  reason was provided, leaving <code>(PAUSED, for {ms}ms)</code>.</li>
-</ul>
-<h3 id="inactive-prior-run-summary">Inactive — prior run summary<a class="headerlink" href="#inactive-prior-run-summary" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>no active loop; last {label} {reason} after {N} iterations
-</code></pre></div>
-<p><code>{reason}</code> is one of the canonical finish reasons (<code>completion_promise</code>,
-<code>max_iterations</code>, <code>abort_promise</code>, <code>aborted</code>, <code>stagnation</code>,
-<code>max_tokens</code>, <code>send_error</code>, <code>user_stopped</code>, <code>detached</code>).</p>
-<h3 id="inactive-first-call-in-a-fresh-session">Inactive — first call in a fresh session<a class="headerlink" href="#inactive-first-call-in-a-fresh-session" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>no active loop and no prior run in this session
-</code></pre></div>
-<p>This is the only case where <code>ralph_status</code> returns neither an
-active snapshot nor a <code>last</code> block. It is safe to call from any
-session, including before any loop has been armed.</p>
+<p>Both triggers are <strong>only honored after <code>min_iterations</code></strong> to avoid premature termination from the agent merely describing the protocol on iter 1.</p>
+<h2 id="stagnation-detection">Stagnation detection<a class="headerlink" href="#stagnation-detection" title="Permanent link">&para;</a></h2>
+<p>The driver tracks the last few iter responses and aborts with <code>reason: "stagnation"</code> when N consecutive responses are byte-identical (default N=3; <code>--stagnation-limit 0</code> disables). Stagnation overrides <code>min_iterations</code> as a safety floor — a genuinely stuck loop should not run to <code>max_iterations</code> just because <code>min</code> hadn't been reached.</p>
+<h2 id="adaptive-iteration-budget">Adaptive iteration budget<a class="headerlink" href="#adaptive-iteration-budget" title="Permanent link">&para;</a></h2>
+<p>When <code>--self-improve</code> reaches <code>--max</code> and progress signals are positive (the working tree shows uncommitted changes, or the last few iters are not byte-identical), the runner grants <code>adaptive_extension</code> more iterations up to <code>adaptive_max_total</code> rather than aborting useful work. See <a href="../packages/tui/src/runner.mjs"><code>packages/tui/src/runner.mjs</code></a> for the signal evaluation and ceiling rules.</p>
 
 
 

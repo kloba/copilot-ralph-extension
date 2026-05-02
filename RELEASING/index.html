@@ -558,8 +558,8 @@
 
 
 <h1 id="releasing">Releasing<a class="headerlink" href="#releasing" title="Permanent link">&para;</a></h1>
-<p><code>copilot-ralph-extension</code> ships as a small set of <code>.mjs</code> files copied into <code>~/.copilot/extensions/ralph</code> (or <code>.github/extensions/ralph</code> for project-scoped installs). There is <strong>no npm publish</strong>; releases are tagged commits on <code>main</code> plus an annotated GitHub Release page.</p>
-<p>A formal tag-driven release-automation workflow now ships at <a href="../.github/workflows/release.yml"><code>.github/workflows/release.yml</code></a> (see issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/10">#10</a> for the rationale). Pushing a <code>vX.Y.Z</code> tag verifies <code>package.json</code> matches the tag, asserts a matching <code>CHANGELOG.md</code> section exists, runs <code>npm test</code>, and creates the GitHub Release with every <code>extension/*.mjs</code> attached as an asset. The manual checklist below is the fallback when the workflow is unavailable or you need to cut a release out-of-band.</p>
+<p><code>copilot-ralph-extension</code> ships as the <code>ralph-tui</code> standalone TUI app. There is <strong>no npm publish</strong> today; releases are tagged commits on <code>main</code> plus an annotated GitHub Release page. The auto-attached source zipball / tarball is the canonical download.</p>
+<p>A tag-driven release-automation workflow ships at <a href="../.github/workflows/release.yml"><code>.github/workflows/release.yml</code></a> (see issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/10">#10</a> for the rationale). Pushing a <code>vX.Y.Z</code> tag verifies <code>package.json</code> matches the tag, asserts a matching <code>CHANGELOG.md</code> section exists, runs <code>npm test</code> + <code>npm run check</code>, and creates the GitHub Release with the matching changelog section as the body. The manual checklist below is the fallback when the workflow is unavailable or you need to cut a release out-of-band.</p>
 <h2 id="manual-release-checklist">Manual release checklist<a class="headerlink" href="#manual-release-checklist" title="Permanent link">&para;</a></h2>
 <ol>
 <li><strong>Verify <code>main</code> is green</strong>: <code>npm test</code> and the GitHub Actions CI workflow on the latest commit.</li>
@@ -573,43 +573,32 @@
 <li>Re-create an empty <code>## Unreleased</code> heading immediately above it for the next cycle.</li>
 <li>Commit with message <code>Release vX.Y.Z</code> and the standard <code>Co-authored-by</code> trailer.</li>
 <li><strong>Tag the release</strong>: <code>git tag -a vX.Y.Z -m "vX.Y.Z"</code> and <code>git push --tags</code>.</li>
-<li><strong>Create a GitHub Release</strong>:</li>
-<li>Title: <code>vX.Y.Z</code>.</li>
-<li>Body: paste the new <code>## X.Y.Z</code> section from <code>CHANGELOG.md</code> verbatim.</li>
-<li>Attach every <code>.mjs</code> module under <code>extension/</code> as a release asset so users can pin a specific revision without cloning the repo. The full set is the same one <code>install.sh</code> copies — currently <code>extension.mjs</code>, <code>handler.mjs</code>, and <code>events-emit.mjs</code>. A drift guard in <code>test/extension.test.mjs</code> keeps <code>release.yml</code>'s asset list in sync with the directory; mirror that list here when invoking <code>gh release create</code> manually:
-     <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Extract the matching CHANGELOG block (heading-line + body up to,</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="c1"># but not including, the next &quot;## &quot; heading). Escapes the dots in</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1"># the version pattern so awk doesn&#39;t treat them as regex</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># wildcards. Replace `0.6.0` below with your actual version.</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>gh<span class="w"> </span>release<span class="w"> </span>create<span class="w"> </span>vX.Y.Z<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span>extension/extension.mjs<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span>extension/handler.mjs<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span>extension/events-emit.mjs<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span>--title<span class="w"> </span><span class="s2">&quot;vX.Y.Z&quot;</span><span class="w"> </span>--notes-file<span class="w"> </span>&lt;<span class="o">(</span>awk<span class="w"> </span><span class="s1">&#39;/^## X\.Y\.Z[[:space:]]*$/{p=1;next} p&amp;&amp;/^## /{exit} p&#39;</span><span class="w"> </span>CHANGELOG.md<span class="o">)</span>
-</code></pre></div></li>
+<li><strong>Create a GitHub Release</strong> if the workflow is unavailable:
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Extract the matching CHANGELOG block (heading-line + body up to,</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="c1"># but not including, the next &quot;## &quot; heading). Replace `X.Y.Z` below</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1"># with your actual version.</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>gh<span class="w"> </span>release<span class="w"> </span>create<span class="w"> </span>vX.Y.Z<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span>--title<span class="w"> </span><span class="s2">&quot;vX.Y.Z&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span>--notes-file<span class="w"> </span>&lt;<span class="o">(</span>awk<span class="w"> </span><span class="s1">&#39;/^## X\.Y\.Z[[:space:]]*$/{p=1;next} p&amp;&amp;/^## /{exit} p&#39;</span><span class="w"> </span>CHANGELOG.md<span class="o">)</span>
+</code></pre></div>
+   The auto-attached source zipball is the canonical download; no per-file <code>.mjs</code> asset upload is needed.</li>
 </ol>
 <h2 id="versioning">Versioning<a class="headerlink" href="#versioning" title="Permanent link">&para;</a></h2>
 <p>We follow <strong>Semantic Versioning</strong>:</p>
 <ul>
-<li><strong>MAJOR</strong> — breaking change to the tool surface (renamed/removed tool, removed parameter, changed default that flips loop behavior).</li>
-<li><strong>MINOR</strong> — new tool, new optional parameter, new opt-in feature flag.</li>
+<li><strong>MAJOR</strong> — breaking change to the <code>ralph-tui</code> CLI surface (renamed/removed subcommand or flag, removed env var, changed JSONL event shape).</li>
+<li><strong>MINOR</strong> — new subcommand, new flag, new opt-in feature.</li>
 <li><strong>PATCH</strong> — bug fix, doc-only change, internal refactor with no user-visible behavior change.</li>
 </ul>
-<p>The package has zero runtime dependencies, so dependency-driven version bumps don't apply.</p>
+<p>The non-render layer has zero runtime dependencies, so dependency-driven version bumps don't apply there. The Ink renderer's package-lock churn falls under PATCH unless a major Ink/React/Yoga upgrade changes user-visible rendering.</p>
 <h2 id="pinning-a-specific-version-for-end-users">Pinning a specific version (for end users)<a class="headerlink" href="#pinning-a-specific-version-for-end-users" title="Permanent link">&para;</a></h2>
-<p>Once a release exists with assets attached, end users can pin a specific revision. Mirror <code>install.sh</code>'s FILES list — every <code>.mjs</code> under <code>extension/</code> must be downloaded; the extension imports its modules by relative path, so a partial download will crash at module-load time:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Project-scoped pin</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>.github/extensions/ralph
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="c1"># Order matters: leaf modules first, entry point (extension.mjs) LAST —</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># mirrors install.sh&#39;s FILES array and README Option A/B/D. If</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># `/extensions reload` fires mid-download, this guarantees the SDK</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="c1"># never sees a new `extension.mjs` importing missing/old siblings.</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="k">for</span><span class="w"> </span>f<span class="w"> </span><span class="k">in</span><span class="w"> </span>events-emit.mjs<span class="w"> </span>prompts.mjs<span class="w"> </span>handler.mjs<span class="w"> </span>extension.mjs<span class="p">;</span><span class="w"> </span><span class="k">do</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span>curl<span class="w"> </span>-L<span class="w"> </span>-o<span class="w"> </span><span class="s2">&quot;.github/extensions/ralph/</span><span class="nv">$f</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="s2">&quot;https://github.com/kloba/copilot-ralph-extension/releases/download/vX.Y.Z/</span><span class="nv">$f</span><span class="s2">&quot;</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="k">done</span>
+<p>Once a release exists, end users can pin a specific revision by checking out the matching tag:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/kloba/copilot-ralph-extension
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nb">cd</span><span class="w"> </span>copilot-ralph-extension
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>git<span class="w"> </span>checkout<span class="w"> </span>vX.Y.Z
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>--help
 </code></pre></div>
-<p>For the user-scoped equivalent, swap <code>.github/extensions/ralph</code> for <code>~/.copilot/extensions/ralph</code>.</p>
+<p>A future release will publish <code>ralph-tui</code> to npm so <code>npm i -g ralph-tui@X.Y.Z</code> works; until then the source checkout above is the supported install path.</p>
 <h2 id="hotfix-branches">Hotfix branches<a class="headerlink" href="#hotfix-branches" title="Permanent link">&para;</a></h2>
 <p>For an out-of-band patch when <code>main</code> has unshippable in-progress work:</p>
 <ol>

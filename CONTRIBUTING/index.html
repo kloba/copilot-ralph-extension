@@ -513,9 +513,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#running-the-extension-locally-against-copilot-cli" class="md-nav__link">
+  <a href="#running-ralph-tui-locally" class="md-nav__link">
     <span class="md-ellipsis">
-      Running the extension locally against Copilot CLI
+      Running ralph-tui locally
     </span>
   </a>
   
@@ -589,25 +589,26 @@
 <h2 id="local-development-setup">Local development setup<a class="headerlink" href="#local-development-setup" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/kloba/copilot-ralph-extension.git
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>copilot-ralph-extension
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>npm<span class="w"> </span><span class="nb">test</span><span class="w">    </span><span class="c1"># runs the node:test suite under test/ (no install needed — zero runtime deps)</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>npm<span class="w"> </span><span class="nb">test</span><span class="w">    </span><span class="c1"># runs the node:test suite under packages/*/test (no install needed for the non-render layer)</span>
 </code></pre></div>
-<p>The repository has <strong>zero npm runtime dependencies</strong> and only Node ≥ 20's built-ins (<code>node:test</code>, <code>node:assert</code>, <code>node:child_process</code>). <code>npm install</code> is not required to run the test suite.</p>
-<h2 id="running-the-extension-locally-against-copilot-cli">Running the extension locally against Copilot CLI<a class="headerlink" href="#running-the-extension-locally-against-copilot-cli" title="Permanent link">&para;</a></h2>
-<p>For day-to-day iteration, prefer a <strong>project-scoped</strong> install so your <code>git checkout</code> is the live source the CLI loads:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./install.sh<span class="w"> </span>--project<span class="w">   </span><span class="c1"># installs into .github/extensions/ralph in this repo</span>
+<p>The repository has <strong>zero npm runtime dependencies</strong> for the non-render layer (<code>prompts.mjs</code>, <code>runner.mjs</code>, <code>events*.mjs</code>, <code>writer.mjs</code>, <code>tail.mjs</code>, <code>plain.mjs</code>, <code>bin/tui.mjs</code>). <code>npm install</code> is only required when developing the Ink-rendered watch / run UI:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">cd</span><span class="w"> </span>packages/tui<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>install<span class="w">   </span><span class="c1"># pulls Ink + React + Yoga + Commander</span>
 </code></pre></div>
-<p>After editing <code>extension/handler.mjs</code>, run <code>extensions_reload</code> from inside Copilot CLI (or restart the CLI) — new tool definitions are picked up immediately.</p>
-<p>For a user-scoped install (loads the same extension across all your repos):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./install.sh<span class="w">             </span><span class="c1"># default: ~/.copilot/extensions/ralph</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>./install.sh<span class="w"> </span>--dry-run<span class="w">   </span><span class="c1"># show what would be copied without writing</span>
+<h2 id="running-ralph-tui-locally">Running ralph-tui locally<a class="headerlink" href="#running-ralph-tui-locally" title="Permanent link">&para;</a></h2>
+<p>For day-to-day iteration:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># From the repo root, no install needed for plain mode:</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>run<span class="w"> </span>--self-improve<span class="w"> </span>--fresh<span class="w"> </span>--max<span class="w"> </span><span class="m">5</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Watch the live timeline in another terminal:</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>watch
 </code></pre></div>
 <h2 id="style-conventions">Style conventions<a class="headerlink" href="#style-conventions" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Source files</strong>: <code>extension/extension.mjs</code> (SDK glue, ~30 lines) and <code>extension/handler.mjs</code> (controller, ~2.5kLOC). Keep the SDK layer thin — all logic that needs unit-testing belongs in <code>handler.mjs</code> so it can be exercised against a fake session.</li>
-<li><strong>No third-party deps.</strong> New runtime dependencies require a strong justification (security review, zero-fork ecosystem cost, etc.). Prefer Node built-ins.</li>
+<li><strong>Source files</strong>: pure ESM under <code>packages/tui/src/</code> and <code>packages/tui/bin/</code>. Keep the non-render modules dependency-free; only the Ink renderer depends on user-space packages.</li>
+<li><strong>No third-party deps in the non-render layer.</strong> New runtime dependencies require a strong justification (security review, zero-fork ecosystem cost, etc.).</li>
 <li><strong>Comments</strong>: only where context is non-obvious. The codebase already uses comments to explain <em>why</em> (rationale, edge cases, prompt-injection guards) rather than <em>what</em>.</li>
 <li><strong>Formatting</strong>: 4-space indentation, trailing commas in multi-line literals, double-quoted strings.</li>
-<li><strong>Tests</strong>: every behavior change adds or updates a test in <code>test/extension.test.mjs</code>. Use the existing <code>makeFakeSession</code> / <code>runTurn</code> / <code>arm</code> helpers — they exercise the controller through the same event surface the SDK uses.</li>
+<li><strong>Tests</strong>: every behavior change adds or updates a test in <code>packages/tui/test/*.test.mjs</code>. The runner suite uses a Node-script "fake copilot" shim parameterised by a <code>SCRIPT</code> env var.</li>
 </ul>
 <h2 id="commit-trailer-rules">Commit trailer rules<a class="headerlink" href="#commit-trailer-rules" title="Permanent link">&para;</a></h2>
 <p>Every commit MUST include both <code>Co-authored-by</code> trailers in this order:</p>

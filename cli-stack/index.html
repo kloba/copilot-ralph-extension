@@ -673,8 +673,11 @@ rather than internet folklore.</p>
 </tbody>
 </table>
 <p>These pins live in <a href="../packages/tui/package.json"><code>packages/tui/package.json</code></a>
-and never appear in the core extension's <code>package.json</code> — issue #22's
-hard constraint that the extension stays zero-dep at runtime.</p>
+and are only required for the interactive Ink-rendered <code>watch</code> / <code>run</code>
+UI. The non-render layer (<code>prompts.mjs</code>, <code>runner.mjs</code>, <code>events*.mjs</code>,
+<code>writer.mjs</code>, <code>tail.mjs</code>, <code>plain.mjs</code>, <code>bin/tui.mjs</code>) is zero-dep so
+plain-mode <code>ralph-tui list</code> / <code>replay</code> / <code>watch --plain</code> runs straight
+from a fresh source checkout with no <code>npm install</code>.</p>
 <h2 id="why-ink">Why Ink?<a class="headerlink" href="#why-ink" title="Permanent link">&para;</a></h2>
 <p>Ink lets you build terminal UIs with React's component model. The
 benefit for an event-stream visualizer is concrete:</p>
@@ -781,9 +784,9 @@ at Yoga as the layout backend.</p>
 <h2 id="footprint">Footprint<a class="headerlink" href="#footprint" title="Permanent link">&para;</a></h2>
 <p>The TUI's full dependency closure resolves to ~3 MB of <code>node_modules/</code>
 when installed (Ink + React + Yoga's WASM + Commander). That cost is
-paid only by users who run <code>ralph-tui watch</code> interactively. The
-<em>event emitter</em> in the core extension stays stdlib-only, so an
-extension install via <code>install.sh</code> adds zero new packages.</p>
+paid only by users who run the interactive Ink-rendered UI. Plain-mode
+subcommands (<code>list</code>, <code>replay</code>, <code>watch --plain</code>, <code>run --headless</code>) work
+straight from a fresh source checkout with no <code>npm install</code>.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../packages/tui/README.md">packages/tui/README.md</a> — user-facing

@@ -445,9 +445,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#arm-a-loop" class="md-nav__link">
+  <a href="#drive-a-loop" class="md-nav__link">
     <span class="md-ellipsis">
-      Arm a loop
+      Drive a loop
     </span>
   </a>
   
@@ -577,9 +577,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#arm-a-loop" class="md-nav__link">
+  <a href="#drive-a-loop" class="md-nav__link">
     <span class="md-ellipsis">
-      Arm a loop
+      Drive a loop
     </span>
   </a>
   
@@ -611,13 +611,25 @@
 <h2 id="install">Install<a class="headerlink" href="#install" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/kloba/copilot-ralph-extension
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>copilot-ralph-extension
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>./install.sh
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>--help
 </code></pre></div>
-<h2 id="arm-a-loop">Arm a loop<a class="headerlink" href="#arm-a-loop" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nx">ralph_loop</span><span class="p">({</span><span class="w"> </span><span class="nx">prompt</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Refactor src/auth.js. Emit COMPLETE when done.&quot;</span><span class="w"> </span><span class="p">})</span>
+<p>For the interactive Ink-rendered watch UI:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">cd</span><span class="w"> </span>packages/tui<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>install
+</code></pre></div>
+<h2 id="drive-a-loop">Drive a loop<a class="headerlink" href="#drive-a-loop" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Drain the existing backlog (red CI → stale PRs → open issues → SDLC).</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>run<span class="w"> </span>--self-improve<span class="w"> </span>--fresh<span class="w"> </span>--max<span class="w"> </span><span class="m">50</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Grow the project backlog with a focus area.</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>run<span class="w"> </span>--grow-project<span class="w"> </span>--fresh<span class="w"> </span>--focus<span class="w"> </span><span class="s2">&quot;ralph-tui replay UX&quot;</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># Custom prompt mode — re-fed verbatim every iter until COMPLETE.</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span>--prompt<span class="w"> </span><span class="s2">&quot;Refactor packages/tui/src/runner.mjs and add tests. Emit COMPLETE when green.&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">  </span>--fresh
 </code></pre></div>
 <p>Stop early:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nx">ralph_stop</span><span class="p">({</span><span class="w"> </span><span class="nx">reason</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;changed plan&quot;</span><span class="w"> </span><span class="p">})</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>node<span class="w"> </span>packages/tui/bin/tui.mjs<span class="w"> </span>run<span class="w"> </span>--stop<span class="w"> </span>&lt;runId&gt;
 </code></pre></div>
 <p>See the project <a href="https://github.com/kloba/copilot-ralph-extension#readme">README</a> for the full reference until these pages are filled in.</p>
 

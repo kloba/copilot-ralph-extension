@@ -504,9 +504,9 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#why-sessionidle-instead-of-a-subprocess-wrapper" class="md-nav__link">
+  <a href="#what-ships" class="md-nav__link">
     <span class="md-ellipsis">
-      Why session.idle instead of a subprocess wrapper?
+      What ships
     </span>
   </a>
   
@@ -519,13 +519,31 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Source layout">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ralph-tui-run-the-driver" class="md-nav__link">
+    <span class="md-ellipsis">
+      ralph-tui run — the driver
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ralph-tui run — the driver">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#extensionmjs-vs-handlermjs-split" class="md-nav__link">
+  <a href="#context-modes" class="md-nav__link">
     <span class="md-ellipsis">
-      extension.mjs vs handler.mjs split
+      Context modes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#state-machine-statejson" class="md-nav__link">
+    <span class="md-ellipsis">
+      State machine — state.json
     </span>
   </a>
   
@@ -537,18 +555,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#state-machine-stateactive-the-activeloopstate" class="md-nav__link">
+  <a href="#jsonl-event-contract" class="md-nav__link">
     <span class="md-ellipsis">
-      State machine: state.active (the ActiveLoopState)
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#sub-agent-event-filtering" class="md-nav__link">
-    <span class="md-ellipsis">
-      Sub-agent event filtering
+      JSONL event contract
     </span>
   </a>
   
@@ -564,15 +573,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#tool-surface" class="md-nav__link">
-    <span class="md-ellipsis">
-      Tool surface
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#completion-promise-abort-promise-contracts" class="md-nav__link">
     <span class="md-ellipsis">
       Completion-promise &amp; abort-promise contracts
@@ -582,27 +582,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#adaptive-iteration-budget-issue-4" class="md-nav__link">
+  <a href="#pause-resume-stop-status" class="md-nav__link">
     <span class="md-ellipsis">
-      Adaptive iteration budget (issue #4)
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#token-tracking-issue-7" class="md-nav__link">
-    <span class="md-ellipsis">
-      Token tracking (issue #7)
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#caffeinate-integration-issue-8" class="md-nav__link">
-    <span class="md-ellipsis">
-      Caffeinate integration (issue #8)
+      Pause / resume / stop / status
     </span>
   </a>
   
@@ -612,6 +594,15 @@
   <a href="#test-architecture" class="md-nav__link">
     <span class="md-ellipsis">
       Test architecture
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-we-removed-the-in-session-extension" class="md-nav__link">
+    <span class="md-ellipsis">
+      Why we removed the in-session extension
     </span>
   </a>
   
@@ -637,125 +628,121 @@
 
 <h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h1>
 <p>This document is for contributors and future-self maintenance. End-user docs live in the <a href="../README.md">README</a>. For local-dev setup see <a href="../CONTRIBUTING/">CONTRIBUTING.md</a>.</p>
-<h2 id="why-sessionidle-instead-of-a-subprocess-wrapper">Why <code>session.idle</code> instead of a subprocess wrapper?<a class="headerlink" href="#why-sessionidle-instead-of-a-subprocess-wrapper" title="Permanent link">&para;</a></h2>
-<p>Existing Ralph implementations for Copilot CLI (e.g. <code>copilot-ralph-mode</code>) are <strong>shell wrappers</strong>: they <code>spawn copilot -p "&lt;prompt&gt;"</code> once per iteration. Each iteration starts with a fresh session and loses the conversation context built up by previous iterations.</p>
-<p>This extension instead runs <strong>inside the active session</strong>, driven by the Copilot CLI extension SDK's <code>session.idle</code> event — the same architectural pattern as Anthropic's Claude Code <a href="https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum"><code>ralph-wiggum</code></a> plugin (their <code>Stop</code> hook). When the root agent finishes its turn:</p>
-<ol>
-<li>The SDK emits <code>session.idle</code> to all attached extensions.</li>
-<li>The Ralph controller's <code>onIdle</code> handler runs the completion / abort / stagnation / max-iterations checks.</li>
-<li>If the loop should continue, the controller calls <code>session.send({ prompt })</code> to inject the prompt as a new user turn.</li>
-<li>Copilot CLI processes that turn exactly as if the human had typed it — including all UI rendering, model calls, tool execution, and ancillary handlers.</li>
-</ol>
-<p>The trade-off is documented in the README's comparison table; see <a href="../README.md#whats-different-here">What's different here?</a>.</p>
+<h2 id="what-ships">What ships<a class="headerlink" href="#what-ships" title="Permanent link">&para;</a></h2>
+<p>The project ships a single artifact: the <code>ralph-tui</code> CLI. It drives autonomous Copilot CLI loops by spawning each iteration as a fresh <code>copilot -p ...</code> subprocess, parses the JSONL stdout for terminal markers, and tails a per-run <code>events.jsonl</code> event stream so a separate terminal can <code>ralph-tui watch</code> the live timeline.</p>
+<p>The previous in-session Copilot CLI extension (<code>ralph_loop</code> / <code>self_improve</code> / <code>grow_project</code> / <code>ralph_status</code> / <code>ralph_pause</code> / <code>ralph_resume</code> / <code>ralph_stop</code> tools) was retired — see <a href="../CHANGELOG.md"><code>CHANGELOG.md</code></a>. All forward work lives in <code>packages/tui/</code>.</p>
 <h2 id="source-layout">Source layout<a class="headerlink" href="#source-layout" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>extension/
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── extension.mjs   # SDK glue — joinSession + createRalphController() + register tools/hooks
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── handler.mjs     # The entire controller: state machine, validation, tool defs, baked prompts
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>└── events-emit.mjs # Zero-dep JSONL event emitter (writes ~/.copilot/ralph/runs/&lt;runId&gt;/events.jsonl)
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>test/
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>├── extension.test.mjs       # node:test suite — controller against a fake session
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>├── events-emit.test.mjs     # Unit tests for the JSONL emitter helpers
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>└── handler-events.test.mjs  # Integration tests covering controller↔emitter wiring
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>packages/tui/       # Stand-alone TUI consumer (`ralph-tui`) — see packages/tui/README.md
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>install.sh          # User- or project-scoped install into ~/.copilot/extensions or .github/extensions
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>packages/tui/
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── bin/tui.mjs        # CLI entry — argv parser + dispatcher
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── src/
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│   ├── prompts.mjs    # Baked SDLC prompts (PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT)
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│   ├── runner.mjs     # `ralph-tui run` driver — spawns each iter, tracks state.json
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│   ├── events.mjs     # Pure event contract (read side)
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│   ├── events-emit.mjs # Zero-dep JSONL emitter (write side)
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│   ├── writer.mjs     # JSONL reader + index aggregator (`list`/`stats`/`prune`)
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│   ├── tail.mjs       # Live tail iterator for `watch`
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│   ├── plain.mjs      # Plain-mode log line formatter
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│   ├── watch.mjs      # Watch dispatcher (TTY → Ink, non-TTY → plain)
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│   ├── run-ui.mjs     # Ink renderer for `run`&#39;s live UI
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│   └── components/    # Ink layout components (Header, Timeline, DetailPane, …)
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>├── test/              # node:test suite
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>└── package.json       # Ink/React/Yoga deps for the renderer
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>scripts/
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>├── check.mjs          # Portable equivalent of CI&#39;s syntax-check job
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>└── ralph-tui-fresh.sh # Optional `git pull --ff-only` wrapper for long runs
 </code></pre></div>
-<h3 id="extensionmjs-vs-handlermjs-split"><code>extension.mjs</code> vs <code>handler.mjs</code> split<a class="headerlink" href="#extensionmjs-vs-handlermjs-split" title="Permanent link">&para;</a></h3>
+<h2 id="ralph-tui-run-the-driver"><code>ralph-tui run</code> — the driver<a class="headerlink" href="#ralph-tui-run-the-driver" title="Permanent link">&para;</a></h2>
+<p><a href="../packages/tui/src/runner.mjs"><code>runner.mjs</code></a> is the heart of the project. Each iteration is a fresh subprocess:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>copilot -p &quot;&lt;baked or user prompt&gt;&quot; --allow-all-tools --output-format json [--resume &lt;sessionId&gt;]
+</code></pre></div>
+<p>The driver parses JSONL stdout for two markers:</p>
 <ul>
-<li><strong><code>extension.mjs</code></strong> is the only file that talks to the SDK. It's intentionally tiny (~30 LOC). Anything beyond <code>joinSession</code>, <code>controller.attach(session)</code>, and <code>for (const t of controller.tools) session.registerTool(t)</code> does not belong here.</li>
-<li><strong><code>handler.mjs</code></strong> is everything else: state machine, prompt validation, tool definitions, completion / abort / stagnation logic, baked-prompt templates, adaptive-budget signal evaluation, caffeinate spawning, etc. Because it's pure JS over a tiny event-bus interface (<code>on</code>/<code>emit</code>/<code>send</code>/<code>log</code>), it can be unit-tested with <code>makeFakeSession()</code> from <code>test/extension.test.mjs</code> — no SDK mock required.</li>
+<li>Root <code>assistant.message.data.content</code> (no <code>agentId</code>) — the iter's user-visible response. Scanned for the configured <code>completion_promise</code> / <code>abort_promise</code> substring.</li>
+<li>Terminal <code>result</code> event with <code>result.sessionId</code> — captured at iter 1 and reused via <code>--resume=&lt;sessionId&gt;</code> on iter 2+ when the driver is in <code>--continue</code> mode.</li>
 </ul>
-<p>The <code>createRalphController(opts?)</code> factory returns <code>{ tools, hooks, attach, state }</code>. Each call returns an <strong>independent</strong> controller with closure-private state — important because tests routinely create two controllers and assert non-leakage.</p>
-<h2 id="state-machine-stateactive-the-activeloopstate">State machine: <code>state.active</code> (the <code>ActiveLoopState</code>)<a class="headerlink" href="#state-machine-stateactive-the-activeloopstate" title="Permanent link">&para;</a></h2>
-<p>While a loop is running, <code>state.active</code> holds the canonical loop state. Field-by-field documentation lives in the JSDoc above <code>createRalphController</code> in <code>handler.mjs</code>. Notable fields:</p>
+<h3 id="context-modes">Context modes<a class="headerlink" href="#context-modes" title="Permanent link">&para;</a></h3>
 <ul>
-<li><code>i</code> / <code>max</code> / <code>min</code> — current iteration index, effective max, lower bound for honoring the completion / abort promises.</li>
-<li><code>prompt</code> / <code>completionPromise</code> / <code>abortPromise</code> — the strings re-fed each iter and the substrings that terminate the loop.</li>
-<li><code>prev</code> / <code>streak</code> / <code>stagnationLimit</code> — byte-identical-response detector that aborts a stuck loop.</li>
-<li><code>pendingFire</code> / <code>fireInFlight</code> / <code>observedMessageThisFire</code> — per-iteration dispatch guards. The first idle (the one that <em>armed</em> the loop) consumes <code>pendingFire</code> to fire iter 1; the in-flight markers prevent stale-idle bloat from cancelled tool calls or sub-agents.</li>
-<li><code>paused</code> / <code>pauseReason</code> / <code>pausedAt</code> / <code>totalPausedMs</code> — pause-state fields (issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/3">#3</a>). When <code>paused === true</code>, <code>onIdle</code> short-circuits before firing the next iteration so the user can chat freely without consuming iterations. <code>ralph_resume</code> re-arms by zeroing the streak detector (manual intervention almost always changes context) and folding <code>pausedFor</code> into <code>totalPausedMs</code> for accurate elapsed-time reporting in <code>ralph_status</code>.</li>
-<li>Adaptive-budget fields (issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/4">#4</a>): <code>adaptiveBudget</code>, <code>adaptiveExtension</code>, <code>adaptiveMaxTotal</code>, <code>originalMax</code>, <code>adaptiveContentHashes</code>, <code>adaptiveExtensionHistory</code>.</li>
+<li><strong><code>--continue</code></strong> — resume the same Copilot session every iter. The Copilot CLI itself manages the conversation history; the driver only forwards <code>--resume=&lt;sessionId&gt;</code>. Closer to the in-session shape that the retired extension provided.</li>
+<li><strong><code>--fresh</code></strong> — brand-new Copilot session every iter. Each iteration sees only the prompt + tool results, with no history from prior iters. Better for long backlog-drain loops where context rot would otherwise dominate late iterations.</li>
 </ul>
-<p>When the loop finishes, <code>state.active</code> becomes <code>null</code> and the immutable <code>state.lastResult</code> (a deep-frozen <code>RalphResult</code>) holds the post-mortem.</p>
-<h2 id="sub-agent-event-filtering">Sub-agent event filtering<a class="headerlink" href="#sub-agent-event-filtering" title="Permanent link">&para;</a></h2>
-<p>Copilot CLI's <code>task</code> / <code>explore</code> / <code>code-review</code> / <code>rubber-duck</code> agents share the same event bus as the root agent. Without filtering, a sub-agent's <code>session.idle</code> would queue an extra prompt fire, and a sub-agent's abort would tear down the root loop. <code>isSubAgentEvent(ev)</code> (in <code>handler.mjs</code>) returns <code>true</code> whenever <code>ev.agentId</code> is a non-empty string — root events have no <code>agentId</code>. <strong>All loop-driving handlers must early-return on <code>isSubAgentEvent(ev)</code>.</strong></p>
-<h2 id="the-baked-prompt-pattern">The "baked prompt" pattern<a class="headerlink" href="#the-baked-prompt-pattern" title="Permanent link">&para;</a></h2>
-<p><code>self_improve</code> and <code>grow_project</code> are convenience tools that wrap <code>armLoop()</code> with a <strong>prompt baked in</strong>: the user only supplies optional <code>focus</code> / <code>max_iterations</code> / <code>min_iterations</code>, and the tool builds a multi-paragraph SDLC or backlog-grooming prompt from a template constant (<code>PROMPT_SELF_IMPROVE</code>, <code>PROMPT_GROW_PROJECT</code>). The bake is opaque to <code>validateArgs</code> — we validate only what the user supplied, then construct the prompt and call <code>armLoop({ prompt: baked, ... })</code>.</p>
-<p>The baked prompts include hard-coded <code>COMPLETE</code> / <code>ABORT_…</code> tokens and <code>min_iterations</code> defaults that defer honoring those tokens (otherwise the agent would emit <code>COMPLETE</code> on iter 1 by virtue of merely <em>describing</em> the protocol). When changing a baked prompt, run the existing prompt-shape tests (<code>PROMPT_SELF_IMPROVE: contains the protocol literal</code>, etc.) — they pin the user-visible contract.</p>
-<h2 id="tool-surface">Tool surface<a class="headerlink" href="#tool-surface" title="Permanent link">&para;</a></h2>
+<h3 id="state-machine-statejson">State machine — <code>state.json</code><a class="headerlink" href="#state-machine-statejson" title="Permanent link">&para;</a></h3>
+<p>Each run owns a directory at <code>&lt;runs-root&gt;/&lt;runId&gt;/</code> containing <code>events.jsonl</code>, optional <code>index.jsonl</code> (for the runs-root index), and <code>state.json</code>. The state file holds:</p>
+<ul>
+<li><code>runId</code>, <code>label</code>, <code>mode</code>, <code>contextMode</code>, <code>startedAt</code>.</li>
+<li><code>iter</code> — current iteration number.</li>
+<li><code>pauseRequested</code>, <code>stopRequested</code> — out-of-band flags flipped by sibling <code>--pause</code> / <code>--stop</code> invocations.</li>
+<li><code>sessionId</code> — captured on iter 1 in <code>--continue</code> mode.</li>
+</ul>
+<p>State writes are CAS-protected via a per-state-file lockfile (<code>acquireLock</code> / <code>releaseLock</code> in <code>runner.mjs</code>) so concurrent <code>--pause</code> + <code>--stop</code> from two terminals do not lose updates.</p>
+<h2 id="jsonl-event-contract">JSONL event contract<a class="headerlink" href="#jsonl-event-contract" title="Permanent link">&para;</a></h2>
+<p>The runner emits one JSON object per line via <a href="../packages/tui/src/events-emit.mjs"><code>events-emit.mjs</code></a>:</p>
 <table>
 <thead>
 <tr>
-<th>Tool</th>
-<th>Purpose</th>
-<th>Key contract</th>
+<th>Type</th>
+<th>Emitted when</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>ralph_loop</code></td>
-<td>Generic re-fed-prompt loop</td>
-<td>One loop at a time. Returns immediately after arming. Driven by <code>session.idle</code>.</td>
+<td><code>armed</code></td>
+<td>Once per run, on driver start. Also written to <code>&lt;runs-root&gt;/index.jsonl</code> so <code>ralph-tui list</code> / <code>stats</code> can enumerate without scanning every per-run dir.</td>
 </tr>
 <tr>
-<td><code>ralph_stop</code></td>
-<td>Cancel the active loop</td>
-<td>Returns failure if no loop is active. Optional <code>reason</code> string is recorded as <code>note</code> on the result.</td>
+<td><code>iteration_start</code></td>
+<td>Before spawning the next <code>copilot -p</code> subprocess.</td>
 </tr>
 <tr>
-<td><code>ralph_status</code></td>
-<td>Live structured snapshot of the active loop</td>
-<td>Issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/5">#5</a> — read-only; safe to call mid-loop.</td>
+<td><code>iteration_end</code></td>
+<td>After the subprocess exits; carries the iter's response excerpt and tokens (when usage events were observed).</td>
 </tr>
 <tr>
-<td><code>ralph_pause</code></td>
-<td>Pause the active loop without losing state</td>
-<td>Issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/3">#3</a>. Idempotent; <code>onIdle</code> short-circuits while <code>paused === true</code>. Returns failure if no loop is active.</td>
+<td><code>pause</code> / <code>resume</code></td>
+<td>Honored at the next iter boundary after the corresponding flag flip.</td>
 </tr>
 <tr>
-<td><code>ralph_resume</code></td>
-<td>Resume a paused loop</td>
-<td>Returns failure if no loop is active or the loop is not paused. Stagnation streak is reset on resume.</td>
+<td><code>stagnation</code></td>
+<td>Emitted when the byte-identical-response detector fires.</td>
 </tr>
 <tr>
-<td><code>self_improve</code></td>
-<td>Baked SDLC self-improvement prompt</td>
-<td>Wraps <code>armLoop</code> with <code>PROMPT_SELF_IMPROVE</code>. Honors <code>focus</code> for narrowing scope.</td>
+<td><code>complete</code></td>
+<td>Terminal — completion-promise observed.</td>
 </tr>
 <tr>
-<td><code>grow_project</code></td>
-<td>Baked backlog-grooming + execution loop</td>
-<td>Wraps <code>armLoop</code> with <code>PROMPT_GROW_PROJECT</code>. Drives <code>gh</code> CLI calls.</td>
+<td><code>abort</code></td>
+<td>Terminal — abort-promise / max iterations / stagnation / send error / user stop.</td>
 </tr>
 </tbody>
 </table>
-<p>All tools share the <code>success(message, extra)</code> / <code>failure(message, extra)</code> envelope: <code>{ ...extra, textResultForLlm, resultType }</code> (extras cannot override <code>textResultForLlm</code> or <code>resultType</code>). The shape is pinned by tests so refactors can't accidentally leak internal scratch into the LLM-facing return.</p>
+<p>Reader-side helpers live in <a href="../packages/tui/src/events.mjs"><code>events.mjs</code></a> (<code>parseEventLine</code>, <code>serializeEvent</code>, <code>safeSliceChars</code>, <code>foldEvents</code>) and <a href="../packages/tui/src/writer.mjs"><code>writer.mjs</code></a> (<code>readRunIndex</code>, <code>aggregateRuns</code>, <code>pruneRuns</code>, the <code>resolveRunsRoot</code> helper).</p>
+<p>The emitter swallows every error so a disk hiccup never crashes the loop. The reader is tolerant of malformed lines for the same reason — a torn write must not break <code>replay</code>.</p>
+<h2 id="the-baked-prompt-pattern">The "baked prompt" pattern<a class="headerlink" href="#the-baked-prompt-pattern" title="Permanent link">&para;</a></h2>
+<p><code>--self-improve</code> and <code>--grow-project</code> are convenience wrappers that drive <code>runner.mjs</code>'s loop with a prompt baked in: the user only supplies optional <code>--focus</code> / <code>--max</code>, and the runner builds a multi-paragraph SDLC or backlog-grooming prompt from a template constant (<code>PROMPT_SELF_IMPROVE</code>, <code>PROMPT_GROW_PROJECT</code> in <a href="../packages/tui/src/prompts.mjs"><code>prompts.mjs</code></a>).</p>
+<p>The baked prompts include hard-coded <code>COMPLETE</code> / <code>ABORT_…</code> tokens. A load-time parity guard at the bottom of <code>prompts.mjs</code> throws if the prompt body stops emitting either token; the runner refuses to start rather than silently ship a broken prompt.</p>
 <h2 id="completion-promise-abort-promise-contracts">Completion-promise &amp; abort-promise contracts<a class="headerlink" href="#completion-promise-abort-promise-contracts" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong><code>completion_promise</code></strong> (default <code>"COMPLETE"</code>) — substring match against the latest assistant content. When seen on iter ≥ <code>min_iterations</code>, finishes the loop with <code>reason: "completion_promise"</code>.</li>
-<li><strong><code>abort_promise</code></strong> (optional, no default) — same mechanism, but finishes with <code>reason: "abort_promise"</code>. Used by <code>grow_project</code> (<code>ABORT_NO_BACKLOG</code>) to bail when there's nothing to do.</li>
-<li>Both promises are <strong>only honored once <code>i &gt;= min_iterations</code></strong> to avoid premature termination from the agent merely describing the protocol on iter 1. Stagnation, max-iterations, and adaptive-budget terminators have their own thresholds and do not respect <code>min_iterations</code>.</li>
+<li><strong><code>--completion-promise</code></strong> (default <code>"COMPLETE"</code>) — substring match against the iter's response. Triggers a terminal <code>complete</code> event with <code>reason: "completion_promise"</code>.</li>
+<li><strong><code>--abort-promise</code></strong> (optional; defaults to the baked prompt's abort token in <code>--self-improve</code> / <code>--grow-project</code> modes; no default in <code>--prompt</code> mode) — same mechanism, but emits an <code>abort</code> event with <code>reason: "abort_promise"</code>.</li>
+<li>Both are <strong>only honored after <code>min_iterations</code></strong> (currently a per-mode default; <code>--prompt</code> mode honors immediately) to avoid premature termination from the agent merely describing the protocol on iter 1.</li>
 </ul>
-<h2 id="adaptive-iteration-budget-issue-4">Adaptive iteration budget (issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/4">#4</a>)<a class="headerlink" href="#adaptive-iteration-budget-issue-4" title="Permanent link">&para;</a></h2>
-<p>Opt-in. When the loop reaches <code>max_iterations</code>, <code>evaluateAdaptiveSignals(a, gitExec)</code> returns a non-null reason iff <em>either</em> <code>git diff --shortstat HEAD</code> or <code>git status --porcelain</code> reports working-tree changes, <em>or</em> the rolling 3-iteration content-hash window contains ≥ 2 distinct hashes. A positive signal grants <code>adaptive_extension</code> more iterations, capped at <code>adaptive_max_total</code>. Stagnation / completion / abort still win unconditionally because they're checked earlier in <code>onIdle</code>.</p>
-<h2 id="token-tracking-issue-7">Token tracking (issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/7">#7</a>)<a class="headerlink" href="#token-tracking-issue-7" title="Permanent link">&para;</a></h2>
-<p><code>assistant.message</code> events from the root agent are routed through two helpers in <code>handler.mjs</code>: <code>extractUsage(ev)</code> reads <code>data.usage.{input_tokens, output_tokens, model}</code> (or the flat <code>data.usage_input_tokens</code>/<code>usage_output_tokens</code>/<code>usage_model</code> form used by the SDK's events table); <code>creditUsage(a, usage)</code> accumulates the result onto <code>a.tokens.input</code> / <code>a.tokens.output</code>, appends a per-iteration breakdown to <code>byIteration</code> (<code>{iter, input, output, model}</code>), and folds per-model totals into <code>byModel</code>. Sub-agent events are filtered upstream by <code>isSubAgentEvent</code>, so token credit covers root-agent usage only.</p>
-<p>Two safety contracts the helpers enforce:</p>
-<ul>
-<li><strong>Creditable-pair rejection.</strong> <code>extractUsage</code> returns <code>null</code> (and <code>creditUsage</code> is therefore not called) unless <strong>both</strong> peers pass the four-clause <code>isCreditableTokenPair</code> gate: <code>Number.isFinite(input) &amp;&amp; Number.isFinite(output)</code> (NaN / Infinity / non-numeric all rejected, including the <code>Number(undefined) === NaN</code> path that defends against missing fields), <code>input &gt;= 0 &amp;&amp; output &gt;= 0</code> (a negative peer would silently masquerade a <code>max_tokens</code> cap by <em>decreasing</em> the cumulative budget), AND <code>(input &gt; 0 || output &gt; 0)</code> (a zero/zero event carries no information and would pollute the per-iteration breakdown with empty rows). The same gate is shared by both the nested-<code>usage</code> and flat-<code>usage_*</code> parser branches so a future SDK shape inherits the full contract automatically. See <a href="../concepts/#two-safety-contracts">Concepts → Two safety contracts</a> for the user-facing version.</li>
-<li><strong>Pause-time isolation.</strong> While <code>state.active.paused</code> is true, <code>onAssistantMessage</code> short-circuits before <code>creditUsage</code> runs, so pause-time chat does not credit tokens to the loop's budget. See <a href="../concepts/#pause--resume-semantics">Concepts → Pause / resume semantics</a> for the full contract.</li>
-</ul>
-<p>Two thresholds are derived from the running <code>tokens.input</code> total against <code>MODEL_CONTEXT_WINDOWS[model]</code>: the user-tunable <code>warn_at_pct</code> (default 80%) fires a single ⚠ "approaching" log line per loop, and a hard-coded 95% threshold fires a ⚠ "critical" line. Both dedupe via <code>tokens.warnedThresholds</code> so each threshold logs at most once. If <code>warn_at_pct &gt;= 95</code>, the 80%-keyed branch is skipped to avoid duplicate warnings on the same usage spike. Unknown models log a one-time "no known context-window size; skipping window warnings" notice (<code>tokens.unknownModelLogged</code>) so the user knows the threshold checks are inert for that model.</p>
-<p>The <code>max_tokens</code> cap (set at arm time) is checked at the end of each iteration in <code>onIdle</code>; the running total — input + output — is compared against the cap, and the loop finishes with <code>reason: "max_tokens"</code> once it crosses. Because pause-time and rejected events do not credit, this cap is never tripped by chat-time activity or malformed events.</p>
-<h2 id="caffeinate-integration-issue-8">Caffeinate integration (issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/8">#8</a>)<a class="headerlink" href="#caffeinate-integration-issue-8" title="Permanent link">&para;</a></h2>
-<p>Opt-in via <code>RALPH_CAFFEINATE=1</code>. On macOS, <code>armLoop</code> spawns <code>caffeinate -i [-d] -w &lt;pid&gt;</code> to inhibit display/system sleep for the duration of the loop. <code>finish()</code> (and every error path) kills the caffeinate process. Tests inject a <code>spawnFn</code> stub via <code>createRalphController({ caffeinate: { spawnFn } })</code>.</p>
+<h2 id="pause-resume-stop-status">Pause / resume / stop / status<a class="headerlink" href="#pause-resume-stop-status" title="Permanent link">&para;</a></h2>
+<p>Out-of-band flags written to the run's <code>state.json</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ralph-tui<span class="w"> </span>run<span class="w"> </span>--pause<span class="w">   </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># set pauseRequested=true</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>ralph-tui<span class="w"> </span>run<span class="w"> </span>--resume<span class="w">  </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># clear pauseRequested</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>ralph-tui<span class="w"> </span>run<span class="w"> </span>--stop<span class="w">    </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># set stopRequested=true</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>ralph-tui<span class="w"> </span>run<span class="w"> </span>--status<span class="w">  </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># read state.json + render</span>
+</code></pre></div>
+<p>The driver re-reads <code>state.json</code> at every iter boundary; the in-flight Copilot child is <strong>never killed mid-iter</strong> — the driver waits for natural exit before honoring pause/stop. <code>SIGINT</code> / <code>SIGTERM</code> at the driver process maps onto <code>--stop</code> via the same lock-protected CAS path.</p>
 <h2 id="test-architecture">Test architecture<a class="headerlink" href="#test-architecture" title="Permanent link">&para;</a></h2>
 <ul>
 <li><code>node:test</code> runner; no third-party test deps.</li>
-<li><code>makeFakeSession()</code> returns a <code>{ on, emit, send, log }</code> object that mimics the SDK's event bus.</li>
-<li><code>runTurn(session, content)</code> drives one iteration: emits <code>assistant.message</code> then <code>session.idle</code>.</li>
-<li>DI on the controller (<code>createRalphController({ caffeinate, git, adaptive, events })</code>) lets tests stub external effects (process spawn, git exec, JSONL event emit) without monkey-patching. The <code>events</code> slot is the issue <a href="https://github.com/kloba/copilot-ralph-extension/issues/22">#22</a> JSONL emitter wiring — accepts <code>true</code> (default emitter), <code>{ env, fs }</code> (default emitter w/ overrides), or <code>{ factory }</code> (custom emitter built per-arm); see the inline JSDoc above <code>armLoop</code> for the full contract.</li>
-<li>Several <strong>shape-pin tests</strong> lock down field counts and key sets on <code>state.active</code>, the success-envelope, the parsed-args object, and the tool-array order. These exist specifically to catch refactors that silently leak internal scratch into the LLM-facing surface.</li>
+<li>The runner suite in <code>packages/tui/test/runner.test.mjs</code> drives end-to-end loops through a Node-script "fake copilot" shim that emits scripted JSONL on stdout. The shim is parameterised by a <code>SCRIPT</code> env var (path to a JSON file describing the iter's output) so a single binary covers every test scenario.</li>
+<li>Pure helpers (<code>validateFocus</code>, <code>composePrompt</code>, <code>reduceCopilotEvents</code>, <code>resolveStateRoot</code>, <code>readState</code>, …) get straightforward unit tests.</li>
+<li>The reader-side tests (<code>writer.test.mjs</code>, <code>events.test.mjs</code>, <code>tail.test.mjs</code>) sandbox into <code>mkdtempSync</code>-allocated dirs and pin the JSONL contract.</li>
 </ul>
+<h2 id="why-we-removed-the-in-session-extension">Why we removed the in-session extension<a class="headerlink" href="#why-we-removed-the-in-session-extension" title="Permanent link">&para;</a></h2>
+<p>The original project began as an in-session Copilot CLI extension that exposed <code>ralph_loop</code> / <code>self_improve</code> / <code>grow_project</code> tools to the active Copilot session via the <code>@github/copilot-sdk/extension</code> SDK's <code>joinSession</code> + <code>session.idle</code> event contract. The TUI driver (<code>ralph-tui run</code>) eventually grew to cover every feature of the in-session tools — same baked prompts, same pause/resume/stop/status, same adaptive budget — without imposing the SDK contract on every cross-cutting change.</p>
+<p>Maintaining both engines required keeping every prompt change, every event-vocabulary entry, and every adaptive-budget tweak in lockstep across two implementations. Deleting the in-session engine retired that whole drift surface. See issue #50 for the full rationale.</p>
 
 
 

@@ -46,6 +46,13 @@ const VERB = {
     stagnation: "stagn",
     complete: "done ",
     abort: "abort",
+    // Issue #48 slice 1 — three-level hierarchy. Verbs are 5 chars
+    // (or 5 with trailing space) so column alignment under
+    // `tail -f`/`awk` stays uniform with the existing vocabulary.
+    stage_start: "stge+",
+    stage_end: "stge-",
+    substage: "sub  ",
+    backlog_snapshot: "back ",
 };
 
 /**
@@ -78,6 +85,28 @@ export function formatEventLine(ev) {
     }
     if (Number.isFinite(ev.streak)) parts.push(`streak=${ev.streak}`);
     if (Number.isFinite(ev.pausedForMs)) parts.push(`pausedForMs=${ev.pausedForMs}`);
+    // Issue #48 slice 1 — stage / substage / backlog fields. Each
+    // gates on its own type/finiteness so a misordered or partial
+    // event still renders the fields it does have.
+    if (Number.isFinite(ev.stage)) parts.push(`stage=${ev.stage}`);
+    if (typeof ev.stageName === "string" && ev.stageName) parts.push(`name=${ev.stageName}`);
+    if (Number.isFinite(ev.sub)) parts.push(`sub=${ev.sub}`);
+    if (typeof ev.verb === "string" && ev.verb) parts.push(`verb=${ev.verb}`);
+    if (typeof ev.argsSummary === "string" && ev.argsSummary) {
+        // Always JSON.stringify args — the "args" field is intrinsically
+        // multi-token (e.g. `git log --oneline -20`) so quoting is not
+        // optional. Cap at 80 chars on the rendered side; the events
+        // file already caps at 500. Reuses the same surrogate-safe
+        // truncate as the excerpt branch below.
+        const collapsed = safeSliceChars(ev.argsSummary.replace(/\s+/g, " "), 80);
+        parts.push(`args=${JSON.stringify(collapsed)}`);
+    }
+    if (typeof ev.outcome === "string" && ev.outcome) parts.push(`outcome=${ev.outcome}`);
+    if (Number.isFinite(ev.durationMs)) parts.push(`durationMs=${ev.durationMs}`);
+    if (Number.isFinite(ev.redCi)) parts.push(`redCi=${ev.redCi}`);
+    if (Number.isFinite(ev.openPrs)) parts.push(`openPrs=${ev.openPrs}`);
+    if (Number.isFinite(ev.openIssues)) parts.push(`openIssues=${ev.openIssues}`);
+    if (Number.isFinite(ev.closedByLoop)) parts.push(`closedByLoop=${ev.closedByLoop}`);
     if (typeof ev.reason === "string" && ev.reason) {
         // JSON.stringify the reason iff it contains whitespace, so a
         // user-supplied multi-word reason from ralph_pause / ralph_stop

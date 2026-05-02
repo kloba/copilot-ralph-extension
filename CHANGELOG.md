@@ -3,6 +3,37 @@
 ## Unreleased
 
 ### Features
+- `events.jsonl` event vocabulary gains four strictly-additive
+  types (`stage_start`, `stage_end`, `substage`,
+  `backlog_snapshot`) so the TUI can surface a 3-level
+  hierarchy (iteration → SDLC stage → sub-stage) plus a
+  backlog-pressure header. `EVENT_TYPES` retains the eight
+  pre-existing types in their original order — historical
+  `events.jsonl` files replay through the new reader unchanged.
+  `foldEvents` now tracks `activeStage`, `recentStages`
+  (per-iter), `currentStageSubstages` (per-stage), and
+  `backlog` (`{redCi, openPrs, openIssues, closedByLoop}`),
+  with reset-on-`armed` / reset-on-`iteration_start` /
+  reset-on-`stage_start` semantics so a long-running loop's
+  snapshot stays bounded. `serializeEvent` allow-lists the
+  new fields with conservative caps (`stageName` ≤ 64 chars,
+  `verb` ≤ 32, `argsSummary` / `outcome` capped via
+  `safeSliceChars` so the 16 KB per-line ceiling holds).
+  `formatEventLine` renders the new types with stable
+  one-line shapes (`stge+` / `stge-` / `sub` / `back`
+  verbs; `stage=K name=… durationMs=… outcome=…`,
+  `sub=L verb=… args="…"`, and
+  `redCi=… openPrs=… openIssues=… closedByLoop=…`) so
+  CI / `tail -f` / `awk` consumers see new columns alongside
+  the existing iteration-level columns. The `excerpt+note`
+  lockstep guard in `test/events-emit.test.mjs` is scoped to
+  the user-supplied prose fields it actually pins; new
+  machine-generated identifier fields keep their own caps.
+  Pinned by 19 new tests across
+  `packages/tui/test/events.test.mjs` and
+  `packages/tui/test/plain.test.mjs`. Foundation for the
+  3-level hierarchical TUI tracked in issue #48.
+
 - `ralph-tui run` — new subcommand that drives a
   `ralph_loop` / `self_improve` / `grow_project` loop
   OUT-OF-SESSION by spawning each iteration as a fresh

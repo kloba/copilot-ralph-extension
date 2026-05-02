@@ -430,3 +430,76 @@ test("formatEventLine: min=N segment is type-gated to 'armed' (defensive)", () =
     });
     assert.match(armed, /\bmin=2\b/, "armed event with minIterations must render min=N");
 });
+
+// ─── Issue #48 slice 1: stage / substage / backlog plain-line shape ──
+
+test("formatEventLine: stage_start uses stge+ verb and renders stage + name", () => {
+    const line = formatEventLine({
+        type: "stage_start", ts: 0, runId: "r-1",
+        iteration: 4, stage: 1, stageName: "ORIENT",
+    });
+    assert.match(line, /\sstge\+\s/);
+    assert.match(line, /stage=1/);
+    assert.match(line, /name=ORIENT/);
+    assert.match(line, /iter=4\b/);
+});
+
+test("formatEventLine: stage_end uses stge- verb and renders durationMs + outcome", () => {
+    const line = formatEventLine({
+        type: "stage_end", ts: 0, runId: "r-1",
+        iteration: 4, stage: 1, stageName: "ORIENT",
+        durationMs: 3407, outcome: "ok",
+    });
+    assert.match(line, /\sstge-\s/);
+    assert.match(line, /durationMs=3407/);
+    assert.match(line, /outcome=ok/);
+});
+
+test("formatEventLine: substage uses `sub` verb and renders verb + args", () => {
+    const line = formatEventLine({
+        type: "substage", ts: 0, runId: "r-1",
+        iteration: 4, stage: 5, sub: 3,
+        verb: "edit", argsSummary: "extension/handler.mjs (-12, +18)",
+        outcome: "ok",
+    });
+    // Verb column is 5 chars wide ("sub  ") — match a leading word boundary
+    // so a future verb rename keeps a single token but the test still
+    // catches an accidental column shift.
+    assert.match(line, /\bsub\b/);
+    assert.match(line, /sub=3/);
+    assert.match(line, /verb=edit/);
+    assert.match(line, /args="extension\/handler\.mjs/);
+    assert.match(line, /outcome=ok/);
+});
+
+test("formatEventLine: substage args field collapses internal whitespace and quotes the result", () => {
+    const line = formatEventLine({
+        type: "substage", ts: 0, runId: "r-1",
+        iteration: 1, stage: 1, sub: 1,
+        verb: "shell", argsSummary: "git\nlog\t--oneline   -20",
+    });
+    assert.match(line, /args="git log --oneline -20"/);
+});
+
+test("formatEventLine: backlog_snapshot renders all four counters", () => {
+    const line = formatEventLine({
+        type: "backlog_snapshot", ts: 0, runId: "r-1",
+        redCi: 0, openPrs: 2, openIssues: 11, closedByLoop: 3,
+    });
+    assert.match(line, /\bback\b/);
+    assert.match(line, /redCi=0/);
+    assert.match(line, /openPrs=2/);
+    assert.match(line, /openIssues=11/);
+    assert.match(line, /closedByLoop=3/);
+});
+
+test("formatEventLine: backlog_snapshot omits absent counters (null != 0)", () => {
+    const line = formatEventLine({
+        type: "backlog_snapshot", ts: 0, runId: "r-1",
+        openPrs: 5,
+    });
+    assert.match(line, /openPrs=5/);
+    assert.doesNotMatch(line, /redCi=/);
+    assert.doesNotMatch(line, /openIssues=/);
+    assert.doesNotMatch(line, /closedByLoop=/);
+});

@@ -40,7 +40,15 @@
 /** Hard cap on a single emitted event line, enforced by the writer. */
 export const MAX_EVENT_LINE_BYTES = 16 * 1024;
 
-/** Set of recognised event types — used by parseEventLine for validation. */
+/** Set of recognised event types — used by parseEventLine for validation.
+ *
+ * Strictly additive: a new event type appends to this list and never
+ * reorders / removes existing entries, so historical `events.jsonl`
+ * files keep replaying through the latest reader unchanged. The three
+ * stage-level types (`stage_start`, `stage_end`, `substage`) plus
+ * `backlog_snapshot` were added in slice 1 of issue #48 to enable the
+ * 3-level hierarchical TUI (iteration → SDLC stage → sub-stage) and
+ * the backlog-pressure header. */
 export const EVENT_TYPES = Object.freeze([
     "armed",
     "iteration_start",
@@ -50,6 +58,29 @@ export const EVENT_TYPES = Object.freeze([
     "stagnation",
     "complete",
     "abort",
+    "stage_start",
+    "stage_end",
+    "substage",
+    "backlog_snapshot",
+]);
+
+/** Canonical SDLC stage list for self_improve, in execution order.
+ *
+ * The runner's `[STAGE: NAME]` marker parser (slice 4) and the renderer
+ * (slice 7) both reference this list so a drift between the prompt
+ * body and the consumers of the event stream is impossible. The
+ * `grow_project` SDLC has its own stage list in PROMPT_GROW_PROJECT;
+ * each loop label maps to its own stage list at parse time. */
+export const SDLC_STAGES_SELF_IMPROVE = Object.freeze([
+    "ORIENT",
+    "IDEATE",
+    "CRITIQUE",
+    "BASELINE",
+    "IMPLEMENT",
+    "TEST",
+    "COMMIT",
+    "PUSH",
+    "END",
 ]);
 
 const EVENT_TYPE_SET = new Set(EVENT_TYPES);
@@ -151,6 +182,35 @@ export function serializeEvent(ev) {
     }
     if (typeof ev.note === "string") out.note = safeSliceChars(ev.note, 500);
 
+    // Stage-level fields (issue #48 slice 1). Strictly opt-in: only
+    // appear on event objects whose type set them, so a plain
+    // iteration_end roundtrip is unchanged.
+    if (Number.isFinite(ev.stage)) out.stage = ev.stage;
+    if (typeof ev.stageName === "string" && ev.stageName) {
+        // Cap at 64 chars — well above any baked stage name (longest is
+        // `IMPLEMENT` at 9) but loose enough for a future custom-prompt
+        // mode that names stages descriptively.
+        out.stageName = safeSliceChars(ev.stageName, 64);
+    }
+    if (Number.isFinite(ev.sub)) out.sub = ev.sub;
+    if (typeof ev.verb === "string" && ev.verb) {
+        out.verb = safeSliceChars(ev.verb, 32);
+    }
+    if (typeof ev.argsSummary === "string") {
+        out.argsSummary = safeSliceChars(ev.argsSummary, 500);
+    }
+    if (typeof ev.outcome === "string" && ev.outcome) {
+        out.outcome = safeSliceChars(ev.outcome, 32);
+    }
+    if (Number.isFinite(ev.durationMs)) out.durationMs = ev.durationMs;
+    // Backlog snapshot fields. All optional — the writer emits whatever
+    // probes returned; missing fields render as `?` in the TUI rather
+    // than silently zeroing.
+    if (Number.isFinite(ev.redCi)) out.redCi = ev.redCi;
+    if (Number.isFinite(ev.openPrs)) out.openPrs = ev.openPrs;
+    if (Number.isFinite(ev.openIssues)) out.openIssues = ev.openIssues;
+    if (Number.isFinite(ev.closedByLoop)) out.closedByLoop = ev.closedByLoop;
+
     const line = JSON.stringify(out);
     if (Buffer.byteLength(line, "utf8") > MAX_EVENT_LINE_BYTES) {
         throw new RangeError(
@@ -214,6 +274,10 @@ export function foldEvents(events) {
      *   startedAt: number|null,
      *   updatedAt: number|null,
      *   iterations: Array<{iteration:number, startedAt:number, endedAt:number|null, excerpt:string|null}>,
+     *   activeStage: {stage:number, name:string, startedAt:number}|null,
+     *   recentStages: Array<{stage:number, name:string, startedAt:number, endedAt:number|null, durationMs:number|null, outcome:string|null}>,
+     *   currentStageSubstages: Array<{sub:number, ts:number, verb:string|null, argsSummary:string|null, outcome:string|null, durationMs:number|null}>,
+     *   backlog: {redCi:number|null, openPrs:number|null, openIssues:number|null, closedByLoop:number|null}|null,
      * }} */
     const snap = {
         runId: null,
@@ -229,6 +293,10 @@ export function foldEvents(events) {
         startedAt: null,
         updatedAt: null,
         iterations: [],
+        activeStage: null,
+        recentStages: [],
+        currentStageSubstages: [],
+        backlog: null,
     };
 
     for (const ev of events) {
@@ -248,6 +316,10 @@ export function foldEvents(events) {
                 snap.lastExcerpt = null;
                 snap.startedAt = ev.ts;
                 snap.iterations = [];
+                snap.activeStage = null;
+                snap.recentStages = [];
+                snap.currentStageSubstages = [];
+                snap.backlog = null;
                 break;
             case "iteration_start":
                 if (Number.isFinite(ev.iteration)) {
@@ -260,6 +332,13 @@ export function foldEvents(events) {
                     });
                 }
                 snap.status = "running";
+                // A fresh iteration starts with no active stage and an
+                // empty per-iter stage history. The active loop loops
+                // over its SDLC stages from the top each iter, so the
+                // header's "Stages — iter N" pane is per-iter.
+                snap.activeStage = null;
+                snap.recentStages = [];
+                snap.currentStageSubstages = [];
                 break;
             case "iteration_end": {
                 const last = snap.iterations[snap.iterations.length - 1];
@@ -293,6 +372,64 @@ export function foldEvents(events) {
                 snap.status = "aborted";
                 snap.reason = ev.reason ?? snap.reason;
                 break;
+            case "stage_start": {
+                if (!Number.isFinite(ev.stage)) break;
+                const name = typeof ev.stageName === "string" && ev.stageName
+                    ? ev.stageName : `STAGE_${ev.stage}`;
+                snap.activeStage = { stage: ev.stage, name, startedAt: ev.ts };
+                snap.currentStageSubstages = [];
+                break;
+            }
+            case "stage_end": {
+                if (!Number.isFinite(ev.stage)) break;
+                const name = typeof ev.stageName === "string" && ev.stageName
+                    ? ev.stageName
+                    : (snap.activeStage && snap.activeStage.stage === ev.stage
+                        ? snap.activeStage.name : `STAGE_${ev.stage}`);
+                const startedAt = snap.activeStage && snap.activeStage.stage === ev.stage
+                    ? snap.activeStage.startedAt : null;
+                const durationMs = Number.isFinite(ev.durationMs)
+                    ? ev.durationMs
+                    : (Number.isFinite(startedAt) && Number.isFinite(ev.ts)
+                        ? ev.ts - startedAt : null);
+                snap.recentStages.push({
+                    stage: ev.stage,
+                    name,
+                    startedAt,
+                    endedAt: ev.ts,
+                    durationMs,
+                    outcome: typeof ev.outcome === "string" ? ev.outcome : null,
+                });
+                if (snap.activeStage && snap.activeStage.stage === ev.stage) {
+                    snap.activeStage = null;
+                }
+                break;
+            }
+            case "substage": {
+                if (!Number.isFinite(ev.sub)) break;
+                snap.currentStageSubstages.push({
+                    sub: ev.sub,
+                    ts: ev.ts,
+                    verb: typeof ev.verb === "string" ? ev.verb : null,
+                    argsSummary: typeof ev.argsSummary === "string" ? ev.argsSummary : null,
+                    outcome: typeof ev.outcome === "string" ? ev.outcome : null,
+                    durationMs: Number.isFinite(ev.durationMs) ? ev.durationMs : null,
+                });
+                break;
+            }
+            case "backlog_snapshot": {
+                // Replace whole-record so "absent field on later event"
+                // doesn't accidentally forget a value the older event
+                // had — the runner is the source of truth and emits
+                // every field it managed to capture.
+                snap.backlog = {
+                    redCi: Number.isFinite(ev.redCi) ? ev.redCi : null,
+                    openPrs: Number.isFinite(ev.openPrs) ? ev.openPrs : null,
+                    openIssues: Number.isFinite(ev.openIssues) ? ev.openIssues : null,
+                    closedByLoop: Number.isFinite(ev.closedByLoop) ? ev.closedByLoop : null,
+                };
+                break;
+            }
             default:
                 // Unreachable — parseEventLine filters unknown types.
                 break;

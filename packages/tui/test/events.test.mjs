@@ -21,6 +21,14 @@ test("EVENT_TYPES is the closed set documented in the issue", () => {
         "stagnation",
         "complete",
         "abort",
+        // Issue #48 slice 1 — three-level hierarchy event vocabulary.
+        // Strictly additive; the eight pre-existing types above must
+        // never reorder or drop so historical events.jsonl files
+        // replay through this reader unchanged.
+        "stage_start",
+        "stage_end",
+        "substage",
+        "backlog_snapshot",
     ]);
 });
 
@@ -384,4 +392,147 @@ test("serializeEvent: reason field is capped at 500 chars (defensive symmetry wi
     // must stay well under MAX_EVENT_LINE_BYTES.
     assert.ok(Buffer.byteLength(lineOver, "utf8") < MAX_EVENT_LINE_BYTES,
         `capped event line must stay under MAX_EVENT_LINE_BYTES (${MAX_EVENT_LINE_BYTES}); got ${Buffer.byteLength(lineOver, "utf8")}`);
+});
+
+// ─── Issue #48 slice 1: stage / substage / backlog event vocabulary ──
+
+test("serializeEvent: stage_start round-trips iteration + stage + stageName", () => {
+    const ev = { type: "stage_start", ts: 7, runId: "r-1", iteration: 4, stage: 1, stageName: "ORIENT" };
+    const back = parseEventLine(serializeEvent(ev));
+    assert.deepEqual(back, ev);
+});
+
+test("serializeEvent: stage_end round-trips with durationMs + outcome", () => {
+    const ev = {
+        type: "stage_end", ts: 10, runId: "r-1", iteration: 4, stage: 1,
+        stageName: "ORIENT", durationMs: 3407, outcome: "ok",
+    };
+    const back = parseEventLine(serializeEvent(ev));
+    assert.deepEqual(back, ev);
+});
+
+test("serializeEvent: substage round-trips verb + argsSummary + outcome + durationMs", () => {
+    const ev = {
+        type: "substage", ts: 20, runId: "r-1", iteration: 4, stage: 5, sub: 3,
+        verb: "edit", argsSummary: "extension/handler.mjs (-12, +18)",
+        outcome: "ok", durationMs: 412,
+    };
+    const back = parseEventLine(serializeEvent(ev));
+    assert.deepEqual(back, ev);
+});
+
+test("serializeEvent: substage clips an oversized argsSummary at 500 chars", () => {
+    const huge = "x".repeat(2000);
+    const line = serializeEvent({ type: "substage", ts: 1, runId: "r", iteration: 1, stage: 1, sub: 1, argsSummary: huge });
+    const obj = JSON.parse(line);
+    assert.equal(obj.argsSummary.length, 500);
+});
+
+test("serializeEvent: backlog_snapshot round-trips all four counters", () => {
+    const ev = {
+        type: "backlog_snapshot", ts: 30, runId: "r-1",
+        redCi: 0, openPrs: 2, openIssues: 11, closedByLoop: 3,
+    };
+    const back = parseEventLine(serializeEvent(ev));
+    assert.deepEqual(back, ev);
+});
+
+test("serializeEvent: backlog_snapshot drops missing counters (null != 0)", () => {
+    // Distinguishes "we never probed" from "we probed and found 0" so
+    // the header can render `?` vs `0` appropriately.
+    const line = serializeEvent({ type: "backlog_snapshot", ts: 1, runId: "r", openPrs: 5 });
+    const obj = JSON.parse(line);
+    assert.equal(obj.openPrs, 5);
+    assert.ok(!("redCi" in obj));
+    assert.ok(!("openIssues" in obj));
+    assert.ok(!("closedByLoop" in obj));
+});
+
+test("foldEvents: stage_start sets activeStage and clears currentStageSubstages", () => {
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r", label: "self_improve" },
+        { type: "iteration_start", ts: 2, runId: "r", iteration: 1 },
+        { type: "stage_start", ts: 3, runId: "r", iteration: 1, stage: 1, stageName: "ORIENT" },
+    ]);
+    assert.deepEqual(snap.activeStage, { stage: 1, name: "ORIENT", startedAt: 3 });
+    assert.deepEqual(snap.currentStageSubstages, []);
+    assert.deepEqual(snap.recentStages, []);
+});
+
+test("foldEvents: stage_end appends to recentStages with computed durationMs", () => {
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r", label: "self_improve" },
+        { type: "iteration_start", ts: 2, runId: "r", iteration: 1 },
+        { type: "stage_start", ts: 100, runId: "r", iteration: 1, stage: 1, stageName: "ORIENT" },
+        { type: "stage_end", ts: 150, runId: "r", iteration: 1, stage: 1, stageName: "ORIENT", outcome: "ok" },
+    ]);
+    assert.equal(snap.activeStage, null);
+    assert.equal(snap.recentStages.length, 1);
+    assert.deepEqual(snap.recentStages[0], {
+        stage: 1, name: "ORIENT", startedAt: 100, endedAt: 150, durationMs: 50, outcome: "ok",
+    });
+});
+
+test("foldEvents: substage events accumulate on currentStageSubstages and reset on next stage_start", () => {
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r", label: "self_improve" },
+        { type: "iteration_start", ts: 2, runId: "r", iteration: 1 },
+        { type: "stage_start", ts: 3, runId: "r", iteration: 1, stage: 1, stageName: "ORIENT" },
+        { type: "substage", ts: 4, runId: "r", iteration: 1, stage: 1, sub: 1, verb: "shell", argsSummary: "git log -20", outcome: "ok" },
+        { type: "substage", ts: 5, runId: "r", iteration: 1, stage: 1, sub: 2, verb: "gh", argsSummary: "gh run list", outcome: "ok" },
+        { type: "stage_end", ts: 6, runId: "r", iteration: 1, stage: 1, stageName: "ORIENT", outcome: "ok" },
+        { type: "stage_start", ts: 7, runId: "r", iteration: 1, stage: 2, stageName: "IDEATE" },
+        { type: "substage", ts: 8, runId: "r", iteration: 1, stage: 2, sub: 1, verb: "view", argsSummary: "AGENTS.md", outcome: "ok" },
+    ]);
+    assert.equal(snap.activeStage.name, "IDEATE");
+    assert.equal(snap.currentStageSubstages.length, 1, "substages reset on new stage_start");
+    assert.equal(snap.currentStageSubstages[0].verb, "view");
+    assert.equal(snap.recentStages.length, 1, "previous stage stays in recentStages");
+});
+
+test("foldEvents: iteration_start clears active+recent stages and substages", () => {
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r", label: "self_improve" },
+        { type: "iteration_start", ts: 2, runId: "r", iteration: 1 },
+        { type: "stage_start", ts: 3, runId: "r", iteration: 1, stage: 1, stageName: "ORIENT" },
+        { type: "stage_end", ts: 5, runId: "r", iteration: 1, stage: 1, stageName: "ORIENT", outcome: "ok" },
+        { type: "iteration_end", ts: 6, runId: "r", iteration: 1 },
+        { type: "iteration_start", ts: 7, runId: "r", iteration: 2 },
+    ]);
+    assert.equal(snap.activeStage, null);
+    assert.deepEqual(snap.recentStages, [], "recentStages clears at the new iter boundary");
+    assert.deepEqual(snap.currentStageSubstages, []);
+});
+
+test("foldEvents: backlog_snapshot replaces the whole record", () => {
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r", label: "self_improve" },
+        { type: "backlog_snapshot", ts: 2, runId: "r", redCi: 0, openPrs: 2, openIssues: 11, closedByLoop: 3 },
+        { type: "backlog_snapshot", ts: 5, runId: "r", redCi: 0, openPrs: 2, openIssues: 8, closedByLoop: 6 },
+    ]);
+    assert.deepEqual(snap.backlog, { redCi: 0, openPrs: 2, openIssues: 8, closedByLoop: 6 });
+});
+
+test("foldEvents: backlog_snapshot with missing fields renders them as null (not 0)", () => {
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r", label: "self_improve" },
+        { type: "backlog_snapshot", ts: 2, runId: "r", openPrs: 5 },
+    ]);
+    assert.deepEqual(snap.backlog, { redCi: null, openPrs: 5, openIssues: null, closedByLoop: null });
+});
+
+test("foldEvents: armed resets all stage / substage / backlog state (replay-with-multiple-runs case)", () => {
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r1", label: "self_improve" },
+        { type: "stage_start", ts: 2, runId: "r1", iteration: 1, stage: 1, stageName: "ORIENT" },
+        { type: "substage", ts: 3, runId: "r1", iteration: 1, stage: 1, sub: 1, verb: "shell", argsSummary: "git log" },
+        { type: "stage_end", ts: 4, runId: "r1", iteration: 1, stage: 1 },
+        { type: "backlog_snapshot", ts: 5, runId: "r1", openPrs: 3 },
+        { type: "armed", ts: 100, runId: "r2", label: "self_improve" },
+    ]);
+    assert.equal(snap.runId, "r2");
+    assert.equal(snap.activeStage, null);
+    assert.deepEqual(snap.recentStages, []);
+    assert.deepEqual(snap.currentStageSubstages, []);
+    assert.equal(snap.backlog, null);
 });

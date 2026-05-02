@@ -398,18 +398,29 @@ test("events-emit MAX_EXCERPT_CHARS lockstep: TUI serializeEvent caps excerpt+no
     const emitCap = Number(emitMatch[1]);
     assert.equal(emitCap, 500, "MAX_EXCERPT_CHARS is the contract value; bump on BOTH sides if you change it");
 
-    // TUI side: scan every safeSliceChars(<expr>, <N>) call and
-    // require BOTH (excerpt + note) to use the same cap as the
-    // emitter. A future refactor that extracts the literal into a
-    // named constant on the TUI side will keep this test passing
-    // because we read the actual call-site argument.
-    const tuiCalls = [...tui.matchAll(/safeSliceChars\([^,]+,\s*(\d+)\s*\)/g)].map((m) => Number(m[1]));
-    assert.ok(tuiCalls.length >= 2, `expected ≥2 safeSliceChars() calls in TUI events.mjs (excerpt+note), found ${tuiCalls.length}`);
-    for (const cap of tuiCalls) {
+    // TUI side: pin the excerpt + note caps specifically. The
+    // contract this guard protects is "user-supplied prose fields
+    // (excerpt, note, reason) cap at the same value as the emitter
+    // ceiling so a 500-char excerpt makes it through the writer
+    // intact". Other size-bounded fields (stageName, verb, outcome,
+    // argsSummary) have their own legitimately smaller caps because
+    // they're machine-generated identifiers / one-line summaries —
+    // they don't need 500 chars and capping them tighter keeps the
+    // event-line shape clean. Iter 48-issue: scope the guard so a
+    // future field's tighter cap doesn't trip the lockstep check.
+    const matchCap = (field) => {
+        const m = tui.match(new RegExp(String.raw`safeSliceChars\(\s*ev\.${field}\b[^,]*,\s*(\d+)\s*\)`));
+        assert.ok(m, `serializeEvent must call safeSliceChars(ev.${field}, <N>)`);
+        return Number(m[1]);
+    };
+    const excerptCap = matchCap("excerpt");
+    const noteCap = matchCap("note");
+    const reasonCap = matchCap("reason");
+    for (const [name, cap] of [["excerpt", excerptCap], ["note", noteCap], ["reason", reasonCap]]) {
         assert.equal(
             cap,
             emitCap,
-            `TUI safeSliceChars cap ${cap} differs from events-emit MAX_EXCERPT_CHARS ${emitCap}; ` +
+            `TUI safeSliceChars(ev.${name}, ${cap}) differs from events-emit MAX_EXCERPT_CHARS ${emitCap}; ` +
             "bump BOTH sides in lockstep — see the comment block above MAX_EXCERPT_CHARS in events-emit.mjs.",
         );
     }

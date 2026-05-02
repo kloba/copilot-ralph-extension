@@ -1004,6 +1004,96 @@ test("PROMPT_SELF_IMPROVE ORIENT/IDEATE prioritise healing red GitHub Actions ru
     assert.match(p, /continue-on-error/, "must call out the continue-on-error anti-pattern so the agent fixes the root cause");
 });
 
+test("PROMPT_SELF_IMPROVE drains real backlog (CI → PRs → human-filed issues) before generic SDLC hardening", () => {
+    // The reframe (May 2026): self_improve is a backlog-DRAIN runner,
+    // not a generic SDLC polisher. The previous prompt let "rotating
+    // SDLC improvement" stand as a co-equal tier with open-issue
+    // match, which produced ~100 commits of micro-polish (drift
+    // pins, defensive guards on hypothetical edge cases, comment
+    // alignment) while four open human-filed issues sat untouched.
+    // This test pins the corrected priority ordering so that
+    // failure mode cannot recur silently:
+    //   (a) RED CI         — already pinned in the prior test
+    //   (b) STALE OPEN PR  — NEW tier, must come AFTER red CI but
+    //                        BEFORE open-issue match
+    //   (c) OPEN HUMAN-FILED ISSUE — was tier (b), now (c); must
+    //                        come BEFORE rotating SDLC and must
+    //                        explicitly target issues WITHOUT the
+    //                        grow-project label (those belong to
+    //                        the feature-backlog runner)
+    //   (d) ROTATING SDLC HARDENING — last-resort fallback only
+    const p = PROMPT_SELF_IMPROVE;
+    // ORIENT must run all three best-effort gh probes (CI, PRs, issues).
+    assert.match(p, /gh pr list[^\n]*--state\s+open/, "ORIENT must run `gh pr list --state open` to surface stale PRs");
+    assert.match(p, /gh pr list[\s\S]{0,80}\|\|\s*true/, "ORIENT PR query must be best-effort (`|| true`)");
+    // Tier labels must appear and be ordered correctly.
+    assert.match(p, /\bSTALE OPEN PR\b/, "IDEATE must declare a STALE OPEN PR tier");
+    assert.match(p, /\bOPEN HUMAN-FILED ISSUE\b/, "IDEATE must declare an OPEN HUMAN-FILED ISSUE tier (renamed from OPEN ISSUE MATCH)");
+    const iRed = p.indexOf("RED CI");
+    const iPr = p.indexOf("STALE OPEN PR");
+    const iIssue = p.indexOf("OPEN HUMAN-FILED ISSUE");
+    const iSdlc = p.indexOf("ROTATING SDLC");
+    assert.ok(iRed > -1 && iPr > -1 && iIssue > -1 && iSdlc > -1, "all four tier labels must appear");
+    assert.ok(iRed < iPr, "RED CI must come before STALE OPEN PR");
+    assert.ok(iPr < iIssue, "STALE OPEN PR must come before OPEN HUMAN-FILED ISSUE");
+    assert.ok(iIssue < iSdlc, "OPEN HUMAN-FILED ISSUE must come before ROTATING SDLC HARDENING");
+    // Tier (d) must be marked as a fallback, not a default — pin
+    // the anti-pattern guard so a future edit can't silently
+    // re-promote ROTATING SDLC back to a co-equal tier.
+    assert.match(p, /Tier \(d\)[\s\S]{0,200}fallback,?\s+not a default/i, "HARD RULES must call out tier (d) as fallback-only, not a default");
+    assert.match(p, /defensive guards|drift-pinning|comment[ /-]+(alignment|doc alignment)/i, "tier (d) must call out the specific anti-patterns (defensive guards / drift-pins / comment alignment) that produced the prior 100-commit micro-polish run");
+});
+
+test("PROMPT_SELF_IMPROVE encourages packing the paid-turn (multiple atomic commits per iter)", () => {
+    // Anti-pattern guard against the previous "smallest correct
+    // step is the right step" mantra. That framing was anti-aligned
+    // with Copilot's pricing model: each iteration is a paid
+    // premium request, so emitting one tiny commit per iter
+    // multiplies the request count to drain the same backlog and
+    // reinforced the micro-polish failure mode. The corrected
+    // contract: pack the turn — multiple atomic commits per iter
+    // are encouraged, with the tree green between commits.
+    const p = PROMPT_SELF_IMPROVE;
+    assert.doesNotMatch(p, /smallest correct step/i, "must not retain the anti-aligned 'smallest correct step' mantra");
+    assert.match(p, /paid premium request/i, "must explain the per-iteration cost model (paid premium request)");
+    assert.match(p, /multiple atomic commits|multiple .*commits|drain (multiple|several|more than one)/i, "must encourage multiple atomic commits per iter when the work permits");
+    assert.match(p, /tree (must )?stay(s)? green between commits|green between (commits|them)/i, "must require the tree to stay green between commits");
+});
+
+test("PROMPT_GROW_PROJECT scope is FEATURES ONLY — bugs and human-filed asks belong elsewhere", () => {
+    // Companion to the self_improve reframe: grow_project EXPANDS
+    // the backlog with new features; self_improve DRAINS the
+    // existing backlog (red CI / stale PRs / human-filed issues).
+    // Without an explicit scope guard the two loops fight over
+    // the same human-filed issue — and worse, grow_project's
+    // SELECT filter (`--label proposed`) silently excludes
+    // unlabelled human-filed asks, so they never get picked up at
+    // all. Pin the scope guard so a "tighten the prompt" refactor
+    // can't blur the division of labor.
+    const p = PROMPT_GROW_PROJECT;
+    assert.match(p, /NEW FEATURES only/i, "HARD RULES must declare grow_project ships NEW FEATURES only");
+    assert.match(p, /backlog-drain runner|self_improve|backlog drain/i, "must reference the backlog-drain runner so the agent knows where bugs / human-filed asks belong");
+    // Re-label-and-skip protocol when a grow-project issue is
+    // actually a bug: pin both halves so the loop doesn't ship
+    // a non-feature under a feature gate.
+    assert.match(p, /strip[\s\S]{0,80}grow-project|remove[\s\S]{0,80}grow-project[\s\S]{0,40}label/i, "must instruct the agent to strip the grow-project label when an issue turns out to be a bug");
+    assert.match(p, /skip|emit ABORT_NO_BACKLOG/i, "must instruct the agent to skip non-feature issues (or abort) rather than ship them");
+});
+
+test("PROMPT_GROW_PROJECT encourages packing the paid-turn (multiple complete features per iter when independent)", () => {
+    // Mirror of the self_improve packing pin. Same pricing-model
+    // argument: when two proposed issues are independent and
+    // small, ship both in one iter rather than burning a fresh
+    // premium request. But unlike self_improve, the per-feature
+    // gate (tests + acceptance + demo + close) must NOT be
+    // shortcut to fit more in — pin both halves of the rule.
+    const p = PROMPT_GROW_PROJECT;
+    assert.doesNotMatch(p, /smallest correct step/i, "must not retain the anti-aligned 'smallest correct step' mantra");
+    assert.match(p, /paid premium request/i, "must explain the per-iteration cost model (paid premium request)");
+    assert.match(p, /(independent and small|when (two|both)[\s\S]{0,40}independent)/i, "must say multi-feature packing is gated on issues being independent and small");
+    assert.match(p, /Do NOT shortcut|do not shortcut[\s\S]{0,40}gate/i, "must forbid shortcutting the per-feature gate to fit more features in");
+});
+
 test("PROMPT_SELF_IMPROVE + max-sized focus suffix fits under MAX_PROMPT_CHARS", () => {
     // Mirror of the grow_project worst-case budget test. Focus is
     // independently capped at MAX_FOCUS_CHARS, but PROMPT_SELF_IMPROVE

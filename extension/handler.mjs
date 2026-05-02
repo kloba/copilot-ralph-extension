@@ -193,12 +193,16 @@ const VERB_BY_REASON = Object.freeze({
     max_tokens: "⏹ stopped",
 });
 
-// Project-agnostic SDLC self-improvement prompt baked into the
+// Project-agnostic SDLC backlog-drain prompt baked into the
 // `self_improve` tool. Each iteration walks the agent through:
-//   ORIENT  — read recent commits + project docs
-//   IDEATE  — pick ONE concrete change, rotating across SDLC categories
-//             (bug fix, hardening, validation, tests, refactor,
-//             dependency hygiene, docs, release engineering)
+//   ORIENT  — read recent commits + best-effort enumerate red CI,
+//             open PRs, and open human-filed issues via the gh CLI
+//   IDEATE  — pick ONE backlog item by priority: RED CI →
+//             STALE OPEN PR → OPEN HUMAN-FILED ISSUE →
+//             ROTATING SDLC HARDENING (last-resort fallback). If
+//             none of the first three tiers has a candidate AND
+//             no genuine user-visible improvement is identifiable,
+//             abort rather than mine the codebase for non-issues.
 //   CRITIQUE — rubber-duck pass: state the change, the risk, and one
 //              alternative considered and rejected
 //   BASELINE — detect & run the project's existing test command
@@ -209,22 +213,25 @@ const VERB_BY_REASON = Object.freeze({
 //              is suppressed when RALPH_NO_ATTRIBUTION=1 is set in env)
 //   PUSH     — git push (non-fatal on push failure)
 //   END      — emit COMPLETE on its own line, or ABORT_NO_IMPROVEMENTS
-const PROMPT_SELF_IMPROVE = `You are running an autonomous self-improvement iteration on the project in cwd. Each iteration must produce ONE concrete improvement and a real commit; if no worthwhile improvement exists after honest investigation, emit ABORT_NO_IMPROVEMENTS instead.
+const PROMPT_SELF_IMPROVE = `You are running an autonomous backlog-draining iteration on the project in cwd. Each iteration is a paid premium request — drain as many real backlog items as fit in one turn (a failing CI run, a stale open pull request, an open human-filed issue), each as its own atomic commit with the tree green between them. If after honest investigation no real backlog item is actionable AND no genuine user-visible improvement is identifiable, emit ABORT_NO_IMPROVEMENTS rather than inventing defensive-guard or comment-alignment pseudo-improvements.
 
-PER-ITERATION SDLC WORKFLOW (the smallest correct step is the right step):
+PER-ITERATION SDLC WORKFLOW (each iteration is a paid premium request — pack the turn; multiple atomic commits are encouraged when the work permits):
 
 1. ORIENT.
    - Run \`git log --oneline -20\` and read the most recent commits so you do not redo or undo prior iterations.
-   - If the \`gh\` CLI is available and authenticated, run \`gh issue list --state open --limit 30 2>/dev/null || true\` to see open issues a human or a prior backlog-driven run may have already filed. Skim the titles + labels so you don't duplicate, contradict, or pre-empt work that's already tracked.
-   - Also best-effort check CI health: \`gh run list --status failure --limit 10 2>/dev/null || true\`. If any recent runs on the default branch (or your current branch's HEAD) are failing, treat that as the highest-priority signal — a red CI blocks releases and silently breaks downstream consumers. Drill into the most recent failure with \`gh run view <run-id> --log-failed 2>/dev/null || true\` to capture the actual error before IDEATE.
+   - If the \`gh\` CLI is available and authenticated, run all three of the following best-effort backlog probes (each \`|| true\` so a missing/unauth gh doesn't abort the iteration):
+     - \`gh run list --status failure --limit 10 2>/dev/null || true\` — failing GitHub Actions runs on the default / current branch are the highest-priority backlog item; a red CI blocks releases and silently breaks downstream consumers. Drill into the most recent failure with \`gh run view <run-id> --log-failed 2>/dev/null || true\` to capture the actual error before IDEATE.
+     - \`gh pr list --state open --limit 20 2>/dev/null || true\` — open pull requests. Stale PRs (failing checks, mergeable=CONFLICTING, unaddressed review comments, or no activity in days) are the second-priority backlog item. Inspect any candidate with \`gh pr view <pr-num> --json state,mergeable,statusCheckRollup,reviewDecision,headRefName 2>/dev/null || true\`.
+     - \`gh issue list --state open --limit 30 2>/dev/null || true\` — open issues. Treat any issue WITHOUT the \`grow-project\` (or \`proposed\`) label as a human-filed backlog item that THIS loop owns. Issues carrying \`grow-project\` / \`proposed\` are loop-ideated feature backlog and belong to a different runner — skim them so you don't duplicate, but do NOT pick them up here.
    - Skim the project's primary docs: README, AGENTS.md, package.json / pyproject.toml / Cargo.toml / go.mod (whichever exist), CHANGELOG.
    - Detect the project's existing test command (npm test, pytest, cargo test, go test ./..., etc).
 
 2. IDEATE.
    PRIORITY ORDER (do not skip a higher tier when a candidate exists in it):
      a. RED CI — if ORIENT surfaced any failing GitHub Actions run on the default branch / current branch HEAD, healing that failure IS the iteration. Reproduce the failure locally if possible, fix the root cause (not the symptom — do not add \`continue-on-error\` or delete the failing job to silence it), and verify the fix re-runs green via \`gh run rerun <run-id>\` or by pushing the fix and watching the new run. If the failure is a flaky test, harden it; if it's an env/dependency drift, pin or update; if it's a legitimate regression, revert or fix forward.
-     b. OPEN ISSUE MATCH — if your candidate improvement matches an open issue you saw in ORIENT, prefer addressing that issue end-to-end and reference it with \`Closes #N\` (or \`Refs #N\` if the fix is partial); if the matching issue carries the \`grow-project\` or \`proposed\` label, defer to the backlog tooling and pick a different improvement instead — this loop should not race the backlog runner for issues already queued for feature work.
-     c. ROTATING SDLC IMPROVEMENT — pick ONE concrete improvement, rotating across the categories below so the loop covers the whole lifecycle over time:
+     b. STALE OPEN PR — if ORIENT surfaced an open PR with failing checks, mergeable=CONFLICTING, an unaddressed review, or extended inactivity, driving that PR to a mergeable state IS the iteration. For PRs you can push to (a branch you authored / loop-authored), rebase onto the default branch, fix forward until checks are green, push, and merge. For PRs authored by someone else, leave a constructive \`gh pr review --comment\` summarising what's blocking — do NOT push to their branch.
+     c. OPEN HUMAN-FILED ISSUE — if ORIENT surfaced an open issue WITHOUT the \`grow-project\` / \`proposed\` label, addressing that issue end-to-end IS the iteration. Pick the oldest one with a clear, scoped fix (lowest number first when ties). Reference the issue via \`Closes #N\` (or \`Refs #N\` if the fix is partial). Issues carrying \`grow-project\` / \`proposed\` belong to the feature-backlog runner — leave them alone here.
+     d. ROTATING SDLC HARDENING — ONLY if tiers (a)-(c) are all empty AND a genuine user-visible improvement is identifiable. Pick ONE concrete improvement, rotating across the categories below so the loop covers the whole lifecycle over time:
         - bug fix or edge-case hardening
         - input validation / error message clarity
         - tests for under-covered behaviour
@@ -232,7 +239,7 @@ PER-ITERATION SDLC WORKFLOW (the smallest correct step is the right step):
         - dependency / config hygiene
         - docs (README, CHANGELOG, comments) accuracy
         - release engineering (version bump rules, CI hints, .gitignore, lockfile)
-   Avoid repeating the SDLC category used in the previous 2-3 commits.
+        Avoid repeating the SDLC category used in the previous 2-3 commits. If you cannot identify a user-visible improvement, emit ABORT_NO_IMPROVEMENTS — defensive guards on hypothetical edge cases, drift-pinning of trivial format strings, and comment / doc alignment churn are NOT acceptable iteration output.
 
 3. CRITIQUE (rubber-duck pass).
    Before editing, briefly state: the change, the risk it introduces, and one alternative you considered and rejected. Reject your own idea and pick a different one if the risk outweighs the value.
@@ -261,9 +268,10 @@ PER-ITERATION SDLC WORKFLOW (the smallest correct step is the right step):
 
 HARD RULES:
 - Stay in cwd; do not edit unrelated repos.
+- Tier (d) is a fallback, not a default. A run that exclusively produces tier (d) commits is a failure mode — the agent is mining the codebase for non-issues. When (a)-(c) are empty and no user-visible (d) improvement is identifiable, ABORT.
+- Each iteration is a paid premium request. Pack the turn — drain multiple backlog items in one iter as separate atomic commits when feasible, rather than burning a fresh premium request on each tiny commit. The tree must stay green between commits; if a commit reveals a regression in a later commit's scope, fix it inline before closing the iter.
 - Do not introduce new top-level dependencies, frameworks, or build systems unless that introduction IS the improvement and the rubber-duck critique justified it.
-- Do not delete or rewrite the project's existing license, README, or CHANGELOG wholesale; surgical edits only.
-- Each iteration is a paid turn — the smallest correct step is the right step.`;
+- Do not delete or rewrite the project's existing license, README, or CHANGELOG wholesale; surgical edits only.`;
 
 // Literal abort token baked into PROMPT_SELF_IMPROVE. The completion
 // counterpart is DEFAULTS.completion_promise ("COMPLETE") and is reused
@@ -279,18 +287,22 @@ if (!PROMPT_SELF_IMPROVE.includes(DEFAULTS.completion_promise) ||
 }
 
 // PROMPT_GROW_PROJECT is the baked SDLC prompt for the grow_project tool.
-// Unlike self_improve (which polishes one tiny improvement per iter), this
-// loop grows a project by ideating a backlog of features as GitHub issues
-// (via the `gh` CLI) on the first iter, then executing one feature per
-// subsequent iter against a three-part completion gate: tests green +
-// executable acceptance check + demo invocation. The literal abort token
-// is BAKED_BACKLOG_ABORT_TOKEN ("ABORT_NO_BACKLOG"), distinct from
+// Unlike self_improve (which drains the existing backlog: red CI, stale
+// PRs, human-filed issues), this loop EXPANDS the backlog: it ideates a
+// set of new features as GitHub issues on the first iter, then ships one
+// or more end-to-end per subsequent iter against a three-part completion
+// gate (tests green + executable acceptance check + demo invocation).
+// Bugs, hardening, CI healing, and human-filed asks belong to
+// self_improve, not here. The literal abort token is
+// BAKED_BACKLOG_ABORT_TOKEN ("ABORT_NO_BACKLOG"), distinct from
 // self_improve's "ABORT_NO_IMPROVEMENTS" because the agent emits it for a
 // different reason: the backlog has been drained, not that no worthwhile
 // improvement exists.
-const PROMPT_GROW_PROJECT = `You are running an autonomous project-growth iteration on the project in cwd. Each iteration ships ONE feature end-to-end from a GitHub-issue backlog; if the backlog is drained or no proposed issue is ready, emit ABORT_NO_BACKLOG instead.
+const PROMPT_GROW_PROJECT = `You are running an autonomous project-growth iteration on the project in cwd. Each iteration is a paid premium request — ship one or more complete features end-to-end from a GitHub-issue backlog (not placeholder slices), each as its own atomic commit with the tree green between them. If the backlog is drained or no proposed issue is ready, emit ABORT_NO_BACKLOG instead.
 
-PER-ITERATION SDLC WORKFLOW (the smallest correct step is the right step):
+This loop's job is to GROW the project with new features. Bug fixes, hardening, CI healing, refactors, and human-filed asks belong to the backlog-drain runner — not here. If a \`grow-project\`-labelled issue turns out to describe a bug or non-feature task, remove the \`grow-project\` and \`proposed\` labels (so the backlog-drain runner picks it up) and skip it.
+
+PER-ITERATION SDLC WORKFLOW (each iteration is a paid premium request — ship complete features, multiple if independent and small):
 
 1. ORIENT.
    - \`gh issue list --label grow-project --state open\` to see the backlog.
@@ -347,9 +359,10 @@ PER-ITERATION SDLC WORKFLOW (the smallest correct step is the right step):
 
 HARD RULES:
 - Stay in cwd; do not edit unrelated repos.
+- This loop ships NEW FEATURES only. Bug fixes, hardening, CI healing, refactors, and human-filed asks belong to the backlog-drain runner. If a \`grow-project\`-labelled issue turns out to describe a bug or non-feature task, strip its \`grow-project\` / \`proposed\` labels and skip it; pick a different proposed feature or emit ABORT_NO_BACKLOG.
+- Each iteration is a paid premium request. When two proposed issues are independent and small, ship both in one iter as separate atomic commits (each through the full gate: tests green + acceptance + demo + close) rather than burning a fresh premium request on each. Do NOT shortcut the per-feature gate to fit more in.
 - Do not introduce new top-level dependencies, frameworks, or build systems unless that introduction IS the feature and the rubber-duck critique justified it.
-- Do not delete or rewrite the project's existing license, README, or CHANGELOG wholesale; surgical edits only.
-- Each iteration is a paid turn — the smallest correct step is the right step.`;
+- Do not delete or rewrite the project's existing license, README, or CHANGELOG wholesale; surgical edits only.`;
 
 // Literal abort token baked into PROMPT_GROW_PROJECT. Centralised here so
 // the warnPromiseDrift call site (in the grow_project handler) and the

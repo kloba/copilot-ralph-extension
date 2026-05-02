@@ -3,6 +3,43 @@
 ## Unreleased
 
 ### Features
+- `self_improve` and `grow_project` baked SDLC prompts
+  reframed around the per-iteration cost model and a clean
+  division of labor. **`self_improve`** is now a backlog-DRAIN
+  runner: each ORIENT stage best-effort enumerates red CI
+  runs, open pull requests, and open human-filed issues
+  via `gh run list --status failure`, `gh pr list --state
+  open`, and `gh issue list --state open`. IDEATE runs a
+  four-tier priority list — RED CI → STALE OPEN PR → OPEN
+  HUMAN-FILED ISSUE (any open issue WITHOUT the
+  `grow-project` / `proposed` label) → ROTATING SDLC
+  HARDENING (last-resort fallback). When the first three
+  tiers are empty AND no genuine user-visible improvement
+  is identifiable, the agent is instructed to emit
+  `ABORT_NO_IMPROVEMENTS` rather than mine the codebase
+  for defensive guards, drift-pins, or comment-alignment
+  churn. **`grow_project`** is now scoped explicitly to NEW
+  FEATURES only — bug fixes, hardening, CI healing,
+  refactors, and human-filed asks belong to the
+  backlog-drain runner. If a `grow-project`-labelled issue
+  turns out to describe a bug, the agent is instructed to
+  strip its `grow-project` / `proposed` labels and skip it
+  so the backlog-drain runner picks it up. Both prompts
+  drop the prior "smallest correct step is the right step"
+  mantra, which was anti-aligned with Copilot's premium-
+  request pricing model: each iteration is a paid request
+  whether it produces one tiny commit or several
+  substantive ones, so the corrected contract is "pack the
+  turn — multiple atomic commits per iter are encouraged
+  when the work permits, with the tree green between
+  commits" (`grow_project` keeps the per-feature gate
+  intact: tests + acceptance + demo + close cannot be
+  shortcut to fit more features in). Together these
+  changes address the failure mode where a long
+  `self_improve` run produced ~100 commits of micro-polish
+  while four open human-filed issues sat untouched. Pinned
+  by four new drift-guard tests in `test/extension.test.mjs`.
+
 - `install.sh --dry-run` now derives an at-a-glance
   `Direction:` label between the `Version:` and `Source:`
   lines, naming the relationship between the installed

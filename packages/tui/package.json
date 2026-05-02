@@ -1,15 +1,13 @@
 {
-  "name": "@copilot-ralph-extension/tui",
+  "name": "@autopilot/tui",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Terminal UI for visualizing live ralph_loop / self_improve / grow_project runs (issue #22).",
+  "description": "Terminal UI for visualizing live autopilot run / self_improve / grow_project runs (issue #22).",
   "author": "Taras Kloba",
   "keywords": [
     "github-copilot",
     "copilot-cli",
-    "extension",
-    "ralph-wiggum",
     "tui",
     "ink",
     "observability"

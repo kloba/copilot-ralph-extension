@@ -67,7 +67,12 @@ export function resolveBin({ override, env = process.env } = {}) {
  *  prompt) so it's intentionally unused here.
  */
 export function spawnArgs(prompt, { resumeSessionId, sessionName: _sessionName, extraArgs = [] } = {}) {
-    const args = ["-p", prompt, "--dangerously-skip-permissions", "--output-format", "stream-json"];
+    // Claude Code requires `--verbose` whenever `-p` (--print) is paired
+    // with `--output-format stream-json`; without it the CLI exits with
+    // "Error: When using --print, --output-format=stream-json requires
+    // --verbose". The flag is silent at runtime and only affects the
+    // event stream's verbosity envelope.
+    const args = ["-p", prompt, "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"];
     if (resumeSessionId) args.push("--resume", resumeSessionId);
     for (const a of extraArgs) args.push(a);
     return { args, env: undefined };

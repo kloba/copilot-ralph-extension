@@ -3,6 +3,45 @@
 ## Unreleased
 
 ### Features
+- TUI 3-level renderer (issue #48 slice 9): the `<App>` layout
+  now composes the new `<TasksPane>` + `<LastCommit>` panes
+  alongside the existing `<Header>` / `<StagesRow>` /
+  `<SubstagesPane>` / `<Timeline>` / `<DetailPane>` /
+  `<Controls>` so a `ralph-tui run --self-improve` session
+  surfaces the L1 work item / L2 flex stage plan / L3 per-
+  stage task list / footer last-commit hierarchy specced by
+  the issue's mockup. `<Header>` gained an active work-item
+  row above the backlog row (kind glyph + `#ref` + clipped
+  title, magenta accent so it pops) that collapses to nothing
+  when no work item is in flight, and the backlog row picks
+  up a green `(N done)` pip showing how many work items the
+  loop has closed so far via `closedByLoop`. `<StagesRow>`
+  picks the stages list from `snapshot.currentPlan.stages`
+  when the agent has emitted a `[STAGE_PLAN: …]`, falling
+  back to the canonical list otherwise; pinned-tail stages
+  (`COMMIT` / `PUSH` / `END` for self-improve, `CLOSE` too
+  for grow-project) display a 📌 glyph so the user sees
+  they're loop-mandated, and stages added by an agent
+  amendment (any reason other than the runner's
+  `pinned-tail-enforcement`) get a `+` glyph so amend churn
+  is visible. New `<TasksPane>` renders the current task
+  list with `▶ N.M` for the in-flight task (with `← this
+  iter` marker), `✓ N.M` for done, `✗ N.M` for failed, `↷
+  N.M` for skipped, and `· N.M` for not-yet-started — where
+  N is the parent stage's 1-based ordinal in the active plan
+  and M is the task's `sub` number. New `<LastCommit>`
+  footer renders the latest `commit_observed` event as
+  `<sha7>  <subject>   <N> trailers (M co-authors)` with the
+  SHA in yellow + the co-author badge in magenta; falls back
+  to `last commit: (none yet)` when no commit has been
+  observed. Pure components — fed entirely from the
+  `foldEvents` snapshot, no extra wiring needed in the
+  driver. 21 new tests in `packages/tui/test/components.test.mjs`
+  cover the new helpers (`selectStages`, `computeAmendmentAdds`,
+  `stageOrdinal`, `computeTaskRows`, `countCoAuthors`),
+  empty/placeholder states, and a full 3-level
+  end-to-end render.
+
 - `ralph-tui run` (`packages/tui/src/runner.mjs`) now turns the
   agent's `[STAGE_PLAN: …]` / `[STAGE_PLAN_AMEND: …]` /
   `[TASK_LIST: …]` / `[TASK_START: …]` / `[TASK_END: …]` /

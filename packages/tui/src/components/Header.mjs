@@ -5,6 +5,15 @@
 // a glance, and renders `∞` for the iteration cap when max equals the
 // runaway-guard ceiling (the new self-improve default per slice 3).
 //
+// Issue #48 slice 9: extended with a Level-1 active work-item row
+// (kind / ref / title) above the backlog row when foldEvents has
+// observed a `workitem_start` without a matching `workitem_end`. The
+// row collapses to nothing when no work item is active, so single-
+// shot `--prompt` runs and pre-iter-1 states stay compact. Also
+// gained a "(N done)" pip on the backlog row showing the count of
+// work items the loop has already closed (`closedByLoop`) so the
+// user sees forward motion as the backlog drains.
+//
 // Pure presentational component. Uses React.createElement directly so
 // the file loads in plain Node ESM (no JSX/TypeScript build step).
 
@@ -36,6 +45,28 @@ const STATUS_LABEL = {
     aborted: "ABORT",
 };
 
+// Single source of truth for kind → display glyph. Keep these
+// short — the row lives next to the title and we want the title to
+// fit on one terminal line for typical widths (~80 cols).
+const WORKITEM_GLYPH = {
+    issue: "⊘",
+    pr: "⤷",
+    red_ci: "✗",
+};
+
+// Work item title cap — Header is one line; a 60-char title plus the
+// kind glyph + ref leaves room on a typical 80-col terminal. Longer
+// titles ellipsize. (Surrogate-safe slice via Array.from is not
+// needed here — this is for display, not storage; the canonical
+// title clip lives in events.mjs:serializeEvent.)
+const WORKITEM_TITLE_MAX = 60;
+
+function clipTitle(title) {
+    if (typeof title !== "string") return "";
+    if (title.length <= WORKITEM_TITLE_MAX) return title;
+    return title.slice(0, WORKITEM_TITLE_MAX - 1) + "…";
+}
+
 /** Render a backlog field — number when present, `?` when null. The
  *  renderer always reserves space for all three fields so the header
  *  doesn't reflow as the agent populates them across iters. */
@@ -53,6 +84,8 @@ export default function Header({ snapshot }) {
     const tokens = snapshot?.tokens ?? { input: 0, output: 0 };
     const total = (tokens.input || 0) + (tokens.output || 0);
     const backlog = snapshot?.backlog ?? null;
+    const activeWorkItem = snapshot?.activeWorkItem ?? null;
+    const closedByLoop = snapshot?.closedByLoop ?? 0;
 
     const maxLabel = max === RUNAWAY_GUARD_CEILING ? "∞" : String(max);
 
@@ -78,10 +111,28 @@ export default function Header({ snapshot }) {
         justifyContent: "space-between",
     }, left, right);
 
+    // Issue #48 slice 9 — Level 1 work-item row. Renders only when
+    // foldEvents reports an active work item (workitem_start without
+    // a matching workitem_end). Layout: glyph + kind + #ref + title.
+    const workItemRow = activeWorkItem
+        ? h(Box, { flexDirection: "row", marginTop: 0 },
+            h(Text, { color: "magenta", bold: true },
+                WORKITEM_GLYPH[activeWorkItem.kind] ?? "•"),
+            h(Text, { dimColor: true }, " " + activeWorkItem.kind),
+            activeWorkItem.ref != null
+                ? h(Text, null, " #" + activeWorkItem.ref)
+                : null,
+            activeWorkItem.title
+                ? h(Text, { bold: true }, "  " + clipTitle(activeWorkItem.title))
+                : null,
+          )
+        : null;
+
     // Backlog row — only rendered for SDLC modes that emit
     // `backlog_snapshot`. When the snapshot is absent (e.g. --prompt
     // mode or pre-iter-1), the row collapses to nothing so the
-    // header stays compact.
+    // header stays compact. Issue #48 slice 9: appended a "(N done)"
+    // pip showing how many work items the loop has closed so far.
     const backlogRow = backlog
         ? h(Box, { flexDirection: "row", marginTop: 0 },
             h(Text, { dimColor: true }, "backlog: "),
@@ -91,6 +142,9 @@ export default function Header({ snapshot }) {
             h(Text, { dimColor: true }, " open PRs · "),
             h(Text, { color: backlog.redCi > 0 ? "red" : undefined }, backlogField(backlog.redCi)),
             h(Text, { dimColor: true }, " red CI runs"),
+            closedByLoop > 0
+                ? h(Text, { color: "green" }, "  (" + String(closedByLoop) + " done)")
+                : null,
           )
         : null;
 
@@ -99,5 +153,5 @@ export default function Header({ snapshot }) {
         borderColor: "blue",
         paddingX: 1,
         flexDirection: "column",
-    }, topRow, backlogRow);
+    }, topRow, workItemRow, backlogRow);
 }

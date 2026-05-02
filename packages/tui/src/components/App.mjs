@@ -10,9 +10,11 @@ import { Box, useApp, useInput } from "ink";
 import { foldEvents } from "../events.mjs";
 import Header from "./Header.mjs";
 import StagesRow from "./StagesRow.mjs";
+import TasksPane from "./TasksPane.mjs";
 import SubstagesPane from "./SubstagesPane.mjs";
 import Timeline from "./Timeline.mjs";
 import DetailPane from "./DetailPane.mjs";
+import LastCommit from "./LastCommit.mjs";
 import Controls from "./Controls.mjs";
 
 const h = React.createElement;
@@ -95,9 +97,11 @@ export default function App({ eventStream, events: initial = [], runId, onUserAb
     return h(Box, { flexDirection: "column" },
         h(Header, { snapshot }),
         h(StagesRow, { snapshot }),
+        h(TasksPane, { snapshot }),
         h(SubstagesPane, { snapshot }),
         h(Timeline, { snapshot }),
         h(DetailPane, { snapshot }),
+        h(LastCommit, { snapshot }),
         h(Controls, { status: snapshot.status }),
     );
 }

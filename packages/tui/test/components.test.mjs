@@ -471,3 +471,268 @@ test("App without onUserAbort still exits on q (read-only watch mode)", { skip }
     await new Promise((r) => setImmediate(r));
     inst.unmount();
 });
+
+// ─── Issue #48 slice 9: 3-level renderer (work item → plan → tasks) ─────
+
+let TasksPane, LastCommit;
+let stageOrdinal, computeTaskRows, countCoAuthors, computeAmendmentAdds, selectStages;
+if (inkAvailable) {
+    const tp = await import("../src/components/TasksPane.mjs");
+    TasksPane = tp.default;
+    stageOrdinal = tp.stageOrdinal;
+    computeTaskRows = tp.computeTaskRows;
+    const lc = await import("../src/components/LastCommit.mjs");
+    LastCommit = lc.default;
+    countCoAuthors = lc.countCoAuthors;
+    const sr = await import("../src/components/StagesRow.mjs");
+    selectStages = sr.selectStages;
+    computeAmendmentAdds = sr.computeAmendmentAdds;
+}
+
+test("Header: active work item row renders kind + #ref + title", { skip }, () => {
+    const snapshot = {
+        status: "running",
+        label: "self_improve",
+        runId: "r1",
+        iteration: 5,
+        maxIterations: 1000,
+        tokens: { input: 0, output: 0 },
+        activeWorkItem: { kind: "issue", ref: 48, title: "3-level hierarchical TUI", startedAt: 1 },
+    };
+    const out = render(React.createElement(Header, { snapshot })).lastFrame();
+    assert.match(out, /#48/);
+    assert.match(out, /3-level hierarchical TUI/);
+    assert.match(out, /issue/);
+});
+
+test("Header: ∞ shown when maxIterations is the runaway-guard ceiling", { skip }, () => {
+    const snapshot = {
+        status: "running", label: "self_improve", runId: "r1",
+        iteration: 5, maxIterations: 1000, tokens: { input: 0, output: 0 },
+    };
+    const out = render(React.createElement(Header, { snapshot })).lastFrame();
+    assert.match(out, /iter\s+5/);
+    assert.match(out, /∞/);
+});
+
+test("Header: backlog row shows '(N done)' pip when closedByLoop > 0", { skip }, () => {
+    const snapshot = {
+        status: "running", label: "self_improve", runId: "r1",
+        iteration: 5, maxIterations: 1000, tokens: { input: 0, output: 0 },
+        backlog: { openIssues: 3, openPrs: 1, redCi: 0 },
+        closedByLoop: 7,
+    };
+    const out = render(React.createElement(Header, { snapshot })).lastFrame();
+    assert.match(out, /3 open issues/);
+    assert.match(out, /\(7 done\)/);
+});
+
+test("Header: no work-item row when activeWorkItem is null", { skip }, () => {
+    const snapshot = {
+        status: "running", label: "self_improve", runId: "r1",
+        iteration: 5, maxIterations: 1000, tokens: { input: 0, output: 0 },
+        activeWorkItem: null,
+    };
+    const out = render(React.createElement(Header, { snapshot })).lastFrame();
+    assert.equal(out.match(/issue/), null, "no 'issue' label when no active work item");
+});
+
+test("StagesRow.selectStages: prefers snapshot.currentPlan.stages over canonical list", () => {
+    if (!inkAvailable) return;
+    const stages = selectStages({
+        label: "self_improve",
+        currentPlan: { stages: ["DIAGNOSE", "REPRO", "FIX"] },
+    });
+    assert.deepEqual(stages, ["DIAGNOSE", "REPRO", "FIX"]);
+});
+
+test("StagesRow.selectStages: falls back to canonical list when no plan", () => {
+    if (!inkAvailable) return;
+    const stages = selectStages({ label: "self_improve" });
+    assert.ok(stages.includes("ORIENT"));
+    assert.ok(stages.includes("COMMIT"));
+});
+
+test("StagesRow.selectStages: dedupes stages within plan (defensive)", () => {
+    if (!inkAvailable) return;
+    const stages = selectStages({
+        currentPlan: { stages: ["A", "B", "A", "B", "C"] },
+    });
+    assert.deepEqual(stages, ["A", "B", "C"]);
+});
+
+test("StagesRow.computeAmendmentAdds: skips runner-driven pinned-tail-enforcement amends", () => {
+    if (!inkAvailable) return;
+    const adds = computeAmendmentAdds({
+        planAmendments: [
+            { add: "COMMIT", reason: "pinned-tail-enforcement" },
+            { add: "DOCS", reason: "agent-amendment" },
+            { remove: "FOO", reason: "agent-amendment" },
+        ],
+    });
+    assert.equal(adds.has("COMMIT"), false, "pinned-tail-enforcement adds are runner noise");
+    assert.equal(adds.has("DOCS"), true, "agent amendments are surfaced");
+    assert.equal(adds.size, 1);
+});
+
+test("StagesRow renders 📌 glyph on pinned tail stages (COMMIT / PUSH / END)", { skip }, () => {
+    const snapshot = {
+        label: "self_improve",
+        recentStages: [],
+        activeStage: { name: "ORIENT" },
+    };
+    const out = render(React.createElement(StagesRow, { snapshot })).lastFrame();
+    assert.match(out, /COMMIT📌|COMMIT 📌|COMMIT.*📌/);
+});
+
+test("StagesRow renders agent-emitted plan stages instead of canonical when currentPlan is set", { skip }, () => {
+    const snapshot = {
+        label: "self_improve",
+        currentPlan: { stages: ["DIAG", "REPRO", "FIX", "TEST", "COMMIT", "PUSH", "END"] },
+        recentStages: [],
+        activeStage: { name: "DIAG" },
+    };
+    const out = render(React.createElement(StagesRow, { snapshot })).lastFrame();
+    assert.match(out, /DIAG/);
+    assert.match(out, /REPRO/);
+    // Canonical-only stages (e.g. CRITIQUE) must NOT appear.
+    assert.equal(out.match(/CRITIQUE/), null);
+});
+
+test("TasksPane.stageOrdinal: returns 1-based index from current plan", () => {
+    if (!inkAvailable) return;
+    const snap = {
+        currentPlan: { stages: ["DIAG", "FIX", "TEST"] },
+    };
+    assert.equal(stageOrdinal(snap, "DIAG"), 1);
+    assert.equal(stageOrdinal(snap, "FIX"), 2);
+    assert.equal(stageOrdinal(snap, "TEST"), 3);
+    assert.equal(stageOrdinal(snap, "MISSING"), null);
+});
+
+test("TasksPane.stageOrdinal: falls back to canonical stage list", () => {
+    if (!inkAvailable) return;
+    const snap = { label: "self_improve" };
+    assert.equal(stageOrdinal(snap, "ORIENT"), 1);
+    assert.equal(stageOrdinal(snap, "COMMIT"), 7);
+});
+
+test("TasksPane.computeTaskRows: empty inputs → []", () => {
+    if (!inkAvailable) return;
+    assert.deepEqual(computeTaskRows({}), []);
+    assert.deepEqual(computeTaskRows(null), []);
+});
+
+test("TasksPane.computeTaskRows: in-flight / recent / pending precedence (one of each)", () => {
+    if (!inkAvailable) return;
+    const snap = {
+        currentTaskList: { stage: "FIX", items: ["task-a", "task-b", "task-c"] },
+        taskInFlight: { stage: "FIX", sub: 2, desc: "task-b" },
+        recentTasks: [
+            { stage: "FIX", sub: 1, outcome: "ok", desc: "task-a" },
+        ],
+    };
+    const rows = computeTaskRows(snap);
+    const states = rows.map((r) => `${r.sub}:${r.state}`);
+    // sub 1 in recent → "ok"; sub 2 in flight → "in_flight"; sub 3 not started → "pending"
+    assert.deepEqual(states, ["1:ok", "2:in_flight", "3:pending"]);
+});
+
+test("TasksPane: empty placeholder when no task list emitted yet", { skip }, () => {
+    const out = render(React.createElement(TasksPane, { snapshot: {} })).lastFrame();
+    assert.match(out, /no task list yet/);
+});
+
+test("TasksPane: renders ▶ on in-flight + '← this iter' marker", { skip }, () => {
+    const snap = {
+        currentPlan: { stages: ["FIX"] },
+        currentTaskList: { stage: "FIX", items: ["task-a"] },
+        taskInFlight: { stage: "FIX", sub: 1, desc: "task-a" },
+        recentTasks: [],
+    };
+    const out = render(React.createElement(TasksPane, { snapshot: snap })).lastFrame();
+    assert.match(out, /▶/);
+    assert.match(out, /1\.1/);
+    assert.match(out, /task-a/);
+    assert.match(out, /← this iter/);
+});
+
+test("TasksPane: renders ✓ on completed tasks (recentTasks ok outcome)", { skip }, () => {
+    const snap = {
+        currentPlan: { stages: ["FIX"] },
+        currentTaskList: { stage: "FIX", items: ["task-a", "task-b"] },
+        recentTasks: [
+            { stage: "FIX", sub: 1, outcome: "ok", desc: "task-a" },
+            { stage: "FIX", sub: 2, outcome: "ok", desc: "task-b" },
+        ],
+    };
+    const out = render(React.createElement(TasksPane, { snapshot: snap })).lastFrame();
+    assert.match(out, /✓/);
+    assert.match(out, /1\.1/);
+    assert.match(out, /1\.2/);
+});
+
+test("LastCommit.countCoAuthors: counts only Co-authored-by trailers", () => {
+    if (!inkAvailable) return;
+    assert.equal(countCoAuthors([
+        "Co-authored-by: Copilot <c@example.com>",
+        "Co-authored-by: ralph <r@example.com>",
+        "Closes #42",
+        "Refs #1",
+    ]), 2);
+    assert.equal(countCoAuthors([]), 0);
+    assert.equal(countCoAuthors(null), 0);
+});
+
+test("LastCommit: placeholder when no commit observed yet", { skip }, () => {
+    const out = render(React.createElement(LastCommit, { snapshot: {} })).lastFrame();
+    assert.match(out, /last commit/i);
+    assert.match(out, /none yet/i);
+});
+
+test("LastCommit: renders sha + subject + trailer count + co-author badge", { skip }, () => {
+    const snap = {
+        lastCommit: {
+            sha: "abc1234567890",
+            subject: "feat(x): test commit",
+            trailers: [
+                "Co-authored-by: Copilot <c@example.com>",
+                "Co-authored-by: ralph <r@example.com>",
+            ],
+        },
+    };
+    const out = render(React.createElement(LastCommit, { snapshot: snap })).lastFrame();
+    assert.match(out, /abc1234/);
+    assert.match(out, /feat\(x\): test commit/);
+    assert.match(out, /2 trailers/);
+    assert.match(out, /2 co-authors/);
+});
+
+test("App: 3-level layout — work item header, plan stages, tasks pane, last commit footer all surface together", { skip }, () => {
+    const events = [
+        { type: "armed", runId: "r1", label: "self_improve", maxIterations: 1000, minIterations: 1, ts: 1 },
+        { type: "iteration_start", runId: "r1", iteration: 1, ts: 2 },
+        { type: "workitem_start", runId: "r1", iteration: 1, kind: "issue", ref: 48,
+          title: "3-level hierarchical TUI", ts: 3 },
+        { type: "stage_plan", runId: "r1", iteration: 1, stages: ["DIAG", "FIX", "TEST"], ts: 4 },
+        { type: "stage_start", runId: "r1", iteration: 1, stage: 1, stageName: "DIAG", ts: 5 },
+        { type: "task_list", runId: "r1", iteration: 1, stage: "DIAG", items: ["read code", "form hypothesis"], ts: 6 },
+        { type: "task_start", runId: "r1", iteration: 1, stage: "DIAG", sub: 1, desc: "read code", ts: 7 },
+        { type: "commit_observed", runId: "r1", iteration: 1, sha: "deadbeef1234567",
+          subject: "feat(x): land 3-level renderer",
+          trailers: ["Co-authored-by: Copilot <c@example.com>"], ts: 8 },
+    ];
+    const out = render(React.createElement(App, { events, runId: "r1" })).lastFrame();
+    // L1: work item
+    assert.match(out, /#48/);
+    assert.match(out, /3-level hierarchical TUI/);
+    // L2: plan stages (must be DIAG/FIX/TEST, NOT canonical CRITIQUE etc.)
+    assert.match(out, /DIAG/);
+    assert.match(out, /FIX/);
+    // L3: tasks
+    assert.match(out, /read code/);
+    assert.match(out, /← this iter/);
+    // Footer: last commit
+    assert.match(out, /deadbee/);
+    assert.match(out, /land 3-level renderer/);
+});

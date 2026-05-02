@@ -308,6 +308,21 @@
   `1 character.` and `N characters.`.
 
 ### Refactor
+- Extract `pauseElapsedFromAt(pausedAt, now)` helper in
+  `extension/handler.mjs` and route the three formerly-
+  duplicated pause-elapsed call sites — `finish()`,
+  `ralph_status`, and `ralph_resume` — through it. Each
+  site previously open-coded `pausedAt > 0 ? Math.max(0,
+  now - pausedAt) : 0` (the never-paused sentinel + clock-
+  skew clamp), and pre-iter-154 the `ralph_resume` site
+  had drifted off the clamp entirely (fixed iter 154).
+  Centralising the expression makes that drift mechanically
+  impossible to reintroduce. The helper is exported via the
+  `__test__` bag and pinned with a direct unit test in
+  `test/extension.test.mjs` covering the never-paused
+  sentinel, the happy-path subtraction, and the backward-
+  skew clamp. Behaviour preserved (verified by the existing
+  664 tests staying green pre- and post-extract).
 - `packages/tui/src/writer.mjs`'s two throw-on-traversal call
   sites (`resolveRunEventsPath` and `createEventWriter`) now
   route through a shared `assertSafeRunId(fnName, runId)`

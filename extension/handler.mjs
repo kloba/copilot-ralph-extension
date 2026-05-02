@@ -514,6 +514,19 @@ function deepFreeze(obj) {
     return obj;
 }
 
+// Compute "elapsed ms since the active loop entered its current pause",
+// clamped to >= 0 so a backward system-clock jump (NTP correction,
+// manual clock change, daylight savings on a host without monotonic-
+// time backing) cannot credit a negative window. Returns 0 when
+// `pausedAt` is the never-paused sentinel (0). Centralised so all
+// three call sites (finish(), ralph_status, ralph_resume) share the
+// same skew-guard contract — pre-iter-155 the resume site had drifted
+// to an unclamped form (fixed in iter 154); having one helper makes
+// that drift mechanically impossible to reintroduce.
+function pauseElapsedFromAt(pausedAt, now) {
+    return pausedAt > 0 ? Math.max(0, now - pausedAt) : 0;
+}
+
 // ---------------------------------------------------------------------------
 // caffeinate integration (issue #8)
 //
@@ -1397,7 +1410,7 @@ export function createRalphController(opts = {}) {
         // still paused (e.g. the user calls ralph_stop without resuming),
         // also subtract the not-yet-banked current pause window so the
         // result is consistent regardless of pause/resume cadence.
-        const currentPauseMs = paused && pausedAt > 0 ? Math.max(0, finishedAt - pausedAt) : 0;
+        const currentPauseMs = paused ? pauseElapsedFromAt(pausedAt, finishedAt) : 0;
         const durationMs = Math.max(0, clampedElapsed(startedAt) - (totalPausedMs ?? 0) - currentPauseMs);
         const result = {
             reason,
@@ -1940,7 +1953,7 @@ export function createRalphController(opts = {}) {
             paused: a.paused === true,
             pause_reason: a.pauseReason ?? null,
             paused_at: a.paused && a.pausedAt > 0 ? new Date(a.pausedAt).toISOString() : null,
-            paused_for_ms: a.paused && a.pausedAt > 0 ? Math.max(0, now - a.pausedAt) : 0,
+            paused_for_ms: a.paused ? pauseElapsedFromAt(a.pausedAt, now) : 0,
             total_paused_ms: a.totalPausedMs ?? 0,
             // Issue #7: live token usage so the user can monitor budget
             // consumption against `max_tokens` mid-run without waiting
@@ -2218,7 +2231,7 @@ export function createRalphController(opts = {}) {
                 if (!a.paused) {
                     return failure(`ralph_resume: ${a.label} is not paused. Use ralph_pause first, or ralph_stop to cancel.`);
                 }
-                const pausedFor = a.pausedAt > 0 ? Math.max(0, Date.now() - a.pausedAt) : 0;
+                const pausedFor = pauseElapsedFromAt(a.pausedAt, Date.now());
                 a.totalPausedMs += pausedFor;
                 a.paused = false;
                 a.pauseReason = null;
@@ -2567,4 +2580,4 @@ export function createRalphController(opts = {}) {
     };
 }
 
-export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, classifyPorcelainLine, parseUserReason, coerceNumberField, VERSION, compareSemver, VERB_BY_REASON, isCaffeinateEnabled, resolveCaffeinateScope, caffeinateFlagsForScope, describeArgType, displayValue };
+export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, classifyPorcelainLine, parseUserReason, coerceNumberField, VERSION, compareSemver, VERB_BY_REASON, isCaffeinateEnabled, resolveCaffeinateScope, caffeinateFlagsForScope, describeArgType, displayValue, pauseElapsedFromAt };

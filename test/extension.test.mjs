@@ -10215,3 +10215,30 @@ test("ralph_resume: clamps pausedFor to >= 0 when system clock skews backward (c
         `totalPausedMs must remain >= 0 (got ${controller.state.active.totalPausedMs})`);
     await controller.tools.find((t) => t.name === "ralph_stop").handler({});
 });
+
+test("pauseElapsedFromAt: never-paused sentinel + clock-skew clamp (direct)", () => {
+    // Iter 155 — the helper extracted from three formerly-duplicated
+    // call sites (finish(), ralph_status, ralph_resume) that all
+    // computed "elapsed ms since pausedAt, clamped >= 0, with a
+    // never-paused sentinel of 0". Pre-iter-155 the resume site had
+    // drifted off the clamp (fixed iter 154); centralising the
+    // expression makes that drift mechanically impossible. Pin the
+    // contract directly so a future "simplify" pass that drops the
+    // clamp or the sentinel guard fires this test instead of
+    // sneaking through the integration paths.
+    const { pauseElapsedFromAt } = __test__;
+    // Never-paused sentinel: pausedAt === 0 → 0, regardless of `now`.
+    assert.equal(pauseElapsedFromAt(0, 0), 0);
+    assert.equal(pauseElapsedFromAt(0, 1_000_000), 0);
+    assert.equal(pauseElapsedFromAt(0, Date.now()), 0);
+    // Happy path: forward-running clock, normal subtraction.
+    assert.equal(pauseElapsedFromAt(100, 100), 0, "same-instant pause is 0ms");
+    assert.equal(pauseElapsedFromAt(100, 250), 150);
+    assert.equal(pauseElapsedFromAt(1_000_000, 1_001_500), 1500);
+    // Clock-skew clamp: now < pausedAt → 0, NOT a negative number.
+    assert.equal(pauseElapsedFromAt(100, 50), 0, "backward clock skew must clamp to 0");
+    assert.equal(pauseElapsedFromAt(2_000_000, 1_000_000), 0, "1Ms backward jump must still clamp to 0");
+    // Negative pausedAt is non-sensical but defensively returns 0
+    // (the `> 0` guard treats it as the never-paused sentinel branch).
+    assert.equal(pauseElapsedFromAt(-1, 1000), 0);
+});

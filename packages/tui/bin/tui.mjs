@@ -118,6 +118,26 @@ ENV
  *  `VALUE_FLAGS` AND update the USAGE block above so
  *  `ralph-tui --help` keeps matching the parser. */
 const VALUE_FLAGS = new Set(["older-than", "limit", "max", "focus", "prompt", "completion-promise", "abort-promise", "pause", "resume", "stop", "status"]);
+
+/** Default `--max` iterations per loop mode for `ralph-tui run`.
+ *
+ *  `self-improve` has no fixed scope: the agent's job is to drain the
+ *  entire backlog (failing CI runs, stale PRs, open issues, latent
+ *  improvements) and then assert ABORT_NO_IMPROVEMENTS. A 100-iter cap
+ *  makes the loop quit before the work is done, which is exactly the
+ *  failure mode issue #48 is fixing. So the default is the
+ *  runaway-guard ceiling (MAX_ALLOWED_ITERATIONS = 1000) — explicit
+ *  `--max N` still wins, and the renderer shows "iter X of ∞" when
+ *  the effective max is the ceiling.
+ *
+ *  `grow-project` drains a finite GitHub-issue backlog and `prompt`
+ *  takes a user-supplied scope (often a one-shot task); both keep
+ *  the conservative DEFAULT_MAX_ITERATIONS = 100 default. */
+export function defaultMaxIterationsFor(mode, runner) {
+    if (mode === "self-improve") return runner.MAX_ALLOWED_ITERATIONS;
+    return runner.DEFAULT_MAX_ITERATIONS;
+}
+
 export function parseArgv(argv) {
     const out = { cmd: null, positional: [], flags: {} };
     const args = [...argv];
@@ -469,7 +489,7 @@ export async function cmdRun(flags) {
         return 2;
     }
 
-    let max = runner.DEFAULT_MAX_ITERATIONS;
+    let max;
     if (flags.max !== undefined) {
         if (flags.max === true) { fail(`run --max: requires an integer value`); return 2; }
         const n = Number(String(flags.max).trim());
@@ -478,6 +498,8 @@ export async function cmdRun(flags) {
             return 2;
         }
         max = n;
+    } else {
+        max = defaultMaxIterationsFor(mode, runner);
     }
 
     const focus = flags.focus !== undefined && flags.focus !== true ? String(flags.focus) : undefined;

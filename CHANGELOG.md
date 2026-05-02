@@ -3,6 +3,19 @@
 ## Unreleased
 
 ### Features
+- `ralph-tui run --self-improve` no longer caps at 100 iterations
+  by default. The default `--max` for `--self-improve` mode is now
+  the runaway-guard ceiling (`MAX_ALLOWED_ITERATIONS = 1000`),
+  matching the loop's job: drain the entire backlog and assert
+  `ABORT_NO_IMPROVEMENTS`. The 100-iter cap was stopping the loop
+  while real backlog items were still actionable — exactly the
+  failure mode issue #48 is fixing. Explicit `--max N` still
+  wins; `--grow-project` and `--prompt` keep the conservative
+  100-iter default since their scope is finite and user-supplied.
+  New exported helper `defaultMaxIterationsFor(mode, runner)` in
+  `packages/tui/bin/tui.mjs` resolves the per-mode default and is
+  pinned by tests in `packages/tui/test/bin.test.mjs`.
+
 - `PROMPT_SELF_IMPROVE` and `PROMPT_GROW_PROJECT` now instruct the
   agent to emit `[STAGE: NAME]` markers on a line by themselves as
   it enters each numbered SDLC stage (`[STAGE: ORIENT]`,

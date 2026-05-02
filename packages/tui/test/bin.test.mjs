@@ -693,3 +693,34 @@ test("VALUE_FLAGS JSDoc comment lists every flag actually in the set (drift guar
         );
     }
 });
+
+// ─── Issue #48 slice 3: scope-driven default for `ralph-tui run --max` ──
+
+import { defaultMaxIterationsFor } from "../bin/tui.mjs";
+import * as __runner from "../src/runner.mjs";
+
+test("defaultMaxIterationsFor: self-improve → MAX_ALLOWED_ITERATIONS (unbounded by default)", () => {
+    // self-improve drains the whole backlog — a 100-iter cap stops the
+    // loop while work is left undone (issue #48). The runaway-guard
+    // ceiling is the right default; explicit --max N still wins.
+    assert.equal(defaultMaxIterationsFor("self-improve", __runner), __runner.MAX_ALLOWED_ITERATIONS);
+    assert.ok(__runner.MAX_ALLOWED_ITERATIONS > __runner.DEFAULT_MAX_ITERATIONS,
+        "MAX_ALLOWED_ITERATIONS must exceed DEFAULT_MAX_ITERATIONS, otherwise the new default would not actually unblock self-improve");
+});
+
+test("defaultMaxIterationsFor: grow-project → DEFAULT_MAX_ITERATIONS (finite backlog)", () => {
+    // grow-project drains a finite GitHub-issue backlog. The 100-iter
+    // default is plenty and prevents a runaway when the agent fails to
+    // emit ABORT_NO_BACKLOG.
+    assert.equal(defaultMaxIterationsFor("grow-project", __runner), __runner.DEFAULT_MAX_ITERATIONS);
+});
+
+test("defaultMaxIterationsFor: prompt → DEFAULT_MAX_ITERATIONS (user-supplied scope)", () => {
+    assert.equal(defaultMaxIterationsFor("prompt", __runner), __runner.DEFAULT_MAX_ITERATIONS);
+});
+
+test("defaultMaxIterationsFor: unknown mode → DEFAULT_MAX_ITERATIONS (safe fallback)", () => {
+    assert.equal(defaultMaxIterationsFor("future-mode", __runner), __runner.DEFAULT_MAX_ITERATIONS);
+    assert.equal(defaultMaxIterationsFor(undefined, __runner), __runner.DEFAULT_MAX_ITERATIONS);
+    assert.equal(defaultMaxIterationsFor("", __runner), __runner.DEFAULT_MAX_ITERATIONS);
+});

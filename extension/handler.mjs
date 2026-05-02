@@ -173,8 +173,12 @@ const TOKEN_WARNING_THRESHOLDS = Object.freeze([80, 95]);
 
 
 // Map finish reason → log-line verb. Reasons not listed fall through
-// to "⏹ stopped" (max_iterations, user_stopped, detached, max_tokens —
-// neutral exits where the loop ran to a configured boundary).
+// to "⏹ stopped" (max_iterations, user_stopped, detached — neutral
+// exits where the loop ran to a configured boundary). max_tokens has
+// an explicit table entry below for defensive double-coverage so a
+// future "trim VERB_BY_REASON" refactor that drops the `??` fallback
+// can't silently turn token-budget exits into the wrong verb; it is
+// conceptually another neutral exit and renders identically.
 //   ✅ completed — completion_promise
 //   ⚠️  ended   — send_error, aborted, abort_promise, stagnation
 //                 (something went wrong; mirrors the ABORT_REASONS
@@ -2563,4 +2567,4 @@ export function createRalphController(opts = {}) {
     };
 }
 
-export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, classifyPorcelainLine, parseUserReason, coerceNumberField, VERSION, compareSemver };
+export const __test__ = { DEFAULTS, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, MAX_PROMPT_CHARS, MAX_PROMISE_CHARS, MAX_CONTENT_CHARS, MAX_FOCUS_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW, reprefixRalphLoopError, gitAheadBehind, gitUncommittedLines, classifyPorcelainLine, parseUserReason, coerceNumberField, VERSION, compareSemver, VERB_BY_REASON };

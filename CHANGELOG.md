@@ -528,6 +528,24 @@
   time instead of as a misleading green check on `main`.
 
 ### Documentation
+- `extension/handler.mjs`'s `VERB_BY_REASON` header comment
+  drifted away from the table: pre-iter-143 it claimed
+  `max_tokens` "falls through to ⏹ stopped" alongside
+  `max_iterations`, `user_stopped`, and `detached`, but the
+  table actually has an explicit
+  `max_tokens: "⏹ stopped"` entry. Behaviour was correct
+  (the explicit entry returns the same string the fallback
+  would have produced), but the comment misled anyone
+  auditing the verb ladder. Updated the comment to
+  acknowledge `max_tokens` has an explicit entry for
+  defensive double-coverage and pin the contract with a
+  drift-guard test in `test/extension.test.mjs`:
+  `max_tokens` MUST stay in `VERB_BY_REASON`,
+  `max_iterations` / `user_stopped` / `detached` MUST stay
+  out (the comment's "fall through" claim depends on it).
+  Regression catch verified by adding a redundant
+  `max_iterations: "⏹ stopped"` entry — the targeted test
+  fires.
 - `packages/tui/bin/tui.mjs`'s top-of-file `// Subcommands:`
   comment block now lists all 7 currently-shipped subcommands
   (`list`, `replay`, `watch`, `doctor`, `prune`, `stats`,

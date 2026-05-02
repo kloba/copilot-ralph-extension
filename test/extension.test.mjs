@@ -9826,3 +9826,40 @@ test("install.sh --dry-run prints Direction line covering fresh / no-op / upgrad
         rmSync(sandboxHome, { recursive: true, force: true });
     }
 });
+
+// Iter 143 — drift guard for the VERB_BY_REASON header comment in
+// extension/handler.mjs. Pre-iter-143 the comment claimed "max_tokens
+// falls through to ⏹ stopped" but the table actually had an explicit
+// `max_tokens: "⏹ stopped"` entry. Behaviour was correct (the explicit
+// entry returns the same string the fallback would have produced) but
+// the comment misled anyone auditing the table. Pin both directions:
+//   - max_tokens MUST stay in the table (defensive double-coverage so
+//     a future "trim the `??` fallback" refactor can't silently turn
+//     token-budget exits into the wrong verb).
+//   - max_iterations / user_stopped / detached MUST stay OUT of the
+//     table (they intentionally exercise the fallback so the comment's
+//     "fall through" claim stays accurate).
+test("VERB_BY_REASON: max_tokens has explicit entry; neutral exits fall through (comment-vs-code drift guard)", () => {
+    const { VERB_BY_REASON } = __test__;
+    // Explicit entries — comment says "max_tokens has explicit entry below".
+    assert.equal(VERB_BY_REASON.max_tokens, "⏹ stopped",
+        "max_tokens must have an explicit `⏹ stopped` entry (defensive double-coverage if the `??` fallback is ever dropped)");
+    // ✅ completed and ⚠️ ended ladders are pinned by other tests; reaffirm
+    // here so a refactor that flattens VERB_BY_REASON also trips this guard.
+    assert.equal(VERB_BY_REASON.completion_promise, "✅ completed");
+    for (const reason of ["send_error", "aborted", "abort_promise", "stagnation"]) {
+        assert.equal(VERB_BY_REASON[reason], "⚠️ ended",
+            `${reason} must map to ⚠️ ended (something went wrong)`);
+    }
+    // Fallback reasons MUST NOT appear in the table — the comment's
+    // "fall through" claim depends on this. If a future PR adds e.g.
+    // `max_iterations: "⏹ stopped"`, the comment becomes inaccurate
+    // again and this test fires.
+    for (const reason of ["max_iterations", "user_stopped", "detached"]) {
+        assert.equal(
+            Object.prototype.hasOwnProperty.call(VERB_BY_REASON, reason),
+            false,
+            `${reason} must NOT have an explicit VERB_BY_REASON entry — the header comment claims it falls through. Either remove the entry or update the comment.`,
+        );
+    }
+});

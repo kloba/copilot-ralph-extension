@@ -24,6 +24,19 @@
   either value is caught at test time.
 
 ### Fixes
+- `install.sh` now exits 0 on a successful install. Every
+  install.sh test before this fix used `--dry-run` (which
+  exits before the EXIT trap is armed), so a latent bug in
+  the `cleanup()` trap was invisible: when every temp file
+  had been consumed by its `mv`, the trap's per-file
+  `[[ -e $tmp ]] && rm -f $tmp` returned false, and bash
+  propagated that as the script's exit code — meaning a
+  clean install ALWAYS reported failure to the caller even
+  though every byte landed correctly. Added a trailing
+  `return 0` to `cleanup()` plus two tests: an end-to-end
+  install in a sandbox HOME asserting exit 0, and a
+  source-level drift guard pinning the explicit `return 0`
+  so a future refactor can't silently re-introduce the bug.
 - `resolveRunsRoot` now `.trim()`s the `RALPH_EVENTS_DIR`
   override before returning it. Shells routinely leak stray
   leading/trailing whitespace into env vars (heredoc

@@ -8804,3 +8804,51 @@ test("packages/tui ships a committed package-lock.json (Dependabot prerequisite)
     assert.ok(typeof lock.lockfileVersion === "number" && lock.lockfileVersion >= 2,
         `packages/tui/package-lock.json must be lockfileVersion ≥ 2 (npm ≥ 7) for dependabot's deterministic resolve; got ${lock.lockfileVersion}`);
 });
+
+// Iter 108 — install.sh's cleanup() trap iterates TMP_FILES and runs
+// `[[ -e $tmp ]] && rm -f $tmp` on each. After a successful install,
+// every `mv` has consumed its temp, so every `[[ -e $tmp ]]` returns
+// false; the short-circuit `&&` then makes the function's last
+// command return non-zero, and the EXIT trap propagates that as the
+// SCRIPT's exit code — so `./install.sh` ALWAYS exited 1 on a
+// successful install. (Every install.sh test before iter 108 used
+// `--dry-run`, which exits before the trap is armed, so the bug was
+// invisible to the test suite.) The fix is a trailing `return 0` in
+// cleanup() so the trap returns 0 when no real failure occurred.
+// Real failures still propagate via the explicit `exit 1` BEFORE
+// the trap fires.
+test("install.sh: a successful (non-dry-run) install exits 0 (cleanup trap must not propagate non-zero)", async () => {
+    const sandboxHome = mkdtempSync(join(tmpdir(), "ralph-install-exit0-"));
+    try {
+        const r = spawnSync(
+            "bash",
+            [resolve(REPO_ROOT, "install.sh")],
+            { encoding: "utf8", env: { ...process.env, HOME: sandboxHome } },
+        );
+        assert.equal(r.status, 0,
+            `install.sh exited ${r.status} after a clean run; cleanup() trap must return 0 when no real failure occurred. stdout=${r.stdout}; stderr=${r.stderr}`);
+        assert.match(r.stdout, /Installed ralph extension/,
+            "stdout must include the success line; install.sh should run end-to-end");
+        // Sanity: every file landed.
+        const installedDir = `${sandboxHome}/.copilot/extensions/ralph`;
+        for (const f of ["extension.mjs", "handler.mjs", "events-emit.mjs"]) {
+            assert.ok(existsSync(`${installedDir}/${f}`),
+                `${f} must be present in the installed dir after a clean install`);
+        }
+    } finally {
+        rmSync(sandboxHome, { recursive: true, force: true });
+    }
+});
+
+test("install.sh: cleanup() returns 0 explicitly so the EXIT trap cannot leak a `[[ -e ]]` false from the loop", () => {
+    // Drift-guard the source-level fix: the `cleanup()` body must
+    // end with `return 0` (after the loop). A future refactor that
+    // drops the explicit return would re-introduce the iter 108 bug
+    // — silent exit-1 on every successful install — without any
+    // user-visible warning. Pin the literal source pattern.
+    const installSh = readFileSync(resolve(REPO_ROOT, "install.sh"), "utf8");
+    const m = installSh.match(/cleanup\(\)\s*\{[\s\S]*?\n\}/m);
+    assert.ok(m, "install.sh must declare a `cleanup()` function for the EXIT trap");
+    assert.match(m[0], /return\s+0\s*\n\s*\}\s*$/m,
+        "cleanup() must end with an explicit `return 0` so the EXIT trap doesn't propagate the loop's last `[[ -e ]]` false as the script's exit code");
+});

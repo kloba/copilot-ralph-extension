@@ -156,6 +156,15 @@ cleanup() {
   for tmp in ${TMP_FILES[@]+"${TMP_FILES[@]}"}; do
     [[ -e "$tmp" ]] && rm -f "$tmp"
   done
+  # The `[[ -e "$tmp" ]] && rm -f` short-circuit returns the exit code
+  # of whichever side evaluated last, so when no temp file remains
+  # after a clean install (every `mv` succeeded) the trap returns 1
+  # — and bash then propagates that as the SCRIPT's exit code on
+  # EXIT, even though every install step succeeded. Force a 0 return
+  # so a successful install ALWAYS reports success to the caller; an
+  # explicit early exit before the trap fires preserves error codes
+  # from real failures.
+  return 0
 }
 trap cleanup EXIT
 for f in "${FILES[@]}"; do

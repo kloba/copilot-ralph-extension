@@ -5287,7 +5287,7 @@ test("install.sh: rejects duplicate flags and unknown arguments", () => {
     assert.match(unknown.stderr, /unknown argument/);
 });
 
-test("scripts/ralph-tui-fresh.sh: shape, shebang, and only-when-run gate", () => {
+test("scripts/autopilot-fresh.sh: shape, shebang, and only-when-run gate", () => {
     // Drift guard for the auto-upgrade wrapper. Each assertion below
     // pins a specific safety property documented in the script's
     // header comment + the `Auto-upgrade for each run` subsection
@@ -5296,9 +5296,9 @@ test("scripts/ralph-tui-fresh.sh: shape, shebang, and only-when-run gate", () =>
     // dropping `set -euo pipefail`, removing the `|| true` failure
     // swallow, or relocating the entry point Node script) trips the
     // matching assertion before merge.
-    const wrapperPath = resolve(REPO_ROOT, "scripts/ralph-tui-fresh.sh");
+    const wrapperPath = resolve(REPO_ROOT, "scripts/autopilot-fresh.sh");
     const src = readFileSync(wrapperPath, "utf8");
-    // Shebang — invocation via `./scripts/ralph-tui-fresh.sh` requires
+    // Shebang — invocation via `./scripts/autopilot-fresh.sh` requires
     // the kernel to find `bash` via env.
     assert.match(src, /^#!\/usr\/bin\/env bash\n/,
         "wrapper must start with `#!/usr/bin/env bash` shebang");
@@ -5309,7 +5309,7 @@ test("scripts/ralph-tui-fresh.sh: shape, shebang, and only-when-run gate", () =>
         "wrapper must `set -euo pipefail` so typos surface loudly");
     // Only-when-`run` gate. Pin the literal "$1" branch shape so a
     // refactor that fires the upgrade on every invocation (which
-    // would make `ralph-tui list` feel laggy) trips this test.
+    // would make `autopilot list` feel laggy) trips this test.
     assert.match(src, /\[\[ "\$\{1:-\}" == "run" \]\]/,
         'wrapper must guard the upgrade behind `[[ "${1:-}" == "run" ]]`');
     // Silent failure mode — pin the `git pull --quiet --ff-only`
@@ -5331,21 +5331,21 @@ test("scripts/ralph-tui-fresh.sh: shape, shebang, and only-when-run gate", () =>
         'wrapper must end with `exec node "$ROOT/packages/tui/bin/tui.mjs" "$@"` so signals + exit code propagate from Node, not from bash');
 });
 
-test("scripts/ralph-tui-fresh.sh: file mode includes execute bit", () => {
-    // Without the +x bit, `./scripts/ralph-tui-fresh.sh` from a fresh
+test("scripts/autopilot-fresh.sh: file mode includes execute bit", () => {
+    // Without the +x bit, `./scripts/autopilot-fresh.sh` from a fresh
     // clone fails with EACCES even though the shebang line is correct.
     // chmod is set at file-creation time; this test pins it so a
     // future commit that recreates the file (e.g. via a string-edit
     // tool that drops mode bits) doesn't silently regress to 644.
-    const wrapperPath = resolve(REPO_ROOT, "scripts/ralph-tui-fresh.sh");
+    const wrapperPath = resolve(REPO_ROOT, "scripts/autopilot-fresh.sh");
     const st = statSync(wrapperPath);
     // Owner execute bit (0o100). Group/other bits are not pinned —
     // umask differs per contributor, but +x for owner is mandatory.
     assert.ok((st.mode & 0o100) !== 0,
-        `scripts/ralph-tui-fresh.sh must be executable (got mode 0${(st.mode & 0o777).toString(8)})`);
+        `scripts/autopilot-fresh.sh must be executable (got mode 0${(st.mode & 0o777).toString(8)})`);
 });
 
-test("scripts/ralph-tui-fresh.sh: non-`run` subcommand skips upgrade and passes through to bin/tui.mjs", () => {
+test("scripts/autopilot-fresh.sh: non-`run` subcommand skips upgrade and passes through to bin/tui.mjs", () => {
     // End-to-end smoke: invoke the wrapper with `--help` (which is
     // NOT `run`) and assert that bin/tui.mjs's USAGE is printed and
     // the exit code is 0. Two failure modes this catches:
@@ -5357,12 +5357,54 @@ test("scripts/ralph-tui-fresh.sh: non-`run` subcommand skips upgrade and passes 
     // Running with `--help` keeps the test sub-second and offline.
     const r = spawnSync(
         "bash",
-        [resolve(REPO_ROOT, "scripts/ralph-tui-fresh.sh"), "--help"],
+        [resolve(REPO_ROOT, "scripts/autopilot-fresh.sh"), "--help"],
         { encoding: "utf8", timeout: 10_000 },
     );
     assert.equal(r.status, 0, `--help exited ${r.status}; stderr=${r.stderr}`);
     assert.match(r.stdout, /autopilot — terminal visualizer/,
         "wrapper must passthrough `--help` to bin/tui.mjs's USAGE block");
+});
+
+test("scripts/ralph-tui-fresh.sh: deprecating wrapper that execs autopilot-fresh.sh", () => {
+    // Decision C (issue #49): the legacy script becomes a thin
+    // deprecating wrapper that prints a one-line stderr notice and
+    // execs the canonical `scripts/autopilot-fresh.sh`. Pin the
+    // shape so a future "simplify" pass that drops the notice
+    // (silent rename) or replaces `exec` with a plain call (signals
+    // / exit code regress) trips this test.
+    const wrapperPath = resolve(REPO_ROOT, "scripts/ralph-tui-fresh.sh");
+    const src = readFileSync(wrapperPath, "utf8");
+    assert.match(src, /^#!\/usr\/bin\/env bash\n/,
+        "deprecating wrapper must start with `#!/usr/bin/env bash` shebang");
+    assert.match(src, /deprecated/i,
+        "deprecating wrapper must mention deprecation in its body so users see a notice");
+    assert.match(src, /autopilot-fresh\.sh/,
+        "deprecating wrapper must point users at scripts/autopilot-fresh.sh");
+    assert.match(src, /^exec ".*autopilot-fresh\.sh" "\$@"$/m,
+        "deprecating wrapper must `exec` the canonical script with `$@` so signals + exit code propagate");
+    // File mode — the wrapper is invoked directly via alias on
+    // legacy installs, so the +x bit must survive the rewrite.
+    const st = statSync(wrapperPath);
+    assert.ok((st.mode & 0o100) !== 0,
+        `scripts/ralph-tui-fresh.sh must be executable (got mode 0${(st.mode & 0o777).toString(8)})`);
+});
+
+test("scripts/ralph-tui-fresh.sh: emits deprecation notice on stderr and forwards to autopilot-fresh.sh", () => {
+    // End-to-end smoke for Decision C: invoke the legacy wrapper
+    // with `--help` (NOT `run`, so no network round-trip) and
+    // assert (a) the deprecation notice landed on stderr, (b) the
+    // canonical script's stdout (bin/tui.mjs USAGE) was forwarded,
+    // and (c) the exit code is 0 (Node's, not bash's).
+    const r = spawnSync(
+        "bash",
+        [resolve(REPO_ROOT, "scripts/ralph-tui-fresh.sh"), "--help"],
+        { encoding: "utf8", timeout: 10_000 },
+    );
+    assert.equal(r.status, 0, `--help exited ${r.status}; stderr=${r.stderr}`);
+    assert.match(r.stderr, /deprecated/i,
+        "legacy wrapper must print a deprecation notice on stderr");
+    assert.match(r.stdout, /ralph-tui — terminal visualizer/,
+        "legacy wrapper must passthrough `--help` to bin/tui.mjs's USAGE block via autopilot-fresh.sh");
 });
 
 test("packages/tui/README.md: documents the ralph-tui-fresh.sh wrapper", () => {

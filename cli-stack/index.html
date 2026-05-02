@@ -676,7 +676,7 @@ rather than internet folklore.</p>
 and are only required for the interactive Ink-rendered <code>watch</code> / <code>run</code>
 UI. The non-render layer (<code>prompts.mjs</code>, <code>runner.mjs</code>, <code>events*.mjs</code>,
 <code>writer.mjs</code>, <code>tail.mjs</code>, <code>plain.mjs</code>, <code>bin/tui.mjs</code>) is zero-dep so
-plain-mode <code>ralph-tui list</code> / <code>replay</code> / <code>watch --plain</code> runs straight
+plain-mode <code>autopilot list</code> / <code>replay</code> / <code>watch --plain</code> runs straight
 from a fresh source checkout with no <code>npm install</code>.</p>
 <h2 id="why-ink">Why Ink?<a class="headerlink" href="#why-ink" title="Permanent link">&para;</a></h2>
 <p>Ink lets you build terminal UIs with React's component model. The
@@ -719,7 +719,7 @@ the extension's webview stays consistent with the CLI.</p>
 <h2 id="why-commander">Why Commander?<a class="headerlink" href="#why-commander" title="Permanent link">&para;</a></h2>
 <p>Commander has been the dominant Node CLI parser since 2011 and is
 what tools like ESLint, Vue CLI, and <code>pnpm</code> ship with. The reasons
-for picking it for <code>ralph-tui</code>:</p>
+for picking it for <code>autopilot</code>:</p>
 <ul>
 <li><strong>Subcommand ergonomics.</strong> <code>program.command("replay &lt;runId&gt;")</code> and
   <code>program.command("watch [runId]")</code> map 1:1 to our <code>cmd</code> switch.</li>

@@ -522,13 +522,13 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#ralph-tui-run-the-driver" class="md-nav__link">
+  <a href="#autopilot-run-the-driver" class="md-nav__link">
     <span class="md-ellipsis">
-      ralph-tui run — the driver
+      autopilot run — the driver
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="ralph-tui run — the driver">
+    <nav class="md-nav" aria-label="autopilot run — the driver">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -629,14 +629,14 @@
 <h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h1>
 <p>This document is for contributors and future-self maintenance. End-user docs live in the <a href="../README.md">README</a>. For local-dev setup see <a href="../CONTRIBUTING/">CONTRIBUTING.md</a>.</p>
 <h2 id="what-ships">What ships<a class="headerlink" href="#what-ships" title="Permanent link">&para;</a></h2>
-<p>The project ships a single artifact: the <code>ralph-tui</code> CLI. It drives autonomous Copilot CLI loops by spawning each iteration as a fresh <code>copilot -p ...</code> subprocess, parses the JSONL stdout for terminal markers, and tails a per-run <code>events.jsonl</code> event stream so a separate terminal can <code>ralph-tui watch</code> the live timeline.</p>
+<p>The project ships a single artifact: the <code>autopilot</code> CLI. It drives autonomous Copilot CLI loops by spawning each iteration as a fresh <code>copilot -p ...</code> subprocess, parses the JSONL stdout for terminal markers, and tails a per-run <code>events.jsonl</code> event stream so a separate terminal can <code>autopilot watch</code> the live timeline.</p>
 <p>The previous in-session Copilot CLI extension (<code>ralph_loop</code> / <code>self_improve</code> / <code>grow_project</code> / <code>ralph_status</code> / <code>ralph_pause</code> / <code>ralph_resume</code> / <code>ralph_stop</code> tools) was retired — see <a href="../CHANGELOG.md"><code>CHANGELOG.md</code></a>. All forward work lives in <code>packages/tui/</code>.</p>
 <h2 id="source-layout">Source layout<a class="headerlink" href="#source-layout" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>packages/tui/
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── bin/tui.mjs        # CLI entry — argv parser + dispatcher
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── src/
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│   ├── prompts.mjs    # Baked SDLC prompts (PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT)
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│   ├── runner.mjs     # `ralph-tui run` driver — spawns each iter, tracks state.json
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│   ├── runner.mjs     # `autopilot run` driver — spawns each iter, tracks state.json
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│   ├── events.mjs     # Pure event contract (read side)
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│   ├── events-emit.mjs # Zero-dep JSONL emitter (write side)
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│   ├── writer.mjs     # JSONL reader + index aggregator (`list`/`stats`/`prune`)
@@ -651,7 +651,7 @@
 <a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>├── check.mjs          # Portable equivalent of CI&#39;s syntax-check job
 <a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>└── ralph-tui-fresh.sh # Optional `git pull --ff-only` wrapper for long runs
 </code></pre></div>
-<h2 id="ralph-tui-run-the-driver"><code>ralph-tui run</code> — the driver<a class="headerlink" href="#ralph-tui-run-the-driver" title="Permanent link">&para;</a></h2>
+<h2 id="autopilot-run-the-driver"><code>autopilot run</code> — the driver<a class="headerlink" href="#autopilot-run-the-driver" title="Permanent link">&para;</a></h2>
 <p><a href="../packages/tui/src/runner.mjs"><code>runner.mjs</code></a> is the heart of the project. Each iteration is a fresh subprocess:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>copilot -p &quot;&lt;baked or user prompt&gt;&quot; --allow-all-tools --output-format json [--resume &lt;sessionId&gt;]
 </code></pre></div>
@@ -686,7 +686,7 @@
 <tbody>
 <tr>
 <td><code>armed</code></td>
-<td>Once per run, on driver start. Also written to <code>&lt;runs-root&gt;/index.jsonl</code> so <code>ralph-tui list</code> / <code>stats</code> can enumerate without scanning every per-run dir.</td>
+<td>Once per run, on driver start. Also written to <code>&lt;runs-root&gt;/index.jsonl</code> so <code>autopilot list</code> / <code>stats</code> can enumerate without scanning every per-run dir.</td>
 </tr>
 <tr>
 <td><code>iteration_start</code></td>
@@ -727,10 +727,10 @@
 </ul>
 <h2 id="pause-resume-stop-status">Pause / resume / stop / status<a class="headerlink" href="#pause-resume-stop-status" title="Permanent link">&para;</a></h2>
 <p>Out-of-band flags written to the run's <code>state.json</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ralph-tui<span class="w"> </span>run<span class="w"> </span>--pause<span class="w">   </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># set pauseRequested=true</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>ralph-tui<span class="w"> </span>run<span class="w"> </span>--resume<span class="w">  </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># clear pauseRequested</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>ralph-tui<span class="w"> </span>run<span class="w"> </span>--stop<span class="w">    </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># set stopRequested=true</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>ralph-tui<span class="w"> </span>run<span class="w"> </span>--status<span class="w">  </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># read state.json + render</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>autopilot<span class="w"> </span>run<span class="w"> </span>--pause<span class="w">   </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># set pauseRequested=true</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>autopilot<span class="w"> </span>run<span class="w"> </span>--resume<span class="w">  </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># clear pauseRequested</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>autopilot<span class="w"> </span>run<span class="w"> </span>--stop<span class="w">    </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># set stopRequested=true</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>autopilot<span class="w"> </span>run<span class="w"> </span>--status<span class="w">  </span>&lt;runId&gt;<span class="w">     </span><span class="c1"># read state.json + render</span>
 </code></pre></div>
 <p>The driver re-reads <code>state.json</code> at every iter boundary; the in-flight Copilot child is <strong>never killed mid-iter</strong> — the driver waits for natural exit before honoring pause/stop. <code>SIGINT</code> / <code>SIGTERM</code> at the driver process maps onto <code>--stop</code> via the same lock-protected CAS path.</p>
 <h2 id="test-architecture">Test architecture<a class="headerlink" href="#test-architecture" title="Permanent link">&para;</a></h2>
@@ -741,7 +741,7 @@
 <li>The reader-side tests (<code>writer.test.mjs</code>, <code>events.test.mjs</code>, <code>tail.test.mjs</code>) sandbox into <code>mkdtempSync</code>-allocated dirs and pin the JSONL contract.</li>
 </ul>
 <h2 id="why-we-removed-the-in-session-extension">Why we removed the in-session extension<a class="headerlink" href="#why-we-removed-the-in-session-extension" title="Permanent link">&para;</a></h2>
-<p>The original project began as an in-session Copilot CLI extension that exposed <code>ralph_loop</code> / <code>self_improve</code> / <code>grow_project</code> tools to the active Copilot session via the <code>@github/copilot-sdk/extension</code> SDK's <code>joinSession</code> + <code>session.idle</code> event contract. The TUI driver (<code>ralph-tui run</code>) eventually grew to cover every feature of the in-session tools — same baked prompts, same pause/resume/stop/status, same adaptive budget — without imposing the SDK contract on every cross-cutting change.</p>
+<p>The original project began as an in-session Copilot CLI extension that exposed <code>ralph_loop</code> / <code>self_improve</code> / <code>grow_project</code> tools to the active Copilot session via the <code>@github/copilot-sdk/extension</code> SDK's <code>joinSession</code> + <code>session.idle</code> event contract. The TUI driver (<code>autopilot run</code>) eventually grew to cover every feature of the in-session tools — same baked prompts, same pause/resume/stop/status, same adaptive budget — without imposing the SDK contract on every cross-cutting change.</p>
 <p>Maintaining both engines required keeping every prompt change, every event-vocabulary entry, and every adaptive-budget tweak in lockstep across two implementations. Deleting the in-session engine retired that whole drift surface. See issue #50 for the full rationale.</p>
 
 

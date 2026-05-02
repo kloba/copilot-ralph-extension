@@ -6906,3 +6906,35 @@ test("ralph_pause: pause-time content does NOT accumulate into state.lastAssista
     assert.equal(controller.state.lastAssistantContent, beforePauseContent,
         "pause-time assistant.message content must NOT accumulate into lastAssistantContent");
 });
+
+test("docs/concepts.md documents the iter-57 + iter-59 pause/resume isolation contracts", () => {
+    // Drift guard: iters 57 + 59 changed the observable pause/resume
+    // contract — pause-time chat is isolated from token budget AND
+    // completion/abort evaluation, and ralph_resume resets the
+    // lastAssistantContent buffer in addition to the stagnation
+    // streak. Pin the doc so a future "trim the page" PR can't strip
+    // these contracts without flagging.
+    const concepts = readFileSync(resolve(REPO_ROOT, "docs/concepts.md"), "utf8");
+    // Token budget isolation (iter 59).
+    assert.match(concepts, /Token budget isolation/i);
+    assert.match(concepts, /not credited to[\s\S]*tokens\.input[\s\S]*tokens\.output/);
+    assert.match(concepts, /max_tokens/);
+    // Completion / abort isolation (iter 57 + iter 59 root-cause defense).
+    assert.match(concepts, /Completion \/ abort isolation/i);
+    assert.match(concepts, /COMPLETE when the refactor lands/);
+    // Resume-time resets table — must list lastAssistantContent.
+    assert.match(concepts, /resets `streak` \/ `prev` \/ `lastAssistantContent`/);
+});
+
+test("README pause/resume bullet lists the iter-59 token + completion isolation contract", () => {
+    // Companion drift guard for the README — the canonical user-
+    // facing summary must stay in sync with docs/concepts.md and the
+    // actual handler behavior. A "simplify the bullets" PR could
+    // otherwise strip the contract without breaking any code test.
+    const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf8");
+    assert.match(readme, /Pause-time chat is isolated from loop bookkeeping/);
+    assert.match(readme, /max_tokens/);
+    assert.match(readme, /completion_promise[\s\S]*abort_promise/);
+    // Cross-reference into concepts.md must remain pointable.
+    assert.match(readme, /docs\/concepts\.md/);
+});

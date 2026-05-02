@@ -344,6 +344,7 @@ ralph_resume();
 
 - The currently-running iteration finishes normally; subsequent `session.idle` events are short-circuited until `ralph_resume`.
 - Iteration counter, prompt, and full conversation context are preserved across the pause.
+- **Pause-time chat is isolated from loop bookkeeping.** Tokens consumed during your pause-time conversation are not credited to the loop's budget (so a long chat cannot spuriously trip a configured `max_tokens` cap on resume), and your pause-time messages are not inspected for the configured `completion_promise` / `abort_promise` triggers (so a casual mention of the phrase will not terminate the loop). See [Concepts → Pause / resume semantics](./docs/concepts.md#pause--resume-semantics) for the full contract and the trade-off (an in-flight iter completion signal that landed right before pause is forfeited; you can still inspect it via `ralph_status.last_response_excerpt`).
 - `ralph_resume` resets the stagnation streak (manual intervention almost always changes context, so a post-resume identical-to-pre-pause turn must NOT be misclassified as stuck).
 - `ralph_pause` is idempotent: pausing an already-paused loop is a no-op success.
 - `ralph_stop` works while paused and terminates the loop.

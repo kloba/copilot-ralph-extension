@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Documentation
+- Document the iter-57 + iter-59 pause/resume isolation contract in
+  `docs/concepts.md` and the README. Pause-time chat is now isolated
+  from the loop's token budget AND from completion/abort evaluation,
+  and `ralph_resume` resets `lastAssistantContent` in addition to the
+  stagnation streak — but the previous docs only mentioned the
+  streak reset, leaving the new contract undocumented. The expanded
+  "Pause / resume semantics" section now covers both isolation
+  layers, the trade-off (an in-flight iter completion signal that
+  landed right before pause is forfeited), and the resume-time
+  resets table now lists all three reset fields. Two drift-guard
+  tests pin the new wording in both files.
+
 ### Fixes
 - `onAssistantMessage` now short-circuits when the
   loop is paused, preventing pause-time chat from

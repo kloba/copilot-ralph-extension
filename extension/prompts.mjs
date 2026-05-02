@@ -58,6 +58,9 @@ export const BAKED_BACKLOG_ABORT_TOKEN = "ABORT_NO_BACKLOG";
 //   END      — emit COMPLETE on its own line, or ABORT_NO_IMPROVEMENTS
 export const PROMPT_SELF_IMPROVE = `You are running an autonomous backlog-draining iteration on the project in cwd. Each iteration is a paid premium request — drain as many real backlog items as fit in one turn (a failing CI run, a stale open pull request, an open human-filed issue), each as its own atomic commit with the tree green between them. If after honest investigation no real backlog item is actionable AND no genuine user-visible improvement is identifiable, emit ABORT_NO_IMPROVEMENTS rather than inventing defensive-guard or comment-alignment pseudo-improvements.
 
+STAGE MARKERS (emit on a line by itself as you enter each SDLC stage):
+\`[STAGE: ORIENT]\`, \`[STAGE: IDEATE]\`, \`[STAGE: CRITIQUE]\`, \`[STAGE: BASELINE]\`, \`[STAGE: IMPLEMENT]\`, \`[STAGE: TEST]\`, \`[STAGE: COMMIT]\`, \`[STAGE: PUSH]\`, \`[STAGE: END]\`. Emit each marker exactly once per iteration, in order, immediately before doing the work for that stage. The runner parses these markers from your response stream to drive the live progress UI; missing markers don't break the loop, but they hide your progress from the user. Do NOT invent stage names beyond this list.
+
 PER-ITERATION SDLC WORKFLOW (each iteration is a paid premium request — pack the turn; multiple atomic commits are encouraged when the work permits):
 
 1. ORIENT.
@@ -128,6 +131,9 @@ HARD RULES:
 export const PROMPT_GROW_PROJECT = `You are running an autonomous project-growth iteration on the project in cwd. Each iteration is a paid premium request — ship one or more complete features end-to-end from a GitHub-issue backlog (not placeholder slices), each as its own atomic commit with the tree green between them. If the backlog is drained or no proposed issue is ready, emit ABORT_NO_BACKLOG instead.
 
 This loop's job is to GROW the project with new features. Bug fixes, hardening, CI healing, refactors, and human-filed asks belong to the backlog-drain runner — not here. If a \`grow-project\`-labelled issue turns out to describe a bug or non-feature task, remove the \`grow-project\` and \`proposed\` labels (so the backlog-drain runner picks it up) and skip it.
+
+STAGE MARKERS (emit on a line by itself as you enter each SDLC stage):
+\`[STAGE: ORIENT]\`, \`[STAGE: IDEATE]\`, \`[STAGE: SELECT]\`, \`[STAGE: CRITIQUE]\`, \`[STAGE: BASELINE]\`, \`[STAGE: IMPLEMENT]\`, \`[STAGE: TEST]\`, \`[STAGE: ACCEPTANCE]\`, \`[STAGE: DEMO]\`, \`[STAGE: COMMIT]\`, \`[STAGE: PUSH]\`, \`[STAGE: CLOSE]\`, \`[STAGE: END]\`. Emit each marker exactly once per iteration, in order, immediately before doing the work for that stage. Skip IDEATE when the backlog is non-empty (no marker needed for a skipped stage). The runner parses these markers from your response stream to drive the live progress UI; missing markers don't break the loop, but they hide your progress from the user. Do NOT invent stage names beyond this list.
 
 PER-ITERATION SDLC WORKFLOW (each iteration is a paid premium request — ship complete features, multiple if independent and small):
 

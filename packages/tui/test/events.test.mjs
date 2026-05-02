@@ -536,3 +536,49 @@ test("foldEvents: armed resets all stage / substage / backlog state (replay-with
     assert.deepEqual(snap.currentStageSubstages, []);
     assert.equal(snap.backlog, null);
 });
+
+// ─── Issue #48 slice 2: stage marker / prompt parity guards ──────────
+
+import {
+    SDLC_STAGES_SELF_IMPROVE,
+    SDLC_STAGES_GROW_PROJECT,
+    stagesForLabel,
+} from "../src/events.mjs";
+import { PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT } from "../../../extension/prompts.mjs";
+
+test("SDLC_STAGES_SELF_IMPROVE: every stage name appears in PROMPT_SELF_IMPROVE", () => {
+    for (const stage of SDLC_STAGES_SELF_IMPROVE) {
+        assert.ok(
+            PROMPT_SELF_IMPROVE.includes(`[STAGE: ${stage}]`),
+            `PROMPT_SELF_IMPROVE missing marker [STAGE: ${stage}] — drift between events.mjs stage list and the baked prompt body`,
+        );
+    }
+});
+
+test("SDLC_STAGES_GROW_PROJECT: every stage name appears in PROMPT_GROW_PROJECT", () => {
+    for (const stage of SDLC_STAGES_GROW_PROJECT) {
+        assert.ok(
+            PROMPT_GROW_PROJECT.includes(`[STAGE: ${stage}]`),
+            `PROMPT_GROW_PROJECT missing marker [STAGE: ${stage}] — drift between events.mjs stage list and the baked prompt body`,
+        );
+    }
+});
+
+test("stagesForLabel: maps labels to their canonical lists; unknown → null", () => {
+    assert.equal(stagesForLabel("self_improve"), SDLC_STAGES_SELF_IMPROVE);
+    assert.equal(stagesForLabel("grow_project"), SDLC_STAGES_GROW_PROJECT);
+    assert.equal(stagesForLabel("ralph_loop"), null, "ralph_loop / custom-prompt mode has no fixed stage list");
+    assert.equal(stagesForLabel(undefined), null);
+    assert.equal(stagesForLabel(""), null);
+});
+
+test("PROMPT_SELF_IMPROVE / PROMPT_GROW_PROJECT explicitly instruct the agent to emit stage markers", () => {
+    // Pin the literal string so a future edit can't strip the
+    // instruction without the test catching it. The runner depends on
+    // the agent emitting these markers — without the instruction,
+    // the live UI silently degrades to "no stage info".
+    assert.match(PROMPT_SELF_IMPROVE, /STAGE MARKERS/, "PROMPT_SELF_IMPROVE must declare a STAGE MARKERS section");
+    assert.match(PROMPT_SELF_IMPROVE, /\[STAGE: ORIENT\]/, "PROMPT_SELF_IMPROVE must include the literal [STAGE: ORIENT] example");
+    assert.match(PROMPT_GROW_PROJECT, /STAGE MARKERS/, "PROMPT_GROW_PROJECT must declare a STAGE MARKERS section");
+    assert.match(PROMPT_GROW_PROJECT, /\[STAGE: SELECT\]/, "PROMPT_GROW_PROJECT must include the literal [STAGE: SELECT] example");
+});

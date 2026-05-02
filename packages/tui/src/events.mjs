@@ -83,6 +83,35 @@ export const SDLC_STAGES_SELF_IMPROVE = Object.freeze([
     "END",
 ]);
 
+/** Canonical SDLC stage list for grow_project, in execution order.
+ *
+ * `IDEATE` is conditional (only when the backlog is empty) and may be
+ * skipped — the runner emits no event for a skipped stage rather than
+ * inventing a synthetic one. */
+export const SDLC_STAGES_GROW_PROJECT = Object.freeze([
+    "ORIENT",
+    "IDEATE",
+    "SELECT",
+    "CRITIQUE",
+    "BASELINE",
+    "IMPLEMENT",
+    "TEST",
+    "ACCEPTANCE",
+    "DEMO",
+    "COMMIT",
+    "PUSH",
+    "CLOSE",
+    "END",
+]);
+
+/** Map a loop label to its canonical stage list. Returns null for
+ *  custom-prompt loops (no stage row rendered). */
+export function stagesForLabel(label) {
+    if (label === "self_improve") return SDLC_STAGES_SELF_IMPROVE;
+    if (label === "grow_project") return SDLC_STAGES_GROW_PROJECT;
+    return null;
+}
+
 const EVENT_TYPE_SET = new Set(EVENT_TYPES);
 
 /**

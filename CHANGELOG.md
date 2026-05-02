@@ -3,6 +3,21 @@
 ## Unreleased
 
 ### Features
+- `PROMPT_SELF_IMPROVE` and `PROMPT_GROW_PROJECT` now instruct the
+  agent to emit `[STAGE: NAME]` markers on a line by themselves as
+  it enters each numbered SDLC stage (`[STAGE: ORIENT]`,
+  `[STAGE: IDEATE]`, … `[STAGE: END]`). The runner-side parser
+  (issue #48 slice 4) reads these markers from the agent's
+  response stream to drive the 3-level hierarchical TUI's stage
+  row. Missing markers don't break the loop, but they hide
+  progress from the user. `events.mjs` now exports
+  `SDLC_STAGES_SELF_IMPROVE`, `SDLC_STAGES_GROW_PROJECT`, and a
+  `stagesForLabel(label)` lookup helper, all kept in lockstep
+  with the prompt bodies by parity-guard tests
+  (`packages/tui/test/events.test.mjs` —
+  *every stage name appears in PROMPT_*) so a future edit cannot
+  silently strip a marker without the test catching it.
+
 - `events.jsonl` event vocabulary gains four strictly-additive
   types (`stage_start`, `stage_end`, `substage`,
   `backlog_snapshot`) so the TUI can surface a 3-level

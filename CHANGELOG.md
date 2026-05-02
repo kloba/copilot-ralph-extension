@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Tests
+- Added direct branch-coverage unit tests for
+  `evaluateAdaptiveSignals` (the
+  adaptive-iteration-budget signal evaluator at
+  `extension/handler.mjs:686`). The function is
+  now exported via `__test__` so each branch can
+  be exercised in isolation: shortstat-detected
+  changes, porcelain fallback (with singular vs
+  plural phrasing), distinct-hash novelty,
+  combined git+hash reason, identical-hash
+  no-op, gitExec throw swallowed, gitExec ok=false
+  treated as no signal, and the documented
+  `ADAPTIVE_WINDOW = 3` constant. Previously
+  these branches were only reached transitively
+  through the loop-driven adaptive_budget tests,
+  which made it expensive to pin individual
+  reason strings and tolerated phrasing drift.
+
 ### Documentation
 - README.md and the `ralph_status` tool
   description in `extension/handler.mjs` now

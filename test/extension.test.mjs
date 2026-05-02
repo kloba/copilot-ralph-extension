@@ -7,7 +7,7 @@ import { dirname, resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { createRalphController, validateArgs, __test__ } from "../extension/handler.mjs";
-const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf } = __test__;
+const { MAX_PROMISE_CHARS, MAX_PROMPT_CHARS, MAX_ALLOWED_ITERATIONS, PREVIEW_CHARS, PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN, BAKED_COPILOT_TRAILER, BAKED_RALPH_TRAILER, BAKED_ATTRIBUTION_OPT_OUT, BAKED_RALPH_LOOP_RIDER, composeRalphLoopPrompt, SELF_IMPROVE_DEFAULTS, GROW_PROJECT_DEFAULTS, MAX_FOCUS_CHARS, previewOf, evaluateAdaptiveSignals, ADAPTIVE_WINDOW } = __test__;
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -5848,4 +5848,95 @@ test("ralph_pause / ralph_resume reject unknown args", async () => {
     const r2 = await resume.handler({ bogus: 1 });
     assert.equal(r2.resultType, "failure");
     assert.match(r2.textResultForLlm, /unknown|bogus/i);
+});
+
+// ── evaluateAdaptiveSignals: direct branch coverage ────────────────────
+//
+// The adaptive-budget extension fires when EITHER the working tree has
+// uncommitted changes OR the rolling content-hash window contains ≥ 2
+// distinct hashes. Indirect coverage exists via the loop-driven adaptive
+// tests, but those run through the entire arming → idle → terminator
+// pipeline, which makes it expensive to pin individual branches. These
+// direct tests stub `gitExec` and an `a`-shaped state object so each of
+// the six branches fires independently — cheap, fast, and resistant to
+// loop-orchestration drift.
+
+function makeAdaptiveState(hashes = []) {
+    return { adaptiveContentHashes: [...hashes] };
+}
+
+test("evaluateAdaptiveSignals: shortstat reports changes → uncommitted-changes signal fires", () => {
+    const stub = (args) => {
+        if (args[0] === "diff") return { ok: true, stdout: " 2 files changed, 5 insertions(+), 1 deletion(-)\n" };
+        throw new Error("porcelain should not be consulted when shortstat hits");
+    };
+    const r = evaluateAdaptiveSignals(makeAdaptiveState([]), stub);
+    assert.match(r ?? "", /^uncommitted changes \(2 files changed, 5 insertions\(\+\), 1 deletion\(-\)\)$/);
+});
+
+test("evaluateAdaptiveSignals: empty shortstat falls back to porcelain when working tree dirty", () => {
+    const stub = (args) => {
+        if (args[0] === "diff") return { ok: true, stdout: "" };
+        if (args[0] === "status") return { ok: true, stdout: " M extension/handler.mjs\n?? scratch.txt\n" };
+        throw new Error("unexpected git args");
+    };
+    const r = evaluateAdaptiveSignals(makeAdaptiveState([]), stub);
+    assert.equal(r, "2 working-tree changes");
+});
+
+test("evaluateAdaptiveSignals: porcelain singular form for exactly one change", () => {
+    const stub = (args) => {
+        if (args[0] === "diff") return { ok: true, stdout: "" };
+        if (args[0] === "status") return { ok: true, stdout: " M one.mjs\n" };
+        throw new Error("unexpected");
+    };
+    assert.equal(evaluateAdaptiveSignals(makeAdaptiveState([]), stub), "1 working-tree change");
+});
+
+test("evaluateAdaptiveSignals: distinct response hashes fire even with clean tree", () => {
+    const stub = () => ({ ok: true, stdout: "" });
+    const r = evaluateAdaptiveSignals(makeAdaptiveState(["a", "b"]), stub);
+    assert.equal(r, "2 distinct responses in last 2 iterations");
+});
+
+test("evaluateAdaptiveSignals: identical hashes do NOT trigger response-novelty signal", () => {
+    const stub = () => ({ ok: true, stdout: "" });
+    assert.equal(evaluateAdaptiveSignals(makeAdaptiveState(["a", "a", "a"]), stub), null);
+});
+
+test("evaluateAdaptiveSignals: combines git + hash signals into a single comma-joined reason", () => {
+    const stub = (args) => {
+        if (args[0] === "diff") return { ok: true, stdout: " 1 file changed, 2 insertions(+)\n" };
+        throw new Error("porcelain should not run when shortstat hits");
+    };
+    const r = evaluateAdaptiveSignals(makeAdaptiveState(["a", "b", "c"]), stub);
+    assert.equal(
+        r,
+        "uncommitted changes (1 file changed, 2 insertions(+)), 3 distinct responses in last 3 iterations",
+    );
+});
+
+test("evaluateAdaptiveSignals: clean tree + insufficient hashes returns null", () => {
+    const stub = () => ({ ok: true, stdout: "" });
+    assert.equal(evaluateAdaptiveSignals(makeAdaptiveState(["solo"]), stub), null);
+});
+
+test("evaluateAdaptiveSignals: gitExec throw is swallowed; hash signal still fires", () => {
+    const throwy = () => { throw new Error("git missing"); };
+    // hash signal independent of git result
+    assert.equal(
+        evaluateAdaptiveSignals(makeAdaptiveState(["x", "y"]), throwy),
+        "2 distinct responses in last 2 iterations",
+    );
+    // both throw and no hash signal → null (no signal)
+    assert.equal(evaluateAdaptiveSignals(makeAdaptiveState([]), throwy), null);
+});
+
+test("evaluateAdaptiveSignals: gitExec returning ok:false is treated as no signal (not an error)", () => {
+    const stub = () => ({ ok: false, stdout: "ignored" });
+    assert.equal(evaluateAdaptiveSignals(makeAdaptiveState([]), stub), null);
+});
+
+test("evaluateAdaptiveSignals: ADAPTIVE_WINDOW is the documented constant 3", () => {
+    assert.equal(ADAPTIVE_WINDOW, 3);
 });

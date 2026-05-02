@@ -16,7 +16,7 @@ Out-of-band control is first-class: `--pause`, `--resume`, `--stop`, and `--stat
 `autopilot` drives a coding agent through three levels of decomposition, then loops:
 
 1. **Level 1 — find what to do.** Scan the repo (red CI, stale PRs, open issues, SDLC hardening rotation) and pick one concrete work item. If nothing is queued, ideate a new feature and file it as a GitHub issue first, then pick it up.
-2. **Level 2 — split into stages.** Break the work item into SDLC stages (orient → critique → baseline → implement → test → commit → push).
+2. **Level 2 — split into stages.** Plan the SDLC stages this work item needs — generated per work item, not a fixed pipeline. Typical shape: orient → critique → baseline → implement → test → commit → push, but a doc fix may skip several and a feature may add more (acceptance, demo, close).
 3. **Level 3 — split into tasks.** Break each stage into the smallest executable steps the agent can deliver in one turn.
 
 Orchestrate the tasks until every stage is delivered, then loop back to **Level 1** for the next work item. Each iteration is a brand-new `copilot -p` subprocess, so context never poisons the next pass. The driver owns the spawn / capture / decide-to-stop trichotomy plus out-of-band control, structured event logs (`events.jsonl`), CAS-protected run state, completion / abort / stagnation triggers, and an adaptive iteration budget for `--self-improve`.

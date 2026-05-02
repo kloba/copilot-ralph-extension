@@ -6522,3 +6522,79 @@ test("docs/faq.md is no longer the stub and answers core operational questions",
     assert.match(faq, /~\/\.copilot\/ralph\/runs/);
     assert.match(faq, /RALPH_EVENTS_DIR/);
 });
+
+// -----------------------------------------------------------------------------
+// finish(): durationMs deducts paused time so wall-clock reflects active runtime.
+// The ActiveLoopState typedef has long claimed `totalPausedMs - cumulative
+// paused time across all pause/resume cycles, deducted from durationMs so
+// wall-clock reflects active time` — but the implementation prior to this
+// commit just did `durationMs = clampedElapsed(startedAt)`, ignoring
+// totalPausedMs entirely. Pin the corrected behaviour so a future "simplify"
+// pass cannot silently restore the drift.
+// -----------------------------------------------------------------------------
+
+test("finish: durationMs subtracts totalPausedMs from wall-clock elapsed", async () => {
+    const { controller, session, stop } = await arm({ max_iterations: 5 });
+    runTurn(session, "first");
+    await new Promise((r) => setImmediate(r));
+    // Backdate startedAt so wallClock is meaningfully large regardless of
+    // CI clock granularity, and seed a known totalPausedMs budget.
+    const a = controller.state.active;
+    const FAKE_WALL_MS = 30000;
+    const PAUSED_BUDGET = 12345;
+    a.startedAt = Date.now() - FAKE_WALL_MS;
+    a.totalPausedMs = PAUSED_BUDGET;
+    const r = await stop.handler({});
+    assert.equal(r.resultType, "success");
+    assert.equal(controller.state.active, null);
+    const last = controller.state.lastResult;
+    assert.ok(last, "lastResult must be set after stop");
+    // durationMs should be approximately FAKE_WALL_MS - PAUSED_BUDGET.
+    // Allow ±100ms slack for the brief sync work between backdating and stop().
+    const expected = FAKE_WALL_MS - PAUSED_BUDGET;
+    assert.ok(
+        last.durationMs >= expected - 50 && last.durationMs <= expected + 200,
+        `durationMs (${last.durationMs}) should be ~${expected} (wallClock ${FAKE_WALL_MS} − paused ${PAUSED_BUDGET})`,
+    );
+});
+
+test("finish: durationMs also subtracts the not-yet-banked current pause window", async () => {
+    // If the user calls ralph_stop while the loop is still paused, the
+    // current pause window hasn't been added to totalPausedMs yet — but
+    // it's still time the loop wasn't running. Pin that finish() also
+    // subtracts the live `Date.now() - pausedAt` window.
+    const { controller, session, stop } = await arm({ max_iterations: 5 });
+    runTurn(session, "first");
+    await new Promise((r) => setImmediate(r));
+    const a = controller.state.active;
+    const FAKE_WALL_MS = 20000;
+    const LIVE_PAUSE_MS = 7500;
+    a.startedAt = Date.now() - FAKE_WALL_MS;
+    a.paused = true;
+    a.pausedAt = Date.now() - LIVE_PAUSE_MS;
+    a.totalPausedMs = 0;
+    const r = await stop.handler({ reason: "force-quit while paused" });
+    assert.equal(r.resultType, "success");
+    const last = controller.state.lastResult;
+    const expected = FAKE_WALL_MS - LIVE_PAUSE_MS;
+    assert.ok(
+        last.durationMs >= expected - 50 && last.durationMs <= expected + 200,
+        `durationMs (${last.durationMs}) must be ~${expected} (wallClock ${FAKE_WALL_MS} − live pause ${LIVE_PAUSE_MS})`,
+    );
+    assert.ok(last.durationMs >= 0, "durationMs must be clamped to 0+");
+});
+
+test("finish: durationMs clamped to 0 when totalPausedMs exceeds elapsed", async () => {
+    // Defensive guard: if a clock skew or buggy caller pushed
+    // totalPausedMs past wall-clock elapsed, the result must NOT go
+    // negative. Clamp at 0 so downstream consumers (TUI, JSON
+    // serializers, the ralph_status snapshot) never see a negative
+    // duration.
+    const { controller, session, stop } = await arm({ max_iterations: 3 });
+    runTurn(session, "first");
+    await new Promise((r) => setImmediate(r));
+    controller.state.active.totalPausedMs = 1e9; // absurdly large
+    const r = await stop.handler({});
+    assert.equal(r.resultType, "success");
+    assert.equal(controller.state.lastResult.durationMs, 0);
+});

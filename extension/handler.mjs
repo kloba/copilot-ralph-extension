@@ -1256,9 +1256,17 @@ export function createRalphController(opts = {}) {
 
     const finish = (reason, note) => {
         if (!state.active) return;
-        const { startedAt, i: iterations, label, tokens, stopCaffeinate, originalMax, max, adaptiveBudget, adaptiveExtensionHistory } = state.active;
+        const { startedAt, i: iterations, label, tokens, stopCaffeinate, originalMax, max, adaptiveBudget, adaptiveExtensionHistory, totalPausedMs, paused, pausedAt } = state.active;
         const finishedAt = Date.now();
-        const durationMs = clampedElapsed(startedAt);
+        // Wall-clock elapsed since arm, then deduct cumulative pause time
+        // so durationMs reflects ACTIVE runtime (matches the typedef:
+        // "totalPausedMs ... deducted from durationMs so wall-clock
+        // reflects active time"). If finish() fires while the loop is
+        // still paused (e.g. the user calls ralph_stop without resuming),
+        // also subtract the not-yet-banked current pause window so the
+        // result is consistent regardless of pause/resume cadence.
+        const currentPauseMs = paused && pausedAt > 0 ? Math.max(0, finishedAt - pausedAt) : 0;
+        const durationMs = Math.max(0, clampedElapsed(startedAt) - (totalPausedMs ?? 0) - currentPauseMs);
         const result = {
             reason,
             iterations,

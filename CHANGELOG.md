@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Fixes
+- `result.durationMs` now actually subtracts
+  paused time from wall-clock elapsed, matching
+  the long-standing typedef contract
+  (`totalPausedMs ... deducted from durationMs
+  so wall-clock reflects active time`). Prior to
+  this commit the field reported raw wall-clock
+  elapsed and ignored `totalPausedMs` entirely
+  — a loop paused for an hour and then run for
+  five minutes would report `durationMs:
+  3900000` (65 min) instead of the true active
+  runtime (5 min). The fix subtracts BOTH banked
+  `totalPausedMs` AND the not-yet-banked current
+  pause window (when `ralph_stop` fires while
+  the loop is still paused), and clamps at 0 so
+  a clock-skew defect can't surface a negative
+  duration. Three new tests pin: the
+  totalPausedMs subtraction, the live-pause
+  subtraction at stop-while-paused, and the
+  zero-clamp guard.
+
 ### Documentation
 - Replace the `docs/faq.md` stub (a 4-line
   pointer to the README) with a real Q&A page

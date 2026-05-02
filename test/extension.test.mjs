@@ -9863,3 +9863,92 @@ test("VERB_BY_REASON: max_tokens has explicit entry; neutral exits fall through 
         );
     }
 });
+
+test("isCaffeinateEnabled: case + whitespace tolerant truthy parse (issue #8)", () => {
+    // The helper at extension/handler.mjs:536 lower-cases + trims env
+    // input before checking against the truthy set. Pin the contract
+    // directly so a future refactor swapping in a shared env-parser
+    // can't silently tighten or loosen what counts as "enabled" — the
+    // existing caffeinate end-to-end tests only exercise "1" and would
+    // pass even if the case/whitespace tolerance were dropped.
+    const { isCaffeinateEnabled } = __test__;
+
+    // Truthy variants — every documented form + capitalisation.
+    for (const v of ["1", "true", "yes", "on", "TRUE", "YES", "ON",
+        "True", "Yes", "On", "  1  ", "\t1\n", "  true  "]) {
+        assert.equal(isCaffeinateEnabled({ RALPH_CAFFEINATE: v }), true,
+            `RALPH_CAFFEINATE=${JSON.stringify(v)} must enable caffeinate`);
+    }
+
+    // Falsy / disabled — anything not in the truthy set, including
+    // unset, empty string, and bogus tokens.
+    for (const v of [undefined, "", "0", "false", "no", "off", "FALSE",
+        "enable", "y", "  ", "1\n2"]) {
+        assert.equal(isCaffeinateEnabled({ RALPH_CAFFEINATE: v }), false,
+            `RALPH_CAFFEINATE=${JSON.stringify(v)} must NOT enable caffeinate`);
+    }
+
+    // Defensive: env arg itself absent / non-object → false (no throw).
+    assert.equal(isCaffeinateEnabled(undefined), false, "undefined env must not throw");
+    assert.equal(isCaffeinateEnabled(null), false, "null env must not throw");
+    assert.equal(isCaffeinateEnabled({}), false, "empty env must default to disabled");
+
+    // Non-string values must NOT enable — protects against e.g.
+    // RALPH_CAFFEINATE=true (boolean) sneaking in via a wrapper.
+    for (const v of [true, 1, {}, []]) {
+        assert.equal(isCaffeinateEnabled({ RALPH_CAFFEINATE: v }), false,
+            `RALPH_CAFFEINATE=${typeof v} (non-string) must NOT enable caffeinate`);
+    }
+});
+
+test("resolveCaffeinateScope: case + whitespace tolerant; bogus → idle (issue #8)", () => {
+    const { resolveCaffeinateScope } = __test__;
+
+    // Default (env unset / absent) → "idle".
+    assert.equal(resolveCaffeinateScope({}), "idle");
+    assert.equal(resolveCaffeinateScope(undefined), "idle");
+    assert.equal(resolveCaffeinateScope(null), "idle");
+    assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: undefined }), "idle");
+
+    // Explicit "idle" passes through.
+    assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: "idle" }), "idle");
+    assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: "IDLE" }), "idle");
+    assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: "  idle  " }), "idle");
+
+    // "idle+display" — the only other documented scope.
+    assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: "idle+display" }), "idle+display");
+    assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: "IDLE+DISPLAY" }), "idle+display");
+    assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: "  Idle+Display  " }), "idle+display");
+
+    // Bogus values fall back to "idle" (safe default — keep the loop
+    // on rather than failing arm-time over a typo).
+    for (const v of ["display", "always", "idle+", "+display", "true",
+        "1", "", "  ", "\n"]) {
+        assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: v }), "idle",
+            `bogus scope ${JSON.stringify(v)} must collapse to "idle"`);
+    }
+
+    // Non-string → "idle".
+    for (const v of [true, 1, {}, []]) {
+        assert.equal(resolveCaffeinateScope({ RALPH_CAFFEINATE_SCOPE: v }), "idle",
+            `non-string scope ${typeof v} must collapse to "idle"`);
+    }
+});
+
+test("caffeinateFlagsForScope: idle+display → -id; everything else → -i (issue #8)", () => {
+    const { caffeinateFlagsForScope } = __test__;
+
+    // -i: prevent idle sleep only (default scope).
+    assert.equal(caffeinateFlagsForScope("idle"), "-i");
+    // -id: prevent idle AND display sleep (the only other documented scope).
+    assert.equal(caffeinateFlagsForScope("idle+display"), "-id");
+
+    // Defensive: any other value → -i. resolveCaffeinateScope
+    // already normalises before reaching here, but pin the function's
+    // own fall-through so a future caller that bypasses the
+    // normaliser still gets the safe minimum (idle-only).
+    for (const v of ["display", "", undefined, null, "IDLE+DISPLAY", "bogus"]) {
+        assert.equal(caffeinateFlagsForScope(v), "-i",
+            `unexpected scope ${JSON.stringify(v)} must default to -i, not -id`);
+    }
+});

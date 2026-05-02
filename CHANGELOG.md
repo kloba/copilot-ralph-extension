@@ -408,6 +408,32 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Pin the three caffeinate env-parser helpers
+  (`isCaffeinateEnabled`, `resolveCaffeinateScope`,
+  `caffeinateFlagsForScope` in `extension/handler.mjs`) with
+  direct unit tests in `test/extension.test.mjs`. Pre-iter-145
+  the helpers were exercised only end-to-end through the
+  `armWithCaffeinate` integration suite, which covers `"1"` /
+  `"idle+display"` / `"bogus"` but never the case + whitespace
+  tolerance every other env knob in the project ships
+  (`RALPH_CAFFEINATE=TRUE`, `=" yes "`, `=ON` all enable;
+  `RALPH_CAFFEINATE_SCOPE=IDLE+DISPLAY` resolves to
+  `idle+display`). The three new tests pin the truthy set
+  including capitalisation + whitespace, the falsy default
+  including non-string `env` arguments and non-string values
+  (boolean / number / object / array) so a future refactor
+  swapping in a shared env-truthy helper can't silently
+  tighten the truthy contract, and the
+  `caffeinateFlagsForScope` fall-through ensuring any value
+  other than `"idle+display"` defaults to `-i` (idle-only)
+  rather than the more invasive `-id` (idle + display) — a
+  defensive contract that protects callers who bypass the
+  normaliser. Regression catch verified by mutating each
+  helper independently — the targeted helper-direct test
+  fires alongside the existing integration test, confirming
+  the new tests add genuine coverage rather than overlapping
+  the integration ladder. Helpers added to the `__test__`
+  export bag at `extension/handler.mjs:2570`.
 - Pin `packages/tui/src/tail.mjs`'s under-covered
   input-validation contracts so a future "simplify the tail
   surface" PR can't silently drop the typeof guards. Added

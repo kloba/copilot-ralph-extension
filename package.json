@@ -1,7 +1,7 @@
 {
-  "name": "copilot-ralph-extension",
+  "name": "autopilot",
   "version": "0.7.0",
-  "description": "Ralph Wiggum-style autonomous iterative loop for GitHub Copilot CLI, packaged as the autopilot standalone TUI app.",
+  "description": "Autonomous iterative loop for GitHub Copilot CLI, packaged as the autopilot standalone TUI app.",
   "type": "module",
   "private": true,
   "author": "Taras Kloba",
@@ -16,7 +16,6 @@
   "keywords": [
     "github-copilot",
     "copilot-cli",
-    "ralph-wiggum",
     "agent",
     "iterative-loop",
     "autonomous",

@@ -117,6 +117,25 @@
   "premium 0" pre-iter-1.
 
 ### Fixes
+- `ralph-tui run` no longer prints a spurious
+  `ExperimentalWarning: Detected unsettled top-level await at
+  …/packages/tui/bin/tui.mjs:<EOF>` line on exit. Root cause:
+  the symlink-aware direct-run check pulled `realpathSync` and
+  `pathToFileURL` in via two `await import(...)` statements at
+  module top level (added by the `npm link` symlink fix in
+  `8b2a98e`). On Node 22+, when `main()`'s
+  `.then(process.exit)` fires the implicit module-evaluation
+  TLA hadn't been observed as settled yet, so Node attached
+  the warning to the file's last line. Fix: promote both
+  imports to the existing static `import fs from "node:fs"` /
+  `import { fileURLToPath, pathToFileURL } from "node:url"`
+  lines and drop the dynamic `await import(...)`. New
+  regression test `tui.mjs has no top-level await (Node 22+
+  unsettled-TLA warning regression guard)` in
+  `packages/tui/test/bin.test.mjs` walks the file at brace-
+  and string-aware depth 0 to fail any future re-introduction
+  of a top-level `await`.
+
 - `ralph-tui run` no longer renders `tokens 0` for the
   duration of a `--self-improve` / `--continue` / `--fresh`
   run. Root cause: `reduceCopilotEvents` in

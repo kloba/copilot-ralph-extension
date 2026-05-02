@@ -233,6 +233,86 @@ test("Header.formatElapsed: returns null for non-finite or negative input", { sk
     assert.equal(formatElapsed(-1), null);
 });
 
+// ─── appVersion pip rendering (issue #59) ────────────────────────
+// The Header's heading row renders a dim `v<X.Y.Z>` pip pinned to
+// the right edge when the `appVersion` prop is supplied. Hidden
+// otherwise so snapshot tests + pre-issue-59 callers stay
+// deterministic.
+
+test("Header: renders dim version pip when appVersion is supplied", { skip }, () => {
+    const snapshot = {
+        status: "idle",
+        label: "ralph_loop",
+        runId: "ralph_loop-1",
+        iteration: 0,
+        maxIterations: 10,
+        tokens: { input: 0, output: 0 },
+    };
+    const out = render(React.createElement(Header, { snapshot, appVersion: "1.2.3" })).lastFrame();
+    assert.match(out, /v1\.2\.3/);
+    // The heading text and version pip both still render — neither
+    // collapses the other.
+    assert.match(out, /Run/);
+});
+
+test("Header: hides version pip when appVersion is omitted", { skip }, () => {
+    const snapshot = {
+        status: "running",
+        label: "ralph_loop",
+        runId: "ralph_loop-2",
+        iteration: 1,
+        maxIterations: 10,
+        tokens: { input: 0, output: 0 },
+    };
+    const out = render(React.createElement(Header, { snapshot })).lastFrame();
+    // Asserting no `v` followed by a digit in the heading line — the
+    // existing label / runId can contain digits but not the `vN`
+    // pattern. Use a tight regex anchored to `v\d`.
+    assert.doesNotMatch(out, /v\d/);
+});
+
+test("Header: hides version pip when appVersion is empty string", { skip }, () => {
+    // Defensive: a future caller might pass `""` if version lookup
+    // fails. Header should hide rather than render `v` with no
+    // value (which would look broken).
+    const snapshot = {
+        status: "idle",
+        label: "ralph_loop",
+        runId: "ralph_loop-3",
+        iteration: 0,
+        maxIterations: 10,
+        tokens: { input: 0, output: 0 },
+    };
+    const out = render(React.createElement(Header, { snapshot, appVersion: "" })).lastFrame();
+    assert.doesNotMatch(out, /v\d/);
+});
+
+test("Header: renders 'unknown' version pip when readTuiVersion's fallback is passed through", { skip }, () => {
+    // version.mjs returns the literal string "unknown" on any
+    // read/parse failure. Header should still render that — `vunknown`
+    // is more informative than nothing when something went wrong.
+    const snapshot = {
+        status: "idle",
+        label: "ralph_loop",
+        runId: "ralph_loop-4",
+        iteration: 0,
+        maxIterations: 10,
+        tokens: { input: 0, output: 0 },
+    };
+    const out = render(React.createElement(Header, { snapshot, appVersion: "unknown" })).lastFrame();
+    assert.match(out, /vunknown/);
+});
+
+test("App: forwards appVersion prop through to Header pip", { skip }, () => {
+    const events = [
+        { type: "armed", runId: "r1", at: 1, label: "ralph_loop", maxIterations: 10 },
+    ];
+    const out = render(React.createElement(App, {
+        events, runId: "r1", appVersion: "9.8.7",
+    })).lastFrame();
+    assert.match(out, /v9\.8\.7/);
+});
+
 test("DetailPane: renders 'premium req N' row when set", { skip }, () => {
     const snapshot = {
         tokens: { input: 0, output: 415 },

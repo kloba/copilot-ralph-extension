@@ -8,6 +8,7 @@
 import process from "node:process";
 
 import { tailEventsFile, readEventsFile } from "./tail.mjs";
+import { readTuiVersion } from "./version.mjs";
 
 /**
  * @param {Object} args
@@ -37,6 +38,7 @@ export async function runInteractive({ runId, eventsPath }) {
             runId,
             events: initial,
             eventStream,
+            appVersion: readTuiVersion(),
         }),
     );
     await waitUntilExit();

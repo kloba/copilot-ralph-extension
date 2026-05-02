@@ -14,6 +14,14 @@
 // work items the loop has already closed (`closedByLoop`) so the
 // user sees forward motion as the backlog drains.
 //
+// Issue #59: optional `appVersion` prop renders a dim `v<X.Y.Z>`
+// pip in the heading row's right edge — at-a-glance read of which
+// build is running, useful when filing issues or confirming an
+// update took effect. Component stays purely presentational; the
+// caller (run-ui.mjs / watch.mjs) is responsible for resolving the
+// version string from `src/version.mjs`. Hidden when the prop is
+// absent so snapshot tests stay deterministic.
+//
 // Pure presentational component. Uses React.createElement directly so
 // the file loads in plain Node ESM (no JSX/TypeScript build step).
 
@@ -93,7 +101,7 @@ function backlogField(value) {
     return value === null || value === undefined ? "?" : String(value);
 }
 
-export default function Header({ snapshot, now }) {
+export default function Header({ snapshot, now, appVersion }) {
     const status = snapshot?.status ?? "idle";
     const label = snapshot?.label ?? "(unknown)";
     const runId = snapshot?.runId ?? "(no run)";
@@ -219,7 +227,22 @@ export default function Header({ snapshot, now }) {
     // The status badge (RUN / DONE / PAUSE) lives in the topRow
     // right of the heading, so the heading is the user-facing pane
     // label rather than a duplicate of the status.
-    const heading = h(Text, { bold: true, underline: true }, "Run");
+    //
+    // Issue #59: when `appVersion` is supplied, the heading row
+    // becomes a flex row with the version pip pinned to the right
+    // edge. The pip renders as a dim `v<value>` so it doesn't
+    // compete visually with the active heading text. Absent /
+    // empty prop ⇒ no pip, and the row collapses to a single
+    // bold-underline "Run" text node (existing behaviour for
+    // pre-issue-59 callers + snapshot tests).
+    const versionPip = (typeof appVersion === "string" && appVersion.length > 0)
+        ? h(Text, { dimColor: true }, "v" + appVersion)
+        : null;
+    const headingText = h(Text, { bold: true, underline: true }, "Run");
+    const heading = versionPip
+        ? h(Box, { flexDirection: "row", justifyContent: "space-between" },
+            headingText, versionPip)
+        : headingText;
 
     return h(Box, {
         borderStyle: "round",

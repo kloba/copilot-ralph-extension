@@ -2426,164 +2426,418 @@ test("runRalphTui: omits session_attached when result.sessionId is missing", asy
     assert.equal(sa.length, 0, "no event when reducer didn't surface a sessionId");
 });
 
-// ─── Issue #56 slice 4 — computeIterFilesChanged + iteration_end carries field ───
+// ─── Issue #51 — `--reset-on={workitem|iter|never}` ───────────────────
+//
+// Pin the three-valued reset boundary contract:
+//   - `never`    behaves like the legacy `--continue` — captures
+//                sessionId on iter 1, resumes for iter 2+.
+//   - `iter`     behaves like the legacy `--fresh` — every iter
+//                starts a brand-new session.
+//   - `workitem` (default) — drops the captured sessionId at every
+//                work-item boundary, including any iter-exit (the
+//                runner treats iter-exit as an implicit boundary so
+//                a half-finished work item never carries stale
+//                context into the next iter).
+//
+// Plus the legacy `contextMode: "continue"|"fresh"` API boundary stays
+// honored for back-compat callers.
 
-test("computeIterFilesChanged: gitExec=null returns null (non-git cwd / test injection)", () => {
-    assert.equal(computeIterFilesChanged({
-        gitExec: null, cwd: "/repo", env: {}, iterStartSha: "abc1234",
-    }), null);
+import { legacyContextModeToResetOn, RESET_ON_VALUES } from "../src/runner.mjs";
+
+test("legacyContextModeToResetOn: maps continue→never and fresh→iter", () => {
+    assert.equal(legacyContextModeToResetOn("continue"), "never");
+    assert.equal(legacyContextModeToResetOn("fresh"), "iter");
 });
 
-test("computeIterFilesChanged: HEAD changed → counts diff + status lines", () => {
-    const calls = [];
-    const gitExec = ({ args }) => {
-        calls.push(args.join(" "));
-        if (args[0] === "rev-parse" && args[1] === "HEAD") return "def5678\n";
-        if (args[0] === "diff" && args[1] === "--name-only") {
-            // 3 committed files
-            return "src/a.mjs\nsrc/b.mjs\ntest/c.test.mjs\n";
-        }
-        if (args[0] === "status" && args[1] === "--porcelain") {
-            // 2 uncommitted churn lines
-            return " M README.md\n?? new-file.txt\n";
-        }
-        return null;
-    };
-    const out = computeIterFilesChanged({
-        gitExec, cwd: "/repo", env: {}, iterStartSha: "abc1234",
-    });
-    assert.equal(out, 5, "3 committed + 2 uncommitted");
-    assert.deepEqual(calls, [
-        "rev-parse HEAD",
-        "diff --name-only abc1234..HEAD",
-        "status --porcelain",
-    ]);
+test("legacyContextModeToResetOn: returns null for unknown / non-string input", () => {
+    assert.equal(legacyContextModeToResetOn("workitem"), null,
+        "the new vocabulary is not a legacy value — caller validates separately");
+    assert.equal(legacyContextModeToResetOn("bogus"), null);
+    assert.equal(legacyContextModeToResetOn(undefined), null);
+    assert.equal(legacyContextModeToResetOn(null), null);
+    assert.equal(legacyContextModeToResetOn(42), null);
 });
 
-test("computeIterFilesChanged: HEAD unchanged → committed=0, status only", () => {
-    const gitExec = ({ args }) => {
-        if (args[0] === "rev-parse" && args[1] === "HEAD") return "abc1234\n";
-        if (args[0] === "status" && args[1] === "--porcelain") return " M one.mjs\n";
-        return null;
-    };
-    const out = computeIterFilesChanged({
-        gitExec, cwd: "/repo", env: {}, iterStartSha: "abc1234",
-    });
-    assert.equal(out, 1, "no commit landed → only the one uncommitted file counts");
+test("RESET_ON_VALUES exposes the three accepted values in canonical order", () => {
+    assert.deepEqual([...RESET_ON_VALUES], ["workitem", "iter", "never"]);
 });
 
-test("computeIterFilesChanged: iterStartSha=null → skip diff entirely, count only status", () => {
-    const calls = [];
-    const gitExec = ({ args }) => {
-        calls.push(args[0]);
-        if (args[0] === "status") return "?? a\n?? b\n?? c\n";
-        return null;
-    };
-    const out = computeIterFilesChanged({
-        gitExec, cwd: "/repo", env: {}, iterStartSha: null,
-    });
-    assert.equal(out, 3);
-    // No rev-parse / diff calls when iterStartSha is null.
-    assert.deepEqual(calls, ["status"]);
+test("runRalphTui: rejects unknown resetOn value", async () => {
+    await assert.rejects(
+        runRalphTui({ mode: "self-improve", resetOn: "bogus" }),
+        /resetOn must be one of/,
+    );
 });
 
-test("computeIterFilesChanged: gitExec returns null for everything → 0 (clean repo)", () => {
-    const out = computeIterFilesChanged({
-        gitExec: () => null, cwd: "/repo", env: {}, iterStartSha: "abc1234",
-    });
-    assert.equal(out, 0);
-});
-
-test("computeIterFilesChanged: tolerates blank lines / \\r\\n line endings", () => {
-    const gitExec = ({ args }) => {
-        if (args[0] === "status") return "?? a\r\n\r\n?? b\r\n";
-        return null;
-    };
-    assert.equal(computeIterFilesChanged({
-        gitExec, cwd: "/repo", env: {}, iterStartSha: null,
-    }), 2);
-});
-
-test("runRalphTui: iteration_end carries filesChanged when gitExec returns canned diff/status", async () => {
+test("runRalphTui: defaults resetOn to workitem when neither resetOn nor contextMode is passed", async () => {
     const events = [];
     const eventEmitter = {
-        runId: "files-changed-test",
+        runId: "default-resetOn",        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const spawn = makeMockSpawn([{
+        stdout: [
+            JSON.stringify({ type: "assistant.message", data: { content: "COMPLETE" } }),
+            JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+        ].join("\n") + "\n",
+        exitCode: 0,
+    }]);
+    await runRalphTui({
+        mode: "self-improve",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    const armed = events.find((e) => e.type === "armed");
+    assert.equal(armed.resetOn, "workitem", "default resetOn must be 'workitem'");
+});
+
+test("runRalphTui: legacy contextMode='continue' maps to resetOn='never' (back-compat)", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "legacy-continue",
         eventsPath: "/dev/null",
         write: (ev) => events.push(ev),
         close: () => {},
     };
-    // gitExec stub: arm-time + iter-1 readHeadCommit, plus iter-start
-    // rev-parse HEAD (returns SHA1), iter-end rev-parse HEAD (returns
-    // SHA2 — HEAD changed), iter-end diff (2 files), iter-end status
-    // (1 uncommitted).
-    let revParseHeadCalls = 0;
-    const gitExec = ({ args }) => {
-        if (args[0] === "rev-parse" && args[1] === "--short") return "abc1234\n";
-        if (args[0] === "log") return "subject ";
-        if (args[0] === "rev-parse" && args[1] === "HEAD") {
-            revParseHeadCalls += 1;
-            // 1st = iter-start; 2nd = iter-end (computeIterFilesChanged).
-            return revParseHeadCalls === 1 ? "0000aaa\n" : "0000bbb\n";
-        }
-        if (args[0] === "diff" && args[1] === "--name-only") {
-            return "file1.mjs\nfile2.mjs\n";  // 2 committed
-        }
-        if (args[0] === "status" && args[1] === "--porcelain") {
-            return " M dirty.mjs\n";  // 1 uncommitted
-        }
-        return null;
-    };
-    const spawn = makeMockSpawn([
-        {
-            stdout: [
-                JSON.stringify({ type: "assistant.message", data: { content: "wrap up COMPLETE" } }),
-                JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
-            ].join("\n") + "\n",
-            exitCode: 0,
-        },
-    ]);
+    const spawn = makeMockSpawn([{
+        stdout: [
+            JSON.stringify({ type: "assistant.message", data: { content: "COMPLETE" } }),
+            JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+        ].join("\n") + "\n",
+        exitCode: 0,
+    }]);
     await runRalphTui({
+        mode: "self-improve",
+        contextMode: "continue",
+        max: 1,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    const armed = events.find((e) => e.type === "armed");
+    assert.equal(armed.resetOn, "never", "contextMode='continue' must map to resetOn='never'");
+    assert.equal(armed.contextMode, "continue", "armed event keeps the legacy contextMode value for back-compat consumers");
+});
+
+test("runRalphTui: legacy contextMode='fresh' maps to resetOn='iter' (back-compat)", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "legacy-fresh",
+        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    const spawn = makeMockSpawn([{
+        stdout: [
+            JSON.stringify({ type: "assistant.message", data: { content: "COMPLETE" } }),
+            JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+        ].join("\n") + "\n",
+        exitCode: 0,
+    }]);    await runRalphTui({
         mode: "self-improve",
         contextMode: "fresh",
         max: 1,
         env: makeEnv(),
         spawn,
         eventEmitter,
-        gitExec,
     });
-    const iterEnds = events.filter((e) => e.type === "iteration_end");
-    assert.equal(iterEnds.length, 1);
-    assert.equal(iterEnds[0].filesChanged, 3, "2 committed + 1 uncommitted");
+    const armed = events.find((e) => e.type === "armed");
+    assert.equal(armed.resetOn, "iter");
+    assert.equal(armed.contextMode, "fresh");
 });
 
-test("runRalphTui: iteration_end omits filesChanged when gitExec is not provided (test/non-git)", async () => {
+// resetOn=workitem — the default. Spawn calls always start a new
+// session (no --resume) regardless of how many iters run, because
+// every iter-exit is treated as a work-item boundary that drops the
+// captured sessionId.
+test("runRalphTui: resetOn=workitem drops captured sessionId at iter exit (no --resume on iter 2+)", async () => {
+    const argLog = [];
+    const spawn = function (_bin, args) {
+        argLog.push([...args]);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            const isLast = argLog.length === 3;
+            const events = [
+                JSON.stringify({
+                    type: "assistant.message",
+                    data: { content: isLast ? "wrap up COMPLETE" : "iter going" },
+                }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: `sess-${argLog.length}` } }),
+            ];
+            for (const fn of handlers.stdout) fn(Buffer.from(events.join("\n") + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+    await runRalphTui({
+        mode: "self-improve",
+        resetOn: "workitem",
+        max: 3,
+        env: makeEnv(),
+        spawn,
+    });
+    // Every iter must NOT carry a --resume argument: we drop the
+    // captured sessionId at every iter-exit (work-item boundary,
+    // implicit or explicit).
+    assert.equal(argLog.length, 3, "all 3 iters should run");
+    for (let i = 0; i < argLog.length; i++) {
+        assert.ok(!argLog[i].some((a) => typeof a === "string" && a.startsWith("--resume=")),
+            `iter ${i + 1} (resetOn=workitem) must not pass --resume — every iter starts a fresh session`);
+    }
+});
+
+// resetOn=workitem with an explicit `[WORKITEM_END]` marker mid-iter:
+// the runner observes the boundary and the post-iter cleanup drops
+// the captured sessionId. This test pins the marker-driven path
+// distinctly from the implicit-iter-exit path above.
+test("runRalphTui: resetOn=workitem drops sessionId after [WORKITEM_END] marker", async () => {
     const events = [];
     const eventEmitter = {
-        runId: "no-files-changed-test",
+        runId: "wi-reset-test",        eventsPath: "/dev/null",
+        write: (ev) => events.push(ev),
+        close: () => {},
+    };
+    // Two iters: iter 1 emits a complete WORKITEM_START + WORKITEM_END;
+    // iter 2 wraps up with COMPLETE. After iter 1 the captured
+    // sessionId should be dropped (workitem mode treats the
+    // WORKITEM_END marker as the canonical reset point), so iter 2
+    // must spawn without --resume.
+    const argLog = [];
+    const spawn = function (_bin, args) {
+        argLog.push([...args]);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            const isFirst = argLog.length === 1;
+            const lines = isFirst
+                ? [
+                    JSON.stringify({
+                        type: "assistant.message",
+                        timestamp: "2026-01-01T00:00:00.000Z",
+                        data: { content: '[WORKITEM_START: {"kind":"issue","ref":1,"title":"x"}]\n[WORKITEM_END: {"kind":"issue","ref":1,"closesN":1}]' },
+                    }),
+                    JSON.stringify({ type: "result", success: true, result: { sessionId: "sess-1" } }),
+                ]
+                : [
+                    JSON.stringify({ type: "assistant.message", data: { content: "COMPLETE" } }),
+                    JSON.stringify({ type: "result", success: true, result: { sessionId: "sess-2" } }),
+                ];
+            for (const fn of handlers.stdout) fn(Buffer.from(lines.join("\n") + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+    await runRalphTui({
+        mode: "self-improve",
+        resetOn: "workitem",
+        max: 2,
+        env: makeEnv(),
+        spawn,
+        eventEmitter,
+    });
+    assert.ok(events.some((e) => e.type === "workitem_end"),
+        "the WORKITEM_END marker fired the workitem_end event");
+    assert.ok(!argLog[1].some((a) => typeof a === "string" && a.startsWith("--resume=")),
+        "iter 2 must not resume — sessionId dropped at the WORKITEM_END boundary");
+});
+
+test("runRalphTui: resetOn=never resumes the captured sessionId on iter 2+ (status-quo --continue)", async () => {
+    const argLog = [];
+    const spawn = function (_bin, args) {
+        argLog.push([...args]);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            const isFirst = argLog.length === 1;
+            const lines = isFirst
+                ? [
+                    JSON.stringify({ type: "assistant.message", data: { content: "iter 1" } }),
+                    JSON.stringify({ type: "result", success: true, result: { sessionId: "STABLE-SID" } }),
+                ]
+                : [
+                    JSON.stringify({ type: "assistant.message", data: { content: "iter 2 COMPLETE" } }),
+                    JSON.stringify({ type: "result", success: true, result: { sessionId: "STABLE-SID" } }),
+                ];
+            for (const fn of handlers.stdout) fn(Buffer.from(lines.join("\n") + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+    const result = await runRalphTui({
+        mode: "self-improve",
+        resetOn: "never",
+        max: 5,
+        env: makeEnv(),
+        spawn,
+    });
+    assert.equal(result.terminationReason, "complete");
+    assert.ok(argLog[0].some((a) => a === "-n"), "iter 1 names a fresh session");
+    assert.ok(argLog[1].some((a) => a === "--resume=STABLE-SID"), "iter 2 must --resume the captured session");
+});
+
+test("runRalphTui: resetOn=iter never resumes (status-quo --fresh)", async () => {
+    const argLog = [];
+    const spawn = function (_bin, args) {
+        argLog.push([...args]);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            const isLast = argLog.length === 2;
+            const lines = [
+                JSON.stringify({
+                    type: "assistant.message",
+                    data: { content: isLast ? "wrap up COMPLETE" : "still going" },
+                }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "ignored" } }),
+            ];
+            for (const fn of handlers.stdout) fn(Buffer.from(lines.join("\n") + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+    await runRalphTui({
+        mode: "self-improve",
+        resetOn: "iter",
+        max: 3,
+        env: makeEnv(),
+        spawn,
+    });
+    for (let i = 0; i < argLog.length; i++) {
+        assert.ok(!argLog[i].some((a) => typeof a === "string" && a.startsWith("--resume=")),
+            `iter ${i + 1} (resetOn=iter) must never --resume`);
+        assert.ok(!argLog[i].some((a) => a === "-n"),
+            `iter ${i + 1} (resetOn=iter) must never -n (no named session)`);
+    }
+});
+
+// resetOn=workitem with an iter that does NOT emit WORKITEM_END
+// (e.g. ABORT mid-iter, or a custom prompt that never opens a work
+// item). The runner must STILL drop the captured sessionId at iter
+// exit so the next iter starts a brand-new session.
+test("runRalphTui: resetOn=workitem drops sessionId on iter exit even WITHOUT a [WORKITEM_END] marker", async () => {
+    const argLog = [];
+    const spawn = function (_bin, args) {
+        argLog.push([...args]);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            const isLast = argLog.length === 2;
+            // No WORKITEM markers at all — just a plain assistant
+            // message and the terminal result. workitem mode must
+            // STILL reset the session at iter exit.
+            const lines = [
+                JSON.stringify({
+                    type: "assistant.message",
+                    data: { content: isLast ? "second iter COMPLETE" : "first iter (no markers)" },
+                }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: `sid-${argLog.length}` } }),
+            ];
+            for (const fn of handlers.stdout) fn(Buffer.from(lines.join("\n") + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+    await runRalphTui({
+        mode: "self-improve",
+        resetOn: "workitem",
+        max: 2,
+        env: makeEnv(),
+        spawn,
+    });
+    assert.equal(argLog.length, 2, "two iters ran");
+    assert.ok(!argLog[1].some((a) => typeof a === "string" && a.startsWith("--resume=")),
+        "iter 2 (resetOn=workitem, no WORKITEM_END in iter 1) must still start fresh — implicit work-item boundary");
+});
+
+// Multiple `[WORKITEM_END]` markers within a single iter (edge case:
+// the agent processes two unrelated items in one subprocess). The
+// runner observes the markers, emits workitem_end events for each,
+// and at iter exit drops the captured sessionId so the next iter
+// starts fresh — the within-iter resets are bookkeeping; the
+// inter-iter session reset still fires once per iter exit.
+test("runRalphTui: resetOn=workitem with multiple WORKITEM_END markers in one iter still resets at iter exit", async () => {
+    const events = [];
+    const eventEmitter = {
+        runId: "wi-multi-test",
         eventsPath: "/dev/null",
         write: (ev) => events.push(ev),
         close: () => {},
     };
-    const spawn = makeMockSpawn([
-        {
-            stdout: [
-                JSON.stringify({ type: "assistant.message", data: { content: "wrap up COMPLETE" } }),
-                JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
-            ].join("\n") + "\n",
-            exitCode: 0,
-        },
-    ]);
+    const argLog = [];
+    const spawn = function (_bin, args) {
+        argLog.push([...args]);
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            const isFirst = argLog.length === 1;
+            const lines = isFirst
+                ? [
+                    JSON.stringify({
+                        type: "assistant.message",
+                        timestamp: "2026-01-01T00:00:00.000Z",
+                        data: {
+                            content: [
+                                '[WORKITEM_START: {"kind":"issue","ref":1,"title":"a"}]',
+                                '[WORKITEM_END: {"kind":"issue","ref":1,"closesN":1}]',
+                                '[WORKITEM_START: {"kind":"issue","ref":2,"title":"b"}]',
+                                '[WORKITEM_END: {"kind":"issue","ref":2,"closesN":1}]',
+                            ].join("\n"),
+                        },
+                    }),
+                    JSON.stringify({ type: "result", success: true, result: { sessionId: "first-sess" } }),
+                ]
+                : [
+                    JSON.stringify({ type: "assistant.message", data: { content: "COMPLETE" } }),
+                    JSON.stringify({ type: "result", success: true, result: { sessionId: "second-sess" } }),
+                ];
+            for (const fn of handlers.stdout) fn(Buffer.from(lines.join("\n") + "\n"));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
     await runRalphTui({
         mode: "self-improve",
-        contextMode: "fresh",
-        max: 1,
+        resetOn: "workitem",
+        max: 2,
         env: makeEnv(),
         spawn,
         eventEmitter,
-        gitExec: null,
     });
-    const iterEnds = events.filter((e) => e.type === "iteration_end");
-    assert.equal(iterEnds.length, 1);
-    assert.equal(iterEnds[0].filesChanged, undefined,
-        "field omitted when gitExec is null so Timeline cell stays hidden");
-});
+    const ends = events.filter((e) => e.type === "workitem_end");
+    assert.equal(ends.length, 2, "both WORKITEM_END markers surfaced as workitem_end events");
+    assert.ok(!argLog[1].some((a) => typeof a === "string" && a.startsWith("--resume=")),
+        "iter 2 must not resume — sessionId dropped at iter exit (workitem boundary)");});

@@ -28,9 +28,15 @@
 //                                subprocess. Choose exactly one prompt
 //                                mode (`--self-improve` /
 //                                `--grow-project` / `--prompt`) AND
-//                                one context mode (`--continue` /
-//                                `--fresh`). Sibling `--pause <runId>`
-//                                / `--resume <runId>` / `--stop
+//                                optionally a context-reset boundary
+//                                (`--reset-on={workitem|iter|never}`,
+//                                default `workitem`). Legacy
+//                                `--continue` / `--fresh` flags map
+//                                onto `--reset-on=never` /
+//                                `--reset-on=iter` with a one-shot
+//                                stderr deprecation notice.
+//                                Sibling `--pause <runId>` /
+//                                `--resume <runId>` / `--stop
 //                                <runId>` / `--status <runId>` operate
 //                                on the run state file of an in-flight
 //                                loop.
@@ -66,7 +72,7 @@ USAGE
   autopilot stats
   autopilot where
   autopilot run (--self-improve | --grow-project | --prompt TEXT)
-                (--continue | --fresh)
+                [--reset-on={workitem|iter|never}]
                 [--max N] [--focus TEXT] [--headless | --plain]
                 [--completion-promise TOKEN] [--abort-promise TOKEN]
   autopilot run --pause <runId>
@@ -88,10 +94,15 @@ OPTIONS
   --self-improve  For \`run\`: drive the baked self_improve SDLC prompt.
   --grow-project  For \`run\`: drive the baked grow_project SDLC prompt.
   --prompt TEXT   For \`run\`: drive a ralph_loop-style custom prompt.
-  --continue  For \`run\`: every iter resumes the same Copilot session
-              (context grows monotonically).
-  --fresh     For \`run\`: every iter starts a brand-new Copilot session
-              (clean context per iter).
+  --reset-on={workitem|iter|never}
+              For \`run\`: when to start a fresh Copilot session.
+              Default \`workitem\` — new session at each
+              \`[WORKITEM_END]\` (or iter exit). \`iter\` resets every
+              iter; \`never\` keeps one session for the whole run.
+  --continue  Deprecated alias for \`--reset-on=never\` (one-shot
+              stderr notice on first use).
+  --fresh     Deprecated alias for \`--reset-on=iter\` (one-shot
+              stderr notice on first use).
   --max N     For \`run\`: iteration cap (default 100; default 1000 —
               effectively unbounded — for --self-improve since the
               loop is scope-driven, not iter-driven; max 1000).
@@ -125,11 +136,11 @@ ENV
  *  known value-taking flags listed in `VALUE_FLAGS` below
  *  (currently: --older-than for `prune`, --limit for `list`, plus
  *  the `run` subcommand's --max, --focus, --prompt,
- *  --completion-promise, --abort-promise, --pause, --resume, --stop,
- *  --status). When adding a new value flag, append it to
- *  `VALUE_FLAGS` AND update the USAGE block above so
+ *  --completion-promise, --abort-promise, --reset-on, --pause,
+ *  --resume, --stop, --status). When adding a new value flag, append
+ *  it to `VALUE_FLAGS` AND update the USAGE block above so
  *  `autopilot --help` keeps matching the parser. */
-const VALUE_FLAGS = new Set(["older-than", "limit", "max", "focus", "prompt", "completion-promise", "abort-promise", "pause", "resume", "stop", "status"]);
+const VALUE_FLAGS = new Set(["older-than", "limit", "max", "focus", "prompt", "completion-promise", "abort-promise", "pause", "resume", "stop", "status", "reset-on"]);
 
 /** Default `--max` iterations per loop mode for `autopilot run`.
  *
@@ -270,6 +281,28 @@ function fail(msg, code = 2) {
     process.stderr.write(`autopilot: ${msg}\n`);
     process.exit(code);
 }
+
+// Issue #51 — one-shot stderr deprecation notice for the legacy
+// `--continue` / `--fresh` flags. The flag itself keeps working
+// (mapped to `--reset-on=never` / `--reset-on=iter`) for one
+// release; the notice prints exactly once per process even if a
+// caller passes the flag twice (no-op by argv parser, but defensive).
+// Module-level guard so the same process can't print the same
+// message twice across multiple `cmdRun` invocations either.
+const _deprecationWarned = new Set();
+export function warnDeprecatedFlagOnce(flag, mapping, sink = process.stderr) {
+    if (_deprecationWarned.has(flag)) return;
+    _deprecationWarned.add(flag);
+    sink.write?.(`autopilot run: --${flag} is deprecated; use --reset-on=${mapping} instead. ` +
+        `--${flag} will be removed in a future release.\n`);
+}
+// Test-only hook so the bin.test.mjs cases for the deprecation
+// notice can run independently. The `__test__` bag is the
+// project-wide convention for "tests can reach in but library
+// users should not" — see also writer.mjs.
+export const __test__ = {
+    resetDeprecationWarnings: () => _deprecationWarned.clear(),
+};
 
 /** Format the user-visible message printed when the user requests
  *  abort via `q` (or, in the future, any other voluntary stop
@@ -599,16 +632,46 @@ export async function cmdRun(flags) {
         return 2;
     }
 
-    let contextMode = null;
-    if (flags.continue) contextMode = "continue";
+    // Issue #51 — `--reset-on={workitem|iter|never}` (default
+    // `workitem`) replaces the binary `--continue` / `--fresh` flag.
+    // Legacy flags continue to work as aliases with a one-shot
+    // stderr deprecation notice; mixing the new flag with either
+    // alias is a usage error so a stale script can't accidentally
+    // half-migrate.
+    const acceptedResetOn = runner.RESET_ON_VALUES;
+    let resetOn = null;
+    if (flags["reset-on"] !== undefined) {
+        const v = flags["reset-on"];
+        if (v === true || typeof v !== "string") {
+            fail(`run --reset-on: requires a value of ${acceptedResetOn.join(", ")}`);
+            return 2;
+        }
+        if (!acceptedResetOn.includes(v)) {
+            fail(`run --reset-on: expected one of ${acceptedResetOn.join(", ")} (got '${v}')`);
+            return 2;
+        }
+        resetOn = v;
+    }
+    if (flags.continue) {
+        if (resetOn !== null) {
+            fail(`run: --continue is a deprecated alias for --reset-on=never; pass only one`);
+            return 2;
+        }
+        warnDeprecatedFlagOnce("continue", "never");
+        resetOn = "never";
+    }
     if (flags.fresh) {
-        if (contextMode) { fail(`run: choose exactly one of --continue / --fresh`); return 2; }
-        contextMode = "fresh";
+        if (resetOn !== null) {
+            fail(`run: --fresh is a deprecated alias for --reset-on=iter; pass only one of --reset-on / --continue / --fresh`);
+            return 2;
+        }
+        warnDeprecatedFlagOnce("fresh", "iter");
+        resetOn = "iter";
     }
-    if (!contextMode) {
-        fail(`run: choose one of --continue / --fresh (no default — context behaviour is too consequential to guess)`);
-        return 2;
-    }
+    // Default: per-work-item resets. See the issue #51 design
+    // discussion in the runner's header comment for why this is
+    // the right default.
+    if (resetOn === null) resetOn = "workitem";
 
     let max;
     if (flags.max !== undefined) {
@@ -728,7 +791,7 @@ export async function cmdRun(flags) {
     try {
         const result = await runner.runRalphTui({
             mode,
-            contextMode,
+            resetOn,
             prompt: promptText,
             focus,
             max,
@@ -841,14 +904,15 @@ export async function main(argv = process.argv.slice(2)) {
         return 0;
     }
     // Bare invocation (no subcommand, no positional) defaults to
-    // `run --self-improve --fresh` so the user does not have to memorise
-    // the canonical drive-the-backlog incantation. `--help` / `--version`
-    // already short-circuited above; explicit subcommands keep their
-    // existing behaviour via the switch below.
+    // `run --self-improve` (which inherits `--reset-on=workitem`,
+    // the post-issue-#51 default). The user does not have to
+    // memorise the canonical drive-the-backlog incantation.
+    // `--help` / `--version` already short-circuited above; explicit
+    // subcommands keep their existing behaviour via the switch
+    // below.
     if (!cmd && !positional.length) {
-        process.stderr.write("autopilot: starting self-improve loop (--fresh). Press q to stop.\n");
+        process.stderr.write("autopilot: starting self-improve loop (--reset-on=workitem). Press q to stop.\n");
         flags["self-improve"] = true;
-        flags.fresh = true;
         return await cmdRun(flags);
     }
     switch (cmd) {

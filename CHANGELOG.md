@@ -9,7 +9,18 @@
 - Startup sweep removes orphan worktrees from prior `terminated` runs (~200 ms budget). (#66)
 
 ### Breaking
-- Binary renamed `ralph-tui` → `autopilot`. Bare invocation now starts `run --self-improve --fresh` (was: print help). Use `autopilot --help` for the previous help output. (#65)
+- Issue #51 — Replaced `ralph-tui run --continue` / `--fresh` with
+  `--reset-on={workitem|iter|never}` (default `workitem`). The old
+  flags continue to work as aliases for one release with a one-shot
+  stderr deprecation notice on first use (`--continue` → `--reset-on=never`,
+  `--fresh` → `--reset-on=iter`). Users who relied on `--continue`'s
+  implicit "always continue" semantics must pass `--reset-on=never`
+  (or the deprecated `--continue` alias) to keep the old behaviour.
+  The new `workitem` default starts a fresh Copilot session at every
+  `[WORKITEM_END]` boundary (or any iter exit), so stages within a
+  single work item share one reasoning chain but unrelated backlog
+  items don't cross-pollinate.
+- Binary renamed `ralph-tui` → `autopilot`. Bare invocation now starts `run --self-improve` with the post-issue-#51 default `--reset-on=workitem` (was: print help). Use `autopilot --help` for the previous help output. (#65)
 - Issue #50 — Removed the in-session Copilot CLI extension.
   The project now ships only as the `ralph-tui` standalone TUI
   app. The `ralph_loop`, `ralph_status`, `ralph_pause`,
@@ -112,7 +123,22 @@
   end-to-end `runRalphTui` test stubs `gitExec` with canned
   diff/status output and pins the iter-end event's `filesChanged`
   field.
-
+- Issue #51 — `autopilot run --reset-on=workitem` (the new default)
+  starts a fresh Copilot session at each `[WORKITEM_END]` boundary,
+  so stages within a work item share context but unrelated backlog
+  items don't cross-pollinate. The `iter` value preserves the
+  status-quo `--fresh` behaviour (every iter starts fresh) and
+  `never` preserves the status-quo `--continue` behaviour (single
+  Copilot session for the whole run). Treats every iter exit as an
+  implicit work-item boundary so a half-finished item never carries
+  stale context into the next iter. The runner's existing
+  per-iter `result.sessionId` capture is reused: in `workitem` mode
+  the captured value is dropped at every iter-exit (whether or not
+  `[WORKITEM_END]` fired); in `never` mode it persists for the whole
+  run; in `iter` mode the runner never captures it. `armed` events
+  now carry both the legacy `contextMode` (continue/fresh/workitem)
+  and the new `resetOn` field so back-compat consumers
+  (`autopilot list / stats`) keep working.
 - Issue #57 — `ralph-tui watch` Live panel streams the agent's
   output (assistant text, tool calls, tool results) for the
   currently active L3 task, sourced directly from the Copilot

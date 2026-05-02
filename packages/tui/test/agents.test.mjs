@@ -292,3 +292,137 @@ test("agent metadata: claude adapter has the documented name + binEnvVar", () =>
     assert.equal(claude.defaultBin, "claude");
     assert.equal(claude.binEnvVar, "AUTOPILOT_CLAUDE_BIN");
 });
+
+// ─── Copilot CLI version probe (issue #105) ────────────────────────
+//
+// The runner spawns `copilot -p ... --output-format json`; older
+// 0.0.x builds reject the `--output-format` flag with a confusing
+// "unknown option" error. The adapter exports a small probe (parse,
+// compare, check, describe) so `cmdRun` and `cmdDoctor` can surface
+// a clear upgrade hint up-front. Helpers are pure where possible
+// and the I/O-bearing `checkCliVersion` accepts an injected
+// `exec`/`env`/`stderr` for the test seam.
+
+test("copilot.parseCliVersion: extracts the M.m.p triple from the documented Copilot CLI banner", () => {
+    assert.deepEqual(copilot.parseCliVersion("GitHub Copilot CLI 1.0.40."), [1, 0, 40]);
+    assert.deepEqual(copilot.parseCliVersion("GitHub Copilot CLI 1.0.40\n"), [1, 0, 40]);
+    assert.deepEqual(copilot.parseCliVersion("0.0.354"), [0, 0, 354]);
+    assert.deepEqual(copilot.parseCliVersion("v2.13.7-beta.1"), [2, 13, 7]);
+});
+
+test("copilot.parseCliVersion: returns null for non-string / un-parseable input", () => {
+    assert.equal(copilot.parseCliVersion(null), null);
+    assert.equal(copilot.parseCliVersion(undefined), null);
+    assert.equal(copilot.parseCliVersion(42), null);
+    assert.equal(copilot.parseCliVersion(""), null);
+    assert.equal(copilot.parseCliVersion("no version here"), null);
+    assert.equal(copilot.parseCliVersion("1.2"), null); // need three components
+});
+
+test("copilot.compareCliVersion: orders triples lexicographically and throws on bad input", () => {
+    assert.equal(copilot.compareCliVersion([1, 0, 0], [0, 9, 99]), 1);
+    assert.equal(copilot.compareCliVersion([0, 9, 99], [1, 0, 0]), -1);
+    assert.equal(copilot.compareCliVersion([1, 2, 3], [1, 2, 3]), 0);
+    assert.equal(copilot.compareCliVersion([1, 0, 40], [1, 0, 0]), 1);
+    assert.equal(copilot.compareCliVersion([0, 0, 354], [1, 0, 0]), -1);
+    assert.throws(() => copilot.compareCliVersion(null, [1, 0, 0]), TypeError);
+    assert.throws(() => copilot.compareCliVersion([1, 0, 0], "1.0.0"), TypeError);
+    assert.throws(() => copilot.compareCliVersion([1, 0], [1, 0, 0]), TypeError);
+});
+
+test("copilot.checkCliVersion: ok path returns the parsed triple + raw banner", () => {
+    const r = copilot.checkCliVersion({
+        bin: "/fake/copilot",
+        exec: () => ({ ok: true, stdout: "GitHub Copilot CLI 1.0.40.\n" }),
+    });
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.version, [1, 0, 40]);
+    assert.equal(r.bin, "/fake/copilot");
+    assert.equal(r.raw, "GitHub Copilot CLI 1.0.40.");
+});
+
+test("copilot.checkCliVersion: too-old version reports the floor and the actual triple", () => {
+    const r = copilot.checkCliVersion({
+        bin: "/fake/copilot",
+        exec: () => ({ ok: true, stdout: "GitHub Copilot CLI 0.0.354.\n" }),
+    });
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, "too-old");
+    assert.deepEqual(r.version, [0, 0, 354]);
+    assert.deepEqual(r.min, [1, 0, 0]);
+});
+
+test("copilot.checkCliVersion: missing binary surfaces reason='missing' (ENOENT)", () => {
+    const err = Object.assign(new Error("spawn /no/such ENOENT"), { code: "ENOENT" });
+    const r = copilot.checkCliVersion({
+        bin: "/no/such/copilot",
+        exec: () => ({ ok: false, reason: "missing", error: err }),
+    });
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, "missing");
+    assert.equal(r.bin, "/no/such/copilot");
+});
+
+test("copilot.checkCliVersion: spawn failure (non-ENOENT) surfaces reason='exec-failed'", () => {
+    const r = copilot.checkCliVersion({
+        bin: "/fake/copilot",
+        exec: () => ({ ok: false, reason: "exec-failed", stderr: "permission denied", status: 126 }),
+    });
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, "exec-failed");
+    assert.equal(r.stderr, "permission denied");
+    assert.equal(r.status, 126);
+});
+
+test("copilot.checkCliVersion: unparseable output surfaces reason='unparseable' with the raw text", () => {
+    const r = copilot.checkCliVersion({
+        bin: "/fake/copilot",
+        exec: () => ({ ok: true, stdout: "Copilot CLI nightly-build\n" }),
+    });
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, "unparseable");
+    assert.equal(r.raw, "Copilot CLI nightly-build");
+});
+
+test("copilot.checkCliVersion: resolves bin via resolveBin when not passed explicitly", () => {
+    let observedBin = null;
+    const r = copilot.checkCliVersion({
+        env: { AUTOPILOT_COPILOT_BIN: "/from/env/copilot" },
+        exec: (bin) => { observedBin = bin; return { ok: true, stdout: "1.0.0\n" }; },
+        stderr: { write: () => true },
+    });
+    assert.equal(observedBin, "/from/env/copilot");
+    assert.equal(r.ok, true);
+    assert.equal(r.bin, "/from/env/copilot");
+});
+
+test("copilot.describeCliVersionResult: composes a one-line summary for each branch", () => {
+    assert.match(
+        copilot.describeCliVersionResult({ ok: true, version: [1, 0, 40], bin: "/fake/copilot", raw: "1.0.40" }),
+        /copilot CLI: 1\.0\.40 \(>= 1\.0\.0, ok\)/,
+    );
+    assert.match(
+        copilot.describeCliVersionResult({ ok: false, reason: "too-old", version: [0, 0, 354], min: [1, 0, 0], bin: "/fake/copilot", raw: "0.0.354" }),
+        /copilot CLI: 0\.0\.354 is older than 1\.0\.0.*issue #105/,
+    );
+    assert.match(
+        copilot.describeCliVersionResult({ ok: false, reason: "missing", bin: "/no/such/copilot" }),
+        /copilot CLI: not found at \/no\/such\/copilot.*npm i -g @github\/copilot/,
+    );
+    assert.match(
+        copilot.describeCliVersionResult({ ok: false, reason: "exec-failed", bin: "/fake/copilot", error: new Error("boom"), status: 1 }),
+        /copilot CLI: `\/fake\/copilot --version` failed \(boom\)/,
+    );
+    assert.match(
+        copilot.describeCliVersionResult({ ok: false, reason: "unparseable", bin: "/fake/copilot", raw: "weird build string" }),
+        /copilot CLI: at \/fake\/copilot but `--version` output is unrecognised/,
+    );
+    assert.match(
+        copilot.describeCliVersionResult(null),
+        /copilot CLI: unknown/,
+    );
+});
+
+test("copilot.MIN_KNOWN_GOOD_CLI_VERSION: pinned at 1.0.0 (issue #105)", () => {
+    assert.equal(copilot.MIN_KNOWN_GOOD_CLI_VERSION, "1.0.0");
+});

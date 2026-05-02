@@ -9172,3 +9172,49 @@ test("docs(architecture): DI options list includes every supported createRalphCo
         "ARCHITECTURE.md must briefly describe what the events DI slot is for",
     );
 });
+
+// Iter 121 — drift guard: README's 3 manual-install `curl` loops MUST
+// list source files in the same leaf-first order as install.sh's
+// FILES array (events-emit.mjs handler.mjs extension.mjs — entry
+// point LAST). install.sh's atomic per-file copy is intentional —
+// from iter 113's commit message: "If a concurrent `/extensions
+// reload` fires mid-install, replacing the entry point last means
+// the SDK either sees the old fully-coherent set or the new fully-
+// coherent set. It can never see an old entry against new siblings
+// whose API contract may have shifted under it."
+//
+// The same invariant applies to the README's curl-based manual
+// install: a download interrupted (or merely slow) mid-loop, with a
+// concurrent /extensions reload, would otherwise leave the new
+// entry point importing missing/old siblings — the exact crash
+// install.sh painstakingly avoids. Pre-iter-121 the README listed
+// the entry point FIRST in all three install snippets.
+test("README curl install loops use leaf-first order matching install.sh's FILES", () => {
+    const readme = readFileSync(join(REPO_ROOT, "README.md"), "utf8");
+    const installSh = readFileSync(join(REPO_ROOT, "install.sh"), "utf8");
+    // Pin install.sh's canonical order (the source of truth).
+    const installFilesMatch = installSh.match(/^FILES=\(([^)]+)\)/m);
+    assert.ok(installFilesMatch, "install.sh must declare FILES=(...) somewhere on its own line");
+    const expectedOrder = installFilesMatch[1].trim();
+    assert.equal(
+        expectedOrder,
+        "events-emit.mjs handler.mjs extension.mjs",
+        "install.sh's FILES order is the source of truth — entry point LAST. " +
+        "Update this assertion AND every README curl loop in lockstep if you change it.",
+    );
+    // Now require every README `for f in <list>; do` loop covering
+    // the runtime modules to use the same order. The regex captures
+    // the list; we then assert it equals expectedOrder verbatim.
+    const forLoops = [...readme.matchAll(/for f in ([^;]+); do/g)].map((m) => m[1].trim());
+    assert.ok(forLoops.length >= 3, `expected ≥3 curl install loops in README, found ${forLoops.length}`);
+    for (const list of forLoops) {
+        if (!/handler\.mjs/.test(list)) continue; // skip unrelated `for f in ...` loops if any
+        assert.equal(
+            list,
+            expectedOrder,
+            `README curl install loop has wrong file order: ${JSON.stringify(list)}. ` +
+            "Must match install.sh's FILES (entry point LAST) so a concurrent " +
+            "/extensions reload mid-curl can never load a new entry against missing/old siblings.",
+        );
+    }
+});

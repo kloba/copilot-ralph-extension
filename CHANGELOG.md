@@ -36,6 +36,22 @@
   either value is caught at test time.
 
 ### Fixes
+- README's three manual-install `curl` loops (Option A
+  user-scoped, Option B project-scoped, Option D pinned
+  release) now download `events-emit.mjs` and `handler.mjs`
+  BEFORE the `extension.mjs` entry point, matching the same
+  leaf-first order `install.sh`'s `FILES` array maintains
+  for atomic per-file installs (iter 113). Previously the
+  README listed `extension.mjs handler.mjs events-emit.mjs`
+  — entry point FIRST — so a slow link or a `/extensions
+  reload` firing mid-curl could leave the SDK loading the
+  new entry point against missing/old siblings (the exact
+  torn-import scenario `install.sh` painstakingly avoids).
+  A drift-guard test now reads `install.sh`'s `FILES=` line
+  as the source of truth and asserts every README `for f in
+  …; do` loop covering the runtime modules uses the same
+  order verbatim, so the two install paths can never silently
+  diverge again.
 - `events-emit.mjs` `clipExcerpt` no longer splits a UTF-16
   surrogate pair when truncating a long excerpt at the
   `MAX_EXCERPT_CHARS` (500) boundary. Previously, an emoji

@@ -2,23 +2,24 @@
 
 > Stack-verification reference for `packages/tui/` (issue #22).
 >
-> The ralph TUI is built on the same proven trio used by today's leading
-> agentic-CLI tools: **Ink** (React for terminal UIs), **Yoga**
-> (Facebook's Flexbox engine that Ink uses for layout), and **Commander**
-> (the de-facto Node.js CLI argument parser). This document captures
-> *why* we picked each piece and *where* the same choice shows up in
-> Anthropic's Claude Code CLI and GitHub Copilot CLI, so future
-> contributors can ground design decisions in real-world precedent
-> rather than internet folklore.
+> The autopilot TUI under `packages/tui/` is built on the same proven
+> trio used by today's leading agentic-CLI tools: **Ink** (React for
+> terminal UIs), **Yoga** (Facebook's Flexbox engine that Ink uses for
+> layout), and **Commander** (the de-facto Node.js CLI argument parser).
+> This document captures *why* we picked each piece and *where* the same
+> choice shows up in Anthropic's Claude Code CLI and GitHub Copilot CLI,
+> so future contributors can ground design decisions in real-world
+> precedent rather than internet folklore.
 
 ## TL;DR
 
-| Layer            | Library     | Version pin           | Purpose                                                  |
-| ---------------- | ----------- | --------------------- | -------------------------------------------------------- |
-| Render           | `ink`       | `^5.0.1`              | React-based renderer for terminal UIs.                   |
-| Layout           | `yoga-layout` | (transitive via Ink)| Flexbox layout — `<Box>` / `<Text>` use Yoga internally. |
-| Argv             | `commander` | `^12.1.0`             | Subcommands (`watch`, `replay`, `list`) + `--plain`.     |
-| Spinners / glyphs | `ink-spinner` | `^5.0.0`           | Status indicators in `<Header>` and `<Controls>`.        |
+| Layer             | Library               | Version pin          | Purpose                                                  |
+| ----------------- | --------------------- | -------------------- | -------------------------------------------------------- |
+| Render            | `ink`                 | `^7.0.1`             | React-based renderer for terminal UIs.                   |
+| Layout            | `yoga-layout`         | (transitive via Ink) | Flexbox layout — `<Box>` / `<Text>` use Yoga internally. |
+| Argv              | `commander`           | `^14.0.3`            | Subcommands (`watch`, `replay`, `list`, `run`) + flags.  |
+| Spinners / glyphs | `ink-spinner`         | `^5.0.0`             | Status indicators in `<Header>` and `<Controls>`.        |
+| (Test only)       | `ink-testing-library` | `^4.0.0`             | Snapshot the Ink tree to a string buffer.                |
 
 These pins live in [`packages/tui/package.json`](../packages/tui/package.json)
 and are only required for the interactive Ink-rendered `watch` / `run`

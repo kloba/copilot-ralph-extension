@@ -100,10 +100,17 @@ if [[ "$DRY_RUN" == "1" ]]; then
   echo "Source:    $SOURCE_DIR/"
   echo "Target:    $TARGET_DIR/"
   echo "Files:"
+  total=0
   for f in "${FILES[@]}"; do
     size=$(wc -c < "$SOURCE_DIR/$f" | tr -d ' ')
     echo "  $f ($size bytes)"
+    total=$((total + size))
   done
+  # Surface the total install footprint so a contributor reviewing
+  # the dry-run output doesn't have to mentally sum the per-file
+  # bytes — useful when verifying that an install fits inside a
+  # quota'd filesystem (e.g. CI sandboxes, container layers).
+  echo "Total:     $total bytes (${#FILES[@]} files)"
   exit 0
 fi
 

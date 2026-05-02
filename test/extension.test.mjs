@@ -8242,3 +8242,36 @@ test("ci.yml has a concurrency block that cancels stale PR runs but preserves ma
         "cancel-in-progress must be gated on pull_request — main pushes must NEVER cancel an in-flight CI run, otherwise the green/red signal on merged commits is silently lost",
     );
 });
+
+test("install.sh: --dry-run reports a Total bytes line summing the per-file sizes", async () => {
+    // Iter 93 added a footprint summary at the end of the dry-run
+    // output so a reviewer doesn't have to mentally sum the per-
+    // file byte counts (handy when verifying the install fits in
+    // a quota'd filesystem — CI sandbox, container layer, etc).
+    // Drift guard pins:
+    //   1. a `Total: N bytes (K files)` line is present;
+    //   2. K equals the actual count of `extension/*.mjs` files;
+    //   3. N equals the sum of the per-file byte sizes.
+    const fs = await import("node:fs");
+    const sandboxHome = mkdtempSync(join(tmpdir(), "ralph-install-total-"));
+    try {
+        const r = spawnSync(
+            "bash",
+            [resolve(REPO_ROOT, "install.sh"), "--dry-run"],
+            { encoding: "utf8", env: { ...process.env, HOME: sandboxHome } },
+        );
+        assert.equal(r.status, 0, `--dry-run exited ${r.status}; stderr=${r.stderr}`);
+        const onDisk = readdirSync(resolve(REPO_ROOT, "extension"))
+            .filter((f) => f.endsWith(".mjs"))
+            .sort();
+        const expectedTotal = onDisk
+            .map((f) => fs.statSync(resolve(REPO_ROOT, "extension", f)).size)
+            .reduce((a, b) => a + b, 0);
+        const m = r.stdout.match(/^Total:\s+(\d+) bytes \((\d+) files\)\s*$/m);
+        assert.ok(m, `dry-run stdout must include a "Total: N bytes (K files)" line; got:\n${r.stdout}`);
+        assert.equal(Number(m[1]), expectedTotal, "Total bytes must equal sum of per-file sizes");
+        assert.equal(Number(m[2]), onDisk.length, "Total file count must equal extension/*.mjs count");
+    } finally {
+        rmSync(sandboxHome, { recursive: true, force: true });
+    }
+});

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Features
+- `install.sh --dry-run` now closes the file listing with a
+  one-line install-footprint summary
+  (`Total:   <N> bytes (<K> files)`) so a contributor reviewing
+  the dry-run output no longer has to mentally sum the per-file
+  byte counts. Useful when verifying an install fits inside a
+  quota'd filesystem (CI sandboxes, container layers). Drift-
+  guard test pins both halves of the line — the byte total
+  matches the sum of `extension/*.mjs` sizes and the file count
+  matches `extension/*.mjs.length` — so a future hardcode of
+  either value is caught at test time.
+
 ### Internal
 - `.github/workflows/ci.yml` now declares a `concurrency` block
   so a fast-typing contributor pushing several commits to the

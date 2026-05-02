@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Fixes
+- `compareSemver` (introduced iter 80) now parses but ignores
+  build metadata per SemVer 2.0.0 §10. Previously the regex
+  rejected the `+meta` suffix outright, so a tag like
+  `0.6.1+sha.abcdef0` fell through to the malformed→0
+  silent-degrade path and compared equal to ALL other versions,
+  including `0.7.0`. Real-world impact: a release pipeline that
+  stamps a build tag (or any consumer pulling tags from
+  `gh release list` where third-party fork releases sometimes
+  include build metadata) would silently miss every upgrade
+  recommendation under the planned issue #25 version-check
+  feature. Widened the regex to accept `+[0-9A-Za-z.-]+` and
+  discard the captured segment before comparison; precedence
+  for `MAJOR.MINOR.PATCH` and prerelease segments is unchanged.
+  9 new tests pin the §10 contract end-to-end. Refs #25.
+
 ### Documentation
 - README's `ralph_status` behaviour-notes block now spells out
   that `elapsed_ms` is wall-clock — counted from arm-time to

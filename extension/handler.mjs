@@ -49,11 +49,13 @@ export const VERSION = "0.6.0";
 // falsely recommend an update on a parse failure — silent degrade
 // over false positive.
 //
-// Build metadata (`+...`) is intentionally NOT supported here; per
-// SemVer 2.0.0 §10 build metadata MUST be ignored when determining
-// version precedence, and our release pipeline does not emit it.
+// Build metadata (`+...`) is permitted by the regex per SemVer 2.0.0
+// §9 but its content is intentionally discarded before precedence
+// comparison, per §10: "Build metadata MUST be ignored when
+// determining version precedence." A tag like `1.0.0+ci.42` therefore
+// compares semver-equal to `1.0.0` and strictly less than `1.0.1`.
 export function compareSemver(a, b) {
-    const re = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
+    const re = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
     const ma = re.exec(typeof a === "string" ? a : "");
     const mb = re.exec(typeof b === "string" ? b : "");
     if (!ma || !mb) return 0;

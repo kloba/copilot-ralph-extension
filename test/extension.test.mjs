@@ -7879,3 +7879,34 @@ test("README pins ralph_status elapsed_ms wall-clock semantics (drift guard)", a
     assert.match(readme, /includes pause time/, "wall-clock bullet must call out pause-time inclusion");
     assert.match(readme, /Subtract `total_paused_ms`/, "wall-clock bullet must point users at total_paused_ms for active-only time");
 });
+
+test("compareSemver parses but ignores build metadata per SemVer 2.0.0 §10", () => {
+    // §10: "Build metadata MUST be ignored when determining version
+    // precedence." Iter 80 implemented compareSemver but its regex
+    // rejected the `+meta` suffix outright, so any tag with build
+    // metadata fell through to the malformed→0 silent-degrade path.
+    // Real-world impact: a CI pipeline that stamps a build tag
+    // (e.g. `0.6.1+sha.abcdef0`) would compare semver-equal to ALL
+    // other versions, including `0.7.0`, and the planned issue #25
+    // version-check feature would never recommend an upgrade.
+    //
+    // Iter 83 widens the regex to accept `+[0-9A-Za-z.-]+` and
+    // discards the captured group before comparison.
+    const { compareSemver } = __test__;
+    // Build metadata is ignored — same precedence as the bare version.
+    assert.strictEqual(compareSemver("1.0.0+x", "1.0.0"), 0);
+    assert.strictEqual(compareSemver("1.0.0", "1.0.0+x"), 0);
+    assert.strictEqual(compareSemver("1.0.0+a", "1.0.0+b"), 0);
+    // Build metadata does NOT mask MAJOR/MINOR/PATCH precedence.
+    assert.strictEqual(compareSemver("1.0.0+x", "1.0.1"), -1);
+    assert.strictEqual(compareSemver("1.0.1", "1.0.0+x"), 1);
+    assert.strictEqual(compareSemver("2.0.0+x", "1.99.99"), 1);
+    // Build metadata combines with prerelease (§9: build follows prerelease).
+    assert.strictEqual(compareSemver("1.0.0-rc.1+x", "1.0.0-rc.1"), 0);
+    assert.strictEqual(compareSemver("1.0.0-rc.1+x", "1.0.0"), -1);
+    assert.strictEqual(compareSemver("1.0.0-rc.1+x", "1.0.0-rc.2"), -1);
+    // Malformed build metadata (empty or missing chars after `+`) still
+    // falls through to malformed→0; we don't make the parser stricter
+    // than necessary.
+    assert.strictEqual(compareSemver("1.0.0+", "1.0.1"), 0, "empty build metadata is rejected → malformed→0");
+});

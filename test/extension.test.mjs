@@ -6938,3 +6938,45 @@ test("README pause/resume bullet lists the iter-59 token + completion isolation 
     // Cross-reference into concepts.md must remain pointable.
     assert.match(readme, /docs\/concepts\.md/);
 });
+
+test("sub-agent assistant.message during pause: sub-agent guard wins (no token credit, no observed flag)", async () => {
+    // Ordering pin for onAssistantMessage's two early-exit guards:
+    // isSubAgentEvent runs FIRST, then the paused guard. If the order
+    // were swapped, a sub-agent assistant.message that arrives while
+    // the loop is paused AND fireInFlight is true would set
+    // observedMessageThisFire — which can prematurely satisfy the
+    // queue-bloat protection in onIdle (line ~1505). Ditto for
+    // sub-agent usage: the sub-agent guard returns BEFORE creditUsage
+    // can run, but if a regression moved the paused guard above it
+    // the paused branch would also skip credit. The interesting bit
+    // is observedMessageThisFire — pin both: zero token credit AND
+    // no observedMessageThisFire mutation when a sub-agent fires
+    // during pause.
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    // Fire iter 1 with real usage; a is the active state shorthand.
+    emitUsage(session, { input: 100, output: 20, content: "iter 1 ok" });
+    const a = controller.state.active;
+    const tokensBefore = { input: a.tokens.input, output: a.tokens.output };
+    // Pause. Force fireInFlight=true to make observedMessageThisFire
+    // mutation observable (it's only touched when fireInFlight is true).
+    await pause.handler({});
+    a.fireInFlight = true;
+    a.observedMessageThisFire = false;
+    // A sub-agent assistant.message during pause — must be filtered
+    // by the sub-agent guard FIRST, never reaching the paused branch
+    // that would have set observedMessageThisFire.
+    session.emit("assistant.message", {
+        agentId: "sub-rubber-duck-1",
+        data: {
+            content: "sub-agent says COMPLETE for what it's worth",
+            usage: { input_tokens: 50000, output_tokens: 9999, model: "claude-opus-4.7" },
+        },
+    });
+    assert.equal(a.tokens.input, tokensBefore.input,
+        "sub-agent usage during pause must not credit input tokens");
+    assert.equal(a.tokens.output, tokensBefore.output,
+        "sub-agent usage during pause must not credit output tokens");
+    assert.equal(a.observedMessageThisFire, false,
+        "sub-agent message during pause must NOT set observedMessageThisFire — sub-agent guard runs before paused guard");
+});

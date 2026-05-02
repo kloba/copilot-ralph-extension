@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Tests
+- Pin the ordering of the two early-exit guards in
+  `onAssistantMessage` (`isSubAgentEvent` first, then the paused
+  short-circuit). A sub-agent `assistant.message` arriving while the
+  loop is paused AND `fireInFlight=true` must NOT set
+  `observedMessageThisFire` — otherwise the post-resume idle would
+  skip the next real fire because queue-bloat protection thinks the
+  in-flight response was already observed (by a sub-agent that
+  wasn't even the root agent). The test arms a loop, pauses, sets
+  `fireInFlight=true` + `observedMessageThisFire=false`, emits a
+  sub-agent `assistant.message` carrying heavy usage (50000 input,
+  9999 output) and a stray "COMPLETE" string, then asserts tokens
+  unchanged AND `observedMessageThisFire=false`. Regressions that
+  swap the two guards trip the test immediately.
+
 ### Documentation
 - Document the iter-57 + iter-59 pause/resume isolation contract in
   `docs/concepts.md` and the README. Pause-time chat is now isolated

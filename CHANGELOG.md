@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Fixes
+- Replace the awkward `Valid keys: .` error
+  rendering for tools that accept no arguments
+  (only `ralph_resume` today) with the clearer
+  `This tool takes no arguments.` guidance. The
+  legacy wording produced output like
+  `ralph_resume: unknown argument: "foo". Valid
+  keys: .` — the dangling period after `Valid
+  keys:` read like a copy-paste typo and
+  obscured the real signal (the tool simply
+  takes no arguments). Tools with at least one
+  known key (every other tool) keep the
+  `Valid keys: ...` listing unchanged.
+
 ### Documentation
 - Fill in the "Pause / resume semantics" section
   of docs/concepts.md (was a stub). Documents the

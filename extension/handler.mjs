@@ -788,8 +788,15 @@ function validateArgShape(toolName, args, knownKeys) {
     }
     const unknown = Object.keys(args).filter((k) => !knownKeys.has(k));
     if (unknown.length) {
+        // When the tool accepts no arguments at all (knownKeys is empty)
+        // the legacy "Valid keys: ." rendered with a stray dangling period
+        // and read like a typo. Surface a clearer user-facing message in
+        // that case.
+        const guidance = knownKeys.size === 0
+            ? "This tool takes no arguments."
+            : `Valid keys: ${[...knownKeys].join(", ")}.`;
         return {
-            error: `${toolName}: unknown argument${pluralS(unknown.length)}: ${unknown.map((k) => JSON.stringify(k)).join(", ")}. Valid keys: ${[...knownKeys].join(", ")}.`,
+            error: `${toolName}: unknown argument${pluralS(unknown.length)}: ${unknown.map((k) => JSON.stringify(k)).join(", ")}. ${guidance}`,
         };
     }
     return null;

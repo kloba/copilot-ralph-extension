@@ -6340,3 +6340,31 @@ test("docs/concepts.md: Pause / resume semantics section exists and pins core cl
     assert.match(doc, /ralph_resume/, "table must reference ralph_resume");
     assert.match(doc, /ralph_stop/, "table must reference ralph_stop");
 });
+
+// -----------------------------------------------------------------------------
+// validateArgShape: when a tool accepts NO arguments at all (knownKeys empty),
+// the legacy wording "Valid keys: ." rendered with a stray dangling period
+// that read like a typo. Pin the cleaner phrasing for ralph_resume (the only
+// shipped tool with an empty key set) and the no-bogus-period invariant.
+// -----------------------------------------------------------------------------
+
+test("ralph_resume: rejects unknown args with 'takes no arguments' guidance (no Valid keys: . typo)", async () => {
+    const { controller } = await arm({ max_iterations: 5 });
+    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const r = await resume.handler({ foo: 1 });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /unknown argument: "foo"/);
+    assert.match(r.textResultForLlm, /takes no arguments/i,
+        "empty-knownKeys tools must say 'takes no arguments' rather than 'Valid keys: .'");
+    // Specifically guard against the dangling-period-after-Valid-keys typo.
+    assert.doesNotMatch(r.textResultForLlm, /Valid keys: ?\./);
+});
+
+test("ralph_resume: pluralizes 'unknown arguments' when more than one bogus key supplied", async () => {
+    const { controller } = await arm({ max_iterations: 5 });
+    const resume = controller.tools.find((t) => t.name === "ralph_resume");
+    const r = await resume.handler({ foo: 1, bar: 2 });
+    assert.equal(r.resultType, "failure");
+    assert.match(r.textResultForLlm, /unknown arguments: "foo", "bar"/);
+    assert.match(r.textResultForLlm, /takes no arguments/i);
+});

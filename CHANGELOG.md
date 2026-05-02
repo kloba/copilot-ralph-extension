@@ -107,6 +107,19 @@
   `1 character.` and `N characters.`.
 
 ### Internal
+- Extract `safeSliceChars(s, max)` as a shared exported helper
+  in `packages/tui/src/events.mjs`, generalising the iter 117
+  `safeSlice500` (now removed). `serializeEvent`'s 500-char
+  excerpt/note cap and `plain.mjs`'s 80-char excerpt cap now
+  share the same surrogate-safe boundary check rather than
+  open-coding the off-by-one guard at every call site. As a
+  follow-on bug fix, `plain.mjs`'s `formatEventLine` excerpt
+  cap is now surrogate-safe — pre-iter-119 the cap used a
+  naive `.slice(0, 80)` which would keep a lone high surrogate
+  when an emoji landed at the boundary; `JSON.stringify` then
+  rendered the lone half as a verbose `\uD83D` escape in the
+  `tail -f`'d line, surprising the user. Pinned by a
+  regression test in `packages/tui/test/plain.test.mjs`.
 - `packages/tui/src/events.mjs`'s `serializeEvent` now uses
   a surrogate-safe truncation helper (`safeSlice500`) for
   the `excerpt` and `note` fields rather than a naïve

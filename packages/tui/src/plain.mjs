@@ -9,6 +9,8 @@
 // log line. No I/O, no ANSI. Tests pin the exact wording for the
 // snapshot suite.
 
+import { safeSliceChars } from "./events.mjs";
+
 const PAD2 = (n) => String(n).padStart(2, "0");
 const PAD3 = (n) => String(n).padStart(3, "0");
 
@@ -69,8 +71,13 @@ export function formatEventLine(ev) {
     if (typeof ev.excerpt === "string" && ev.excerpt) {
         // Collapse whitespace so the excerpt stays single-line. Cap at 80
         // chars in plain mode to keep `tail -f` readable; the TUI's
-        // detail pane shows the full excerpt.
-        const collapsed = ev.excerpt.replace(/\s+/g, " ").slice(0, 80);
+        // detail pane shows the full excerpt. `safeSliceChars` (shared
+        // with serializeEvent) ensures the 80-char boundary doesn't
+        // split a UTF-16 surrogate pair — a naive `.slice(0, 80)`
+        // landing on a high surrogate would emit a lone half that
+        // JSON.stringify would then render as a verbose `\uD83D` escape
+        // in the rendered line.
+        const collapsed = safeSliceChars(ev.excerpt.replace(/\s+/g, " "), 80);
         parts.push(`excerpt=${JSON.stringify(collapsed)}`);
     }
     return parts.join("  ");

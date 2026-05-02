@@ -70,8 +70,8 @@ export function makeRunId(label, startedAt) {
 }
 
 /**
- * Truncate `s` to at most 500 characters without splitting a UTF-16
- * surrogate pair. A naïve `s.slice(0, 500)` can land between the
+ * Truncate `s` to at most `max` characters without splitting a UTF-16
+ * surrogate pair. A naïve `s.slice(0, max)` can land between the
  * high+low halves of a 4-byte char (emoji / astral plane) and emit a
  * lone surrogate — technically valid UTF-16 but renders as a
  * replacement glyph in most terminals AND breaks any consumer doing
@@ -81,13 +81,23 @@ export function makeRunId(label, startedAt) {
  * half). Mirrors the inline guard in extension/events-emit.mjs's
  * `clipExcerpt` and the `safeSliceEnd` helper in extension/handler.mjs.
  *
+ * Exported so other TUI rendering paths (e.g. `plain.mjs`'s 80-char
+ * excerpt cap) can share the same surrogate-safe truncation rather
+ * than re-deriving the off-by-one boundary check at every call site.
+ *
  * @param {string} s
+ * @param {number} max  - non-negative integer; the maximum number of
+ *                        UTF-16 code units to retain. Pre-condition:
+ *                        finite and >= 1; non-conforming inputs
+ *                        return the original string unmodified.
  * @returns {string}
  */
-function safeSlice500(s) {
-    if (s.length <= 500) return s;
-    const code = s.charCodeAt(499);
-    return s.slice(0, code >= 0xD800 && code <= 0xDBFF ? 499 : 500);
+export function safeSliceChars(s, max) {
+    if (typeof s !== "string") return s;
+    if (!Number.isFinite(max) || max < 1) return s;
+    if (s.length <= max) return s;
+    const code = s.charCodeAt(max - 1);
+    return s.slice(0, code >= 0xD800 && code <= 0xDBFF ? max - 1 : max);
 }
 
 /**
@@ -120,14 +130,14 @@ export function serializeEvent(ev) {
     if (Number.isFinite(ev.maxIterations)) out.maxIterations = ev.maxIterations;
     if (Number.isFinite(ev.minIterations)) out.minIterations = ev.minIterations;
     if (typeof ev.reason === "string") out.reason = ev.reason;
-    if (typeof ev.excerpt === "string") out.excerpt = safeSlice500(ev.excerpt);
+    if (typeof ev.excerpt === "string") out.excerpt = safeSliceChars(ev.excerpt, 500);
     if (Number.isFinite(ev.streak)) out.streak = ev.streak;
     if (ev.tokens && typeof ev.tokens === "object") {
         const input = Number.isFinite(ev.tokens.input) ? ev.tokens.input : 0;
         const output = Number.isFinite(ev.tokens.output) ? ev.tokens.output : 0;
         out.tokens = { input, output };
     }
-    if (typeof ev.note === "string") out.note = safeSlice500(ev.note);
+    if (typeof ev.note === "string") out.note = safeSliceChars(ev.note, 500);
 
     const line = JSON.stringify(out);
     if (Buffer.byteLength(line, "utf8") > MAX_EVENT_LINE_BYTES) {

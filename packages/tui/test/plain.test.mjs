@@ -184,3 +184,47 @@ test("formatEventLine: pausedForMs is omitted on non-resume events", () => {
     });
     assert.doesNotMatch(line, /pausedForMs=/);
 });
+
+// Iter 119 — plain-mode excerpt cap at 80 chars must not split a
+// UTF-16 surrogate pair. Pre-iter-119 the cap used a naive
+// `.slice(0, 80)` which would keep a lone high surrogate when an
+// emoji landed at the boundary; the resulting lone surrogate would
+// be rendered by `JSON.stringify` as a verbose `\uD83D` escape in
+// the `tail -f`'d line — surprising the user with a literal escape
+// sequence where they expected either the emoji or its safe
+// truncation. The fix routes the slice through `safeSliceChars`
+// shared with `serializeEvent` (events.mjs).
+test("formatEventLine: 80-char excerpt cap is surrogate-safe", () => {
+    // Place 💀 (U+1F480, two code units 0xD83D + 0xDC80) at indices
+    // 79..80 so a naive `.slice(0, 80)` would keep the high
+    // surrogate at 79 and drop the low surrogate at 80.
+    const skull = String.fromCharCode(0xD83D, 0xDC80);
+    const excerpt = "x".repeat(79) + skull + skull.repeat(20);
+    assert.equal(excerpt.charCodeAt(79), 0xD83D, "test setup: index 79 must be the high surrogate");
+    assert.equal(excerpt.charCodeAt(80), 0xDC80, "test setup: index 80 must be the low surrogate");
+    const line = formatEventLine({
+        type: "iteration_end",
+        ts: 0,
+        runId: "r-1",
+        iteration: 1,
+        excerpt,
+    });
+    const m = line.match(/excerpt="([^"]*)"/);
+    assert.ok(m, "excerpt segment present");
+    // The rendered line must not contain a `\uD83D` JSON escape (the
+    // tell-tale sign of a lone high surrogate). If the slice landed
+    // INSIDE the surrogate pair, JSON.stringify would emit `\\uD83D`
+    // verbatim — surprising the user.
+    assert.ok(
+        !line.includes("\\uD83D") && !line.includes("\\ud83d"),
+        `formatEventLine emitted a lone high surrogate escape: ${line}`,
+    );
+    // The captured excerpt segment itself must contain no lone
+    // high surrogate when re-parsed (defence in depth — the regex
+    // above captures the post-JSON.stringify form, so the captured
+    // string is already escape-decoded by the regex... actually no,
+    // the regex captures the literal between the quotes which still
+    // contains JSON escapes. The negative-include check above is
+    // the canonical assertion).
+    assert.ok(m[1].length <= 80, `cap must hold (got length ${m[1].length})`);
+});

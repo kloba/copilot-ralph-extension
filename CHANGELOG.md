@@ -237,6 +237,26 @@
   `1 character.` and `N characters.`.
 
 ### Internal
+- `packages/tui/src/events.mjs`'s `serializeEvent` now caps the
+  `reason` field at 500 chars (surrogate-safely via
+  `safeSliceChars`) for symmetry with the long-standing caps on
+  `note` and `excerpt`. Caller hygiene already enforced this
+  upstream — `parseUserReason` in `extension/handler.mjs`
+  routes user-supplied `ralph_pause` / `ralph_stop` reasons
+  through `boundedNoteForLog` which caps at PREVIEW_CHARS=500,
+  and the baked-token reasons (`completion_promise`,
+  `abort_promise`, `stagnation`, `max_iterations`,
+  `send_error`, …) are all under 30 chars — so no current
+  callsite trips the cap. The cap is defensive: a future code
+  path that emits a `reason` directly without going through
+  `parseUserReason` cannot bloat events.jsonl past the 16 KB
+  per-line ceiling on a single pathological input. Pinned by
+  a four-branch test exercising overflow-truncation,
+  under-cap pass-through, surrogate-pair-safe back-off (a 501
+  UTF-16-unit reason ending in 💀 must truncate to 499, not
+  emit a lone high surrogate at index 499), and the
+  combined-line-stays-under MAX_EVENT_LINE_BYTES invariant.
+
 - `install.sh` now extracts `export const VERSION = "X.Y.Z";`
   from `handler.mjs` via a single shared
   `extract_handler_version()` shell helper, replacing the two

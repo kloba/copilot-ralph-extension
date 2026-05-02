@@ -129,7 +129,19 @@ export function serializeEvent(ev) {
     if (Number.isFinite(ev.iteration)) out.iteration = ev.iteration;
     if (Number.isFinite(ev.maxIterations)) out.maxIterations = ev.maxIterations;
     if (Number.isFinite(ev.minIterations)) out.minIterations = ev.minIterations;
-    if (typeof ev.reason === "string") out.reason = ev.reason;
+    // Cap `reason` at 500 chars (surrogate-safely) for symmetry with
+    // `note` (line below) and `excerpt` (above). Caller hygiene
+    // already enforces this upstream — `parseUserReason` (handler.mjs)
+    // routes user-supplied reasons through `boundedNoteForLog` which
+    // caps at PREVIEW_CHARS=500, and baked-token reasons
+    // (`completion_promise`, `abort_promise`, `stagnation`,
+    // `max_iterations`, `send_error`, …) are all under 30 chars. The
+    // serializer cap is defensive: makes the event-line shape robust
+    // independent of caller hygiene, so a future code path that
+    // emits a `reason` without going through parseUserReason can't
+    // bloat events.jsonl past the 16 KB per-line ceiling on a single
+    // pathological input. Iter 139 hardening.
+    if (typeof ev.reason === "string") out.reason = safeSliceChars(ev.reason, 500);
     if (typeof ev.excerpt === "string") out.excerpt = safeSliceChars(ev.excerpt, 500);
     if (Number.isFinite(ev.streak)) out.streak = ev.streak;
     if (ev.tokens && typeof ev.tokens === "object") {

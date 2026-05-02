@@ -326,3 +326,62 @@ test("safeSliceChars: low surrogate at the boundary is fine (no back-off)", () =
     assert.equal(out.charCodeAt(78), 0xD83D);
     assert.equal(out.charCodeAt(79), 0xDC80);
 });
+
+test("serializeEvent: reason field is capped at 500 chars (defensive symmetry with note/excerpt)", () => {
+    // Iter 139 hardening: caller hygiene (parseUserReason → boundedNoteForLog
+    // in handler.mjs) already caps user-supplied reasons at 500 chars, but
+    // the event serializer must enforce its own ceiling so a future code
+    // path emitting `reason` directly cannot blow past the 16 KB per-line
+    // limit on a single pathological input. Mirrors the existing
+    // safeSliceChars(…, 500) treatment of `note` and `excerpt`.
+
+    // (a) overflow: 600-char reason is truncated to exactly 500 chars.
+    const overflow = "x".repeat(600);
+    const lineOver = serializeEvent({
+        type: "abort",
+        ts: 1_000_000,
+        runId: "ralph_loop-cap",
+        reason: overflow,
+    });
+    const parsedOver = JSON.parse(lineOver);
+    assert.equal(parsedOver.reason.length, 500,
+        `overflow reason must be capped at 500 chars; got ${parsedOver.reason.length} for input of ${overflow.length}`);
+    assert.ok(parsedOver.reason.startsWith("x"),
+        `truncation must keep the leading bytes (left-trim is wrong; we anchor on the start of the string)`);
+
+    // (b) under-cap: 100-char reason passes through unchanged.
+    const small = "y".repeat(100);
+    const lineSmall = serializeEvent({
+        type: "abort",
+        ts: 1_000_000,
+        runId: "ralph_loop-cap",
+        reason: small,
+    });
+    const parsedSmall = JSON.parse(lineSmall);
+    assert.equal(parsedSmall.reason, small,
+        `under-cap reasons must pass through unchanged so existing baked tokens (completion_promise, abort_promise, stagnation, max_iterations, …) are not silently rewritten`);
+
+    // (c) surrogate-pair safety: a reason whose 500th char would split a
+    // surrogate pair must back off so the rendered line is still valid
+    // UTF-16. Build a string of 499 ASCII + one 4-byte emoji (2 UTF-16
+    // code units) — the natural slice at 500 would land between the
+    // high and low surrogate; safeSliceChars must back off to 499.
+    const head = "a".repeat(499);
+    const tricky = head + "\u{1F480}"; // 💀 (U+1F480 = surrogate pair)
+    assert.equal(tricky.length, 501, "sanity: tricky string is 501 UTF-16 code units (499 + 2)");
+    const lineTricky = serializeEvent({
+        type: "abort",
+        ts: 1_000_000,
+        runId: "ralph_loop-cap",
+        reason: tricky,
+    });
+    const parsedTricky = JSON.parse(lineTricky);
+    assert.equal(parsedTricky.reason.length, 499,
+        `surrogate-pair-aware truncation must back off to 499 (drop the entire emoji) rather than emit a lone high surrogate at index 499; got ${parsedTricky.reason.length}`);
+
+    // (d) the 16 KB per-line ceiling holds for a maxed-out reason.
+    // Even a 500-char reason combined with the rest of the event shape
+    // must stay well under MAX_EVENT_LINE_BYTES.
+    assert.ok(Buffer.byteLength(lineOver, "utf8") < MAX_EVENT_LINE_BYTES,
+        `capped event line must stay under MAX_EVENT_LINE_BYTES (${MAX_EVENT_LINE_BYTES}); got ${Buffer.byteLength(lineOver, "utf8")}`);
+});

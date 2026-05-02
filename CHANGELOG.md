@@ -24,6 +24,14 @@
   either value is caught at test time.
 
 ### Fixes
+- `resolveRunsRoot` now `.trim()`s the `RALPH_EVENTS_DIR`
+  override before returning it. Shells routinely leak stray
+  leading/trailing whitespace into env vars (heredoc
+  redirects, copy-paste, Makefile interpolation), and the
+  unfiltered value silently created runs roots whose name
+  contained literal whitespace — breaking the matching
+  `ralph-tui list` glob. Internal whitespace (e.g. macOS
+  volume paths like `/Volumes/My Drive/runs`) is preserved.
 - `extension/events-emit.mjs` `createEventEmitter.write()`
   now rejects arrays up front. Previously `typeof [] ===
   "object"` and `!ev` was `false`, so an array would fall

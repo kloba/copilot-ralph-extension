@@ -19,11 +19,21 @@ const MAX_EVENT_LINE_BYTES = 16 * 1024;
 // packages/tui/src/events.mjs MAX_EXCERPT_CHARS.
 const MAX_EXCERPT_CHARS = 500;
 
-/** Resolve the runs root, honoring $RALPH_EVENTS_DIR. */
+/** Resolve the runs root, honoring $RALPH_EVENTS_DIR.
+ *
+ * The env-var path is `.trim()`-ed before being returned: shells routinely
+ * leak trailing whitespace into env vars (heredoc redirects, copy-pasted
+ * lines, `RALPH_EVENTS_DIR="$HOME/runs "` from a Makefile), and a path with
+ * stray leading/trailing spaces would silently create a runs root with
+ * literal spaces in its name — surprising the user and breaking the matching
+ * `ralph-tui list` glob. Trimming makes the override robust to that
+ * common-shell-papercut without affecting any legitimate use case (paths
+ * with intentional surrounding whitespace are essentially never real).
+ */
 export function resolveRunsRoot(env = process.env) {
     const override = env?.RALPH_EVENTS_DIR;
     if (override && typeof override === "string" && override.trim()) {
-        return override;
+        return override.trim();
     }
     return join(homedir(), ".copilot", "ralph", "runs");
 }

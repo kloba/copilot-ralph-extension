@@ -292,3 +292,20 @@ test("createEventEmitter: BigInt / circular ref events are dropped, not thrown",
     e.write({ type: "iteration_end", runId: "r", ts: 2, iteration: 1 });
     assert.equal(captured.length, 1);
 });
+
+// Iter 105 — RALPH_EVENTS_DIR routinely picks up stray surrounding
+// whitespace from shell heredocs, Makefile interpolation, copy-paste,
+// etc. Without trimming, the override path was returned verbatim, so
+// `RALPH_EVENTS_DIR=" /tmp/runs "` created `runs` directories whose
+// name literally contained leading + trailing spaces and broke the
+// matching `ralph-tui list` glob. Pin that the override is trimmed at
+// resolve time so a future regression cannot reintroduce that
+// papercut.
+test("resolveRunsRoot: trims surrounding whitespace from RALPH_EVENTS_DIR override", () => {
+    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "  /tmp/ralph-runs  " }), "/tmp/ralph-runs");
+    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "/tmp/ralph-runs\n" }), "/tmp/ralph-runs");
+    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "\t/tmp/ralph-runs" }), "/tmp/ralph-runs");
+    // Internal whitespace (paths with literal spaces, like macOS volumes)
+    // is preserved — only the SURROUNDING whitespace is stripped.
+    assert.equal(resolveRunsRoot({ RALPH_EVENTS_DIR: "  /Volumes/My Drive/runs  " }), "/Volumes/My Drive/runs");
+});

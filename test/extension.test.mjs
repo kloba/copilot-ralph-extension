@@ -5223,6 +5223,42 @@ test("token tracking: fires 80% warning once at threshold", async () => {
     void controller;
 });
 
+test("token tracking: warn_at_pct ≥ 95 fires only the critical warning (no duplicate approaching)", async () => {
+    // Reliability: when a user explicitly dials warn_at_pct up to or past
+    // the hard-coded 95% critical threshold, the dedupe guard keys on the
+    // CONSTANT threshold value (80 / 95) rather than the effective
+    // percent — so without this skip both branches log on the same usage
+    // spike (one ⚠ approaching, one ⚠ critical) for the SAME percentage,
+    // which is noise. The handler now skips the user-tunable branch
+    // when its effective value ≥ 95 so the strictly-more-actionable
+    // critical line stands alone.
+    const { session, controller } = await arm({ max_iterations: 10, warn_at_pct: 95 });
+    runTurn(session, "");
+    // claude-opus-4.7 window = 200000; 96% = 192000
+    emitUsage(session, { input: 192000, output: 100 });
+    const approachingLogs = session.logs.filter((l) => l.includes("approaching context window"));
+    const criticalLogs = session.logs.filter((l) => l.includes("context window critical"));
+    assert.equal(approachingLogs.length, 0, "no `approaching` warning should fire when warn_at_pct ≥ 95");
+    assert.equal(criticalLogs.length, 1, "the 95% critical warning should still fire exactly once");
+    void controller;
+});
+
+test("token tracking: warn_at_pct=99 still fires only the critical warning", async () => {
+    // Same reliability contract at the upper bound: a user who dials
+    // warn_at_pct to its current schema max (99) must not see a stray
+    // `approaching` log if the loop crosses 95% before crossing 99% —
+    // the critical threshold is hard-coded, while the user-tunable
+    // branch is suppressed so output stays single-warning per spike.
+    const { session, controller } = await arm({ max_iterations: 10, warn_at_pct: 99 });
+    runTurn(session, "");
+    emitUsage(session, { input: 196000, output: 100 }); // 98%
+    const approachingLogs = session.logs.filter((l) => l.includes("approaching context window"));
+    const criticalLogs = session.logs.filter((l) => l.includes("context window critical"));
+    assert.equal(approachingLogs.length, 0);
+    assert.equal(criticalLogs.length, 1);
+    void controller;
+});
+
 test("token tracking: missing usage data is a no-op", async () => {
     const { session, controller } = await arm({ max_iterations: 5 });
     runTurn(session, "");

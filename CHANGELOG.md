@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Fixes
+- Token-tracking warning loop no longer emits a
+  redundant ⚠ approaching warning when `warn_at_pct`
+  is set to ≥ 95. Previously the dedupe guard keyed
+  on the CONSTANT threshold value (80 / 95) rather
+  than the effective percent, so a user dialing
+  `warn_at_pct: 95` (or higher) saw BOTH log lines
+  fire for the same usage spike — one approaching,
+  one critical, at the same percentage. Now the
+  user-tunable branch is suppressed when its
+  effective value ≥ 95 so the strictly-more-
+  actionable 95% critical message stands alone.
+  Behaviour for the default `warn_at_pct: 80` and
+  every value 1..94 is unchanged. Two new tests pin
+  the new contract at `warn_at_pct: 95` and the
+  schema upper bound `warn_at_pct: 99`.
+
 ### Documentation
 - Fix stale `tools: controller.tools` comment in
   README's "How it works" code block. Previously

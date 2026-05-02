@@ -1358,6 +1358,15 @@ export function createRalphController(opts = {}) {
         const pct = (used / window) * 100;
         for (const threshold of TOKEN_WARNING_THRESHOLDS) {
             const effective = threshold === 80 ? a.warnAtPct : threshold;
+            // If the user-tunable first warning was dialed up to ≥ 95,
+            // its effective threshold collides with (or exceeds) the
+            // hard-coded 95% critical threshold below it. The dedupe
+            // guard tracks `threshold` (constant), not `effective`, so
+            // both branches would log on the same iteration — leaving
+            // the user with redundant ⚠ approaching / ⚠ critical lines
+            // for the SAME usage spike. Skip the duplicate; the 95%
+            // critical message is strictly more actionable.
+            if (threshold === 80 && a.warnAtPct >= 95) continue;
             if (pct >= effective && !a.tokens.warnedThresholds.includes(threshold)) {
                 a.tokens.warnedThresholds.push(threshold);
                 const usedK = Math.round(used / 1000);

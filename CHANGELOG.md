@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Tests
+- New behavioural drift guard for `ralph_pause` re-pause
+  idempotency. The existing test only pinned "first reason wins";
+  the new test extends coverage to the two adjacent invariants
+  that make idempotency actually safe in practice:
+  (1) `pausedAt` is NOT reset on a re-pause (otherwise the
+  `totalPausedMs += Date.now() - pausedAt` math on resume would
+  silently undercount the paused window, distorting
+  `ralph_status` durations); and (2) `textResultForLlm` echoes
+  the FIRST reason, never the discarded second — so an agent
+  that "updates" the reason via re-pause sees the silent
+  rejection clearly instead of being misled into thinking its
+  new reason landed.
+
 ### Refactor
 - `ralph_status` now uses a module-level `RALPH_STATUS_KEYS` Set
   for argument-shape validation, matching every other loop-control

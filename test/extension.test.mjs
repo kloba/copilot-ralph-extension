@@ -8078,3 +8078,42 @@ test("RALPH_*_KEYS constants are module-level (no inline new Set in tool handler
         "handler.mjs must not allocate a fresh `new Set()` inline at a validateOptionalArgShape call site — use a module-level RALPH_*_KEYS constant instead",
     );
 });
+
+test("ralph_pause re-pause: pausedAt + textResultForLlm preserve the FIRST pause's identity", async () => {
+    // Iter 89 hardens the idempotency contract beyond the simpler
+    // "second call returns success and first reason wins" test
+    // already in place. The full contract a re-pause must honor:
+    //
+    //   1. `pauseReason` is the FIRST reason (verified elsewhere).
+    //   2. `pausedAt` is the FIRST pause timestamp — never reset by
+    //      a subsequent pause call. Otherwise the pause-duration
+    //      math (`totalPausedMs += Date.now() - pausedAt` on
+    //      resume) would silently undercount, hiding the time the
+    //      loop was actually paused from `ralph_status`.
+    //   3. `textResultForLlm` echoes the FIRST reason — agents that
+    //      read the message back must see the canonical reason,
+    //      not the one they just sent. Otherwise an agent that
+    //      "re-pauses with a more specific reason" would believe
+    //      its update landed when it silently did not.
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    runTurn(session, "boot");
+    await pause.handler({ reason: "first" });
+    const a = controller.state.active;
+    const firstPausedAt = a.pausedAt;
+    assert.ok(firstPausedAt > 0, "first pause must capture a positive Date.now() snapshot");
+    // Force an observable wall-clock gap so a regression that DOES
+    // reset `pausedAt` on the second call would shift the value
+    // and trip the equality assertion below. Keeping the sleep
+    // tiny (5 ms) keeps the suite fast; node:assert's strictEqual
+    // would catch even a one-millisecond drift.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const r = await pause.handler({ reason: "second — should be ignored" });
+    assert.equal(r.resultType, "success");
+    assert.equal(r.paused, true);
+    assert.equal(a.pauseReason, "first", "first reason must win on re-pause");
+    assert.equal(a.pausedAt, firstPausedAt, "pausedAt must NOT be reset on re-pause (preserves total-paused-ms accuracy)");
+    assert.match(r.textResultForLlm, /already paused/i, "re-pause message must surface the already-paused signal");
+    assert.match(r.textResultForLlm, /\(first\)/, "re-pause message must echo the FIRST reason, not the second");
+    assert.doesNotMatch(r.textResultForLlm, /should be ignored/, "re-pause message must NOT leak the discarded second reason");
+});

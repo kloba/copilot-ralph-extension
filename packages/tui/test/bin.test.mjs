@@ -369,3 +369,49 @@ test("bin --help: mentions where", () => {
     const r = runBin(["--help"]);
     assert.match(r.stdout, /ralph-tui where/);
 });
+
+test("tui.mjs header comment lists every USAGE subcommand (drift guard)", async () => {
+    // Iter 138 fix: the file's header comment used to list only 3
+    // subcommands (list/replay/watch) while the USAGE constant in the
+    // same file had grown to 7 (list/replay/watch/doctor/prune/stats/
+    // where). A contributor reading the header to understand the tool
+    // scope would silently miss four commands. Pin the symmetry so the
+    // next subcommand drop must update both surfaces.
+    const fs = await import("node:fs");
+    const src = fs.readFileSync(BIN, "utf8");
+
+    // Header subcommands: lines starting with `//   <word>` between the
+    // opening `// Subcommands` block and the first blank-comment line
+    // closing it. We accept a leading `//`, two spaces, then the
+    // subcommand identifier as the first non-space token before either
+    // a space or `[` (positional/optional placeholder).
+    const headerBlock = src.match(/\/\/ Subcommands[\s\S]+?\n\/\/\s*\n/);
+    assert.ok(headerBlock, "could not locate the // Subcommands block in tui.mjs header");
+    const headerCmds = new Set(
+        [...headerBlock[0].matchAll(/^\/\/\s{3}([a-z]+)\b/gm)].map((m) => m[1])
+    );
+
+    // USAGE subcommands: lines beginning `  ralph-tui <cmd>` inside the
+    // `const USAGE = \`…\`;` template literal. Skip the `--help` /
+    // `--version` lines.
+    const usageBlock = src.match(/const USAGE = `([\s\S]+?)`;/);
+    assert.ok(usageBlock, "could not locate the USAGE constant in tui.mjs");
+    const usageCmds = new Set(
+        [...usageBlock[1].matchAll(/^\s{2}ralph-tui\s+([a-z]+)\b/gm)].map((m) => m[1])
+    );
+
+    // Pin: every USAGE subcommand must appear in the header. (We allow
+    // the header to be more verbose; this guard catches the common
+    // direction where USAGE grew but the header didn't.)
+    const missing = [...usageCmds].filter((c) => !headerCmds.has(c));
+    assert.deepEqual(missing, [],
+        `tui.mjs header comment is missing subcommand(s) listed in USAGE: ${missing.join(", ")}. Add them to the // Subcommands block at the top of bin/tui.mjs.`);
+
+    // Sanity: at least the four subcommands the iter 138 fix added
+    // should be present so a future "let me clean up the header"
+    // refactor can't silently drop them again.
+    for (const cmd of ["list", "replay", "watch", "doctor", "prune", "stats", "where"]) {
+        assert.ok(headerCmds.has(cmd),
+            `tui.mjs header // Subcommands block is missing "${cmd}"; the iter 138 drift-guard floor is all 7 currently-shipped subcommands`);
+    }
+});

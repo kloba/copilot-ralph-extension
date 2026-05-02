@@ -1,11 +1,26 @@
 #!/usr/bin/env node
 // Stdlib-only CLI entry for the ralph TUI (issue #22).
 //
-// Subcommands:
-//   list                       — show recorded runs (newest first).
+// Subcommands (keep in sync with the USAGE constant below — pinned by
+// `tui.mjs header comment lists every USAGE subcommand` in
+// packages/tui/test/bin-tui.test.mjs so a drift here surfaces in CI):
+//   list                       — show recorded runs (newest first;
+//                                 `--json` for scripting/dashboards;
+//                                 `--limit N` to cap the table).
 //   replay <runId>             — print every event in a past run.
 //   watch [runId] [--plain]    — tail the given run (or the most recent
 //                                one if omitted) in real time.
+//   doctor                     — diagnose the runs directory + writer
+//                                wiring (permissions, malformed JSONL,
+//                                stale lockfiles, broken symlinks).
+//   prune [--older-than D]     — remove runs older than DURATION
+//        [--dry-run]             (e.g. 30d / 12h / 5m; default 30d).
+//                                `--dry-run` lists what would go.
+//   stats                      — aggregate stats across the run index
+//                                (run count, total iterations, p50/p95
+//                                durations, top SDLC tools).
+//   where                      — print the resolved runs root path so
+//                                a contributor can `cd` into it.
 //
 // `--plain` is implied when stdout is not a TTY so CI logs and asciinema
 // recordings produce stable, ANSI-free output.

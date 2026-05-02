@@ -452,6 +452,22 @@
   time instead of as a misleading green check on `main`.
 
 ### Documentation
+- `packages/tui/bin/tui.mjs`'s top-of-file `// Subcommands:`
+  comment block now lists all 7 currently-shipped subcommands
+  (`list`, `replay`, `watch`, `doctor`, `prune`, `stats`,
+  `where`) instead of just the original 3 (`list`, `replay`,
+  `watch`). A contributor reading the header to gauge tool
+  scope previously saw a stale snapshot from before
+  `doctor` / `prune` / `stats` / `where` landed and would
+  silently miss four user-visible commands. Each header entry
+  now documents key flags inline (e.g. `--json` and
+  `--limit N` for `list`, `--older-than D` for `prune`).
+  Pinned by a drift-guard test in `packages/tui/test/bin.test.mjs`
+  that extracts both the header subcommand list and the
+  USAGE subcommand list from the source and asserts every
+  USAGE subcommand also appears in the header — so the next
+  subcommand drop must update both surfaces in lockstep.
+
 - AGENTS.md's "Section names (in order)" chain now matches the
   actual order observed in `CHANGELOG.md`'s `## Unreleased`
   block, and now documents the `### Tests` and `### CI`

@@ -152,18 +152,19 @@ YOLO BY DEFAULT (issue #83)
   not really an autopilot.
 
 ENV
-  RALPH_TUI_RUNS_DIR  Override the runs root (default
-                    ~/.copilot/ralph-tui/runs). Holds events.jsonl,
-                    index.jsonl, and per-run state.json.
+  AUTOPILOT_RUNS_DIR  Override the runs root (default
+                    ~/.copilot/autopilot/runs). Holds events.jsonl,
+                    index.jsonl, and per-run state.json. On first run,
+                    if the new default does not exist but
+                    ~/.copilot/ralph-tui/runs does, autopilot reads
+                    from the legacy path (with a one-shot stderr
+                    migration notice).
   AUTOPILOT_COPILOT_BIN  Override the \`copilot\` executable used by
                     \`autopilot copilot\` / \`autopilot run\` (default
-                    \`copilot\` on $PATH). Replaces the legacy
-                    RALPH_TUI_COPILOT_BIN — the old name still works
-                    for one release with a deprecation notice.
+                    \`copilot\` on $PATH).
   AUTOPILOT_CLAUDE_BIN   Override the \`claude\` executable used by
                     \`autopilot claude\` (default \`claude\` on $PATH).
-  RALPH_TUI_COPILOT_BIN  Deprecated alias for AUTOPILOT_COPILOT_BIN.
-                    Read with a one-shot stderr deprecation notice.
+  Legacy RALPH_TUI_* names are still read for one release with a one-line stderr deprecation notice.
 `;
 
 /** Minimal argv parser. Returns { cmd, positional[], flags{} }.
@@ -538,7 +539,7 @@ export function cmdDoctor() {
     if (!healthy) {
         process.stderr.write(
             `autopilot doctor: critical problem detected (root=${root}). `
-            + `Check filesystem permissions and RALPH_TUI_RUNS_DIR.\n`,
+            + `Check filesystem permissions and AUTOPILOT_RUNS_DIR.\n`,
         );
         return 1;
     }

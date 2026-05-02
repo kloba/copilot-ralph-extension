@@ -366,21 +366,43 @@ test("bin list (no --limit): all runs preserved", () => {
 });
 
 test("bin where: prints default runs root", () => {
-    const r = runBin(["where"], { RALPH_TUI_RUNS_DIR: "" });  // empty -> default
+    // Override HOME to a clean tmp dir so the legacy-path read-fallback
+    // (which kicks in when ~/.copilot/ralph-tui/runs exists but
+    // ~/.copilot/autopilot/runs doesn't) cannot fire from real on-disk
+    // state on the developer's machine.
+    const fakeHome = tmp();
+    const r = runBin(
+        ["where"],
+        {
+            AUTOPILOT_RUNS_DIR: "",
+            RALPH_TUI_RUNS_DIR: "",
+            HOME: fakeHome,
+        },
+    );
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /\.copilot\/ralph-tui\/runs\n$/);
+    assert.match(r.stdout, /\.copilot\/autopilot\/runs\n$/);
+    rmSync(fakeHome, { recursive: true, force: true });
 });
 
-test("bin where: honours RALPH_TUI_RUNS_DIR override", () => {
+test("bin where: honours AUTOPILOT_RUNS_DIR override", () => {
     const dir = tmp();
-    const r = runBin(["where"], { RALPH_TUI_RUNS_DIR: dir });
+    const r = runBin(["where"], { AUTOPILOT_RUNS_DIR: dir });
     assert.equal(r.status, 0);
     assert.equal(r.stdout, dir + "\n");
     rmSync(dir, { recursive: true, force: true });
 });
 
+test("bin where: honours legacy RALPH_TUI_RUNS_DIR override (with deprecation notice)", () => {
+    const dir = tmp();
+    const r = runBin(["where"], { AUTOPILOT_RUNS_DIR: "", RALPH_TUI_RUNS_DIR: dir });
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, dir + "\n");
+    assert.match(r.stderr, /RALPH_TUI_RUNS_DIR is deprecated/);
+    rmSync(dir, { recursive: true, force: true });
+});
+
 test("bin where: works even when directory does not exist", () => {
-    const r = runBin(["where"], { RALPH_TUI_RUNS_DIR: "/tmp/ralph-tui-does-not-exist-zz" });
+    const r = runBin(["where"], { AUTOPILOT_RUNS_DIR: "/tmp/ralph-tui-does-not-exist-zz" });
     assert.equal(r.status, 0);
     assert.equal(r.stdout, "/tmp/ralph-tui-does-not-exist-zz\n");
 });
@@ -1083,10 +1105,10 @@ test("USAGE: documents AUTOPILOT_COPILOT_BIN and AUTOPILOT_CLAUDE_BIN env vars",
     assert.match(r.stdout, /AUTOPILOT_CLAUDE_BIN/);
 });
 
-test("USAGE: documents the legacy RALPH_TUI_COPILOT_BIN deprecation", () => {
+test("USAGE: documents the legacy RALPH_TUI_* deprecation", () => {
     const r = runBin(["--help"]);
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /RALPH_TUI_COPILOT_BIN/);
+    assert.match(r.stdout, /RALPH_TUI_\*/);
     assert.match(r.stdout, /[Dd]eprecat/);
 });
 

@@ -23,22 +23,27 @@ import pathDefault from "node:path";
 import osDefault from "node:os";
 
 import { MAX_EVENT_LINE_BYTES, makeRunId, serializeEvent } from "./events.mjs";
+import {
+    resolveRunsRoot as sharedResolveRunsRoot,
+    touchMigrationSentinel as sharedTouchSentinel,
+    __resetLegacyWarnGuards,
+} from "./runs-root.mjs";
 
 /**
- * Resolve the on-disk root for ralph TUI run metadata.
- *
- *   $RALPH_TUI_RUNS_DIR if set (absolute path expected; surfaced
- *   verbatim so users can pin a tmp dir in CI).
- *   else `${HOME}/.copilot/ralph-tui/runs`.
- *
- * Shared with `resolveRunsRoot` in `./events-emit.mjs` and
- * `resolveStateRoot` in `./runner.mjs` so events.jsonl, index.jsonl
- * and state.json all land under the same per-run directory.
+ * Resolve the on-disk root for autopilot run metadata. Thin adapter
+ * over the shared resolver in `./runs-root.mjs` that preserves this
+ * module's existing single-options-bag signature so internal callers
+ * (which thread `path`/`os`/`fs` through together) keep working
+ * without churn. See `runs-root.mjs::resolveRunsRoot` for the
+ * precedence + legacy fallback contract.
  */
-export function resolveRunsRoot({ env = process.env, os = osDefault, path = pathDefault } = {}) {
-    const override = env.RALPH_TUI_RUNS_DIR;
-    if (typeof override === "string" && override.length > 0) return override;
-    return path.join(os.homedir(), ".copilot", "ralph-tui", "runs");
+export function resolveRunsRoot({
+    env = process.env,
+    os = osDefault,
+    fs = fsDefault,
+    stderr = process.stderr,
+} = {}) {
+    return sharedResolveRunsRoot(env, { fs, os, stderr });
 }
 
 /**
@@ -176,7 +181,7 @@ export function createEventWriter({
     // keeps the read + write + delete paths in lockstep.
     assertSafeRunId("createEventWriter", runId);
 
-    const root = resolveRunsRoot({ env, os, path });
+    const root = resolveRunsRoot({ env, os, path, fs });
     const runDir = path.join(root, runId);
     const eventsPath = path.join(runDir, "events.jsonl");
     const indexPath = path.join(root, "index.jsonl");
@@ -189,6 +194,7 @@ export function createEventWriter({
     // emit will fail — better to know now.
     try {
         fs.mkdirSync(runDir, { recursive: true });
+        sharedTouchSentinel(env, { fs, os });
     } catch (err) {
         onError(err);
     }
@@ -300,7 +306,11 @@ export { makeRunId };
 // declaration above) so consumers cannot couple to it; the
 // `__test__` bag is the project-wide convention for "tests can
 // reach in but library users should not".
-export const __test__ = { iterJsonlRows };
+export const __test__ = { iterJsonlRows, __resetLegacyWarnGuards };
+
+// Re-export so tests / downstream modules can drop the migration
+// sentinel without depending on ./runs-root.mjs directly.
+export { touchMigrationSentinel } from "./runs-root.mjs";
 
 /**
  * Aggregate stats across all recorded runs. Returns:

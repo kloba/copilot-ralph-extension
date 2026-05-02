@@ -11,8 +11,11 @@ import {
     resolveRunsRoot,
     aggregateRuns,
     pruneRuns,
+    __test__ as writerTestBag,
 } from "../src/writer.mjs";
 import { makeRunId } from "../src/events.mjs";
+
+const { __resetLegacyWarnGuards } = writerTestBag;
 
 function mkTmp() {
     return fs.mkdtempSync(path.join(os.tmpdir(), "ralph-tui-writer-"));
@@ -26,17 +29,85 @@ function readLines(filePath) {
         .map((l) => JSON.parse(l));
 }
 
-test("resolveRunsRoot honours $RALPH_TUI_RUNS_DIR", () => {
-    assert.equal(resolveRunsRoot({ env: { RALPH_TUI_RUNS_DIR: "/tmp/x" } }), "/tmp/x");
+test("resolveRunsRoot honours $AUTOPILOT_RUNS_DIR", () => {
+    assert.equal(resolveRunsRoot({ env: { AUTOPILOT_RUNS_DIR: "/tmp/x" } }), "/tmp/x");
 });
 
-test("resolveRunsRoot defaults to $HOME/.copilot/ralph-tui/runs", () => {
+test("resolveRunsRoot defaults to $HOME/.copilot/autopilot/runs", () => {
+    // Stub the fs so neither the new nor legacy default paths "exist"
+    // — the resolver will return the new default unmodified.
     const fakeOs = { homedir: () => "/h" };
-    assert.equal(resolveRunsRoot({ env: {}, os: fakeOs }), "/h/.copilot/ralph-tui/runs");
+    const fakeFs = { existsSync: () => false };
+    assert.equal(
+        resolveRunsRoot({ env: {}, os: fakeOs, fs: fakeFs }),
+        "/h/.copilot/autopilot/runs",
+    );
+});
+
+test("resolveRunsRoot: $RALPH_TUI_RUNS_DIR legacy fallback emits one-shot deprecation notice", () => {
+    __resetLegacyWarnGuards();
+    const writes = [];
+    const stderr = { write: (s) => writes.push(s) };
+    const env = { RALPH_TUI_RUNS_DIR: "/tmp/legacy-env" };
+    assert.equal(resolveRunsRoot({ env, stderr }), "/tmp/legacy-env");
+    // Second call in the same process: same env value, no second notice.
+    assert.equal(resolveRunsRoot({ env, stderr }), "/tmp/legacy-env");
+    assert.equal(writes.length, 1);
+    assert.match(writes[0], /RALPH_TUI_RUNS_DIR is deprecated/);
+    assert.match(writes[0], /AUTOPILOT_RUNS_DIR/);
+});
+
+test("resolveRunsRoot: AUTOPILOT_RUNS_DIR wins over RALPH_TUI_RUNS_DIR with no notice", () => {
+    const writes = [];
+    const stderr = { write: (s) => writes.push(s) };
+    __resetLegacyWarnGuards();
+    assert.equal(
+        resolveRunsRoot({
+            env: { AUTOPILOT_RUNS_DIR: "/tmp/new", RALPH_TUI_RUNS_DIR: "/tmp/legacy" },
+            stderr,
+        }),
+        "/tmp/new",
+    );
+    assert.equal(writes.length, 0);
+});
+
+test("resolveRunsRoot: legacy-path fallback when new default missing + legacy default present", () => {
+    const writes = [];
+    const stderr = { write: (s) => writes.push(s) };
+    __resetLegacyWarnGuards();
+    const fakeOs = { homedir: () => "/h" };
+    // Only the legacy default exists.
+    const fakeFs = {
+        existsSync: (p) => p === "/h/.copilot/ralph-tui/runs",
+    };
+    const root = resolveRunsRoot({ env: {}, os: fakeOs, fs: fakeFs, stderr });
+    assert.equal(root, "/h/.copilot/ralph-tui/runs");
+    // Second call within the same process: no reprint.
+    const root2 = resolveRunsRoot({ env: {}, os: fakeOs, fs: fakeFs, stderr });
+    assert.equal(root2, "/h/.copilot/ralph-tui/runs");
+    assert.equal(writes.length, 1);
+    assert.match(writes[0], /reading runs from legacy/);
+    assert.match(writes[0], /~\/\.copilot\/autopilot\/runs/);
+});
+
+test("resolveRunsRoot: when new default exists, returns new default without legacy notice", () => {
+    const writes = [];
+    const stderr = { write: (s) => writes.push(s) };
+    __resetLegacyWarnGuards();
+    const fakeOs = { homedir: () => "/h" };
+    // Both directories exist on disk; new default wins (sentinel
+    // semantics: once the new root is created, the legacy notice
+    // never reprints).
+    const fakeFs = { existsSync: () => true };
+    assert.equal(
+        resolveRunsRoot({ env: {}, os: fakeOs, fs: fakeFs, stderr }),
+        "/h/.copilot/autopilot/runs",
+    );
+    assert.equal(writes.length, 0);
 });
 
 test("resolveRunEventsPath joins runId under the runs root", () => {
-    const p = resolveRunEventsPath("ralph_loop-1", { env: { RALPH_TUI_RUNS_DIR: "/tmp/r" } });
+    const p = resolveRunEventsPath("ralph_loop-1", { env: { AUTOPILOT_RUNS_DIR: "/tmp/r" } });
     assert.equal(p, "/tmp/r/ralph_loop-1/events.jsonl");
 });
 
@@ -45,7 +116,7 @@ test("resolveRunEventsPath rejects empty runId", () => {
 });
 
 test("resolveRunEventsPath rejects path-traversal runIds", () => {
-    const env = { RALPH_TUI_RUNS_DIR: "/tmp/r" };
+    const env = { AUTOPILOT_RUNS_DIR: "/tmp/r" };
     for (const bad of ["..", ".", "../etc", "foo/../bar", "foo/bar", "foo\\bar", "..\\etc", "foo\0bar"]) {
         assert.throws(
             () => resolveRunEventsPath(bad, { env }),
@@ -56,7 +127,7 @@ test("resolveRunEventsPath rejects path-traversal runIds", () => {
 });
 
 test("resolveRunEventsPath accepts legitimately-shaped runIds", () => {
-    const env = { RALPH_TUI_RUNS_DIR: "/tmp/r" };
+    const env = { AUTOPILOT_RUNS_DIR: "/tmp/r" };
     // Emitter-produced shape: [A-Za-z0-9_-]+
     for (const ok of ["ralph_loop-1", "self_improve-1700000000000", "grow_project-42", "a-b_c-1"]) {
         assert.doesNotThrow(() => resolveRunEventsPath(ok, { env }));
@@ -69,7 +140,7 @@ test("createEventWriter: emits a valid armed line and creates the run dir", () =
     const w = createEventWriter({
         runId,
         label: "ralph_loop",
-        env: { RALPH_TUI_RUNS_DIR: root },
+        env: { AUTOPILOT_RUNS_DIR: root },
         now: () => 1700000000000,
     });
     w.emit({ type: "armed", maxIterations: 20, minIterations: 5 });
@@ -87,7 +158,7 @@ test("createEventWriter: index.jsonl gains a row only on armed events", () => {
     const w = createEventWriter({
         runId: "self_improve-2",
         label: "self_improve",
-        env: { RALPH_TUI_RUNS_DIR: root },
+        env: { AUTOPILOT_RUNS_DIR: root },
         now: () => 2,
     });
     w.emit({ type: "armed" });
@@ -104,7 +175,7 @@ test("createEventWriter: ts is auto-filled from injected clock when caller omits
     const ticks = [10, 20, 30];
     const w = createEventWriter({
         runId: "r-ts",
-        env: { RALPH_TUI_RUNS_DIR: root },
+        env: { AUTOPILOT_RUNS_DIR: root },
         now: () => ticks.shift(),
     });
     w.emit({ type: "armed" });
@@ -118,7 +189,7 @@ test("createEventWriter: caller-provided ts is preserved", () => {
     const root = mkTmp();
     const w = createEventWriter({
         runId: "r-ts2",
-        env: { RALPH_TUI_RUNS_DIR: root },
+        env: { AUTOPILOT_RUNS_DIR: root },
         now: () => 999,
     });
     w.emit({ type: "armed", ts: 1234 });
@@ -131,7 +202,7 @@ test("createEventWriter: serializer failures route through onError, not throw", 
     const errs = [];
     const w = createEventWriter({
         runId: "r-bad",
-        env: { RALPH_TUI_RUNS_DIR: root },
+        env: { AUTOPILOT_RUNS_DIR: root },
         now: () => 1,
         onError: (e) => errs.push(e),
     });
@@ -146,7 +217,7 @@ test("createEventWriter: close() makes subsequent emits no-ops", () => {
     const root = mkTmp();
     const w = createEventWriter({
         runId: "r-close",
-        env: { RALPH_TUI_RUNS_DIR: root },
+        env: { AUTOPILOT_RUNS_DIR: root },
         now: () => 1,
     });
     w.emit({ type: "armed" });
@@ -162,7 +233,7 @@ test("createEventWriter: rejects non-object events through onError (no throw)", 
     const errs = [];
     const w = createEventWriter({
         runId: "r-nono",
-        env: { RALPH_TUI_RUNS_DIR: root },
+        env: { AUTOPILOT_RUNS_DIR: root },
         onError: (e) => errs.push(e),
     });
     w.emit("oops");
@@ -172,7 +243,7 @@ test("createEventWriter: rejects non-object events through onError (no throw)", 
 
 test("createEventWriter: armed getter flips after first armed emit", () => {
     const root = mkTmp();
-    const w = createEventWriter({ runId: "r-armed", env: { RALPH_TUI_RUNS_DIR: root } });
+    const w = createEventWriter({ runId: "r-armed", env: { AUTOPILOT_RUNS_DIR: root } });
     assert.equal(w.armed, false);
     w.emit({ type: "armed" });
     assert.equal(w.armed, true);
@@ -180,18 +251,18 @@ test("createEventWriter: armed getter flips after first armed emit", () => {
 
 test("readRunIndex: empty when index.jsonl is missing", () => {
     const root = mkTmp();
-    assert.deepEqual(readRunIndex({ env: { RALPH_TUI_RUNS_DIR: root } }), []);
+    assert.deepEqual(readRunIndex({ env: { AUTOPILOT_RUNS_DIR: root } }), []);
 });
 
 test("readRunIndex: returns entries newest-first", () => {
     const root = mkTmp();
-    const w1 = createEventWriter({ runId: "r-1", label: "ralph_loop", env: { RALPH_TUI_RUNS_DIR: root }, now: () => 100 });
+    const w1 = createEventWriter({ runId: "r-1", label: "ralph_loop", env: { AUTOPILOT_RUNS_DIR: root }, now: () => 100 });
     w1.emit({ type: "armed" });
-    const w2 = createEventWriter({ runId: "r-2", label: "self_improve", env: { RALPH_TUI_RUNS_DIR: root }, now: () => 200 });
+    const w2 = createEventWriter({ runId: "r-2", label: "self_improve", env: { AUTOPILOT_RUNS_DIR: root }, now: () => 200 });
     w2.emit({ type: "armed" });
-    const w3 = createEventWriter({ runId: "r-3", label: "grow_project", env: { RALPH_TUI_RUNS_DIR: root }, now: () => 300 });
+    const w3 = createEventWriter({ runId: "r-3", label: "grow_project", env: { AUTOPILOT_RUNS_DIR: root }, now: () => 300 });
     w3.emit({ type: "armed" });
-    const entries = readRunIndex({ env: { RALPH_TUI_RUNS_DIR: root } });
+    const entries = readRunIndex({ env: { AUTOPILOT_RUNS_DIR: root } });
     assert.deepEqual(entries.map((e) => e.runId), ["r-3", "r-2", "r-1"]);
     assert.equal(entries[0].label, "grow_project");
 });
@@ -207,7 +278,7 @@ test("readRunIndex: skips malformed lines, keeps good ones", () => {
         JSON.stringify({ type: "weird", ts: 2, runId: "skip" }),
         JSON.stringify({ type: "armed", ts: 3, runId: "ok-2", label: "ralph_loop" }),
     ].join("\n") + "\n");
-    const entries = readRunIndex({ env: { RALPH_TUI_RUNS_DIR: root } });
+    const entries = readRunIndex({ env: { AUTOPILOT_RUNS_DIR: root } });
     assert.deepEqual(entries.map((e) => e.runId), ["ok-2", "ok-1"]);
 });
 
@@ -222,7 +293,7 @@ function writeRun(root, runId, label, lines) {
 
 test("aggregateRuns: empty index yields zero totals", () => {
     const root = mkTmp();
-    const r = aggregateRuns({ env: { RALPH_TUI_RUNS_DIR: root } });
+    const r = aggregateRuns({ env: { AUTOPILOT_RUNS_DIR: root } });
     assert.equal(r.total, 0);
     assert.deepEqual(r.byTool, {});
     assert.deepEqual(r.byReason, {});
@@ -237,7 +308,7 @@ test("aggregateRuns: run with no terminal event counts toward total + byTool but
         { type: "iteration_start", ts: 2, runId: "ralph_loop-1", iteration: 1 },
         { type: "iteration_end", ts: 3, runId: "ralph_loop-1", iteration: 1 },
     ]);
-    const r = aggregateRuns({ env: { RALPH_TUI_RUNS_DIR: root } });
+    const r = aggregateRuns({ env: { AUTOPILOT_RUNS_DIR: root } });
     assert.equal(r.total, 1);
     assert.deepEqual(r.byTool, { ralph_loop: 1 });
     assert.deepEqual(r.byReason, {});
@@ -254,7 +325,7 @@ test("aggregateRuns: last terminal event wins when multiple are present", () => 
         { type: "abort", ts: 2, runId: "self_improve-1", reason: "stagnation", iteration: 3 },
         { type: "complete", ts: 3, runId: "self_improve-1", reason: "completion_promise", iteration: 5 },
     ]);
-    const r = aggregateRuns({ env: { RALPH_TUI_RUNS_DIR: root } });
+    const r = aggregateRuns({ env: { AUTOPILOT_RUNS_DIR: root } });
     assert.deepEqual(r.byReason, { "complete:completion_promise": 1 });
     assert.equal(r.iters.max, 5);
 });
@@ -264,7 +335,7 @@ test("aggregateRuns: skips runs whose events.jsonl is missing", () => {
     // Index claims a run exists, but no events.jsonl on disk.
     fs.writeFileSync(path.join(root, "index.jsonl"),
         JSON.stringify({ type: "armed", ts: 1, runId: "ghost-1", label: "ralph_loop" }) + "\n");
-    const r = aggregateRuns({ env: { RALPH_TUI_RUNS_DIR: root } });
+    const r = aggregateRuns({ env: { AUTOPILOT_RUNS_DIR: root } });
     assert.equal(r.total, 1);
     assert.deepEqual(r.byTool, { ralph_loop: 1 });
     assert.deepEqual(r.byReason, {});
@@ -283,7 +354,7 @@ test("aggregateRuns: malformed JSONL lines are skipped silently", () => {
     ].join("\n") + "\n");
     fs.writeFileSync(path.join(root, "index.jsonl"),
         JSON.stringify({ type: "armed", ts: 1, runId: "rl-1", label: "ralph_loop" }) + "\n");
-    const r = aggregateRuns({ env: { RALPH_TUI_RUNS_DIR: root } });
+    const r = aggregateRuns({ env: { AUTOPILOT_RUNS_DIR: root } });
     assert.equal(r.total, 1);
     assert.deepEqual(r.byReason, { "complete:completion_promise": 1 });
     assert.equal(r.iters.max, 4);
@@ -295,7 +366,7 @@ test("aggregateRuns: terminal event without reason buckets under bare type", () 
         { type: "armed", ts: 1, runId: "rl-2", label: "ralph_loop" },
         { type: "abort", ts: 2, runId: "rl-2", iteration: 2 },
     ]);
-    const r = aggregateRuns({ env: { RALPH_TUI_RUNS_DIR: root } });
+    const r = aggregateRuns({ env: { AUTOPILOT_RUNS_DIR: root } });
     assert.deepEqual(r.byReason, { abort: 1 });
 });
 
@@ -309,7 +380,7 @@ test("aggregateRuns: mean is arithmetic over runs with iterations", () => {
         { type: "armed", ts: 3, runId: "a-2", label: "ralph_loop" },
         { type: "complete", ts: 4, runId: "a-2", reason: "completion_promise", iteration: 8 },
     ]);
-    const r = aggregateRuns({ env: { RALPH_TUI_RUNS_DIR: root } });
+    const r = aggregateRuns({ env: { AUTOPILOT_RUNS_DIR: root } });
     assert.equal(r.total, 2);
     assert.equal(r.iters.max, 8);
     assert.equal(r.iters.mean, 5);
@@ -337,7 +408,7 @@ test("aggregateRuns: handles >150k recorded runs without blowing the call stack"
     };
     const r = aggregateRuns({
         fs: fakeFs,
-        env: { RALPH_TUI_RUNS_DIR: "/fake" },
+        env: { AUTOPILOT_RUNS_DIR: "/fake" },
     });
     assert.equal(r.total, N);
     assert.equal(r.iters.max, 42);
@@ -368,7 +439,7 @@ test("pruneRuns: refuses to delete entries whose runId contains traversal segmen
     const result = pruneRuns({
         olderThanMs: 10,
         now: () => 10_000,
-        env: { RALPH_TUI_RUNS_DIR: root },
+        env: { AUTOPILOT_RUNS_DIR: root },
     });
     // Only the legitimate run was removed.
     assert.deepEqual(result.removed.map((r) => r.runId), [goodId]);
@@ -400,7 +471,7 @@ test("pruneRuns: deletes only the per-run dir, leaves index for fresh runs", () 
     const result = pruneRuns({
         olderThanMs: 1_000,
         now: () => 10_000,
-        env: { RALPH_TUI_RUNS_DIR: root },
+        env: { AUTOPILOT_RUNS_DIR: root },
     });
     assert.equal(result.removed.length, 1);
     assert.equal(result.removed[0].runId, oldId);
@@ -423,7 +494,7 @@ test("pruneRuns: dryRun never touches the filesystem", () => {
         olderThanMs: 1,
         dryRun: true,
         now: () => 10_000,
-        env: { RALPH_TUI_RUNS_DIR: root },
+        env: { AUTOPILOT_RUNS_DIR: root },
     });
     assert.equal(result.removed.length, 1);
     assert.ok(fs.existsSync(path.join(root, oldId)), "dryRun must not delete");
@@ -440,7 +511,7 @@ test("pruneRuns: missing index.jsonl returns empty result", () => {
     const root = mkTmp();
     const result = pruneRuns({
         olderThanMs: 1,
-        env: { RALPH_TUI_RUNS_DIR: root },
+        env: { AUTOPILOT_RUNS_DIR: root },
     });
     assert.deepEqual(result, { removed: [], kept: 0 });
 });
@@ -466,7 +537,7 @@ test("createEventWriter: rejects path-traversal runIds (sandbox-escape guard)", 
     ];
     for (const { runId, label } of cases) {
         assert.throws(
-            () => createEventWriter({ runId, env: { RALPH_TUI_RUNS_DIR: "/tmp/ralph-test-traversal" } }),
+            () => createEventWriter({ runId, env: { AUTOPILOT_RUNS_DIR: "/tmp/ralph-test-traversal" } }),
             (err) => err instanceof TypeError && /path separators or traversal segments/.test(err.message),
             `runId ${JSON.stringify(runId)} (${label}) must throw a TypeError before any fs work`,
         );
@@ -478,7 +549,7 @@ test("createEventWriter: rejects path-traversal runIds (sandbox-escape guard)", 
     try {
         const w = createEventWriter({
             runId: "ralph_loop-deadbeef",
-            env: { RALPH_TUI_RUNS_DIR: tmp },
+            env: { AUTOPILOT_RUNS_DIR: tmp },
         });
         assert.equal(typeof w.emit, "function", "legitimate runIds must still construct successfully");
         w.close();
@@ -506,7 +577,7 @@ test("traversal-guard error message prefixes the calling function name (assertSa
         "resolveRunEventsPath must prefix its own name in the traversal-guard TypeError",
     );
     assert.throws(
-        () => createEventWriter({ runId: "../etc", env: { RALPH_TUI_RUNS_DIR: "/tmp/ralph-test-traversal-prefix" } }),
+        () => createEventWriter({ runId: "../etc", env: { AUTOPILOT_RUNS_DIR: "/tmp/ralph-test-traversal-prefix" } }),
         (err) => err instanceof TypeError
             && err.message.startsWith("createEventWriter:")
             && /path separators or traversal segments/.test(err.message),
@@ -546,7 +617,7 @@ test("aggregateRuns: hand-edited iteration=Infinity (1e500) row is skipped, not 
     fs.writeFileSync(path.join(root, "evil-1", "events.jsonl"), lines.join("\n") + "\n");
     fs.writeFileSync(path.join(root, "index.jsonl"),
         JSON.stringify({ type: "armed", ts: 1, runId: "evil-1", label: "ralph_loop" }) + "\n");
-    const r = aggregateRuns({ env: { RALPH_TUI_RUNS_DIR: root } });
+    const r = aggregateRuns({ env: { AUTOPILOT_RUNS_DIR: root } });
     assert.equal(Number.isFinite(r.iters.max), true,
         "iters.max must stay finite even with a hand-edited 1e500 iteration row");
     assert.equal(Number.isFinite(r.iters.mean), true,
@@ -591,7 +662,7 @@ test("pruneRuns: hand-edited empty-runId row does NOT delete the runs root (data
     const canary = path.join(root, "canary.txt");
     fs.writeFileSync(canary, "do-not-delete");
 
-    pruneRuns({ olderThanMs: 0, env: { RALPH_TUI_RUNS_DIR: root } });
+    pruneRuns({ olderThanMs: 0, env: { AUTOPILOT_RUNS_DIR: root } });
 
     assert.equal(fs.existsSync(root), true, "runs root must NOT be deleted by an empty-runId row");
     assert.equal(fs.existsSync(canary), true, "sibling files at runs root must NOT be deleted by an empty-runId row");
@@ -635,7 +706,7 @@ test("readRunIndex: empty-runId / missing-runId / non-string-runId rows are skip
         // isn't accidentally rejecting valid input.
         JSON.stringify({ type: "armed", ts: 5, runId: "real-1", label: "ralph_loop" }),
     ].join("\n") + "\n");
-    const entries = readRunIndex({ env: { RALPH_TUI_RUNS_DIR: root } });
+    const entries = readRunIndex({ env: { AUTOPILOT_RUNS_DIR: root } });
     assert.equal(entries.length, 1, "only the legitimate row should survive (4 invalid shapes rejected)");
     assert.equal(entries[0].runId, "real-1", "the surviving row must be the one with the non-empty string runId");
 });
@@ -668,7 +739,7 @@ test("pruneRuns: hand-edited ts=-Infinity row does NOT prematurely delete the ru
     const parsed = JSON.parse(corruptedRow);
     assert.equal(parsed.ts, -Infinity, "JSON.parse of the literal -1e500 must materialise as -Infinity");
 
-    const result = pruneRuns({ olderThanMs: 1, now: () => Date.now(), env: { RALPH_TUI_RUNS_DIR: root } });
+    const result = pruneRuns({ olderThanMs: 1, now: () => Date.now(), env: { AUTOPILOT_RUNS_DIR: root } });
 
     assert.equal(result.removed.length, 0, "ts=-Infinity row must NOT be marked for removal — finite-ts guard");
     assert.equal(fs.existsSync(liveRunDir), true, "the legitimate run dir must survive a corrupted-ts row in the index");

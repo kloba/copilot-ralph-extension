@@ -5,9 +5,14 @@
 // is full, the path is unwritable, or the user nuked the runs root
 // mid-run. The TUI only consumes whatever lines do land on disk.
 
-import { homedir } from "node:os";
 import { mkdirSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
+
+import {
+    resolveRunsRoot as sharedResolveRunsRoot,
+    touchMigrationSentinel,
+    __resetLegacyWarnGuards as sharedResetGuards,
+} from "./runs-root.mjs";
 
 // Hard cap on a single serialized event line. Excerpts/tokens are
 // truncated to fit so a runaway prompt can't blow up the JSONL file.
@@ -25,29 +30,19 @@ const MAX_EVENT_LINE_BYTES = 16 * 1024;
 // and asserts they agree.
 const MAX_EXCERPT_CHARS = 500;
 
-/** Resolve the runs root, honoring $RALPH_TUI_RUNS_DIR.
- *
- * The env-var path is `.trim()`-ed before being returned: shells routinely
- * leak trailing whitespace into env vars (heredoc redirects, copy-pasted
- * lines, `RALPH_TUI_RUNS_DIR="$HOME/runs "` from a Makefile), and a path
- * with stray leading/trailing spaces would silently create a runs root
- * with literal spaces in its name — surprising the user and breaking the
- * matching `ralph-tui list` glob. Trimming makes the override robust to
- * that common-shell-papercut without affecting any legitimate use case
- * (paths with intentional surrounding whitespace are essentially never
- * real).
- *
- * Mirrors `resolveStateRoot` in `./runner.mjs` so events.jsonl,
- * index.jsonl and state.json for a single run land in the same per-run
- * directory.
+/** Resolve the runs root. Thin wrapper over the shared resolver in
+ *  `./runs-root.mjs`; preserves this module's `(env, deps)` signature
+ *  so existing callers (and the test suite) don't churn. See
+ *  `runs-root.mjs::resolveRunsRoot` for the precedence + legacy
+ *  fallback contract.
  */
-export function resolveRunsRoot(env = process.env) {
-    const override = env?.RALPH_TUI_RUNS_DIR;
-    if (override && typeof override === "string" && override.trim()) {
-        return override.trim();
-    }
-    return join(homedir(), ".copilot", "ralph-tui", "runs");
+export function resolveRunsRoot(env = process.env, deps = {}) {
+    return sharedResolveRunsRoot(env, deps);
 }
+
+/** Re-export so tests can reset the shared one-shot dedup guards
+ *  between cases that exercise the legacy-fallback paths. */
+export const __resetLegacyWarnGuards = sharedResetGuards;
 
 /** `${label}-${startedAt}` — stable, sortable, file-system safe.
  *
@@ -121,7 +116,8 @@ function serialize(ev) {
 export function createEventEmitter({ label, startedAt, env, fs } = {}) {
     const _mkdir = fs?.mkdirSync ?? mkdirSync;
     const _append = fs?.appendFileSync ?? appendFileSync;
-    const root = resolveRunsRoot(env ?? process.env);
+    const _env = env ?? process.env;
+    const root = sharedResolveRunsRoot(_env, { fs });
     const runId = makeRunId(label, startedAt);
     const dir = join(root, runId);
     const eventsPath = join(dir, "events.jsonl");
@@ -130,7 +126,11 @@ export function createEventEmitter({ label, startedAt, env, fs } = {}) {
     let dirReady = false;
     const ensureDir = () => {
         if (dirReady) return;
-        try { _mkdir(dir, { recursive: true }); dirReady = true; } catch { /* swallow */ }
+        try {
+            _mkdir(dir, { recursive: true });
+            dirReady = true;
+            touchMigrationSentinel(_env, { fs });
+        } catch { /* swallow */ }
     };
 
     const write = (ev) => {

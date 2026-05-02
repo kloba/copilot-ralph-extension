@@ -5829,6 +5829,48 @@ test("ralph_pause is idempotent — pausing an already-paused loop is a no-op su
     assert.equal(controller.state.active.pauseReason, "first", "first reason wins; second pause is a no-op");
 });
 
+test("ralph_pause: multi-line / whitespace-noisy reason is flattened at entry", async () => {
+    // Pause reasons land in three user-visible places: the timeline log
+    // line ("⏸ <label> paused at i/max (reason)"), the `pause` event's
+    // `reason` field, and the `pause_reason` slot in the ralph_status
+    // JSON snapshot. A multi-line paste (Error stack, blockquote,
+    // CRLF input) into any of those would visually break the layout.
+    // Flattening at entry (boundedNoteForLog: collapseNote +
+    // truncateNote) keeps every downstream consumer single-line.
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    const status = controller.tools.find((t) => t.name === "ralph_status");
+    runTurn(session, "boot");
+    const r = await pause.handler({ reason: "  going to lunch\n\twith newlines\r\nand   spaces  " });
+    assert.equal(r.resultType, "success");
+    // Pinned canonical form (single line, single-spaced, trimmed).
+    assert.equal(r.reason, "going to lunch with newlines and spaces");
+    assert.equal(controller.state.active.pauseReason, "going to lunch with newlines and spaces");
+    // Surfaces single-line in ralph_status JSON snapshot.
+    const s = await status.handler({});
+    assert.equal(s.status.pause_reason, "going to lunch with newlines and spaces");
+    // Timeline log marker stays single-line.
+    const pausedLog = session.logs.find((l) => l.includes("paused at"));
+    assert.ok(pausedLog, "expected a paused log line");
+    assert.equal(pausedLog.includes("\n"), false, `paused log marker contains newline: ${JSON.stringify(pausedLog)}`);
+    assert.equal(/[\t\r\f]/.test(pausedLog), false, `paused log marker contains tab/CR/FF: ${JSON.stringify(pausedLog)}`);
+});
+
+test("ralph_pause: reason that is whitespace-only after flatten resolves to null (not empty string)", async () => {
+    // `"   \n\t  "` collapses to "" — must be stored as null so the
+    // success message ("paused at i/max") does not render an empty
+    // " ()" suffix and ralph_status surfaces null rather than "".
+    const { session, controller } = await arm({ max_iterations: 5 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    runTurn(session, "boot");
+    const r = await pause.handler({ reason: "   \n\t  " });
+    assert.equal(r.resultType, "success");
+    assert.equal(r.reason, null, "all-whitespace reason must become null");
+    assert.equal(controller.state.active.pauseReason, null);
+    assert.doesNotMatch(r.textResultForLlm, /\(\)/, "user-facing text must not render an empty `()` suffix");
+});
+
+
 test("ralph_resume: re-arms the loop and the next idle fires the next iteration", async () => {
     const { session, controller } = await arm({ max_iterations: 5 });
     const pause = controller.tools.find((t) => t.name === "ralph_pause");

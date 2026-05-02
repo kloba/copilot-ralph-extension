@@ -1904,8 +1904,16 @@ export function createRalphController(opts = {}) {
                         { iterations: i, paused: true, reason: a.pauseReason ?? null },
                     );
                 }
-                const reasonRaw = typeof args?.reason === "string" ? args.reason.trim() : "";
-                const reason = reasonRaw ? truncateNote(reasonRaw) : null;
+                // Flatten + truncate the user-supplied reason at entry so a
+                // multi-line paste (e.g. an Error stack, a blockquote, a
+                // CRLF-terminated input) cannot break the single-line
+                // timeline log marker, the `pause_reason` field rendered
+                // in the ralph_status JSON snapshot, or the `reason` on
+                // the emitted `pause` event. boundedNoteForLog applies
+                // both `collapseNote` (whitespace-flatten) and
+                // `truncateNote` (PREVIEW_CHARS surrogate-safe cap).
+                const reasonRaw = typeof args?.reason === "string" ? args.reason : "";
+                const reason = reasonRaw ? boundedNoteForLog(reasonRaw) || null : null;
                 a.paused = true;
                 a.pauseReason = reason;
                 a.pausedAt = Date.now();

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Fixes
+- `ralph_pause` now flattens user-supplied `reason`
+  values at the entry point via `boundedNoteForLog`
+  (collapse all whitespace runs to single spaces +
+  PREVIEW_CHARS surrogate-safe truncate). Previously
+  a multi-line paste — an Error stack, a blockquote,
+  a CRLF input — would land verbatim in
+  `state.active.pauseReason`, which then bled into:
+  the `pause_reason` field of the ralph_status JSON
+  snapshot (breaking JSON visual layout), the
+  `⏸ <label> paused at i/max (reason)` timeline log
+  marker (splitting it across multiple lines), and
+  the `reason` payload on the emitted `pause` event.
+  All three downstream sinks now stay single-line
+  regardless of input. An all-whitespace reason
+  (e.g. `"   \n\t  "`) now resolves to `null` rather
+  than an empty string, so the user-facing pause
+  message no longer renders a stray ` ()` suffix.
+
 ### CI
 - The `Syntax check` job in `.github/workflows/ci.yml`
   now recursively walks the shipped `.mjs` roots

@@ -179,6 +179,20 @@
   `1 character.` and `N characters.`.
 
 ### Internal
+- `install.sh` now extracts `export const VERSION = "X.Y.Z";`
+  from `handler.mjs` via a single shared
+  `extract_handler_version()` shell helper, replacing the two
+  duplicated `awk -F'"'` invocations (one for the source-tree
+  VERSION at script start, one for the target-tree
+  "Installed:" line landed in iter 127). The duplication had
+  drift potential: a future refactor tightening the regex on
+  one site (e.g. allowing `let` declarations, or migrating to
+  a different shape) would silently misreport one of the two
+  versions on otherwise-valid input, making the dry-run
+  "Installed: vA.B.C" / "Version: vX.Y.Z" pair disagree on
+  identical input. Pinned by a new test asserting the awk
+  pattern appears in install.sh exactly once (inside the
+  helper) and that ≥2 callers route through it.
 - Extract `safeSliceChars(s, max)` as a shared exported helper
   in `packages/tui/src/events.mjs`, generalising the iter 117
   `safeSlice500` (now removed). `serializeEvent`'s 500-char

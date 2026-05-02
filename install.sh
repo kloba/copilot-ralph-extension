@@ -29,7 +29,22 @@ if [[ ! -f "$SOURCE_DIR/handler.mjs" ]]; then
   echo "  Hint: install.sh must live next to the extension/ subdir from this repo. Re-clone or re-download the full source tree." >&2
   exit 1
 fi
-VERSION="$(awk -F'"' '/^export const VERSION = "/{print $2; exit}' "$SOURCE_DIR/handler.mjs")"
+# Extract `export const VERSION = "X.Y.Z";` from a handler.mjs file.
+# Single source of truth for the awk pattern: used (a) at script start
+# to read the source-tree VERSION (the "what would be installed"
+# answer for --version, --dry-run, and the success line), and (b) by
+# --dry-run to read the already-installed VERSION at TARGET_DIR for
+# the "Installed:" header line. A drift between the two awks (e.g. a
+# future refactor that tightens one regex but forgets the other)
+# would silently misreport one of the two versions on otherwise-valid
+# input, so a single helper guarantees lockstep evolution. Caller
+# must redirect stderr if a missing file is expected (the b-call
+# does); the a-call expects the file to exist (already guarded by
+# the [[ -f ]] check above).
+extract_handler_version() {
+  awk -F'"' '/^export const VERSION = "/{print $2; exit}' "$1"
+}
+VERSION="$(extract_handler_version "$SOURCE_DIR/handler.mjs")"
 if [[ -z "$VERSION" ]]; then
   echo "Error: could not extract VERSION from $SOURCE_DIR/handler.mjs (expected an 'export const VERSION = \"X.Y.Z\";' line)." >&2
   exit 1
@@ -175,7 +190,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
   # line so the upgrade direction (old → new) reads top-to-bottom.
   installed_version="(none)"
   if [[ -f "$TARGET_DIR/handler.mjs" ]]; then
-    installed_extracted="$(awk -F'"' '/^export const VERSION = "/{print $2; exit}' "$TARGET_DIR/handler.mjs" 2>/dev/null || true)"
+    installed_extracted="$(extract_handler_version "$TARGET_DIR/handler.mjs" 2>/dev/null || true)"
     if [[ -n "$installed_extracted" ]]; then
       installed_version="v$installed_extracted"
     fi

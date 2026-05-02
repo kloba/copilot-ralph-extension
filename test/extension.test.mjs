@@ -9504,3 +9504,42 @@ test("install.sh --project: clear error when git binary is not in PATH", async (
         rmSync(stubBin, { recursive: true, force: true });
     }
 });
+
+test("install.sh: VERSION-from-handler awk pattern lives in exactly one helper", () => {
+    // Iter 131 — refactored both VERSION-extraction call sites
+    // (source-tree at script start, target-tree in --dry-run) onto a
+    // shared `extract_handler_version` shell helper. Pin that the
+    // raw awk pattern (`/^export const VERSION = "/`) appears in
+    // install.sh exactly once — inside the helper body — so a future
+    // change that tightens the regex (e.g. allowing `let` instead of
+    // `const`, or moving to a different declaration shape) cannot
+    // silently regress lockstep behaviour by editing one site and
+    // forgetting the other. The two call sites must read identical
+    // VERSION strings on identical input or the dry-run header
+    // ("Installed: vX.Y.Z" vs "Version: vX.Y.Z") and the
+    // post-install success line will silently disagree.
+    const installSh = readFileSync(resolve(REPO_ROOT, "install.sh"), "utf8");
+    const matches = installSh.match(/\/\^export const VERSION = "/g) ?? [];
+    assert.equal(
+        matches.length,
+        1,
+        `expected exactly 1 occurrence of the VERSION-extract awk pattern in install.sh ` +
+        `(must live inside extract_handler_version() only); found ${matches.length}. ` +
+        `If you intentionally added a new call site, route it through extract_handler_version() ` +
+        `instead of duplicating the regex.`,
+    );
+    // Sanity: the helper itself is declared.
+    assert.match(
+        installSh,
+        /extract_handler_version\(\)\s*\{/,
+        "install.sh must declare an extract_handler_version() function",
+    );
+    // And both expected callers go through the helper (callers, not
+    // the declaration). Match function-call sites — `extract_handler_version "..."` —
+    // the regex requires a quoted argument so the `()` declaration line is excluded.
+    const callerMatches = installSh.match(/extract_handler_version\s+"/g) ?? [];
+    assert.ok(
+        callerMatches.length >= 2,
+        `expected ≥2 callers of extract_handler_version (source-tree + target-tree); found ${callerMatches.length}`,
+    );
+});

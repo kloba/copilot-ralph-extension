@@ -755,11 +755,13 @@ and a second terminal tailing it live.</p>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Node.js &gt;= 20.</strong> Check with <code>node --version</code>.</li>
-<li><strong>GitHub Copilot CLI</strong> on your <code>$PATH</code>. Check with <code>copilot --version</code>. If
-  the binary is missing, follow the upstream
-  <a href="https://github.com/github/gh-copilot">Copilot CLI install guide</a> first —
-  autopilot drives <code>copilot -p ...</code> once per iteration and cannot start
-  without it.</li>
+<li><strong>GitHub Copilot CLI &gt;= 1.0.0</strong> on your <code>$PATH</code>. Check with
+  <code>copilot --version</code>. If the binary is missing or the reported
+  version is older, install / upgrade with <code>npm i -g @github/copilot</code>
+  — autopilot drives <code>copilot -p ... --output-format json</code> once per
+  iteration and the <code>--output-format</code> flag was re-introduced in the
+  1.0.0 line (see issue #105). After installing, run
+  <code>autopilot doctor</code> to confirm the resolved version is recognised.</li>
 <li><strong><code>git</code></strong> (any modern version) — autopilot inspects your working tree to
   signal progress between iterations.</li>
 </ul>

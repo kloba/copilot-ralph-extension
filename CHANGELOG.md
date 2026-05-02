@@ -29,6 +29,32 @@
   into a single per-run directory.
 
 ### Features
+- Issue #52 — `self_improve` now JIT-ideates ONE next feature
+  issue when tiers (a)-(c) are empty (no red CI, no stale PR,
+  no open issue), files it via `gh issue create --label
+  grow-project --label proposed` with a Conventional Commits
+  title and a Summary/Why/Acceptance-Criteria body plus an
+  `Auto-ideated by self_improve iter N on <ISO-date>` footer,
+  and ENDs the iter so the next iter picks it up at tier (c)
+  like any other open issue. The loop never aborts at backlog
+  drain unless no genuine user-visible feature is identifiable
+  (in which case `ABORT_NO_IMPROVEMENTS` still terminates the
+  whole loop honestly — filing a defensive-guard / comment-
+  alignment pseudo-feature is explicitly NOT an acceptable
+  substitute). Tier (c) drops the `grow-project` / `proposed`
+  carve-out: those labels are now tracking metadata, not a
+  "skip me" signal — auto-ideated issues ARE this loop's own
+  backlog, drained at tier (c) like any other open issue.
+  Reliability still always wins: tiers (a)-(c) are checked
+  FIRST, so red CI / stale PR / open-issue work always
+  preempts a tier-(d) ideation in the same iter. A new
+  drift-pin test in `packages/tui/test/prompts.test.mjs`
+  fails if a future edit silently re-introduces the
+  carve-out, swaps the priority-tier order, or drops the
+  `IDEATE_NEXT_FEATURE` step. `PROMPT_GROW_PROJECT` is
+  unchanged for now (a follow-up issue can collapse the
+  two prompts once #49 lands the unified tool surface).
+
 - Issue #57 — `ralph-tui watch` Live panel streams the agent's
   output (assistant text, tool calls, tool results) for the
   currently active L3 task, sourced directly from the Copilot

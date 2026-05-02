@@ -808,6 +808,15 @@ function validateOptionalArgShape(label, args, knownKeys) {
     return shape ? failure(shape.error) : null;
 }
 
+// Single source of truth for the "no active loop" failure surfaced by
+// ralph_stop / ralph_pause / ralph_resume (and any future loop-mutating
+// tool). Centralising the wording prevents drift across handlers — every
+// caller uses the same exact string, which downstream tests + agent
+// prompts can pattern-match against without brittle per-tool variants.
+function noActiveLoopFailure(tool) {
+    return failure(`${tool}: no ralph_loop, self_improve, or grow_project is currently running.`);
+}
+
 const RALPH_LOOP_KEYS = new Set([
     "prompt",
     "max_iterations",
@@ -1858,7 +1867,7 @@ export function createRalphController(opts = {}) {
                 additionalProperties: false,
             },
             handler: async (args) => {
-                if (!state.active) return failure("ralph_stop: no ralph_loop, self_improve, or grow_project is currently running.");
+                if (!state.active) return noActiveLoopFailure("ralph_stop");
                 // ralph_stop's `reason` is optional (null/undefined valid).
                 // Anything else goes through the same shape + unknown-keys
                 // gate as ralph_loop so typos surface loudly.
@@ -1918,7 +1927,7 @@ export function createRalphController(opts = {}) {
                 additionalProperties: false,
             },
             handler: async (args) => {
-                if (!state.active) return failure("ralph_pause: no ralph_loop, self_improve, or grow_project is currently running.");
+                if (!state.active) return noActiveLoopFailure("ralph_pause");
                 const bad = validateOptionalArgShape("ralph_pause", args, RALPH_PAUSE_KEYS);
                 if (bad) return bad;
                 const a = state.active;
@@ -1958,7 +1967,7 @@ export function createRalphController(opts = {}) {
                 additionalProperties: false,
             },
             handler: async (args) => {
-                if (!state.active) return failure("ralph_resume: no ralph_loop, self_improve, or grow_project is currently running.");
+                if (!state.active) return noActiveLoopFailure("ralph_resume");
                 const bad = validateOptionalArgShape("ralph_resume", args, RALPH_RESUME_KEYS);
                 if (bad) return bad;
                 const a = state.active;

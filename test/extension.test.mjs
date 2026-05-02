@@ -3107,6 +3107,33 @@ test("ralph_stop with no active loop reports 'no loop' even if args have a typo"
     assert.doesNotMatch(r.textResultForLlm, /unknown argument/);
 });
 
+test("no-active-loop failure wording is identical (modulo tool name) across ralph_stop / ralph_pause / ralph_resume", async () => {
+    // Drift guard: every loop-mutating tool surfaces the SAME error
+    // string when called with no active loop, only the leading
+    // `<tool>:` prefix differs. Centralised in noActiveLoopFailure() —
+    // this test pins the contract so a future refactor that re-words
+    // one site (e.g. swapping in "ralph_loop" only when other tools
+    // still say "ralph_loop / self_improve / grow_project") immediately
+    // surfaces the inconsistency. Downstream agents + log scrapers
+    // pattern-match on this exact string, so drift is a real bug.
+    const c = createRalphController();
+    const tools = ["ralph_stop", "ralph_pause", "ralph_resume"];
+    const messages = [];
+    for (const name of tools) {
+        const tool = c.tools.find((t) => t.name === name);
+        const r = await tool.handler({});
+        assert.equal(r.resultType, "failure", `${name} should fail with no active loop`);
+        messages.push(r.textResultForLlm);
+    }
+    // Strip the per-tool prefix and assert the remainder is byte-identical.
+    const tails = messages.map((m, i) => m.replace(new RegExp(`^${tools[i]}: `), ""));
+    assert.equal(tails[0], tails[1], "ralph_stop and ralph_pause no-loop wording must match");
+    assert.equal(tails[1], tails[2], "ralph_pause and ralph_resume no-loop wording must match");
+    // Exact wording pin — a refactor that drops "self_improve" or
+    // "grow_project" should fail this test loudly.
+    assert.equal(tails[0], "no ralph_loop, self_improve, or grow_project is currently running.");
+});
+
 test("ralph_stop tolerates null/undefined args; rejects array shape loudly", async () => {
     const { session, controller, stop } = await arm({ max_iterations: 5 });
     session.emit("session.idle", { data: {} });

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Refactor
+- Consolidate the "no active loop" failure wording for
+  ralph_stop / ralph_pause / ralph_resume into a single
+  `noActiveLoopFailure(tool)` helper. Behaviour is
+  byte-identical to before — `<tool>: no ralph_loop,
+  self_improve, or grow_project is currently running.`
+  — but now any future loop-mutating tool that needs
+  the same failure (or any reword) updates one site
+  instead of three. Added a drift-guard test that
+  pins the wording across all three tools and fails
+  loudly if any handler diverges.
+
 ### Fixes
 - Token-tracking warning loop no longer emits a
   redundant ⚠ approaching warning when `warn_at_pct`

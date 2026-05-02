@@ -115,6 +115,17 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Pin the documented `ralph_status` one-line summary format
+  for the paused-without-reason branch:
+  ` (PAUSED, for {ms}ms)` (no em-dash). The em-dash-with-
+  reason path was already pinned, but the no-reason path —
+  the format `docs/concepts.md` explicitly documents — was
+  never asserted, so a future ternary refactor could have
+  silently rendered ` (PAUSED — , for {ms}ms)` (stray
+  em-dash with empty reason slot). Two new tests pin the
+  bare form for both an absent `reason` argument and a
+  whitespace-only reason that `parseUserReason` collapses to
+  null end-to-end.
 - Pin install.sh's `--dry-run` `[overwrite]` annotation
   branch (target file exists but differs from source). Iter
   101 shipped per-file new/overwrite/unchanged tags but the

@@ -8973,3 +8973,48 @@ test("docs/RELEASING.md and AGENTS.md describe the same canonical CHANGELOG head
     assert.doesNotMatch(agents, /## X\.Y\.Z\s+—\s+YYYY-MM-DD/,
         "AGENTS.md must not document a date suffix on release headings — no existing CHANGELOG section uses one, and adding one would break the manual extraction awk in RELEASING.md");
 });
+
+// Iter 111 — ralph_status one-line summary when paused WITHOUT a
+// reason. `docs/concepts.md` §"`ralph_status` one-line summary"
+// explicitly documents that the em-dash + reason are omitted when
+// no reason was provided, leaving the literal ` (PAUSED, for
+// {ms}ms)` segment. The em-dash-with-reason case is pinned by
+// the iter 7441 "tokens segment + PAUSED — review diff" test,
+// but the no-reason branch — the documented format — was never
+// asserted, so a future ternary refactor could silently render
+// ` (PAUSED — , for {ms}ms)` (stray em-dash + empty reason)
+// without any failing test. Pin the documented format.
+test("ralph_status: paused-without-reason summary uses ` (PAUSED, for {ms}ms)` form (no em-dash)", async () => {
+    const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
+    const { ralph, status, controller } = await armStatusable({ git });
+    await ralph.handler({ prompt: "go", max_iterations: 5, stagnation_limit: 0 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    // Pause WITHOUT supplying `reason`. parseUserReason coerces a
+    // missing field to null, so the summary builder must drop the
+    // em-dash + reason fragment entirely.
+    await pause.handler({});
+    const r = await status.handler({});
+    assert.match(r.textResultForLlm, / \(PAUSED, for \d+ms\)/,
+        `summary must include the documented bare form ' (PAUSED, for {ms}ms)' when no pause reason was provided. Got: ${JSON.stringify(r.textResultForLlm)}`);
+    assert.doesNotMatch(r.textResultForLlm, /PAUSED —/,
+        `summary must NOT include the em-dash separator when no pause reason was provided — that would render ' (PAUSED — , for …)' with an empty reason slot. Got: ${JSON.stringify(r.textResultForLlm)}`);
+});
+
+test("ralph_status: paused-without-reason summary preserves docs format even after whitespace-only reason input", async () => {
+    // Companion guard: parseUserReason flattens whitespace-only
+    // strings to null (iter 7559 test pins the helper). Ensure the
+    // summary path inherits the same coercion — a user passing
+    // `reason: "   "` (e.g. from an accidental quote-only paste)
+    // must NOT surface as ` (PAUSED — , for …)` at the summary
+    // level.
+    const git = makeGitStub({ "rev-parse HEAD": { ok: false } });
+    const { ralph, status, controller } = await armStatusable({ git });
+    await ralph.handler({ prompt: "go", max_iterations: 5, stagnation_limit: 0 });
+    const pause = controller.tools.find((t) => t.name === "ralph_pause");
+    await pause.handler({ reason: "   \t\n   " });
+    const r = await status.handler({});
+    assert.match(r.textResultForLlm, / \(PAUSED, for \d+ms\)/,
+        `whitespace-only reason must be coerced to null end-to-end: summary should render the bare ' (PAUSED, for {ms}ms)'. Got: ${JSON.stringify(r.textResultForLlm)}`);
+    assert.doesNotMatch(r.textResultForLlm, /PAUSED —/,
+        `summary must not surface an em-dash for a whitespace-collapsed reason. Got: ${JSON.stringify(r.textResultForLlm)}`);
+});

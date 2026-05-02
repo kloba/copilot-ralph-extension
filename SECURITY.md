@@ -28,7 +28,7 @@ If you need to keep using an older version, please cherry-pick the fix yourself 
 
 In-scope:
 
-- `extension/extension.mjs`, `extension/handler.mjs`
+- Every runtime module shipped under `extension/` (currently `extension.mjs`, `handler.mjs`, `events-emit.mjs`; the set is pinned to `install.sh`'s `FILES` array by a drift-guard test, so any future addition lands here automatically).
 - `install.sh`
 - Anything baked into prompt templates that could be exploited by a malicious external input (e.g. a poisoned issue body fed into `grow_project`).
 

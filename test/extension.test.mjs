@@ -7996,3 +7996,52 @@ test(".gitignore covers mkdocs build output (site/)", async () => {
     );
 });
 
+
+test("SECURITY.md in-scope list covers every shipped extension/*.mjs (drift guard)", async () => {
+    // SECURITY.md scopes the security policy by enumerating which
+    // files in this repo a vulnerability report should target.
+    // Originally it listed `extension/extension.mjs, extension/handler.mjs`
+    // explicitly, but `extension/events-emit.mjs` was added later as a
+    // runtime module and the scope list silently fell behind. A
+    // reporter scanning the scope to know whether a bug in
+    // events-emit qualifies would have been told it doesn't.
+    //
+    // Iter 87 rephrased the scope line to point at the entire
+    // `extension/` directory (with the install.sh FILES drift guard
+    // as the source of truth). This drift guard pins:
+    //   1. SECURITY.md must mention each currently-shipped module
+    //      by basename so a `grep -r` lookup still finds it; AND
+    //   2. SECURITY.md must reference the `install.sh` drift guard
+    //      pattern so a future module addition does not require
+    //      another SECURITY.md edit, just an install.sh one.
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const url = await import("node:url");
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const repoRoot = path.join(here, "..");
+
+    const security = await fs.readFile(path.join(repoRoot, "SECURITY.md"), "utf8");
+    const entries = await fs.readdir(path.join(repoRoot, "extension"));
+    const modules = entries.filter((f) => f.endsWith(".mjs"));
+    assert.ok(modules.length >= 1, "extension/ must contain at least one .mjs");
+
+    for (const mod of modules) {
+        // Use a regex with word boundaries so a path-traversal-style
+        // suffix doesn't satisfy the match (e.g. `extensions/handler.mjs`
+        // shouldn't count as documenting `handler.mjs`).
+        const re = new RegExp(`\\b${mod.replace(/\./g, "\\.")}\\b`);
+        assert.match(
+            security,
+            re,
+            `SECURITY.md must mention ${mod} by basename so reporters can confirm it's in scope`,
+        );
+    }
+
+    // Pin the install.sh-FILES delegation so a contributor adding a
+    // new module isn't forced to also re-edit SECURITY.md.
+    assert.match(
+        security,
+        /install\.sh.*FILES/i,
+        "SECURITY.md must point at install.sh's FILES array as the source-of-truth for in-scope modules",
+    );
+});

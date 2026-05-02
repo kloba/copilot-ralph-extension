@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Documentation
+- `SECURITY.md`'s in-scope file list now covers every runtime
+  module shipped under `extension/` (currently `extension.mjs`,
+  `handler.mjs`, `events-emit.mjs`). The previous wording listed
+  only `extension.mjs` and `handler.mjs` explicitly — a security
+  reporter checking whether a vulnerability in `events-emit.mjs`
+  was in scope would have been told it isn't, even though it's
+  shipped to every install. The new wording delegates the
+  authoritative list to `install.sh`'s `FILES` array (pinned to
+  `extension/*.mjs` by an existing drift-guard test) so a future
+  module addition lands in scope automatically without another
+  `SECURITY.md` edit. A new drift-guard test asserts each shipped
+  `extension/*.mjs` basename is mentioned in `SECURITY.md` AND
+  that the install.sh-FILES delegation pointer is preserved.
+
 ### Internal
 - `.github/workflows/release.yml` now uploads release assets via a
   `shopt -s nullglob; ASSETS=(extension/*.mjs)` bash glob instead

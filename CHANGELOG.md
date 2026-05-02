@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Refactor
+- `validateArgs` adaptive-budget block now uses a single closure
+  helper `validateAdaptiveIntField(fieldName, raw, lo, loLabel)`
+  for both `adaptive_extension` and `adaptive_max_total`. Before
+  this change, each field repeated the same five-line dance —
+  `coerceNumberField` → finite-number gate → bounds gated on
+  `adaptiveBudget` — with hand-spelled error templates. The
+  duplication meant the iter 76 accept-and-ignore contract had
+  to be re-asserted in two places, and any future tweak (relax
+  the upper bound, change the finite-number message wording)
+  would have to land identically in two spots. Extract the
+  shape once: the closure captures `adaptiveBudget` from the
+  enclosing scope and the only field-specific knobs are the
+  lower bound + its display label (since `adaptive_max_total`'s
+  lower bound is the dynamic `max_iterations`, not `1`).
+  Behaviour and error templates are byte-identical to the
+  pre-refactor branches; the existing 558 tests still pass.
+
 ### Features
 - New `compareSemver(a, b)` pure helper (extension/handler.mjs)
   returning `-1 | 0 | 1`. Handles `MAJOR.MINOR.PATCH` plus an

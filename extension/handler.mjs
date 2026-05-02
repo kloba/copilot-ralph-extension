@@ -1152,26 +1152,34 @@ export function validateArgs(args) {
         }
         adaptiveBudget = rawAdaptive;
     }
+    // Both adaptive_extension and adaptive_max_total share the exact same
+    // validation shape: coerce → finite-number gate → bounds gated on
+    // `adaptiveBudget`. The only field-specific knob is the lower bound
+    // (and its label, since `adaptive_max_total`'s lower bound is the
+    // dynamic `max` rather than `1`). Extract once so the accept-and-ignore
+    // contract documented above lives in exactly one place; a future
+    // change (e.g. relax the upper bound, add a finite-number message
+    // tweak) lands in one spot for both fields.
+    const validateAdaptiveIntField = (fieldName, raw, lo, loLabel) => {
+        const c = coerceNumberField(fieldName, raw);
+        if (c.error) return c;
+        const v = c.value;
+        if (!Number.isFinite(v)) {
+            return { error: `ralph_loop: ${fieldName} must be a finite number (got ${displayValue(raw)}).` };
+        }
+        if (adaptiveBudget && (!Number.isInteger(v) || v < lo || v > MAX_ALLOWED_ITERATIONS)) {
+            return { error: `ralph_loop: ${fieldName} must be an integer in [${loLabel}, ${MAX_ALLOWED_ITERATIONS}] (got ${displayValue(raw)}).` };
+        }
+        return { value: v };
+    };
     const rawExt = args.adaptive_extension ?? DEFAULTS.adaptive_extension;
-    const extC = coerceNumberField("adaptive_extension", rawExt);
-    if (extC.error) return extC;
-    const adaptiveExtension = extC.value;
-    if (!Number.isFinite(adaptiveExtension)) {
-        return { error: `ralph_loop: adaptive_extension must be a finite number (got ${displayValue(rawExt)}).` };
-    }
-    if (adaptiveBudget && (!Number.isInteger(adaptiveExtension) || adaptiveExtension < 1 || adaptiveExtension > MAX_ALLOWED_ITERATIONS)) {
-        return { error: `ralph_loop: adaptive_extension must be an integer in [1, ${MAX_ALLOWED_ITERATIONS}] (got ${displayValue(rawExt)}).` };
-    }
+    const extR = validateAdaptiveIntField("adaptive_extension", rawExt, 1, "1");
+    if (extR.error) return extR;
+    const adaptiveExtension = extR.value;
     const rawTotal = args.adaptive_max_total ?? Math.min(max * 5, MAX_ALLOWED_ITERATIONS);
-    const totalC = coerceNumberField("adaptive_max_total", rawTotal);
-    if (totalC.error) return totalC;
-    const adaptiveMaxTotal = totalC.value;
-    if (!Number.isFinite(adaptiveMaxTotal)) {
-        return { error: `ralph_loop: adaptive_max_total must be a finite number (got ${displayValue(rawTotal)}).` };
-    }
-    if (adaptiveBudget && (!Number.isInteger(adaptiveMaxTotal) || adaptiveMaxTotal < max || adaptiveMaxTotal > MAX_ALLOWED_ITERATIONS)) {
-        return { error: `ralph_loop: adaptive_max_total must be an integer in [max_iterations=${max}, ${MAX_ALLOWED_ITERATIONS}] (got ${displayValue(rawTotal)}).` };
-    }
+    const totalR = validateAdaptiveIntField("adaptive_max_total", rawTotal, max, `max_iterations=${max}`);
+    if (totalR.error) return totalR;
+    const adaptiveMaxTotal = totalR.value;
 
     return { value: { prompt, max, min, completionPromise, abortPromise, stagnationLimit, maxTokens, warnAtPct, adaptiveBudget, adaptiveExtension, adaptiveMaxTotal } };
 }

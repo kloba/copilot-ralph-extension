@@ -896,13 +896,18 @@ window pressure climb in real time.</p>
 <h3 id="two-safety-contracts">Two safety contracts<a class="headerlink" href="#two-safety-contracts" title="Permanent link">&para;</a></h3>
 <p>The loop makes two promises about what it credits:</p>
 <ol>
-<li><strong>Negative / NaN / Infinity rejection.</strong> <code>extractUsage</code> discards
-   any <code>assistant.message</code> whose <code>usage.input_tokens</code> or
-   <code>usage.output_tokens</code> is negative, NaN, Infinity, or non-numeric.
-   A flaky upstream usage payload cannot push <code>tokens.input</code> below
-   zero (which would silently mask a <code>max_tokens</code> cap by inflating
-   remaining budget) or generate an <code>Infinity</code> total that breaks
-   the context-window threshold maths.</li>
+<li><strong>Negative / NaN / Infinity / zero-zero rejection.</strong>
+   <code>extractUsage</code> discards any <code>assistant.message</code> whose
+   <code>usage.input_tokens</code> or <code>usage.output_tokens</code> is negative, NaN,
+   Infinity, or non-numeric. It also discards a <code>{input: 0,
+   output: 0}</code> pair — a zero/zero event carries no information and
+   would pollute the per-iteration breakdown with empty rows. The
+   contract is therefore: both peers finite and <code>&gt;= 0</code>, and at
+   least one of them strictly positive. A flaky upstream usage
+   payload cannot push <code>tokens.input</code> below zero (which would
+   silently mask a <code>max_tokens</code> cap by inflating remaining budget)
+   or generate an <code>Infinity</code> total that breaks the context-window
+   threshold maths.</li>
 <li><strong>Pause-time isolation.</strong> While the loop is paused, no
    <code>assistant.message</code> is credited to the running totals, no
    per-iteration entry is appended, and no context-window warning

@@ -764,3 +764,33 @@ test("run-ui module is importable and exports mountRunUi (no top-level Ink impor
     const mod = await import("../src/run-ui.mjs");
     assert.equal(typeof mod.mountRunUi, "function");
 });
+
+// ─── Issue #48 / user-bug: q keypress fallback ─────────────────────
+//
+// Field bug from a real run: pressing `q` in `ralph-tui run` echoed
+// to the terminal as cooked-mode characters instead of unmounting
+// the Ink App — meaning Ink's useInput silently failed to enter raw
+// mode for that environment. installStdinAbortListener is the
+// belt-and-suspenders fallback that bin/tui.mjs's cmdRun installs
+// alongside Ink so the q / Ctrl-C path stays live regardless of
+// whether Ink's hook fires.
+
+import { installStdinAbortListener } from "../bin/tui.mjs";
+
+test("installStdinAbortListener: returns a no-op cleanup when stdin is NOT a TTY (test environment)", () => {
+    // In `node --test` runs, process.stdin.isTTY is undefined / false
+    // so the function MUST short-circuit to a no-op cleanup. This
+    // pins the contract: the function is always safe to call from
+    // cmdRun, and a non-TTY (e.g. CI, asciinema, a piped stdin) is
+    // not an error condition.
+    let fired = 0;
+    const cleanup = installStdinAbortListener(() => { fired += 1; });
+    assert.equal(typeof cleanup, "function");
+    // Returned cleanup must be safely callable even when the listener
+    // didn't actually attach — finally blocks call this
+    // unconditionally and a throw here would mask the real error.
+    cleanup();
+    cleanup(); // idempotent — must not throw on second call
+    assert.equal(fired, 0,
+        "no-op path must not invoke onAbort even when stdin emits arbitrary data");
+});

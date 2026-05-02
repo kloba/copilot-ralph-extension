@@ -46,6 +46,7 @@
 import process from "node:process";
 import fs from "node:fs";
 import nodePath from "node:path";
+import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import { readRunIndex, resolveRunsRoot, resolveRunEventsPath, parseDuration, pruneRuns, aggregateRuns } from "../src/writer.mjs";
@@ -173,6 +174,87 @@ export function parseArgv(argv) {
 
 function isTTY() {
     return Boolean(process.stdout && process.stdout.isTTY);
+}
+
+function isStdinTTY() {
+    return Boolean(process.stdin && process.stdin.isTTY);
+}
+
+/** Install a stdlib keypress listener on process.stdin that fires
+ *  `onAbort(reason)` exactly once when the user hits `q` / `Q` /
+ *  Ctrl-C. Belt-and-suspenders for `cmdRun`'s Ink mount: if Ink's
+ *  `useInput` ever silently fails to enter raw mode (we have field
+ *  reports of `q` echoing to the terminal as cooked-mode input
+ *  instead of unmounting the App, leaving the loop orphaned and
+ *  forcing the user into a double-Ctrl-C — which then triggered
+ *  cooked-mode SIGINT-on-stdin), this parallel listener still
+ *  catches the keystroke. Both Ink's `useInput` AND this listener
+ *  receive the byte (Node's stream emitter delivers `data` events
+ *  to every subscriber); whichever fires first wins, and the
+ *  shared `onAbort` is idempotent at the runner.stopRun level.
+ *
+ *  We deliberately enable raw mode ourselves here BEFORE Ink mounts
+ *  so the keystroke path is guaranteed live — Ink's own
+ *  setRawMode(true) call on useInput-effect-mount is then a no-op
+ *  (idempotent), but the inversion (Ink fails, we succeed) is the
+ *  failure mode this guards against.
+ *
+ *  Returned `cleanup()` is idempotent — safe to call from finally
+ *  blocks even if the keystroke already fired and stdin is paused.
+ *
+ *  Exported for testing.
+ *
+ *  @param {(reason: string) => void} onAbort
+ *  @returns {() => void} cleanup
+ */
+export function installStdinAbortListener(onAbort) {
+    if (!isStdinTTY()) return () => {};
+    let fired = false;
+    let cleaned = false;
+
+    // emitKeypressEvents is a no-op if already wired; it is the
+    // documented stdlib path to receive `keypress` events on stdin.
+    try { readline.emitKeypressEvents(process.stdin); } catch { /* swallow */ }
+    // Raw mode lets us receive single keystrokes (q without Enter,
+    // \x03 for Ctrl-C). Ink's useInput will also call setRawMode(true)
+    // on mount; idempotent. If Ink's effect never runs (the bug),
+    // this call alone keeps stdin in raw mode.
+    try { process.stdin.setRawMode(true); } catch { /* swallow */ }
+    process.stdin.resume();
+
+    const handler = (str, key) => {
+        if (fired) return;
+        const isQuit = (typeof str === "string" && (str === "q" || str === "Q"))
+            || (key && (key.name === "q"));
+        const isCtrlC = (key && key.ctrl && key.name === "c")
+            || str === "\x03";
+        if (!isQuit && !isCtrlC) return;
+        fired = true;
+        try { onAbort(isCtrlC ? "signal_SIGINT" : "user_quit"); }
+        catch { /* swallow */ }
+        // For Ctrl-C in raw mode, the byte \x03 is consumed by stdin
+        // and the kernel does NOT generate SIGINT (that's cooked-mode
+        // behaviour). We synthesise SIGINT to the parent process so
+        // the existing installSignal() handler also runs — that
+        // handler prints the user-visible "SIGINT received — finishing
+        // current iteration, then stopping" message and gates a
+        // double-Ctrl-C into a hard process.exit(130). Without this
+        // re-raise, a stuck iter would leave the user with no way to
+        // hard-abort short of sending SIGTERM from another shell.
+        if (isCtrlC) {
+            try { process.kill(process.pid, "SIGINT"); } catch { /* swallow */ }
+        }
+    };
+    process.stdin.on("keypress", handler);
+
+    return () => {
+        if (cleaned) return;
+        cleaned = true;
+        try { process.stdin.off("keypress", handler); } catch { /* swallow */ }
+        try { if (process.stdin.isTTY) process.stdin.setRawMode(false); }
+        catch { /* swallow */ }
+        try { process.stdin.pause(); } catch { /* swallow */ }
+    };
 }
 
 function fail(msg, code = 2) {
@@ -558,6 +640,28 @@ export async function cmdRun(flags) {
     let runUiMountPromise = null;
     const offInt = installSignal("SIGINT");
     const offTerm = installSignal("SIGTERM");
+    // Belt-and-suspenders keypress handler — see installStdinAbortListener
+    // doc for why we install our own listener even though Ink's useInput
+    // already wires q / Ctrl-C inside <App />. Only meaningful when the
+    // TUI is mounted (runUiMod truthy); in plain mode there's no Ink
+    // and the parent process's default cooked-mode SIGINT handling is
+    // sufficient. The handler routes to runner.stopRun (same path Ink's
+    // useInput uses) so a double-fire (Ink first, then us) is harmless.
+    const offStdinAbort = runUiMod
+        ? installStdinAbortListener((reason) => {
+            if (currentRunId) {
+                try { runner.stopRun(currentRunId, { reason }); }
+                catch { /* swallow */ }
+            }
+            // Tear down the Ink instance (if any) so the user sees an
+            // immediate visual response. The runner's main `await`
+            // will return on its own once stopRun's state.json flag
+            // is observed at the next iter boundary.
+            if (runUiInstance) {
+                try { runUiInstance.unmount(); } catch { /* swallow */ }
+            }
+        })
+        : () => {};
     try {
         const result = await runner.runRalphTui({
             mode,
@@ -643,9 +747,15 @@ export async function cmdRun(flags) {
             ? 0 : 1;
     } finally {
         offInt(); offTerm();
+        // Order matters: unmount Ink first (it restores its own raw-mode
+        // state on unmount), then drop our stdin keypress listener and
+        // restore cooked mode. Reversing the order would leave stdin in
+        // raw mode briefly after Ink released it — minor cosmetic issue
+        // (next shell prompt loses local echo for ~1 frame).
         if (runUiInstance) {
             try { runUiInstance.unmount(); } catch { /* swallow */ }
         }
+        try { offStdinAbort(); } catch { /* swallow */ }
     }
 }
 

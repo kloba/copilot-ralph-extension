@@ -3,6 +3,35 @@
 ## Unreleased
 
 ### Features
+- TUI Header gains an `elapsed HH:MM:SS` wallclock counter on
+  the right row (after `tokens` / `premium`) so an at-a-glance
+  read of the run pane shows how long the loop has been
+  active. Live in non-terminal status (running / paused) — the
+  `<App>` component drives a 1 Hz tick that re-renders the
+  Header so seconds advance without depending on event
+  arrivals (long stages without events no longer freeze the
+  display). Frozen at the run's actual end ts in terminal
+  status (complete / aborted) so the final value is the real
+  duration of the run. `foldEvents` gains a `terminalAt:
+  number|null` field on the snapshot, set strictly from the
+  `complete` / `abort` event's own `ts`, so a late or replayed
+  event arriving after termination cannot shift the frozen
+  elapsed counter (mirrors the `ts`-pinned-not-`updatedAt`
+  pattern used by `iteration_end`). Hidden when the loop has
+  not yet armed (`startedAt` is null) and in static-mode
+  renders without an injected `now` for non-terminal status,
+  so snapshot tests and pre-iter-1 frames stay deterministic
+  rather than rendering a wallclock-derived value that drifts
+  per CI machine. The 1 Hz `setInterval` only fires in live
+  mode (when `<App>` receives an `eventStream`), `unref()`s
+  itself so it can't keep the process alive past TUI
+  unmount, and clears immediately on terminal-status
+  transition or unmount. The new `formatElapsed(ms)` helper
+  is exported from `<Header>` and computes `HH:MM:SS`
+  manually so a 30-hour self-improve run reads `30:00:00`
+  rather than wrapping at 24 hours like a `Date`-based
+  formatter would.
+
 - Issue #54 — `ralph-tui run` UX hardening across the
   three-level layout. The four top panes
   (`<Header>` / `<StagesRow>` / `<TasksPane>` /

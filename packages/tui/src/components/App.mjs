@@ -38,6 +38,13 @@ const h = React.createElement;
  */
 export default function App({ eventStream, events: initial = [], runId, onUserAbort }) {
     const [events, setEvents] = useState(initial);
+    // `now` is read by <Header> to render the live elapsed clock. We
+    // only tick it in live mode (eventStream present) so static-mode
+    // renders (existing tests + snapshot fixtures) stay deterministic
+    // and don't leak intervals across test runs. The tick stops once
+    // the loop reaches a terminal status — at that point <Header>
+    // freezes elapsed at `snapshot.terminalAt` anyway.
+    const [now, setNow] = useState(() => Date.now());
     const { exit } = useApp();
 
     useInput((input, key) => {
@@ -94,8 +101,22 @@ export default function App({ eventStream, events: initial = [], runId, onUserAb
     const snapshot = foldEvents(events);
     if (runId && !snapshot.runId) snapshot.runId = runId;
 
+    // 1 Hz tick to keep the Header's elapsed counter live. Live mode
+    // only — static renders (tests, fixtures) don't tick. Stops at
+    // terminal status so a finished run doesn't keep re-rendering.
+    const isLive = !!eventStream;
+    const tickActive = isLive
+        && snapshot.status !== "complete"
+        && snapshot.status !== "aborted";
+    useEffect(() => {
+        if (!tickActive) return undefined;
+        const id = setInterval(() => setNow(Date.now()), 1000);
+        if (typeof id?.unref === "function") id.unref();
+        return () => clearInterval(id);
+    }, [tickActive]);
+
     return h(Box, { flexDirection: "column" },
-        h(Header, { snapshot }),
+        h(Header, { snapshot, now: isLive ? now : undefined }),
         h(StagesRow, { snapshot }),
         h(TasksPane, { snapshot }),
         h(SubstagesPane, { snapshot }),

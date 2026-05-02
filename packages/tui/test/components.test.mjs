@@ -9,13 +9,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-let render, React, App, Header, Timeline, DetailPane, Controls, truncateTimeline;
+let render, React, App, Header, Timeline, DetailPane, Controls, truncateTimeline, formatElapsed;
 let inkAvailable = false;
 try {
     ({ render } = await import("ink-testing-library"));
     React = (await import("react")).default;
     App = (await import("../src/components/App.mjs")).default;
-    Header = (await import("../src/components/Header.mjs")).default;
+    const HeaderMod = await import("../src/components/Header.mjs");
+    Header = HeaderMod.default;
+    formatElapsed = HeaderMod.formatElapsed;
     const TimelineMod = await import("../src/components/Timeline.mjs");
     Timeline = TimelineMod.default;
     truncateTimeline = TimelineMod.truncate;
@@ -118,6 +120,117 @@ test("Header: hides premium counter when premiumRequests is null", { skip }, () 
     };
     const out = render(React.createElement(Header, { snapshot })).lastFrame();
     assert.doesNotMatch(out, /premium/);
+});
+
+// ─── Issue: elapsed wallclock counter ─────────────────────────────
+// The Header's right row appends `elapsed HH:MM:SS` after the
+// tokens (and premium) counters when `snapshot.startedAt` is finite
+// AND a clock endpoint is available — caller-supplied `now` while
+// the loop runs, or `snapshot.terminalAt` after `complete` /
+// `abort`. Hidden otherwise so static-render snapshots don't drift
+// across CI machines and pre-`armed` states stay compact.
+
+test("Header: shows elapsed HH:MM:SS for a running loop using injected now", { skip }, () => {
+    const snapshot = {
+        status: "running", label: "self_improve",
+        runId: "self_improve-100", iteration: 1, maxIterations: 1000,
+        tokens: { input: 0, output: 0 },
+        startedAt: 1_000_000,           // armed at t=1_000_000 ms
+        updatedAt: 1_500_000,
+        terminalAt: null,
+    };
+    const now = 1_000_000 + ((14 * 60 + 32) * 1000); // +14m32s
+    const out = render(React.createElement(Header, { snapshot, now })).lastFrame();
+    assert.match(out, /elapsed\s+00:14:32/);
+});
+
+test("Header: elapsed freezes at terminalAt for complete status (ignores now)", { skip }, () => {
+    const snapshot = {
+        status: "complete", label: "self_improve",
+        runId: "self_improve-100", iteration: 5, maxIterations: 5,
+        tokens: { input: 1, output: 2 },
+        startedAt: 1_000_000,
+        updatedAt: 9_999_999_999,       // late event, do NOT use this
+        terminalAt: 1_000_000 + 5_000,  // run finished after 5s
+    };
+    const now = 1_000_000 + ((14 * 60 + 32) * 1000);
+    const out = render(React.createElement(Header, { snapshot, now })).lastFrame();
+    assert.match(out, /elapsed\s+00:00:05/);
+    assert.doesNotMatch(out, /14:32/);
+});
+
+test("Header: elapsed freezes at terminalAt for aborted status", { skip }, () => {
+    const snapshot = {
+        status: "aborted", label: "ralph_loop",
+        runId: "ralph_loop-200", iteration: 2, maxIterations: 100,
+        tokens: { input: 0, output: 0 },
+        startedAt: 1_000_000, updatedAt: 1_002_000,
+        terminalAt: 1_000_000 + 90_000, // 1m30s run
+    };
+    const now = 1_000_000 + 999_999_999; // any now value, ignored
+    const out = render(React.createElement(Header, { snapshot, now })).lastFrame();
+    assert.match(out, /elapsed\s+00:01:30/);
+});
+
+test("Header: elapsed hidden when startedAt is null (pre-armed)", { skip }, () => {
+    const snapshot = {
+        status: "idle", label: "(unknown)", runId: "(no run)",
+        iteration: 0, maxIterations: 100,
+        tokens: { input: 0, output: 0 },
+        startedAt: null, updatedAt: null, terminalAt: null,
+    };
+    const out = render(React.createElement(Header, { snapshot, now: 12345 })).lastFrame();
+    assert.doesNotMatch(out, /elapsed/);
+});
+
+test("Header: elapsed hidden in static-mode (no `now`) for non-terminal status", { skip }, () => {
+    // Static renders (e.g. snapshot tests, fixtures) deliberately
+    // pass no `now` — Header must NOT fall back to `Date.now()`
+    // because that would make the rendered frame change every
+    // millisecond and break deterministic test pinning.
+    const snapshot = {
+        status: "running", label: "ralph_loop", runId: "ralph_loop-300",
+        iteration: 1, maxIterations: 10, tokens: { input: 0, output: 0 },
+        startedAt: 1_000_000, updatedAt: 1_500_000, terminalAt: null,
+    };
+    const out = render(React.createElement(Header, { snapshot })).lastFrame();
+    assert.doesNotMatch(out, /elapsed/);
+});
+
+test("Header: elapsed visible without `now` once status is terminal (uses terminalAt)", { skip }, () => {
+    // Terminal status pins the elapsed value to `terminalAt -
+    // startedAt`, so even a static-mode render (no `now`) must
+    // show the frozen elapsed once the loop is done.
+    const snapshot = {
+        status: "complete", label: "self_improve", runId: "self_improve-400",
+        iteration: 3, maxIterations: 3, tokens: { input: 0, output: 0 },
+        startedAt: 1_000_000, updatedAt: 1_007_000,
+        terminalAt: 1_000_000 + 7_000,
+    };
+    const out = render(React.createElement(Header, { snapshot })).lastFrame();
+    assert.match(out, /elapsed\s+00:00:07/);
+});
+
+test("Header.formatElapsed: pads with zeroes and grows past 24 hours without wrap", { skip }, () => {
+    // Long self-improve runs can chew through several days; the
+    // elapsed counter must NOT wrap at 24h (a `Date`-based
+    // formatter would). Pin manual H/M/S so a 30h run reads
+    // `30:00:00`, not `06:00:00`.
+    assert.equal(formatElapsed(0), "00:00:00");
+    assert.equal(formatElapsed(999), "00:00:00");           // sub-second floors
+    assert.equal(formatElapsed(1_000), "00:00:01");
+    assert.equal(formatElapsed(60_000), "00:01:00");
+    assert.equal(formatElapsed((14 * 60 + 32) * 1000), "00:14:32");
+    assert.equal(formatElapsed(60 * 60 * 1000), "01:00:00");
+    assert.equal(formatElapsed(30 * 60 * 60 * 1000), "30:00:00"); // 30h, no wrap
+});
+
+test("Header.formatElapsed: returns null for non-finite or negative input", { skip }, () => {
+    assert.equal(formatElapsed(null), null);
+    assert.equal(formatElapsed(undefined), null);
+    assert.equal(formatElapsed(NaN), null);
+    assert.equal(formatElapsed(Infinity), null);
+    assert.equal(formatElapsed(-1), null);
 });
 
 test("DetailPane: renders 'premium req N' row when set", { skip }, () => {

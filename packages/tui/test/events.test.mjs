@@ -200,6 +200,68 @@ test("foldEvents: a fresh `armed` resets iterations array (replay-with-multiple-
     assert.equal(snap.iterations[0].iteration, 1);
 });
 
+// ─── terminalAt: pins the run's end-of-life timestamp ────────────
+// `terminalAt` is set strictly from the `complete` / `abort` event's
+// own `ts`, not from generic `updatedAt` (which would shift if a
+// late/replayed event arrived after termination). The TUI's Header
+// reads this field to freeze the elapsed-clock display at the
+// run's actual end ts.
+
+test("foldEvents: complete sets terminalAt to the event's ts", () => {
+    const snap = foldEvents([
+        { type: "armed", ts: 100, runId: "r", label: "self_improve" },
+        { type: "iteration_start", ts: 110, runId: "r", iteration: 1 },
+        { type: "complete", ts: 200, runId: "r", reason: "completion_promise" },
+    ]);
+    assert.equal(snap.status, "complete");
+    assert.equal(snap.terminalAt, 200);
+});
+
+test("foldEvents: abort sets terminalAt to the event's ts", () => {
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r", label: "grow_project" },
+        { type: "abort", ts: 50, runId: "r", reason: "user_quit" },
+    ]);
+    assert.equal(snap.status, "aborted");
+    assert.equal(snap.terminalAt, 50);
+});
+
+test("foldEvents: terminalAt is null pre-termination", () => {
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r", label: "ralph_loop" },
+        { type: "iteration_start", ts: 2, runId: "r", iteration: 1 },
+    ]);
+    assert.equal(snap.terminalAt, null);
+});
+
+test("foldEvents: a fresh `armed` resets terminalAt for the new run", () => {
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r1", label: "ralph_loop" },
+        { type: "complete", ts: 2, runId: "r1", reason: "promise" },
+        { type: "armed", ts: 3, runId: "r2", label: "self_improve" },
+    ]);
+    assert.equal(snap.runId, "r2");
+    assert.equal(snap.terminalAt, null,
+        "fresh armed must wipe the previous run's terminalAt");
+});
+
+test("foldEvents: terminalAt is NOT shifted by a late post-termination event", () => {
+    // Replay / out-of-band scenario: a stray event arrives with a
+    // `ts` greater than the terminal event's `ts`. `updatedAt` will
+    // (correctly) advance, but `terminalAt` must stay pinned to the
+    // moment the run actually ended so the Header's elapsed counter
+    // doesn't appear to keep ticking after `complete`.
+    const snap = foldEvents([
+        { type: "armed", ts: 1, runId: "r", label: "self_improve" },
+        { type: "complete", ts: 100, runId: "r", reason: "promise" },
+        { type: "usage_update", ts: 9_999_999, runId: "r", iteration: 1, tokens: { input: 1, output: 1 } },
+    ]);
+    assert.equal(snap.terminalAt, 100,
+        "terminalAt stays pinned to the complete event's ts even when later events arrive");
+    assert.equal(snap.updatedAt, 9_999_999,
+        "updatedAt still tracks the latest event observed (sanity)");
+});
+
 test("foldEvents: rejects non-array input", () => {
     assert.throws(() => foldEvents(null), /must be an array/);
 });

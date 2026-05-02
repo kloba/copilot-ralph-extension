@@ -101,7 +101,12 @@ export function createEventEmitter({ label, startedAt, env, fs } = {}) {
     };
 
     const write = (ev) => {
-        if (!ev || typeof ev !== "object") return;
+        // Arrays are typeof "object" in JS but `{ ...ev }` on an array
+        // produces `{"0": v0, "1": v1, …}` — a meaningless event with
+        // numeric-string keys and no `type` field. The TUI would then
+        // log a "skipped: missing type" warning per array. Reject up
+        // front so a buggy caller cannot pollute the JSONL stream.
+        if (!ev || typeof ev !== "object" || Array.isArray(ev)) return;
         ensureDir();
         const line = serialize(ev);
         if (!line) return;

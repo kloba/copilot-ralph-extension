@@ -15,6 +15,16 @@
   either value is caught at test time.
 
 ### Fixes
+- `extension/events-emit.mjs` `createEventEmitter.write()`
+  now rejects arrays up front. Previously `typeof [] ===
+  "object"` and `!ev` was `false`, so an array would fall
+  through to `serialize()` where `{ ...ev }` turned
+  `[1,2,3]` into `{"0":1,"1":2,"2":3}` — a malformed event
+  with no `type` field that polluted `events.jsonl` and
+  tripped the TUI's "skipped: missing type" path per line.
+  Now arrays (including `[]` and arrays-of-objects) are
+  silently dropped on entry, matching the existing
+  null/non-object behaviour. Drift-guarded.
 - `ralph_loop` now reports an actionable "Shorten the prompt by
   at least N character(s)" hint when a user prompt + the
   commit-attribution rider would exceed `MAX_PROMPT_CHARS`

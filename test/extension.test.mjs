@@ -8544,3 +8544,18 @@ test("AGENTS.md §5 checklist: lists both `npm test` AND `npm run check`", () =>
     assert.match(block, /`npm test`/, "checklist must mention `npm test`");
     assert.match(block, /`npm run check`/, "checklist must mention `npm run check` (see scripts/check.mjs)");
 });
+
+// Iter 100 — events-emit `write()` previously accepted arrays because
+// `typeof [] === "object"` and `!ev` is false. The shallow clone
+// `{...ev}` would then turn `[1,2,3]` into `{"0":1,"1":2,"2":3}` —
+// a malformed event with no `type` field, polluting events.jsonl and
+// triggering the TUI's "skipped: missing type" path per line. Pin
+// the new contract: arrays are rejected up front (no append), null /
+// non-object types remain non-throwing.
+test("createEventEmitter.write: rejects arrays without appending", () => {
+    const { writer, writes } = captureEmitter();
+    writer.write([1, 2, 3]);
+    writer.write([]);
+    writer.write([{ type: "armed" }]);
+    assert.equal(writes.length, 0, "array events must be dropped (no append)");
+});

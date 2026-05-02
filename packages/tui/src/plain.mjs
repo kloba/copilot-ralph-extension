@@ -22,6 +22,18 @@ const PAD3 = (n) => String(n).padStart(3, "0");
 export function formatTimestamp(ts) {
     if (!Number.isFinite(ts)) return "??:??:??.???";
     const d = new Date(ts);
+    // `Number.isFinite(ts)` is necessary but not sufficient: JS Date
+    // tops out at ±8.64e15 ms (100M days from epoch), so a finite-but-
+    // out-of-range value (e.g. Number.MAX_SAFE_INTEGER, or a corrupted
+    // events.jsonl row that lost a digit) constructs an Invalid Date
+    // whose getUTC* accessors all return NaN. Rendering that without a
+    // guard emits the 16-char string "NaN:NaN:NaN.NaN", which is wider
+    // than the 12-char `"??:??:??.???"` sentinel and silently knocks
+    // every column to its right out of awk/grep alignment. Fall back
+    // to the same sentinel a non-finite ts gets so downstream column
+    // parsers see a stable width regardless of how the upstream `ts`
+    // got mangled.
+    if (Number.isNaN(d.getTime())) return "??:??:??.???";
     return `${PAD2(d.getUTCHours())}:${PAD2(d.getUTCMinutes())}:${PAD2(d.getUTCSeconds())}.${PAD3(d.getUTCMilliseconds())}`;
 }
 

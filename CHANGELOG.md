@@ -277,6 +277,28 @@
   invariant scan.
 
 ### Internal
+- `packages/tui/src/plain.mjs`'s `formatTimestamp` now also
+  collapses out-of-range finite inputs to the
+  `"??:??:??.???"` sentinel. Pre-iter-144 the only guard was
+  `!Number.isFinite(ts)`, which is necessary but not
+  sufficient: JS Date tops out at ±8.64e15 ms (100M days
+  from epoch), so a finite-but-unrepresentable value
+  (`Number.MAX_SAFE_INTEGER`, or a corrupted events.jsonl
+  row that lost a digit) constructed an Invalid Date whose
+  `getUTC*` accessors all returned NaN — rendering the
+  16-char string `"NaN:NaN:NaN.NaN"` instead of the 12-char
+  sentinel and silently knocking every column to its right
+  out of awk/grep alignment. The new
+  `Number.isNaN(d.getTime())` guard backs straight off to
+  the same sentinel, keeping the single-line column
+  contract awk-stable regardless of how the upstream `ts`
+  got mangled. Pinned by a 4-assertion test in
+  `packages/tui/test/plain.test.mjs` covering both
+  out-of-range bounds, `MAX_SAFE_INTEGER`, and a symmetry
+  check that the JS Date upper bound itself
+  (`8.64e15`) still renders normally so the guard stays
+  exact rather than an over-broad sledgehammer that would
+  clip plausible far-future timestamps.
 - `packages/tui/src/events.mjs`'s `serializeEvent` now caps the
   `reason` field at 500 chars (surrogate-safely via
   `safeSliceChars`) for symmetry with the long-standing caps on

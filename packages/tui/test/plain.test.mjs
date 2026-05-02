@@ -372,3 +372,24 @@ test("formatEventLine: reason= field quotes whitespace-bearing user reasons but 
     assert.match(tabbed, /reason="lunch\\tbreak"/,
         `reasons containing tabs must also be JSON-stringified (\\s regex catches \\t); got: ${tabbed}`);
 });
+
+test("formatTimestamp: out-of-range finite ts collapses to ?? sentinel (Invalid Date guard)", () => {
+    // JS Date tops out at ±8.64e15 ms from epoch. A finite value
+    // beyond that constructs an Invalid Date whose getUTC* accessors
+    // all return NaN — without the post-construction guard,
+    // formatTimestamp would emit "NaN:NaN:NaN.NaN" (16 chars) instead
+    // of the 12-char `"??:??:??.???"` sentinel and silently break the
+    // column-aligned awk/grep contract every other formatted line
+    // upholds.
+    assert.equal(formatTimestamp(8.64e15 + 1), "??:??:??.???",
+        "ts just past the JS Date upper bound must collapse to the sentinel, not 'NaN:NaN:...'");
+    assert.equal(formatTimestamp(-(8.64e15 + 1)), "??:??:??.???",
+        "ts just past the JS Date lower bound must also collapse to the sentinel");
+    assert.equal(formatTimestamp(Number.MAX_SAFE_INTEGER), "??:??:??.???",
+        "MAX_SAFE_INTEGER ms is finite but unrepresentable as Date — must collapse to the sentinel");
+    // Symmetry: the JS Date max itself MUST still render normally,
+    // proving the guard is exact (not an over-broad "anything > 1e13"
+    // sledgehammer that would clip plausible far-future timestamps).
+    assert.notEqual(formatTimestamp(8.64e15), "??:??:??.???",
+        "the JS Date upper bound itself must still render — guard must be exact, not over-broad");
+});

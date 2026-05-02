@@ -1,5 +1,5 @@
 // Unit tests for packages/tui/src/events-emit.mjs — the zero-dep JSONL
-// emitter consumed by `ralph-tui run`. Pins the exported contract
+// emitter consumed by `autopilot run`. Pins the exported contract
 // (resolveRunsRoot / makeRunId / createEventEmitter's truncation +
 // error-swallowing paths) so a future refactor can't drift silently.
 
@@ -106,8 +106,8 @@ test("createEventEmitter: armed event also writes a line to the run index", () =
     assert.ok(indexLine, "index.jsonl write is missing");
     const idx = JSON.parse(indexLine.line.trimEnd());
     // The TUI's readRunIndex filters for `type === "armed"`. If this
-    // line ever stops being emitted, `ralph-tui list` and
-    // `ralph-tui stats` silently skip every recorded run.
+    // line ever stops being emitted, `autopilot list` and
+    // `autopilot stats` silently skip every recorded run.
     assert.equal(idx.type, "armed", "index entry must carry type=armed so the TUI consumer accepts it");
     assert.equal(idx.runId, "self_improve-99");
     assert.equal(idx.label, "self_improve");
@@ -121,7 +121,7 @@ test("createEventEmitter: index entry round-trips through TUI's readRunIndex", a
     // index.jsonl entries that the TUI's `readRunIndex` consumer must
     // accept. readRunIndex filters for `type: "armed"` exactly — so a
     // regression that drops the `type` field would silently make
-    // `ralph-tui list` / `stats` skip every recorded run. Round-trip
+    // `autopilot list` / `stats` skip every recorded run. Round-trip
     // through a real tmp dir to catch that.
     const fs = await import("node:fs");
     const path = await import("node:path");
@@ -294,7 +294,7 @@ test("createEventEmitter: BigInt / circular ref events are dropped, not thrown",
 // etc. Without trimming, the override path was returned verbatim, so
 // `RALPH_TUI_RUNS_DIR=" /tmp/runs "` created `runs` directories whose
 // name literally contained leading + trailing spaces and broke the
-// matching `ralph-tui list` glob. Pin that the override is trimmed at
+// matching `autopilot list` glob. Pin that the override is trimmed at
 // resolve time so a future regression cannot reintroduce that
 // papercut.
 test("resolveRunsRoot: trims surrounding whitespace from RALPH_TUI_RUNS_DIR override", () => {

@@ -45,7 +45,7 @@ test("bin --help: prints USAGE and exits 0", () => {
     const r = runBin(["--help"]);
     assert.equal(r.status, 0);
     assert.match(r.stdout, /USAGE/);
-    assert.match(r.stdout, /ralph-tui list/);
+    assert.match(r.stdout, /autopilot list/);
 });
 
 test("bin list: empty runs root prints helpful message", () => {
@@ -286,13 +286,13 @@ test("bin --version: prints version matching package.json", () => {
     const r = runBin(["--version"]);
     assert.equal(r.status, 0);
     const pkg = JSON.parse(readFileSync2(resolve(REPO_ROOT, "package.json"), "utf8"));
-    assert.equal(r.stdout.trim(), `ralph-tui ${pkg.version}`);
+    assert.equal(r.stdout.trim(), `autopilot ${pkg.version}`);
 });
 
 test("bin -V: same as --version", () => {
     const r = runBin(["-V"]);
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /^ralph-tui \d/);
+    assert.match(r.stdout, /^autopilot \d/);
 });
 
 test("bin --help: mentions --version", () => {
@@ -387,12 +387,12 @@ test("bin where: works even when directory does not exist", () => {
 
 test("bin --help: mentions where", () => {
     const r = runBin(["--help"]);
-    assert.match(r.stdout, /ralph-tui where/);
+    assert.match(r.stdout, /autopilot where/);
 });
 
 test("tui.mjs has no top-level await (Node 22+ unsettled-TLA warning regression guard)", async () => {
     // Iter regression: the entry-point check used `await import("node:fs")`
-    // and `await import("node:url")` at the top level. On `ralph-tui run`,
+    // and `await import("node:url")` at the top level. On `autopilot run`,
     // when main() resolved and the `.then(process.exit)` chain fired,
     // Node 22+ printed `ExperimentalWarning: Detected unsettled top-level
     // await at file://…/bin/tui.mjs:<EOF-line>` to stderr — a spurious
@@ -479,13 +479,13 @@ test("tui.mjs header comment lists every USAGE subcommand (drift guard)", async 
         [...headerBlock[0].matchAll(/^\/\/\s{3}([a-z]+)\b/gm)].map((m) => m[1])
     );
 
-    // USAGE subcommands: lines beginning `  ralph-tui <cmd>` inside the
+    // USAGE subcommands: lines beginning `  autopilot <cmd>` inside the
     // `const USAGE = \`…\`;` template literal. Skip the `--help` /
     // `--version` lines.
     const usageBlock = src.match(/const USAGE = `([\s\S]+?)`;/);
     assert.ok(usageBlock, "could not locate the USAGE constant in tui.mjs");
     const usageCmds = new Set(
-        [...usageBlock[1].matchAll(/^\s{2}ralph-tui\s+([a-z]+)\b/gm)].map((m) => m[1])
+        [...usageBlock[1].matchAll(/^\s{2}autopilot\s+([a-z]+)\b/gm)].map((m) => m[1])
     );
 
     // Pin: every USAGE subcommand must appear in the header. (We allow
@@ -562,23 +562,22 @@ test("packages/tui/README.md Subcommands block lists every shipped subcommand + 
     // Slice generously so the section's adjacent prose can grow without
     // forcing the test to track exact byte offsets.
     const slice = readme.slice(i, i + 4000);
-    const required = [
-        "ralph-tui list",
-        "ralph-tui replay",
-        "ralph-tui watch",
-        "ralph-tui doctor",
-        "ralph-tui prune",
-        "ralph-tui stats",
-        "ralph-tui where",
-        "--help",
-        "--version",
-        "--json",
-        "--limit",
-        "--older-than",
-        "--dry-run",
-        "--plain",
-    ];
-    for (const kw of required) {
+    // Issue #65 transition: the binary was renamed `ralph-tui` → `autopilot`.
+    // The TUI README's docs sweep lands in a sibling PR (docs are not in
+    // this unit's ownership), so during the rename window the README may
+    // legitimately show either binary name. Each required subcommand must
+    // appear under at least one of the two spellings.
+    const subcmds = ["list", "replay", "watch", "doctor", "prune", "stats", "where"];
+    for (const sub of subcmds) {
+        const oldForm = `ralph-tui ${sub}`;
+        const newForm = `autopilot ${sub}`;
+        assert.ok(
+            slice.includes(oldForm) || slice.includes(newForm),
+            `TUI README ## Subcommands block must list '${newForm}' (or legacy '${oldForm}' during the issue #65 rename window) — currently shipped by bin/tui.mjs`,
+        );
+    }
+    const requiredFlags = ["--help", "--version", "--json", "--limit", "--older-than", "--dry-run", "--plain"];
+    for (const kw of requiredFlags) {
         assert.ok(
             slice.includes(kw),
             `TUI README ## Subcommands block must list '${kw}' (currently shipped by bin/tui.mjs)`,
@@ -592,7 +591,7 @@ test("packages/tui/package.json carries repository/bugs/author metadata aligned 
     // the root package.json carries (iter 151 added the missing
     // root `author`, but the workspace package was forgotten).
     // For a sub-package shipped via the dogfood install path AND
-    // documented as `npx ralph-tui` in docs/faq.md, the missing
+    // documented as `npx autopilot` in docs/faq.md, the missing
     // metadata silently degrades the registry listing if the
     // `private: true` flag is ever flipped (e.g. a future release
     // branch that publishes the TUI to npm separately). Adding
@@ -650,7 +649,7 @@ test("cmdReplay: path-traversal runId routes through fail() with clean error (no
     // path-traversal runIds (`../etc/passwd`, runIds with `\0`, runIds
     // with `\\`, `.`, `..`). Pre-iter-167 `cmdReplay` and `cmdWatch`
     // called the resolver without catching, so a user supplying
-    // `ralph-tui replay ../etc/passwd` saw a raw stack trace instead
+    // `autopilot replay ../etc/passwd` saw a raw stack trace instead
     // of a clean error message. The fix is to catch TypeError at the
     // bin layer and route through `fail()` (clean stderr line + exit
     // code 2). Pin both the no-throw contract and the user-visible
@@ -782,7 +781,7 @@ test("VALUE_FLAGS JSDoc comment lists every flag actually in the set (drift guar
     }
 });
 
-// ─── Issue #48 slice 3: scope-driven default for `ralph-tui run --max` ──
+// ─── Issue #48 slice 3: scope-driven default for `autopilot run --max` ──
 
 import { defaultMaxIterationsFor } from "../bin/tui.mjs";
 import * as __runner from "../src/runner.mjs";
@@ -855,7 +854,7 @@ test("run-ui module is importable and exports mountRunUi (no top-level Ink impor
 
 // ─── Issue #48 / user-bug: q keypress fallback ─────────────────────
 //
-// Field bug from a real run: pressing `q` in `ralph-tui run` echoed
+// Field bug from a real run: pressing `q` in `autopilot run` echoed
 // to the terminal as cooked-mode characters instead of unmounting
 // the Ink App — meaning Ink's useInput silently failed to enter raw
 // mode for that environment. installStdinAbortListener is the
@@ -886,7 +885,7 @@ test("installStdinAbortListener: returns a no-op cleanup when stdin is NOT a TTY
 test("formatAbortMessage: q press → user-visible 'q received' line on stderr", () => {
     const msg = formatAbortMessage("user_quit");
     assert.ok(typeof msg === "string", "user_quit must return a string");
-    assert.match(msg, /^\nralph-tui run: q received — finishing current iteration, then stopping\. Hit Ctrl-C to abort hard\.\n$/);
+    assert.match(msg, /^\nautopilot run: q received — finishing current iteration, then stopping\. Hit Ctrl-C to abort hard\.\n$/);
 });
 
 test("formatAbortMessage: SIGINT path returns null (signal handler prints its own line)", () => {
@@ -906,4 +905,92 @@ test("formatAbortMessage: unknown reason still produces a message (don't silentl
     const msg = formatAbortMessage("custom_reason");
     assert.ok(typeof msg === "string");
     assert.match(msg, /custom_reason received/);
+});
+
+// ─── Issue #65: bare `autopilot` defaults to `run --self-improve --fresh` ──
+//
+// Pre-issue-65 behaviour: bare `ralph-tui` with no args printed USAGE.
+// Post-issue-65: bare `autopilot` (no subcommand, no flags, no positional)
+// invokes `cmdRun` with `flags["self-improve"] = true` and
+// `flags.fresh = true` so the user does not have to memorise the canonical
+// drive-the-backlog incantation. `--help` / `-h` still print USAGE.
+
+test("parseArgv: bare argv has no cmd / positional / flags (defaults dispatch happens in main)", () => {
+    // Pin the parser contract: bare argv produces an empty result. The
+    // self-improve default is applied by main() based on this shape, NOT
+    // by parseArgv — keeps parseArgv pure and testable in isolation.
+    const r = parseArgv([]);
+    assert.equal(r.cmd, null);
+    assert.deepEqual(r.positional, []);
+    assert.deepEqual(r.flags, {});
+});
+
+/** Capture stdout + stderr around an async fn. Returns { stdout, stderr }. */
+async function captureIo(fn) {
+    const realStdoutWrite = process.stdout.write.bind(process.stdout);
+    const realStderrWrite = process.stderr.write.bind(process.stderr);
+    let stdoutBuf = "";
+    let stderrBuf = "";
+    process.stdout.write = (chunk) => { stdoutBuf += String(chunk); return true; };
+    process.stderr.write = (chunk) => { stderrBuf += String(chunk); return true; };
+    try {
+        await fn();
+    } finally {
+        process.stdout.write = realStdoutWrite;
+        process.stderr.write = realStderrWrite;
+    }
+    return { stdout: stdoutBuf, stderr: stderrBuf };
+}
+
+test("main: bare argv writes self-improve banner to stderr and routes to cmdRun (--self-improve --fresh)", async () => {
+    // Pin both halves of the issue #65 dispatch contract: the user-visible
+    // stderr banner fires BEFORE any subprocess work, AND cmdRun receives
+    // flags with self-improve + fresh set.
+    //
+    // To avoid spawning a real `copilot` subprocess, point
+    // RALPH_TUI_COPILOT_BIN at a nonexistent path so the runner's spawn
+    // fails fast — the banner write happens BEFORE that failure, so the
+    // assertion is robust to the runner's exit code.
+    const dir = tmp();
+    const origCopilotBin = process.env.RALPH_TUI_COPILOT_BIN;
+    const origRunsDir = process.env.RALPH_TUI_RUNS_DIR;
+    process.env.RALPH_TUI_COPILOT_BIN = "/nonexistent-copilot-binary-for-test-issue-65";
+    process.env.RALPH_TUI_RUNS_DIR = dir;
+    let captured;
+    try {
+        captured = await captureIo(async () => {
+            try { await tuiMain([]); } catch { /* spawn ENOENT — irrelevant */ }
+        });
+    } finally {
+        if (origCopilotBin === undefined) delete process.env.RALPH_TUI_COPILOT_BIN;
+        else process.env.RALPH_TUI_COPILOT_BIN = origCopilotBin;
+        if (origRunsDir === undefined) delete process.env.RALPH_TUI_RUNS_DIR;
+        else process.env.RALPH_TUI_RUNS_DIR = origRunsDir;
+        rmSync(dir, { recursive: true, force: true });
+    }
+    assert.match(captured.stderr, /autopilot: starting self-improve loop \(--fresh\)\. Press q to stop\./,
+        "bare invocation must print the self-improve banner to stderr before invoking cmdRun");
+});
+
+test("main: --help prints USAGE and does NOT trigger the self-improve banner", async () => {
+    // `autopilot --help` keeps the pre-issue-65 USAGE behaviour; the
+    // self-improve default only kicks in when there's no flag at all.
+    let exitCode;
+    const captured = await captureIo(async () => {
+        exitCode = await tuiMain(["--help"]);
+    });
+    assert.equal(exitCode, 0);
+    assert.match(captured.stdout, /USAGE/, "--help must print USAGE to stdout");
+    assert.match(captured.stdout, /autopilot list/, "USAGE must reference the new binary name");
+    assert.doesNotMatch(captured.stderr, /starting self-improve loop/,
+        "--help must NOT trigger the self-improve banner");
+});
+
+test("parseArgv: --help is recognised and main short-circuits to USAGE before bare-default dispatch", () => {
+    // Symmetry guard: --help / -h sets flags.help. main() inspects
+    // flags.help BEFORE the bare-default branch so the dispatch never
+    // fires for a help invocation.
+    assert.equal(parseArgv(["--help"]).flags.help, true);
+    assert.equal(parseArgv(["--help"]).cmd, null);
+    assert.equal(parseArgv(["-h"]).flags.help, true);
 });

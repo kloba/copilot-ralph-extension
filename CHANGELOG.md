@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Breaking
+- Binary renamed `ralph-tui` → `autopilot`. Bare invocation now starts `run --self-improve --fresh` (was: print help). Use `autopilot --help` for the previous help output. (#65)
 - Issue #50 — Removed the in-session Copilot CLI extension.
   The project now ships only as the `ralph-tui` standalone TUI
   app. The `ralph_loop`, `ralph_status`, `ralph_pause`,

@@ -14,6 +14,18 @@
   matches `extension/*.mjs.length` — so a future hardcode of
   either value is caught at test time.
 
+### Fixes
+- `ralph_loop` now reports an actionable "Shorten the prompt by
+  at least N character(s)" hint when a user prompt + the
+  commit-attribution rider would exceed `MAX_PROMPT_CHARS`
+  (65 536). The previous wording stopped at "Shorten the
+  prompt." — leaving the user to subtract `MAX_PROMPT_CHARS`
+  from `got` themselves. Also drops the misleading `~` prefix
+  on the reserved-bytes count: that value is computed at
+  runtime from the actual rider length, so it is exact, never
+  approximate. Pluralisation flips correctly between
+  `1 character.` and `N characters.`.
+
 ### Tests
 - Drift guard: `ci.yml`'s `matrix.node` lowest entry must equal
   `package.json#engines.node`'s floor major. Mirrors the

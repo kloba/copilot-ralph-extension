@@ -8343,3 +8343,37 @@ test("README documents min_iterations default-clamp behaviour for self_improve +
             `${label} min_iterations README row must call out that an explicit min > max is still rejected`);
     }
 });
+
+test("composeRalphLoopPrompt error message: exact reserved bytes (no `~`) and actionable shorten-by hint", () => {
+    // Iter 96 fix: the previous wording said "~600 chars reserved
+    // for the rider" — but that value is computed at runtime from
+    // separator.length + BAKED_RALPH_LOOP_RIDER.length, so it is
+    // exact, never approximate. The leading `~` misled callers into
+    // thinking they had wiggle-room they didn't have. Drop the `~`
+    // and append an actionable "shorten by at least N character(s)"
+    // hint so the user doesn't have to subtract MAX_PROMPT_CHARS
+    // from `got` themselves to know how much to trim.
+    const reserved = BAKED_RALPH_LOOP_RIDER.length + "\n\n".length;
+    const overshoot = 7;
+    const bigUser = "x".repeat(MAX_PROMPT_CHARS - reserved + overshoot);
+    const r = composeRalphLoopPrompt(bigUser);
+    assert.equal(r.value, undefined);
+    assert.ok(r.error, "must surface an error");
+    // No ~ prefix on the reserved-bytes count — the value is exact.
+    assert.doesNotMatch(r.error, /~\d+\s*chars\s+reserved/i,
+        "error must not prefix the reserved-bytes count with `~` (the value is exact)");
+    // Reserved bytes shown verbatim.
+    assert.ok(r.error.includes(`${reserved} chars reserved`),
+        `error must mention exact reserved bytes (${reserved}); got: ${r.error}`);
+    // Actionable trim hint with correct overshoot count + correct pluralisation.
+    assert.ok(
+        r.error.includes(`Shorten the prompt by at least ${overshoot} characters`),
+        `error must include "Shorten the prompt by at least ${overshoot} characters"; got: ${r.error}`,
+    );
+
+    // Singular form drift guard: overshoot of exactly 1 must use "character" (no "s").
+    const oneOver = "x".repeat(MAX_PROMPT_CHARS - reserved + 1);
+    const r1 = composeRalphLoopPrompt(oneOver);
+    assert.ok(r1.error?.includes("by at least 1 character."),
+        `singular form must read "1 character." (no "s"); got: ${r1.error}`);
+});

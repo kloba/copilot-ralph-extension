@@ -433,7 +433,7 @@ function composeRalphLoopPrompt(userPrompt) {
     if (composed.length > MAX_PROMPT_CHARS) {
         const reserved = separator.length + BAKED_RALPH_LOOP_RIDER.length;
         return {
-            error: `ralph_loop: prompt + commit-attribution rider exceeds ${MAX_PROMPT_CHARS} characters (got ${composed.length}; ~${reserved} chars reserved for the rider). Shorten the prompt.`,
+            error: `ralph_loop: prompt + commit-attribution rider exceeds ${MAX_PROMPT_CHARS} characters (got ${composed.length}; ${reserved} chars reserved for the rider). Shorten the prompt by at least ${composed.length - MAX_PROMPT_CHARS} character${composed.length - MAX_PROMPT_CHARS === 1 ? "" : "s"}.`,
         };
     }
     return { value: composed };

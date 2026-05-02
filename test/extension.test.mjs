@@ -4862,6 +4862,29 @@ test("release.yml asset list matches extension/*.mjs on disk", () => {
     );
 });
 
+test("README `tools: controller.tools` comment lists every controller.tools name in order", () => {
+    // Drift guard for the inline tool list in README's "How it works"
+    // code block. The previous form (`ralph_loop + ralph_stop +
+    // self_improve + grow_project`) drifted out of date when ralph_pause,
+    // ralph_resume, and ralph_status shipped — a contributor reading
+    // README would have built the wrong mental model of the tool surface.
+    // Pin the comment to the actual order of names exported by
+    // `controller.tools` so adding a new tool fails this test loudly.
+    const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf8");
+    const m = readme.match(/tools:\s*controller\.tools,\s*\/\/\s*([^\n]+)/);
+    assert.ok(m, "README must contain `tools: controller.tools, // <names>` comment line");
+    const declared = m[1]
+        .split(/\s*\+\s*/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    const actual = createRalphController().tools.map((t) => t.name);
+    assert.deepEqual(
+        declared,
+        actual,
+        `README \`tools: controller.tools\` comment is stale — update it to list, in order: ${actual.join(" + ")}`,
+    );
+});
+
 test("README + RELEASING install loops list every extension/*.mjs file", () => {
     // Drift guard for the user-facing install snippets. Both README.md
     // (Option A user-scoped, Option B project-scoped, Option C pinned

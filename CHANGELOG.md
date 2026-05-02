@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Documentation
+- Fix stale `tools: controller.tools` comment in
+  README's "How it works" code block. Previously
+  listed only `ralph_loop + ralph_stop + self_improve
+  + grow_project`; now lists all seven tools the
+  controller exposes (adds `ralph_status`,
+  `ralph_pause`, `ralph_resume` in their declaration
+  order). A new drift-guard test parses the comment
+  on every test run and fails loudly when a future
+  tool addition is forgotten in the snippet — same
+  pattern as the existing install.sh / release.yml /
+  README install-loop drift guards.
+
 ### Tests
 - Pin pause-during-pendingFire contract: an early
   `ralph_pause` (before iter 1 has fired) must NOT

@@ -2,7 +2,7 @@
 
 > Stack-verification reference for `packages/tui/` (issue #22).
 >
-> The ralph TUI is built on the same proven trio used by today's leading
+> The autopilot TUI is built on the same proven trio used by today's leading
 > agentic-CLI tools: **Ink** (React for terminal UIs), **Yoga**
 > (Facebook's Flexbox engine that Ink uses for layout), and **Commander**
 > (the de-facto Node.js CLI argument parser). This document captures
@@ -72,7 +72,7 @@ the extension's webview stays consistent with the CLI.
 
 Commander has been the dominant Node CLI parser since 2011 and is
 what tools like ESLint, Vue CLI, and `pnpm` ship with. The reasons
-for picking it for `ralph-tui`:
+for picking it for `autopilot`:
 
 * **Subcommand ergonomics.** `program.command("replay <runId>")` and
   `program.command("watch [runId]")` map 1:1 to our `cmd` switch.
@@ -120,7 +120,7 @@ at Yoga as the layout backend.
 
 The TUI's full dependency closure resolves to ~3 MB of `node_modules/`
 when installed (Ink + React + Yoga's WASM + Commander). That cost is
-paid only by users who run `ralph-tui watch` interactively. The
+paid only by users who run `autopilot watch` interactively. The
 *event emitter* in the core extension stays stdlib-only, so an
 extension install via `install.sh` adds zero new packages.
 
@@ -130,5 +130,5 @@ extension install via `install.sh` adds zero new packages.
   Live TUI walkthrough + asciinema recipe.
 * [packages/tui/package.json](../packages/tui/package.json) — current
   pinned versions.
-* [Issue #22](https://github.com/kloba/copilot-ralph-extension/issues/22) —
+* [Issue #22](https://github.com/kloba/autopilot/issues/22) —
   TUI design discussion.

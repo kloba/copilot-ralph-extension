@@ -6853,7 +6853,7 @@ test("docs/faq.md is no longer the stub and answers core operational questions",
     // Headline questions that MUST be present (regression guard against
     // future "simplify" PRs that drop sections wholesale).
     const requiredHeadings = [
-        /Why doesn't `\/extensions` list `ralph` after install\?/,
+        /Why doesn't `\/extensions` list `autopilot` after install\?/,
         /Why does arming fail with .*already armed/,
         /Why did my loop stop after exactly one iteration\?/,
         /Why does my loop never finish\?/,
@@ -6878,8 +6878,8 @@ test("docs/faq.md is no longer the stub and answers core operational questions",
     assert.match(faq, /pause[\s\S]{0,80}idempotent/i);
     assert.match(faq, /resume[\s\S]{0,40}\*\*not\*\* idempotent/i);
     // (c) The default runs root path — used by the events emitter.
-    assert.match(faq, /~\/\.copilot\/ralph\/runs/);
-    assert.match(faq, /RALPH_EVENTS_DIR/);
+    assert.match(faq, /~\/\.copilot\/autopilot\/runs/);
+    assert.match(faq, /AUTOPILOT_EVENTS_DIR/);
 });
 
 // -----------------------------------------------------------------------------

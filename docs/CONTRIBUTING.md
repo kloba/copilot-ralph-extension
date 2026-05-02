@@ -1,12 +1,12 @@
 # Contributing
 
-Thanks for your interest in `copilot-ralph-extension`! This page is the entry point for contributors. End-user docs live in the [README](../README.md).
+Thanks for your interest in `autopilot`! This page is the entry point for contributors. End-user docs live in the [README](../README.md).
 
 ## Local development setup
 
 ```bash
-git clone https://github.com/kloba/copilot-ralph-extension.git
-cd copilot-ralph-extension
+git clone https://github.com/kloba/autopilot.git
+cd autopilot
 npm test    # runs the node:test suite under test/ (no install needed — zero runtime deps)
 ```
 
@@ -17,7 +17,7 @@ The repository has **zero npm runtime dependencies** and only Node ≥ 20's buil
 For day-to-day iteration, prefer a **project-scoped** install so your `git checkout` is the live source the CLI loads:
 
 ```bash
-./install.sh --project   # installs into .github/extensions/ralph in this repo
+./install.sh --project   # installs into .github/extensions/autopilot in this repo
 ```
 
 After editing `extension/handler.mjs`, run `extensions_reload` from inside Copilot CLI (or restart the CLI) — new tool definitions are picked up immediately.
@@ -25,7 +25,7 @@ After editing `extension/handler.mjs`, run `extensions_reload` from inside Copil
 For a user-scoped install (loads the same extension across all your repos):
 
 ```bash
-./install.sh             # default: ~/.copilot/extensions/ralph
+./install.sh             # default: ~/.copilot/extensions/autopilot
 ./install.sh --dry-run   # show what would be copied without writing
 ```
 
@@ -46,7 +46,7 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 Co-authored-by: copilot-ralph <noreply+copilot-ralph@github.com>
 ```
 
-The first attributes the underlying Copilot model; the second attributes the loop that executed the iteration. Order matters — GitHub surfaces the first co-author more prominently. See the [README "Commit attribution" section](../README.md#commit-attribution) and [CHANGELOG](../CHANGELOG.md) for full rationale and opt-out (`RALPH_NO_ATTRIBUTION=1`).
+The first attributes the underlying Copilot model; the second attributes the loop that executed the iteration. Order matters — GitHub surfaces the first co-author more prominently. See the [README "Commit attribution" section](../README.md#commit-attribution) and [CHANGELOG](../CHANGELOG.md) for full rationale and opt-out (`AUTOPILOT_NO_ATTRIBUTION=1`).
 
 ## Pull request expectations
 

@@ -21,12 +21,12 @@ The trade-off is documented in the README's comparison table; see [What's differ
 extension/
 ├── extension.mjs   # SDK glue — joinSession + createRalphController() + register tools/hooks
 ├── handler.mjs     # The entire controller: state machine, validation, tool defs, baked prompts
-└── events-emit.mjs # Zero-dep JSONL event emitter (writes ~/.copilot/ralph/runs/<runId>/events.jsonl)
+└── events-emit.mjs # Zero-dep JSONL event emitter (writes ~/.copilot/autopilot/runs/<runId>/events.jsonl)
 test/
 ├── extension.test.mjs       # node:test suite — controller against a fake session
 ├── events-emit.test.mjs     # Unit tests for the JSONL emitter helpers
 └── handler-events.test.mjs  # Integration tests covering controller↔emitter wiring
-packages/tui/       # Stand-alone TUI consumer (`ralph-tui`) — see packages/tui/README.md
+packages/tui/       # Stand-alone TUI consumer (`autopilot`) — see packages/tui/README.md
 install.sh          # User- or project-scoped install into ~/.copilot/extensions or .github/extensions
 ```
 
@@ -45,8 +45,8 @@ While a loop is running, `state.active` holds the canonical loop state. Field-by
 - `prompt` / `completionPromise` / `abortPromise` — the strings re-fed each iter and the substrings that terminate the loop.
 - `prev` / `streak` / `stagnationLimit` — byte-identical-response detector that aborts a stuck loop.
 - `pendingFire` / `fireInFlight` / `observedMessageThisFire` — per-iteration dispatch guards. The first idle (the one that *armed* the loop) consumes `pendingFire` to fire iter 1; the in-flight markers prevent stale-idle bloat from cancelled tool calls or sub-agents.
-- `paused` / `pauseReason` / `pausedAt` / `totalPausedMs` — pause-state fields (issue [#3](https://github.com/kloba/copilot-ralph-extension/issues/3)). When `paused === true`, `onIdle` short-circuits before firing the next iteration so the user can chat freely without consuming iterations. `ap_resume` re-arms by zeroing the streak detector (manual intervention almost always changes context) and folding `pausedFor` into `totalPausedMs` for accurate elapsed-time reporting in `ap_status`.
-- Adaptive-budget fields (issue [#4](https://github.com/kloba/copilot-ralph-extension/issues/4)): `adaptiveBudget`, `adaptiveExtension`, `adaptiveMaxTotal`, `originalMax`, `adaptiveContentHashes`, `adaptiveExtensionHistory`.
+- `paused` / `pauseReason` / `pausedAt` / `totalPausedMs` — pause-state fields (issue [#3](https://github.com/kloba/autopilot/issues/3)). When `paused === true`, `onIdle` short-circuits before firing the next iteration so the user can chat freely without consuming iterations. `ap_resume` re-arms by zeroing the streak detector (manual intervention almost always changes context) and folding `pausedFor` into `totalPausedMs` for accurate elapsed-time reporting in `ap_status`.
+- Adaptive-budget fields (issue [#4](https://github.com/kloba/autopilot/issues/4)): `adaptiveBudget`, `adaptiveExtension`, `adaptiveMaxTotal`, `originalMax`, `adaptiveContentHashes`, `adaptiveExtensionHistory`.
 
 When the loop finishes, `state.active` becomes `null` and the immutable `state.lastResult` (a deep-frozen `RalphResult`) holds the post-mortem.
 
@@ -66,8 +66,8 @@ The baked prompts include hard-coded `COMPLETE` / `ABORT_…` tokens and `min_it
 |---|---|---|
 | `ap_loop` | Generic re-fed-prompt loop | One loop at a time. Returns immediately after arming. Driven by `session.idle`. |
 | `ap_stop` | Cancel the active loop | Returns failure if no loop is active. Optional `reason` string is recorded as `note` on the result. |
-| `ap_status` | Live structured snapshot of the active loop | Issue [#5](https://github.com/kloba/copilot-ralph-extension/issues/5) — read-only; safe to call mid-loop. |
-| `ap_pause` | Pause the active loop without losing state | Issue [#3](https://github.com/kloba/copilot-ralph-extension/issues/3). Idempotent; `onIdle` short-circuits while `paused === true`. Returns failure if no loop is active. |
+| `ap_status` | Live structured snapshot of the active loop | Issue [#5](https://github.com/kloba/autopilot/issues/5) — read-only; safe to call mid-loop. |
+| `ap_pause` | Pause the active loop without losing state | Issue [#3](https://github.com/kloba/autopilot/issues/3). Idempotent; `onIdle` short-circuits while `paused === true`. Returns failure if no loop is active. |
 | `ap_resume` | Resume a paused loop | Returns failure if no loop is active or the loop is not paused. Stagnation streak is reset on resume. |
 | `self_improve` | Baked SDLC self-improvement prompt | Wraps `armLoop` with `PROMPT_SELF_IMPROVE`. Honors `focus` for narrowing scope. |
 | `grow_project` | Baked backlog-grooming + execution loop | Wraps `armLoop` with `PROMPT_GROW_PROJECT`. Drives `gh` CLI calls. |
@@ -80,11 +80,11 @@ All tools share the `success(message, extra)` / `failure(message, extra)` envelo
 - **`abort_promise`** (optional, no default) — same mechanism, but finishes with `reason: "abort_promise"`. Used by `grow_project` (`ABORT_NO_BACKLOG`) to bail when there's nothing to do.
 - Both promises are **only honored once `i >= min_iterations`** to avoid premature termination from the agent merely describing the protocol on iter 1. Stagnation, max-iterations, and adaptive-budget terminators have their own thresholds and do not respect `min_iterations`.
 
-## Adaptive iteration budget (issue [#4](https://github.com/kloba/copilot-ralph-extension/issues/4))
+## Adaptive iteration budget (issue [#4](https://github.com/kloba/autopilot/issues/4))
 
 Opt-in. When the loop reaches `max_iterations`, `evaluateAdaptiveSignals(a, gitExec)` returns a non-null reason iff *either* `git diff --shortstat HEAD` or `git status --porcelain` reports working-tree changes, *or* the rolling 3-iteration content-hash window contains ≥ 2 distinct hashes. A positive signal grants `adaptive_extension` more iterations, capped at `adaptive_max_total`. Stagnation / completion / abort still win unconditionally because they're checked earlier in `onIdle`.
 
-## Token tracking (issue [#7](https://github.com/kloba/copilot-ralph-extension/issues/7))
+## Token tracking (issue [#7](https://github.com/kloba/autopilot/issues/7))
 
 `assistant.message` events from the root agent are routed through two helpers in `handler.mjs`: `extractUsage(ev)` reads `data.usage.{input_tokens, output_tokens, model}` (or the flat `data.usage_input_tokens`/`usage_output_tokens`/`usage_model` form used by the SDK's events table); `creditUsage(a, usage)` accumulates the result onto `a.tokens.input` / `a.tokens.output`, appends a per-iteration breakdown to `byIteration` (`{iter, input, output, model}`), and folds per-model totals into `byModel`. Sub-agent events are filtered upstream by `isSubAgentEvent`, so token credit covers root-agent usage only.
 
@@ -97,14 +97,14 @@ Two thresholds are derived from the running `tokens.input` total against `MODEL_
 
 The `max_tokens` cap (set at arm time) is checked at the end of each iteration in `onIdle`; the running total — input + output — is compared against the cap, and the loop finishes with `reason: "max_tokens"` once it crosses. Because pause-time and rejected events do not credit, this cap is never tripped by chat-time activity or malformed events.
 
-## Caffeinate integration (issue [#8](https://github.com/kloba/copilot-ralph-extension/issues/8))
+## Caffeinate integration (issue [#8](https://github.com/kloba/autopilot/issues/8))
 
-Opt-in via `RALPH_CAFFEINATE=1`. On macOS, `armLoop` spawns `caffeinate -i [-d] -w <pid>` to inhibit display/system sleep for the duration of the loop. `finish()` (and every error path) kills the caffeinate process. Tests inject a `spawnFn` stub via `createRalphController({ caffeinate: { spawnFn } })`.
+Opt-in via `AUTOPILOT_CAFFEINATE=1`. On macOS, `armLoop` spawns `caffeinate -i [-d] -w <pid>` to inhibit display/system sleep for the duration of the loop. `finish()` (and every error path) kills the caffeinate process. Tests inject a `spawnFn` stub via `createRalphController({ caffeinate: { spawnFn } })`.
 
 ## Test architecture
 
 - `node:test` runner; no third-party test deps.
 - `makeFakeSession()` returns a `{ on, emit, send, log }` object that mimics the SDK's event bus.
 - `runTurn(session, content)` drives one iteration: emits `assistant.message` then `session.idle`.
-- DI on the controller (`createRalphController({ caffeinate, git, adaptive, events })`) lets tests stub external effects (process spawn, git exec, JSONL event emit) without monkey-patching. The `events` slot is the issue [#22](https://github.com/kloba/copilot-ralph-extension/issues/22) JSONL emitter wiring — accepts `true` (default emitter), `{ env, fs }` (default emitter w/ overrides), or `{ factory }` (custom emitter built per-arm); see the inline JSDoc above `armLoop` for the full contract.
+- DI on the controller (`createRalphController({ caffeinate, git, adaptive, events })`) lets tests stub external effects (process spawn, git exec, JSONL event emit) without monkey-patching. The `events` slot is the issue [#22](https://github.com/kloba/autopilot/issues/22) JSONL emitter wiring — accepts `true` (default emitter), `{ env, fs }` (default emitter w/ overrides), or `{ factory }` (custom emitter built per-arm); see the inline JSDoc above `armLoop` for the full contract.
 - Several **shape-pin tests** lock down field counts and key sets on `state.active`, the success-envelope, the parsed-args object, and the tool-array order. These exist specifically to catch refactors that silently leak internal scratch into the LLM-facing surface.

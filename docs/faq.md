@@ -2,20 +2,20 @@
 
 Short answers to the questions that come up most often when running
 Ralph in anger. Most of these point at a deeper section in the
-[README](https://github.com/kloba/copilot-ralph-extension#readme) or
+[README](https://github.com/kloba/autopilot#readme) or
 at [`docs/concepts.md`](concepts.md) — keep this page narrow and
 link out rather than duplicating prose.
 
 ## Setup
 
-### Why doesn't `/extensions` list `ralph` after install?
+### Why doesn't `/extensions` list `autopilot` after install?
 
 The Copilot CLI loads extensions at startup (and on `/extensions
 reload`). Confirm every shipped `.mjs` is present in the install
 target:
 
-- User-scoped: `~/.copilot/extensions/ralph/` — visible from any cwd.
-- Project-scoped: `<git-root>/.github/extensions/ralph/` — only
+- User-scoped: `~/.copilot/extensions/autopilot/` — visible from any cwd.
+- Project-scoped: `<git-root>/.github/extensions/autopilot/` — only
   visible when you launch Copilot CLI from inside that repo.
 
 Currently shipped files are `extension.mjs`, `handler.mjs`, and
@@ -28,7 +28,7 @@ to the source via `cmp -s`.
 ### How do I install a specific tagged release?
 
 See README → [Option D — Pin a specific tagged
-release](https://github.com/kloba/copilot-ralph-extension#option-d--pin-a-specific-tagged-release).
+release](https://github.com/kloba/autopilot#option-d--pin-a-specific-tagged-release).
 Tags are immutable; release tarballs are SHA-pinned by GitHub,
 so a pinned install never silently shifts under you.
 
@@ -62,7 +62,7 @@ against the assistant's accumulated turn output — if the agent quotes
 the trigger phrase mid-thought (e.g. *"I'll mark this COMPLETE when
 done"*), the loop finishes. Pick a phrase the agent is unlikely to
 mention casually; `RALPH_DONE_42` and similar unusual tokens work
-well. See README → [Limitations](https://github.com/kloba/copilot-ralph-extension#limitations).
+well. See README → [Limitations](https://github.com/kloba/autopilot#limitations).
 
 ### Why does my loop never finish?
 
@@ -108,17 +108,18 @@ state-machine writeup.
 
 ### Where does a running loop's event log live?
 
-By default: `~/.copilot/ralph/runs/<runId>/events.jsonl`. Override
-the runs root with the `RALPH_EVENTS_DIR` environment variable. The
+By default: `~/.copilot/autopilot/runs/<runId>/events.jsonl`. Override
+the runs root with the `AUTOPILOT_EVENTS_DIR` environment variable
+(legacy `RALPH_EVENTS_DIR` is still honored as a fallback). The
 `<runId>` shape is `${label}-${startedAt}` — sortable,
 filesystem-safe, and surfaced in the `armed` event so the TUI can
 locate it.
 
 ### How do I tail a running loop's events?
 
-Use the bundled TUI: `npx ralph-tui watch <runId>` to follow events
-live, or `ralph-tui list` to see runs the index knows about. See
-README → [Inspecting a running loop](https://github.com/kloba/copilot-ralph-extension#inspecting-a-running-loop-ap_status-tool)
+Use the bundled TUI: `npx autopilot watch <runId>` to follow events
+live, or `autopilot list` to see runs the index knows about. See
+README → [Inspecting a running loop](https://github.com/kloba/autopilot#inspecting-a-running-loop-ap_status-tool)
 for the snapshot tool that returns a structured live snapshot
 without leaving the chat.
 
@@ -154,11 +155,11 @@ trailers — one for the `Copilot` GitHub identity, one for the
 dedicated `copilot-ralph` bot account. The dual-trailer convention
 is baked into the SDLC prompts (`self_improve`, `grow_project`)
 and appended as a rider to the user-supplied prompt for
-`ap_loop`. See README → [Commit attribution](https://github.com/kloba/copilot-ralph-extension#commit-attribution).
+`ap_loop`. See README → [Commit attribution](https://github.com/kloba/autopilot#commit-attribution).
 
 ### How do I opt out of the second `copilot-ralph` trailer?
 
-Set `RALPH_NO_ATTRIBUTION=1` in the environment before arming the
+Set `AUTOPILOT_NO_ATTRIBUTION=1` in the environment before arming the
 loop. The opt-out suppresses **only** the second
 `copilot-ralph` trailer; the first `Copilot` trailer always ships.
 Note that the opt-out is honored by the prompt, not enforced by
@@ -169,6 +170,6 @@ it), the trailer can still appear. Audit afterwards with
 ## Anything else?
 
 If your question isn't answered here, open an issue or skim the
-[README](https://github.com/kloba/copilot-ralph-extension#readme)
+[README](https://github.com/kloba/autopilot#readme)
 Troubleshooting and Limitations sections — they cover the
 long-tail edge cases this page intentionally elides.

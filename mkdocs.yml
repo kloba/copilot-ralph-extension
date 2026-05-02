@@ -44,6 +44,7 @@ nav:
   - Home: index.md
   - Quickstart: quickstart.md
   - Concepts: concepts.md
+  - Configuration: configuration.md
   - Recipes: recipes.md
   - Showcase: showcase.md
   - FAQ: faq.md

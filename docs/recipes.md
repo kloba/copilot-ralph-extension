@@ -153,7 +153,7 @@ autopilot run --self-improve --fresh --max 50
   `caffeinate -i autopilot run --self-improve --fresh --max 100` on macOS so
   idle-sleep doesn't stall the loop, or set `AUTOPILOT_CAFFEINATE=1` so the
   runner spawns it for you. See README →
-  [Keep system awake](https://github.com/kloba/autopilot#keep-system-awake-caffeinate-macos).
+  [Keep system awake](configuration.md#keep-system-awake-caffeinate-macos).
 - Swap `--fresh` for `--continue` if you want the agent to remember which
   SDLC categories it already touched (the rotation rule then has cross-iter
   context). Most projects work better with `--fresh` because each iter's

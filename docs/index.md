@@ -13,9 +13,13 @@ Out-of-band control is first-class: `--pause`, `--resume`, `--stop`, and `--stat
 
 ## Why a loop?
 
-The technique is the simplest possible form of agentic autonomy: keep re-feeding the same prompt until the agent promises it's done. Each iteration is a brand-new `copilot -p` subprocess, so context never poisons the next pass. The driver only owns the spawn / capture / decide-to-stop trichotomy — the Copilot agent does the work. This pattern is sometimes called the **Ralph Wiggum** technique after Anthropic's upstream prompt-loop plugin: single-minded, persistent, surprisingly effective.
+`autopilot` drives a coding agent through three levels of decomposition, then loops:
 
-Anthropic ships a canonical reference implementation as a Claude Code plugin: see [anthropics/claude-code → plugins/ralph-wiggum](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum). `autopilot` adapts the same loop shape for the GitHub Copilot CLI and adds out-of-band control, structured event logs (`events.jsonl`), CAS-protected run state, completion / abort / stagnation triggers, and an adaptive iteration budget for `--self-improve`.
+1. **Level 1 — find what to do.** Scan the repo (red CI, stale PRs, open issues, SDLC hardening rotation) and pick one concrete work item.
+2. **Level 2 — split into stages.** Break the work item into SDLC stages (orient → critique → baseline → implement → test → commit → push).
+3. **Level 3 — split into tasks.** Break each stage into the smallest executable steps the agent can deliver in one turn.
+
+Orchestrate the tasks until every stage is delivered, then loop back to **Level 1** for the next work item. Each iteration is a brand-new `copilot -p` subprocess, so context never poisons the next pass. The driver owns the spawn / capture / decide-to-stop trichotomy plus out-of-band control, structured event logs (`events.jsonl`), CAS-protected run state, completion / abort / stagnation triggers, and an adaptive iteration budget for `--self-improve`.
 
 ## Read next
 

@@ -57,4 +57,4 @@ Got a long `autopilot` loop that did something interesting? [File an issue](http
 - One-line outcome — what the loop actually shipped.
 - Optional asciinema link or watch-screenshot for the cast / image gallery.
 
-Anything from a 3-iter typo fix to a multi-hour `--grow-project` backlog drain is fair game — the goal is a corpus of real loops people can point at when explaining what "Ralph Wiggum-style autonomy" looks like in practice.
+Anything from a 3-iter typo fix to a multi-hour `--grow-project` backlog drain is fair game — the goal is a corpus of real loops people can point at when explaining what autonomous-loop autonomy looks like in practice.

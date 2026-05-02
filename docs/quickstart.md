@@ -115,8 +115,8 @@ autopilot run --prompt "Refactor packages/tui/src/runner.mjs and emit COMPLETE w
 - **`--grow-project`** plans new work and adds backlog items in the focus area
   given via `--focus TEXT`. Default `--max 100`; aborts via
   `ABORT_NO_BACKLOG` once the planned items are filed.
-- **`--prompt TEXT`** is the classic Ralph mode: your literal prompt is
-  re-fed verbatim every iteration until the agent emits `COMPLETE` (or your
+- **`--prompt TEXT`** is the raw mode: your literal prompt is re-fed
+  verbatim every iteration until the agent emits `COMPLETE` (or your
   custom `--completion-promise TOKEN`). Default `--max 100`.
 
 `--continue` vs `--fresh` is mandatory — there is no default because the

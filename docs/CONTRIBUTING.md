@@ -52,7 +52,7 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 Co-authored-by: copilot-ralph <copilot-ralph@users.noreply.github.com>
 ```
 
-The first attributes the underlying Copilot model; the second attributes the loop that executed the iteration. Order matters — GitHub surfaces the first co-author more prominently. See the [README "Commit attribution" section](../README.md#commit-attribution) and [CHANGELOG](../CHANGELOG.md) for full rationale and opt-out (`AUTOPILOT_NO_ATTRIBUTION=1`, with legacy `RALPH_NO_ATTRIBUTION=1` still recognized as fallback).
+The first attributes the underlying Copilot model; the second attributes the loop that executed the iteration. Order matters — GitHub surfaces the first co-author more prominently. See [`configuration.md` → Commit attribution](configuration.md#commit-attribution) and [CHANGELOG](../CHANGELOG.md) for full rationale and opt-out (`AUTOPILOT_NO_ATTRIBUTION=1`, with legacy `RALPH_NO_ATTRIBUTION=1` still recognized as fallback).
 
 ## Pull request expectations
 

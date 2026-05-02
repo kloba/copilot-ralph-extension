@@ -268,6 +268,21 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Pin `plain.mjs`'s `formatEventLine` rendering for
+  `iteration_start` (verb `iter+`) and `abort` (verb
+  `abort`) events. Until iter 132 these two verbs only
+  had indirect coverage through the `armed` and
+  `iteration_end` tests; a refactor that renamed
+  `iteration_start` → `iter_start` in the VERB map (or
+  dropped the `abort` mapping entirely) would have
+  silently regressed `tail -f`'d log column alignment to
+  printing the raw event-type string. New tests assert
+  the verb literal AND the surrounding render contract:
+  `iter+` carries `runId` + `iter=N/M` but no
+  `tokens=`/`excerpt=`; `abort` carries `runId` +
+  `reason=` and optionally `note=` but never the per-iter
+  `iter=` segment (since the event uses `iterations`
+  plural rather than `iteration` singular).
 - Pin `install.sh -h` short flag as a byte-identical
   alias of `--help`. The case arm (`--help|-h)`) covers
   both forms, but only the long form was directly

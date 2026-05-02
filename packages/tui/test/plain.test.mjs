@@ -228,3 +228,82 @@ test("formatEventLine: 80-char excerpt cap is surrogate-safe", () => {
     // the canonical assertion).
     assert.ok(m[1].length <= 80, `cap must hold (got length ${m[1].length})`);
 });
+
+// Iter 132 — pin the two terminal/lifecycle verbs that previously
+// only had indirect coverage through serializeEvent + the "armed"
+// and "iteration_end" tests. plain.mjs's VERB map is the sole place
+// where event `type` is translated to a stable column-aligned
+// `tail -f` verb; if a refactor renamed `iteration_start` →
+// `iter+` directly in the emitter (or dropped the `abort` mapping)
+// the rendered logs would silently regress to printing the raw
+// type string. These tests pin both the verb literal AND the
+// surrounding render contract (runId + iter= for iteration_start,
+// reason= for abort) so a future stylesheet pass cannot silently
+// drop a column.
+test("formatEventLine: iteration_start renders verb=iter+ + iter=", () => {
+    // Iteration_start fires at the top of every iter, before the
+    // assistant turn lands. The plain log surfaces the iter counter
+    // so a `tail -f` viewer can tell the loop is making progress
+    // even when the assistant is mid-turn (no iteration_end yet).
+    // Pin the two-character verb (`iter+` vs the closing `iter-`)
+    // so a future contributor can't accidentally collapse them to
+    // the same string and break the visual pairing.
+    const line = formatEventLine({
+        type: "iteration_start",
+        ts: 0,
+        runId: "ralph_loop-7",
+        iteration: 7,
+        maxIterations: 100,
+    });
+    assert.match(line, /\biter\+\s+ralph_loop-7\b/);
+    assert.match(line, /iter=7\/100/);
+    // No tokens / excerpt on iteration_start — those land on the
+    // matching iteration_end.
+    assert.doesNotMatch(line, /tokens=/);
+    assert.doesNotMatch(line, /excerpt=/);
+});
+
+test("formatEventLine: abort verb renders + reason= + note=", () => {
+    // Abort events are emitted for failure-flavored reasons (per
+    // handler.mjs ABORT_REASONS: aborted, abort_promise,
+    // send_error, stagnation). The plain renderer exposes verb +
+    // runId + reason + note so a `grep abort` over the log is
+    // enough to surface why the loop ended without re-reading the
+    // jsonl. Note: abort events carry `iterations` (plural, total
+    // count) — not `iteration` (singular, per-iter index). The
+    // formatter intentionally renders only `iteration`, so the
+    // `iter=` segment is OMITTED on abort/complete events; pin
+    // that absence so a future "render iterations on abort too"
+    // refactor must update the test.
+    const line = formatEventLine({
+        type: "abort",
+        ts: 0,
+        runId: "ralph_loop-9",
+        iterations: 12,
+        reason: "stagnation",
+        note: "3 identical responses",
+    });
+    assert.match(line, /\babort\s+ralph_loop-9\b/);
+    assert.match(line, /reason=stagnation/);
+    assert.match(line, /note="3 identical responses"/);
+    assert.doesNotMatch(line, /\biter=/, "abort events do not carry per-iter index");
+});
+
+test("formatEventLine: abort with abort_promise reason renders cleanly", () => {
+    // Smoke-pin the most common user-driven abort reason
+    // (assistant emitted the abort_promise token). Same shape as
+    // the stagnation case — verb + runId + reason — but with no
+    // note (the emitter passes note=undefined when the reason is
+    // promise-based). Confirms the optional-note branch doesn't
+    // render a stray `note=` segment.
+    const line = formatEventLine({
+        type: "abort",
+        ts: 0,
+        runId: "ralph_loop-1",
+        iterations: 5,
+        reason: "abort_promise",
+    });
+    assert.match(line, /\babort\s+ralph_loop-1\b/);
+    assert.match(line, /reason=abort_promise/);
+    assert.doesNotMatch(line, /note=/, "absent note must not render an empty segment");
+});

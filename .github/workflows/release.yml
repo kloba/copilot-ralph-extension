@@ -6,8 +6,9 @@ name: Release
 #   3. Runs `npm test` on the tagged commit.
 #   4. Creates a GitHub Release with the CHANGELOG section as body and
 #      every extension/*.mjs file attached as standalone downloadable
-#      assets. The asset list MUST stay in sync with install.sh's FILES
-#      array — see test/extension.test.mjs for the drift guard.
+#      assets. The asset upload uses a shell glob so the release tracks
+#      the directory automatically — a new module added under
+#      extension/ ships in the next release without touching this file.
 #
 # All three pre-flight checks fail fast so a malformed tag never produces
 # a half-baked release. See docs/RELEASING.md for the manual checklist.
@@ -132,9 +133,20 @@ jobs:
           NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
         run: |
           set -euo pipefail
+          # Glob every shipped .mjs in extension/ rather than hardcoding
+          # filenames — bash expands the glob at run time, so a new
+          # module added under extension/ (and into install.sh's FILES
+          # array, pinned by the drift guard in test/extension.test.mjs)
+          # automatically ships in the next release. shopt -s nullglob
+          # turns "no matches" into a missing-asset error from gh
+          # release create rather than a literal `extension/*.mjs` arg.
+          shopt -s nullglob
+          ASSETS=(extension/*.mjs)
+          if [[ ${#ASSETS[@]} -eq 0 ]]; then
+            echo "::error::no extension/*.mjs files to upload as release assets" >&2
+            exit 1
+          fi
           gh release create "${TAG}" \
-            extension/extension.mjs \
-            extension/handler.mjs \
-            extension/events-emit.mjs \
+            "${ASSETS[@]}" \
             --title "${TAG}" \
             --notes-file "${NOTES_FILE}"

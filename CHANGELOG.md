@@ -3,6 +3,22 @@
 ## Unreleased
 
 ### Internal
+- `.github/workflows/release.yml` now uploads release assets via a
+  `shopt -s nullglob; ASSETS=(extension/*.mjs)` bash glob instead
+  of a hardcoded three-filename list. The hardcoded form silently
+  dropped any newly-added module from published GitHub Releases —
+  even after iter 84's drift guard pinned `install.sh`'s `FILES`
+  array against `extension/*.mjs`, the workflow still required a
+  separate manual update. The glob makes the workflow track the
+  directory automatically, and `nullglob` ensures an empty
+  `extension/` errors out loudly rather than passing the literal
+  `extension/*.mjs` string to `gh release create` as a non-existent
+  asset name. The pre-existing release.yml drift guard test
+  (`test/extension.test.mjs`) was rewritten in place to pin the
+  glob form, the `nullglob` opt-in, and the absence of any
+  hardcoded `extension/<name>.mjs` filename in the
+  `gh release create` block — so a future "helpful" refactor that
+  re-hardcodes the list trips before merge.
 - `.gitignore` now excludes `site/`, the default mkdocs build
   output directory. A contributor running `mkdocs build` to
   preview the docs site locally would previously have swept

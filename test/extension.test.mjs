@@ -4863,36 +4863,50 @@ test("install.sh FILES array matches actual extension/*.mjs on disk", () => {
     );
 });
 
-test("release.yml asset list matches extension/*.mjs on disk", () => {
-    // Drift guard for the release workflow. release.yml hardcodes the
-    // list of .mjs files attached to each GitHub Release tarball:
+test("release.yml ships every extension/*.mjs via glob (drift guard)", () => {
+    // Drift guard for the release workflow. release.yml originally
+    // hardcoded the list of .mjs files attached to each GitHub
+    // Release tarball:
     //   gh release create "${TAG}" \
     //     extension/extension.mjs \
     //     extension/handler.mjs \
     //     ...
-    // This list MUST stay in sync with the actual modules under
-    // extension/, otherwise users who download the release assets get
-    // a half-shipped extension that crashes at import time. (Real
-    // historical bug: events-emit.mjs was added but the workflow's
-    // asset list wasn't updated until this drift guard caught it.)
+    // The hardcoded list silently dropped any newly-added module
+    // from the published assets — real historical bug: events-emit.mjs
+    // was added but the workflow's list wasn't updated until a drift
+    // guard caught it. Iter 86 replaced the list with a `shopt -s
+    // nullglob; ASSETS=(extension/*.mjs)` bash glob so the workflow
+    // tracks the directory automatically. This drift guard now
+    // pins the glob form so a future "helpful" refactor that
+    // re-hardcodes individual filenames trips before merge.
     const releaseYml = readFileSync(
         resolve(REPO_ROOT, ".github/workflows/release.yml"),
         "utf8",
     );
-    // Match every `    extension/<name>.mjs \` line under the
-    // `gh release create` invocation.
-    const declared = [
-        ...releaseYml.matchAll(/^\s+extension\/([A-Za-z0-9._-]+\.mjs)\s*\\?\s*$/gm),
-    ]
-        .map((m) => m[1])
-        .sort();
-    const onDisk = readdirSync(resolve(REPO_ROOT, "extension"))
-        .filter((f) => f.endsWith(".mjs"))
-        .sort();
-    assert.deepEqual(
-        declared,
-        onDisk,
-        "release.yml asset list and extension/*.mjs disagree — update .github/workflows/release.yml whenever you add or remove a sibling .mjs in extension/",
+    // Required: the glob form must be present.
+    assert.match(
+        releaseYml,
+        /ASSETS=\(extension\/\*\.mjs\)/,
+        "release.yml must declare ASSETS via extension/*.mjs glob",
+    );
+    // Required: nullglob must be enabled so an empty extension/
+    // fails loudly instead of passing the literal `extension/*.mjs`
+    // string to gh release create as an asset name.
+    assert.match(
+        releaseYml,
+        /shopt -s nullglob/,
+        "release.yml must enable nullglob so an empty glob errors out",
+    );
+    // Forbidden: no individual extension/<name>.mjs filenames hardcoded
+    // in the upload step. Keep the regex narrow so unrelated mentions
+    // (the file-header comment, env-var assignments) don't trip — we
+    // scope the search to the gh-release-create block.
+    const uploadBlock = /gh release create[\s\S]*?--notes-file/.exec(releaseYml);
+    assert.ok(uploadBlock, "release.yml must contain a gh release create block");
+    assert.doesNotMatch(
+        uploadBlock[0],
+        /extension\/[A-Za-z0-9_-]+\.mjs/,
+        "release.yml gh-release-create block must not hardcode individual extension/*.mjs filenames; iter 86 moved to a glob",
     );
 });
 
@@ -7981,3 +7995,4 @@ test(".gitignore covers mkdocs build output (site/)", async () => {
         `.gitignore must contain a line matching the mkdocs site_dir (${siteDir}) so 'mkdocs build' artefacts are not accidentally committed`,
     );
 });
+

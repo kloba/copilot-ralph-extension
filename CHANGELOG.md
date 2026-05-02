@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Tests
+- New drift guard asserts `install.sh`'s `FILES=(...)` array
+  matches `extension/*.mjs` as a set. The script's existing
+  guards (Node `--check` parse, missing-file refusal, post-copy
+  `cmp -s` verification) only run *after* the list has been
+  chosen, so a developer adding `extension/newmodule.mjs`
+  without updating `FILES` silently shipped to nowhere — the
+  omitted module never reached the install target and the
+  extension crashed at user-side load time. The new test reads
+  both lists at runtime and trips CI before merge if they
+  diverge.
+
 ### Fixes
 - `compareSemver` (introduced iter 80) now parses but ignores
   build metadata per SemVer 2.0.0 §10. Previously the regex

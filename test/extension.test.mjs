@@ -7910,3 +7910,40 @@ test("compareSemver parses but ignores build metadata per SemVer 2.0.0 §10", ()
     // than necessary.
     assert.strictEqual(compareSemver("1.0.0+", "1.0.1"), 0, "empty build metadata is rejected → malformed→0");
 });
+
+test("install.sh FILES list is in sync with extension/*.mjs (drift guard)", async () => {
+    // install.sh ships a hand-curated FILES=(...) array (line ~56).
+    // The script's existing guards (--check parse, missing-file
+    // refusal, post-copy cmp -s verification) all run AFTER the list
+    // has been chosen — they cannot catch a silent omission where a
+    // developer adds extension/newmodule.mjs but forgets to add it
+    // to FILES. The omitted file then never gets installed; the
+    // shipped extension imports a missing module and crashes at
+    // load time (or silently degrades) on the user's machine.
+    //
+    // This drift guard reads both lists at test time and asserts
+    // they are equal as sets, so the omission trips CI before merge.
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const url = await import("node:url");
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const repoRoot = path.join(here, "..");
+
+    const installSh = await fs.readFile(path.join(repoRoot, "install.sh"), "utf8");
+    // FILES=(extension.mjs handler.mjs events-emit.mjs) — captured group is
+    // a single space-separated list. Permits any whitespace inside the
+    // parens for future re-formatting (e.g. one filename per line).
+    const m = /^FILES=\(([^)]*)\)/m.exec(installSh);
+    assert.ok(m, "install.sh must contain a FILES=(...) array declaration");
+    const installFiles = m[1].trim().split(/\s+/).filter(Boolean).sort();
+
+    const entries = await fs.readdir(path.join(repoRoot, "extension"));
+    const sourceFiles = entries.filter((f) => f.endsWith(".mjs")).sort();
+
+    assert.deepStrictEqual(
+        installFiles,
+        sourceFiles,
+        `install.sh FILES (${installFiles.join(", ")}) must match extension/*.mjs (${sourceFiles.join(", ")}). ` +
+        `If you added a new module, also add it to install.sh; if you removed one, also remove it.`,
+    );
+});

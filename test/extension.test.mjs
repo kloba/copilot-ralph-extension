@@ -6646,3 +6646,84 @@ test("ralph_pause / ralph_stop: null reason still treated as not-supplied (no fa
     const s = await stop.handler({ reason: null });
     assert.equal(s.resultType, "success");
 });
+
+// ---------------------------------------------------------------------------
+// classifyPorcelainLine: pin every branch of the git-status porcelain v1
+// classifier so a refactor (or a future port to porcelain=v2) cannot
+// silently drop / mis-bucket a status code. Driven directly off the
+// __test__ export rather than through buildFilesChangedSinceArm so the
+// branching contract is legible without a gitExec mock harness.
+// ---------------------------------------------------------------------------
+test("classifyPorcelainLine: returns null for lines shorter than 4 chars", () => {
+    const { classifyPorcelainLine } = __test__;
+    assert.equal(classifyPorcelainLine(""), null);
+    assert.equal(classifyPorcelainLine("M"), null);
+    assert.equal(classifyPorcelainLine("M  "), null);
+});
+
+test("classifyPorcelainLine: untracked (??) buckets as added", () => {
+    const { classifyPorcelainLine } = __test__;
+    assert.deepEqual(classifyPorcelainLine("?? src/new.js"), { kind: "added", path: "src/new.js" });
+});
+
+test("classifyPorcelainLine: A in X buckets as added (staged add)", () => {
+    const { classifyPorcelainLine } = __test__;
+    assert.deepEqual(classifyPorcelainLine("A  src/added.js"), { kind: "added", path: "src/added.js" });
+});
+
+test("classifyPorcelainLine: A in Y buckets as added (unstaged add — uncommon but legal)", () => {
+    const { classifyPorcelainLine } = __test__;
+    // " A" technically isn't emitted by git status --porcelain v1 (the
+    // worktree slot uses ?? for untracked) but the classifier handles
+    // it defensively. Pin the defence so a future refactor doesn't
+    // narrow the predicate.
+    assert.deepEqual(classifyPorcelainLine(" A foo"), { kind: "added", path: "foo" });
+});
+
+test("classifyPorcelainLine: D buckets as deleted (either column)", () => {
+    const { classifyPorcelainLine } = __test__;
+    assert.deepEqual(classifyPorcelainLine("D  src/gone.js"), { kind: "deleted", path: "src/gone.js" });
+    assert.deepEqual(classifyPorcelainLine(" D src/wt-deleted.js"), { kind: "deleted", path: "src/wt-deleted.js" });
+});
+
+test("classifyPorcelainLine: M / T buckets as modified (either column)", () => {
+    const { classifyPorcelainLine } = __test__;
+    assert.deepEqual(classifyPorcelainLine("M  src/file.js"), { kind: "modified", path: "src/file.js" });
+    assert.deepEqual(classifyPorcelainLine(" M src/wt.js"), { kind: "modified", path: "src/wt.js" });
+    assert.deepEqual(classifyPorcelainLine("MM src/both.js"), { kind: "modified", path: "src/both.js" });
+    assert.deepEqual(classifyPorcelainLine("T  src/typechange.js"), { kind: "modified", path: "src/typechange.js" });
+    assert.deepEqual(classifyPorcelainLine(" T src/wt-type.js"), { kind: "modified", path: "src/wt-type.js" });
+});
+
+test("classifyPorcelainLine: rename uses post-arrow path, falls back to whole rest if no arrow", () => {
+    const { classifyPorcelainLine } = __test__;
+    assert.deepEqual(
+        classifyPorcelainLine("R  old/path.js -> new/path.js"),
+        { kind: "renamed", path: "new/path.js" },
+    );
+    // R in either column triggers rename handling.
+    assert.deepEqual(
+        classifyPorcelainLine(" R old.js -> new.js"),
+        { kind: "renamed", path: "new.js" },
+    );
+    // Defensive fallback: if the rename arrow is missing, the whole
+    // post-XY substring becomes the path. git --porcelain v1 always
+    // emits the arrow, but the classifier shouldn't crash on a
+    // malformed input.
+    assert.deepEqual(
+        classifyPorcelainLine("R  malformed-rename"),
+        { kind: "renamed", path: "malformed-rename" },
+    );
+});
+
+test("classifyPorcelainLine: unknown status codes fall through to modified (defensive default)", () => {
+    const { classifyPorcelainLine } = __test__;
+    // ! ! is an ignored-file marker (only emitted with --ignored). The
+    // classifier doesn't special-case it; falls through to the
+    // defensive "modified" default. Pin the behaviour so a future
+    // intent (e.g. dropping ignored files entirely) is a deliberate
+    // change with a failing test, not an accidental drift.
+    assert.deepEqual(classifyPorcelainLine("!! ignored.log"), { kind: "modified", path: "ignored.log" });
+    // U is the unmerged marker; bucket lands in "modified" today.
+    assert.deepEqual(classifyPorcelainLine("UU conflict.js"), { kind: "modified", path: "conflict.js" });
+});

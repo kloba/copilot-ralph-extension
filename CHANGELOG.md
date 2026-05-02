@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Tests
+- Direct unit tests for `classifyPorcelainLine`
+  pin every branch of the git-status porcelain
+  v1 classifier (untracked / staged-add /
+  worktree-add / delete / modify / typechange /
+  rename-with-arrow / rename-without-arrow /
+  unknown-falls-through). Previously the
+  classifier was only exercised indirectly via
+  `buildFilesChangedSinceArm` inside
+  `ralph_status`, where mocking the gitExec
+  shape obscured which branch ran. Direct tests
+  document the contract so a future port to
+  porcelain=v2 (or a refactor that narrows a
+  predicate) surfaces a focused failure
+  instead of a far-removed status snapshot
+  drift. `classifyPorcelainLine` is now exposed
+  on the `__test__` export alongside the other
+  internals already pinned by tests
+  (`gitAheadBehind`, `gitUncommittedLines`,
+  `evaluateAdaptiveSignals`, …).
+
 ### Refactor
 - Extract `validateOptionalReasonField(toolName,
   args)` shared between `ralph_stop` and

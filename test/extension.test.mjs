@@ -4802,6 +4802,39 @@ test("handler.mjs: only one spawnSync('git', …) call site (defaultGitExec + de
     assert.match(src, /function runGitCommand\(/, "runGitCommand helper must remain defined");
 });
 
+test("handler.mjs: runGitCommand guards undefined spawnSync result before reading res.status", () => {
+    // Iter 174 — the runGitCommand helper's docstring promises it
+    // will "never throw out of the wrapper" and "every error path
+    // collapses to { ok: false, stdout: '', stderr, code }". Before
+    // this guard, if `spawnSync` ever returned undefined/null (a
+    // theoretical contract violation by a future Node release or an
+    // exotic embedder), the wrapper would TypeError on `res.status`
+    // at the final return — silently breaking the contract that
+    // every gitExec consumer relies on. Pin the explicit
+    // `if (!res)` guard so a future "simplify" pass cannot drop it
+    // without firing this test. We verify the guard sits between
+    // the `res?.error` check and the final ok-shaped return so the
+    // ordering invariant is preserved (error first, then null/undef
+    // result, then happy path).
+    const src = readFileSync(resolve(REPO_ROOT, "extension/handler.mjs"), "utf8");
+    const helperMatch = src.match(/function runGitCommand\([\s\S]*?\n\}\n/);
+    assert.ok(helperMatch, "runGitCommand helper body must be locatable");
+    const body = helperMatch[0];
+    assert.match(
+        body,
+        /if \(!res\) \{[\s\S]{0,400}stderr:\s*"spawnSync returned no result"/,
+        "runGitCommand must guard `if (!res)` and return the documented stderr sentinel before touching res.status",
+    );
+    // Ordering: `res?.error` branch must precede the `!res` guard,
+    // which must precede the final `ok: res.status === 0` return.
+    const errIdx = body.search(/if \(res\?\.error\)/);
+    const nullIdx = body.search(/if \(!res\) \{/);
+    const okIdx = body.search(/ok:\s*res\.status === 0/);
+    assert.ok(errIdx >= 0 && nullIdx >= 0 && okIdx >= 0, "all three branches must be present");
+    assert.ok(errIdx < nullIdx, "res?.error branch must precede the !res guard");
+    assert.ok(nullIdx < okIdx, "!res guard must precede the final happy-path return");
+});
+
 test("ci.yml: install step uses deterministic `npm ci` with no silent fallback", () => {
     // Drift guard. The previous CI form was
     //   npm ci --no-audit --no-fund || npm install --no-audit --no-fund

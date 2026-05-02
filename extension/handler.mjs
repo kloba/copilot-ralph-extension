@@ -663,6 +663,14 @@ function runGitCommand(args, cwd, timeoutMs) {
     if (res?.error) {
         return { ok: false, stdout: "", stderr: res.error.message ?? String(res.error), code: res.status ?? null };
     }
+    if (!res) {
+        // spawnSync should always return a result object, but if a
+        // future Node release or an exotic embedder ever returns
+        // undefined/null, honour the docstring's "never throw out
+        // of the wrapper" contract instead of TypeErroring on the
+        // `res.status` access below.
+        return { ok: false, stdout: "", stderr: "spawnSync returned no result", code: null };
+    }
     return {
         ok: res.status === 0,
         stdout: typeof res.stdout === "string" ? res.stdout : "",

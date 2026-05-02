@@ -77,6 +77,23 @@
   either value is caught at test time.
 
 ### Fixes
+- `runGitCommand` (`extension/handler.mjs:645`) now explicitly
+  guards `if (!res)` between the `res?.error` branch and the
+  final happy-path return. The helper's docstring promises
+  every error path collapses to `{ ok: false, stdout: "",
+  stderr, code }` and "never throw out of the wrapper" — but
+  if `spawnSync` ever returned undefined/null (a theoretical
+  contract violation by a future Node release or an exotic
+  embedder), the wrapper would TypeError on `res.status` at
+  the final return, silently breaking the contract every
+  gitExec consumer (ralph_status diagnostics, armLoop's
+  pre-arm git snapshot, the adaptive-budget evaluator)
+  depends on. Surfaces the documented stderr sentinel
+  (`spawnSync returned no result`) instead. Pinned by a new
+  drift-guard test in `test/extension.test.mjs` that
+  verifies the guard is present AND that the three branches
+  appear in the documented order (`res?.error` → `!res` →
+  happy path).
 - `ralph-tui replay` and `ralph-tui watch` now catch the
   `TypeError` thrown by `resolveRunEventsPath` on path-traversal
   runIds (e.g. `../etc/passwd`, runIds containing `\0`, `\\`, or

@@ -94,14 +94,19 @@ const TOKEN_WARNING_THRESHOLDS = Object.freeze([80, 95]);
 
 
 // Map finish reason → log-line verb. Reasons not listed fall through
-// to "⏹ stopped" (max_iterations, abort_promise, stagnation,
-// user_stopped, detached).
+// to "⏹ stopped" (max_iterations, user_stopped, detached, max_tokens —
+// neutral exits where the loop ran to a configured boundary).
 //   ✅ completed — completion_promise
-//   ⚠️  ended   — send_error, aborted (something went wrong)
+//   ⚠️  ended   — send_error, aborted, abort_promise, stagnation
+//                 (something went wrong; mirrors the ABORT_REASONS
+//                 set used to map terminal events to type=abort, so
+//                 the log marker and the terminal event agree)
 const VERB_BY_REASON = Object.freeze({
     completion_promise: "✅ completed",
     send_error: "⚠️ ended",
     aborted: "⚠️ ended",
+    abort_promise: "⚠️ ended",
+    stagnation: "⚠️ ended",
     max_tokens: "⏹ stopped",
 });
 

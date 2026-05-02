@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Fixes
+- Align `VERB_BY_REASON` log marker with `ABORT_REASONS` terminal-
+  event mapping. `abort_promise` and `stagnation` are listed in
+  `ABORT_REASONS` (so the terminal event maps them to `type=abort`
+  and the TUI shows them red) but the finish-log line was rendering
+  them with `⏹ stopped` — the neutral verb used for "the loop ran
+  to a configured boundary, no failure". A user reading the log
+  came away thinking the run terminated cleanly while the event
+  stream was simultaneously reporting it as a failure. Add both
+  reasons to `VERB_BY_REASON` with `⚠️ ended` so log marker and
+  terminal event semantics agree. The four genuinely-neutral exits
+  (`max_iterations`, `user_stopped`, `detached`, `max_tokens`) keep
+  `⏹ stopped`. Two new tests pin the `⚠️ ended` mapping for
+  `abort_promise` and `stagnation`; one regression test pins that
+  the neutral exits do NOT regress to `⚠️`. The grow_project verb-
+  ladder test from iter 22 is updated to assert the new
+  `⚠️ ended grow_project … abort_promise` contract.
+
 ### Features
 - `ralph_status.textResultForLlm` (the one-line summary string an
   LLM consumer reads when it doesn't introspect the JSON snapshot)

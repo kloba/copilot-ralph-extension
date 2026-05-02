@@ -4654,9 +4654,12 @@ test("finish log line carries the grow_project label for ⏹/✅/⚠️ verbs", 
         runTurn(session, "all done COMPLETE");
         assert.match(session.logs.join("\n"), /✅ completed grow_project.*reason: completion_promise/);
     }
-    // abort_promise → ⏹ stopped grow_project (using ABORT_NO_BACKLOG,
+    // abort_promise → ⚠️ ended grow_project (using ABORT_NO_BACKLOG,
     // which is the new tool's default abort_promise — proves the
     // default plumbing all the way through to the runtime watcher).
+    // Verb is ⚠️ ended (iter 72): abort_promise is in ABORT_REASONS so
+    // the terminal event maps it to type=abort; the log marker now
+    // agrees with that semantic instead of using the neutral ⏹ stopped.
     {
         const session = makeFakeSession();
         const c = createRalphController();
@@ -4665,7 +4668,7 @@ test("finish log line carries the grow_project label for ⏹/✅/⚠️ verbs", 
         await gp.handler({ max_iterations: 5, min_iterations: 1 });
         session.emit("session.idle", { data: {} });
         runTurn(session, "no work left ABORT_NO_BACKLOG");
-        assert.match(session.logs.join("\n"), /⏹ stopped grow_project.*reason: abort_promise/);
+        assert.match(session.logs.join("\n"), /⚠️ ended grow_project.*reason: abort_promise/);
     }
     // send_error → ⚠️ ended grow_project
     {
@@ -7436,4 +7439,47 @@ test("ralph_status: paused summary still includes tokens segment when capped", a
     const idxTokens = r.textResultForLlm.indexOf("tokens 0/50000");
     const idxPaused = r.textResultForLlm.indexOf("PAUSED");
     assert.ok(idxTokens < idxPaused, "tokens segment must precede PAUSED suffix");
+});
+
+// Iter 72 — finish-log marker now agrees with the ABORT_REASONS terminal-
+// event mapping. Previously abort_promise + stagnation fell through to
+// `⏹ stopped` even though the terminal event mapped them to type=abort
+// (UI shows red). Pin the new agreement so a future "trim VERB_BY_REASON"
+// PR can't silently regress to the inconsistent state.
+test("finish log marker: abort_promise → ⚠️ ended (matches terminal event type=abort)", async () => {
+    const { session } = await arm({ max_iterations: 5, abort_promise: "FAIL" });
+    session.emit("session.idle", { data: {} });
+    runTurn(session, "we hit FAIL state");
+    assert.match(session.logs.join("\n"),
+        /⚠️ ended ralph_loop.*reason: abort_promise/,
+        "abort_promise log must use ⚠️ ended (not ⏹ stopped)");
+});
+
+test("finish log marker: stagnation → ⚠️ ended (matches terminal event type=abort)", async () => {
+    const { session } = await arm({ max_iterations: 10, stagnation_limit: 2 });
+    session.emit("session.idle", { data: {} });
+    runTurn(session, "");
+    runTurn(session, "");
+    assert.match(session.logs.join("\n"),
+        /⚠️ ended ralph_loop.*reason: stagnation/,
+        "stagnation log must use ⚠️ ended (not ⏹ stopped)");
+});
+
+test("finish log marker: max_iterations + user_stopped + max_tokens still use ⏹ stopped", async () => {
+    // Defense-in-depth: the four "neutral exit" reasons (the loop ran to
+    // a configured boundary, no failure occurred) must NOT regress to
+    // ⚠️ ended. Pin them explicitly so the verb ladder stays bimodal.
+    // max_iterations.
+    const a = await arm({ max_iterations: 1 });
+    a.session.emit("session.idle", { data: {} });
+    runTurn(a.session, "iter 1, no completion");
+    assert.match(a.session.logs.join("\n"),
+        /⏹ stopped ralph_loop.*reason: max_iterations/);
+    // user_stopped already covered by an earlier test, but add a bare
+    // sanity check here for symmetry with the ⚠️ tests above.
+    const b = await arm({ max_iterations: 5 });
+    b.session.emit("session.idle", { data: {} });
+    await b.stop.handler({});
+    assert.match(b.session.logs.join("\n"),
+        /⏹ stopped ralph_loop.*reason: user_stopped/);
 });

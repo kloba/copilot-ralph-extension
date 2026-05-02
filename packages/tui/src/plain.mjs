@@ -1,7 +1,7 @@
-// Plain-mode renderer for the ralph TUI (issue #22).
+// Plain-mode renderer for autopilot (issue #22).
 //
 // The Ink-based watch UI (slice 5) requires a TTY plus user-space npm
-// dependencies. CI logs, asciinema recordings, and `ralph-tui watch
+// dependencies. CI logs, asciinema recordings, and `autopilot watch
 // --plain` need a non-interactive stream of human-readable lines that
 // preserves *every* event's information without ANSI tricks.
 //
@@ -196,7 +196,7 @@ export function formatEventLine(ev) {
     }
     if (typeof ev.reason === "string" && ev.reason) {
         // JSON.stringify the reason iff it contains whitespace, so a
-        // user-supplied multi-word reason from ralph_pause / ralph_stop
+        // user-supplied multi-word reason from ap_pause / ap_stop
         // (e.g. "user requested" or a flattened multi-line paste) stays
         // a single awk-parseable token in the rendered log line. Baked
         // single-token reasons (completion_promise, abort_promise,

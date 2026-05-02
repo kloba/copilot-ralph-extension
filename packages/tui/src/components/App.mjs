@@ -1,4 +1,4 @@
-// <App> — top-level Ink component for `ralph-tui watch`.
+// <App> — top-level Ink component for `autopilot watch`.
 //
 // Owns the events array (fed from tailEventsFile) and runs foldEvents()
 // to compute the snapshot every render. Uses React.createElement (no
@@ -29,11 +29,11 @@ const h = React.createElement;
  * @param {string} [props.runId]      Display label for the header.
  * @param {(reason: string) => void} [props.onUserAbort] Optional
  *        callback fired when the user requests to abort via Ctrl-C
- *        or `q`. When provided (issue #48 slice 8 — `ralph-tui run`
+ *        or `q`. When provided (issue #48 slice 8 — `autopilot run`
  *        TUI mount), the caller can hook this to call
  *        `runner.stopRun(runId, …)` so the driver gets a graceful
  *        stop request instead of being orphaned mid-iter when the
- *        TUI tears down. Read-only callers (`ralph-tui watch`)
+ *        TUI tears down. Read-only callers (`autopilot watch`)
  *        omit it; the App still exits but no driver action occurs.
  */
 export default function App({ eventStream, events: initial = [], runId, onUserAbort }) {
@@ -84,7 +84,7 @@ export default function App({ eventStream, events: initial = [], runId, onUserAb
                     }
                 }
             } catch (err) {
-                process.stderr.write(`ralph-tui: tail error: ${err?.message ?? err}\n`);
+                process.stderr.write(`autopilot: tail error: ${err?.message ?? err}\n`);
                 exit(err);
             }
         })();

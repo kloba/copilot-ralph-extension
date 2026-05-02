@@ -95,7 +95,7 @@ test("formatEventLine: caps long excerpt at 80 chars", () => {
 });
 
 test("formatEventLine: pause renders verb=pause + iteration + reason", () => {
-    // Issue #3: ralph_pause emits `{ type: "pause", runId, iteration,
+    // Issue #3: ap_pause emits `{ type: "pause", runId, iteration,
     // reason, ts }`. The plain renderer must surface verb / runId /
     // iteration / reason so a `tail -f`'d stream of events lets a
     // human (or `awk`) know which iteration paused and why. Pin the
@@ -117,7 +117,7 @@ test("formatEventLine: pause renders verb=pause + iteration + reason", () => {
 });
 
 test("formatEventLine: pause with null reason omits the reason segment", () => {
-    // ralph_pause without a reason emits `reason: null`. The renderer
+    // ap_pause without a reason emits `reason: null`. The renderer
     // must skip the segment entirely (not render `reason=null`) so
     // empty-reason pause lines stay tidy in the plain log.
     const line = formatEventLine({
@@ -313,7 +313,7 @@ test("formatEventLine: abort with abort_promise reason renders cleanly", () => {
 
 test("formatEventLine: reason= field quotes whitespace-bearing user reasons but not baked tokens", () => {
     // Iter 137 fix: pause/stop events with a user-supplied reason
-    // (via ralph_pause / ralph_stop) routinely contain spaces — the
+    // (via ap_pause / ap_stop) routinely contain spaces — the
     // user types "lunch break", "context-window pressure", or
     // similar. Pre-iter-137 the renderer emitted them unquoted, so
     // the line collapsed multiple tokens after `reason=` and

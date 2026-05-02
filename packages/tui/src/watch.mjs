@@ -1,4 +1,4 @@
-// `ralph-tui watch` interactive entry point (issue #22).
+// `autopilot watch` interactive entry point (issue #22).
 //
 // Mounts the Ink-rendered <App /> against a live tailed events.jsonl.
 // Imported dynamically by bin/tui.mjs so a fresh checkout without

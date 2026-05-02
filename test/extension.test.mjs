@@ -5361,7 +5361,7 @@ test("scripts/ralph-tui-fresh.sh: non-`run` subcommand skips upgrade and passes 
         { encoding: "utf8", timeout: 10_000 },
     );
     assert.equal(r.status, 0, `--help exited ${r.status}; stderr=${r.stderr}`);
-    assert.match(r.stdout, /ralph-tui — terminal visualizer/,
+    assert.match(r.stdout, /autopilot — terminal visualizer/,
         "wrapper must passthrough `--help` to bin/tui.mjs's USAGE block");
 });
 

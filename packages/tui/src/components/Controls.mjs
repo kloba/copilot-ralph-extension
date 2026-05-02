@@ -1,4 +1,4 @@
-// <Controls> — bottom hint row for `ralph-tui watch`.
+// <Controls> — bottom hint row for `autopilot watch`.
 //
 // Uses React.createElement (no JSX) so the file runs in plain Node ESM.
 

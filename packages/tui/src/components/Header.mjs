@@ -170,7 +170,7 @@ export default function Header({ snapshot, now, appVersion, caffeinateActive }) 
     );
 
     const right = h(Box, { flexDirection: "row" },
-        h(Text, null, "iter "),
+        h(Text, null, "task "),
         h(Text, { bold: true }, String(iter)),
         h(Text, null, "/" + maxLabel),
         min != null ? h(Text, { dimColor: true }, " (min " + min + ")") : null,

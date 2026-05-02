@@ -35,7 +35,7 @@ try {
 
 const skip = inkAvailable ? false : "ink-testing-library not installed (cd packages/tui && npm install)";
 
-test("Header shows status badge, label, run id and iter counter", { skip }, () => {
+test("Header shows status badge, label, run id and task counter", { skip }, () => {
     const snapshot = {
         status: "running",
         label: "ralph_loop",
@@ -50,7 +50,7 @@ test("Header shows status badge, label, run id and iter counter", { skip }, () =
     assert.match(out, /RUN/);
     assert.match(out, /ralph_loop/);
     assert.match(out, /1700000000000/);
-    assert.match(out, /iter/);
+    assert.match(out, /task/);
     assert.match(out, /3/);
     assert.match(out, /100/);
     assert.match(out, /tokens/);
@@ -470,7 +470,7 @@ test("App snapshot is stable for a fixed event log", { skip }, () => {
     const out = render(React.createElement(App, { events, runId: "snap" })).lastFrame();
     // Pin the substrings we promise externally; full ANSI snapshot would
     // be brittle across Ink versions.
-    for (const expected of ["DONE", "self_improve", "snap", "iter ", "1", "alpha", "promise"]) {
+    for (const expected of ["DONE", "self_improve", "snap", "task ", "1", "alpha", "promise"]) {
         assert.match(out, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
 });
@@ -587,7 +587,7 @@ test("Header renders ∞ when maxIterations equals runaway-guard ceiling", { ski
     };
     const out = render(React.createElement(Header, { snapshot })).lastFrame();
     assert.match(out, /∞/);
-    // Avoid showing the literal "1000" in the iter row.
+    // Avoid showing the literal "1000" in the task row.
     assert.doesNotMatch(out, /\/1000/);
 });
 
@@ -854,7 +854,7 @@ test("Header: ∞ shown when maxIterations is the runaway-guard ceiling", { skip
         iteration: 5, maxIterations: 1000, tokens: { input: 0, output: 0 },
     };
     const out = render(React.createElement(Header, { snapshot })).lastFrame();
-    assert.match(out, /iter\s+5/);
+    assert.match(out, /task\s+5/);
     assert.match(out, /∞/);
 });
 
@@ -1093,12 +1093,12 @@ test("Issue #54 slice 1: Header renders 'Run' heading inside the bordered Box", 
         tokens: { input: 0, output: 0 },
     };
     const out = render(React.createElement(Header, { snapshot })).lastFrame();
-    // The heading must appear before the status badge / iter counter
+    // The heading must appear before the status badge / task counter
     // line so users see "Run" as the pane label, not buried below.
     assert.match(out, /Run/);
     const runIdx = out.indexOf("Run");
-    const iterIdx = out.indexOf("iter");
-    assert.ok(runIdx >= 0 && iterIdx > runIdx, "Run heading appears before iter counter");
+    const taskIdx = out.indexOf("task");
+    assert.ok(runIdx >= 0 && taskIdx > runIdx, "Run heading appears before task counter");
 });
 
 test("Issue #54 slice 1: Timeline renders 'Timeline' heading", { skip }, () => {

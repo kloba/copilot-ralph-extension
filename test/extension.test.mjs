@@ -10242,3 +10242,33 @@ test("pauseElapsedFromAt: never-paused sentinel + clock-skew clamp (direct)", ()
     // (the `> 0` guard treats it as the never-paused sentinel branch).
     assert.equal(pauseElapsedFromAt(-1, 1000), 0);
 });
+
+test("docs/faq.md pausedForMs section reflects iter-154 Math.max(0, …) clamp", () => {
+    // Iter 157 — `docs/faq.md` "Why is pausedForMs zero on a resume
+    // event?" section described pausedForMs as `now - pausedAt` —
+    // the pre-iter-154 unclamped formula. After iter 154 (the
+    // ralph_resume clamp fix) and iter 155 (the pauseElapsedFromAt
+    // helper extraction), the runtime computes
+    // `pausedAt > 0 ? Math.max(0, now - pausedAt) : 0`. A user on a
+    // system with NTP correction or a manual clock change would
+    // observe a clamp-to-0 result, file a bug pointing at this FAQ
+    // section, and be right. Pin the addition so a future doc-trim
+    // pass that "simplifies" by reverting to the shorter wording
+    // fires this test instead of regressing the doc/code contract.
+    const fileUrl = import.meta.url;
+    const here = dirname(fileURLToPath(fileUrl));
+    const repoRoot = resolve(here, "..");
+    const faq = readFileSync(join(repoRoot, "docs/faq.md"), "utf8");
+    const i = faq.indexOf("Why is `pausedForMs` zero");
+    assert.ok(i >= 0, "FAQ must keep the 'Why is pausedForMs zero' section header");
+    const slice = faq.slice(i, i + 2000);
+    // Pin the BOTH cases (same-ms + backward-skew clamp) AND
+    // either the explicit Math.max(0, …) wording or the "clamp"
+    // verb so the prose can evolve without the test going brittle.
+    assert.match(slice, /backward[\s-]?(?:clock[\s-]?)?skew|clock (?:skew|moves backward|rewind)/i,
+        "FAQ must mention backward clock skew as a cause of pausedForMs == 0");
+    assert.match(slice, /(?:Math\.max\(0|clamp(?:ed|s)?(?:[\s-]?to[\s-]?0)?)/i,
+        "FAQ must mention the Math.max(0, …) clamp / clamping to 0");
+    assert.match(slice, /same[\s-]?millisecond|same ms\b|rounds? to/i,
+        "FAQ must keep the original same-millisecond-rounding case");
+});

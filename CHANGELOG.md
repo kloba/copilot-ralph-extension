@@ -734,6 +734,26 @@
   fails loudly.
 
 ### Documentation
+- `docs/faq.md`'s "Why is `pausedForMs` zero on a `resume`
+  event?" section drifted from the post-iter-154 / iter-155
+  runtime contract: it described the formula as
+  `pausedForMs = now - pausedAt` — the unclamped pre-fix
+  expression. The runtime now computes
+  `pausedAt > 0 ? Math.max(0, now - pausedAt) : 0` (via the
+  shared `pauseElapsedFromAt` helper that backs `finish()`,
+  `ralph_status`, and `ralph_resume`), so a backward clock
+  skew during a pause window — NTP correction, manual clock
+  change, daylight-savings on a host without monotonic-time
+  backing — yields `pausedForMs == 0` rather than crediting a
+  negative duration to `total_paused_ms` and inflating the
+  reported `durationMs`. The FAQ now lists both same-
+  millisecond rounding AND backward-clock-skew clamping as
+  causes of a zero, and explicitly notes the three call
+  sites share a single helper so the contract cannot drift.
+  Pinned by a drift-guard test in `test/extension.test.mjs`
+  that re-reads the section and asserts the backward-skew
+  case + the `Math.max(0, …)` / "clamp" wording + the
+  original same-millisecond case all remain.
 - `docs/concepts.md`'s "Two safety contracts" bullet on
   token-credit rejection drifted from the actual
   `isCreditableTokenPair` contract in `extension/handler.mjs`.

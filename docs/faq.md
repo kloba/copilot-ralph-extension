@@ -124,13 +124,26 @@ without leaving the chat.
 
 ### Why is `pausedForMs` zero on a `resume` event?
 
-A resume is reported with `pausedForMs = now - pausedAt`, where
+A resume reports `pausedForMs = max(0, now - pausedAt)`, where
 `pausedAt` is the wall-clock millisecond timestamp captured by the
-last `ralph_pause`. If you fire `ralph_resume` in the same
-millisecond as the pause (vanishingly rare in practice, but easy
-to hit in fast tests), `pausedForMs` rounds to `0`. The
-`total_paused_ms` accumulated across multiple pause/resume cycles
-is what gets deducted from the final `durationMs`.
+last `ralph_pause`. Two cases produce a zero:
+
+- **Same-millisecond resume.** If you fire `ralph_resume` in the
+  same millisecond as the pause (vanishingly rare in practice, but
+  easy to hit in fast tests), `now - pausedAt` rounds to `0`.
+- **Backward clock skew.** If the system clock moves backward
+  during the pause window (NTP correction, manual clock change,
+  daylight savings on a host without monotonic-time backing),
+  `now - pausedAt` would compute negative — the runtime clamps it
+  to `0` rather than crediting a negative duration to
+  `total_paused_ms`. Without the clamp, the run's reported
+  `durationMs` would be inflated past the true wall-clock elapsed
+  time. The same `Math.max(0, …)` guard runs in `finish()` and
+  `ralph_status.paused_for_ms` for symmetry; all three call sites
+  share a single helper so the contract cannot drift.
+
+The `total_paused_ms` accumulated across multiple pause/resume
+cycles is what gets deducted from the final `durationMs`.
 
 ## Commit attribution
 

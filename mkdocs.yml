@@ -1,4 +1,4 @@
-# MkDocs Material configuration for the Ralph documentation site.
+# MkDocs Material configuration for the autopilot documentation site.
 # Tracked in issue #2: https://github.com/kloba/autopilot/issues/2
 #
 # Build locally:
@@ -7,9 +7,9 @@
 #
 # Deploys via .github/workflows/docs.yml on pushes to main.
 
-site_name: Ralph
-site_description: A Ralph Wiggum-style autonomous loop for the GitHub Copilot CLI.
-site_url: https://kloba.github.io/copilot-ralph-extension/
+site_name: autopilot
+site_description: Autonomous iterative loop for the GitHub Copilot CLI.
+site_url: https://kloba.github.io/autopilot/
 repo_url: https://github.com/kloba/autopilot
 repo_name: kloba/autopilot
 edit_uri: edit/main/docs/

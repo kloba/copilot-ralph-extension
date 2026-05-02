@@ -1,6 +1,6 @@
 # Releasing
 
-`copilot-ralph-extension` ships as the `autopilot` standalone TUI app. There is **no npm publish** today; releases are tagged commits on `main` plus an annotated GitHub Release page. The auto-attached source zipball / tarball is the canonical download.
+`autopilot` ships as a standalone TUI app for autonomous Copilot CLI loops. There is **no npm publish** today; releases are tagged commits on `main` plus an annotated GitHub Release page. The auto-attached source zipball / tarball is the canonical download.
 
 A tag-driven release-automation workflow ships at [`.github/workflows/release.yml`](../.github/workflows/release.yml) (see issue [#10](https://github.com/kloba/autopilot/issues/10) for the rationale). Pushing a `vX.Y.Z` tag verifies `package.json` matches the tag, asserts a matching `CHANGELOG.md` section exists, runs `npm test` + `npm run check`, and creates the GitHub Release with the matching changelog section as the body. The manual checklist below is the fallback when the workflow is unavailable or you need to cut a release out-of-band.
 
@@ -36,17 +36,20 @@ We follow **Semantic Versioning**:
 - **MINOR** — new subcommand, new flag, new opt-in feature.
 - **PATCH** — bug fix, doc-only change, internal refactor with no user-visible behavior change.
 
+**Pre-1.0 caveat:** while the project is on `0.x.y`, a MINOR bump _may_ include a breaking change, but only if it is explicitly called out under a `### Breaking` subheading in the relevant `CHANGELOG.md` section. Once we ship `1.0.0`, breaking changes require a MAJOR bump.
+
 The non-render layer has zero runtime dependencies, so dependency-driven version bumps don't apply there. The Ink renderer's package-lock churn falls under PATCH unless a major Ink/React/Yoga upgrade changes user-visible rendering.
 
 ## Pinning a specific version (for end users)
 
-Once a release exists, end users can pin a specific revision by checking out the matching tag:
+The `packages/tui/` workspace is marked `private`, so `npm i -g @autopilot/tui@X.Y.Z` is **not** available. Pin a specific revision by checking out the matching tag from source:
 
 ```bash
 git clone https://github.com/kloba/autopilot
-cd copilot-ralph-extension
-git checkout vX.Y.Z
-node packages/tui/bin/tui.mjs --help
+cd autopilot
+git checkout vX.Y.Z          # e.g. v0.7.0
+cd packages/tui && npm install && npm link
+autopilot --help
 ```
 
 A future release will publish `autopilot` to npm so `npm i -g autopilot@X.Y.Z` works; until then the source checkout above is the supported install path.

@@ -1,7 +1,7 @@
 # AGENTS.md — Development Guide for Humans and AI Agents
 
 This file is the authoritative process guide for anyone (human or AI) making
-changes to **copilot-ralph-extension**. It pins the three conventions that
+changes to **autopilot**. It pins the three conventions that
 keep the project releasable without drama: **Semantic Versioning** for the
 public surface, **Keep a Changelog** for `CHANGELOG.md`, and **Conventional
 Commits** for git history. Together they let us cut a release by tagging
@@ -68,7 +68,7 @@ what makes automated changelog generation possible.
 
 Use the package or directory name when it narrows the change:
 `tui`, `tui-run`, `release`, `docs`, `prompt`, or a subcommand name
-(`grow-project`, `self-improve`, `replay`, …). Scope is optional but
+(`run`, `watch`, `replay`, …). Scope is optional but
 encouraged — it lands in changelog grouping.
 
 ### Breaking changes

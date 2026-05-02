@@ -185,3 +185,74 @@ test("tailEventsFile: ENOENT until file appears, then catches up", async () => {
     assert.deepEqual(types, ["armed", "complete"]);
     rmSync(dir, { recursive: true, force: true });
 });
+
+// Iter 141 — pin under-covered input-validation contracts so a future
+// "simplify the tail surface" PR can't silently drop the typeof guards
+// without tripping a test. The risk model: callers higher up (replay
+// command, plain-mode renderer, watch loop) reach these helpers with
+// values derived from CLI args and filesystem state, so the contracts
+// are real defensive walls — not theoretical guards.
+
+test("readEventsFile: non-string filePath throws TypeError (input-validation contract)", () => {
+    assert.throws(() => readEventsFile(undefined), { name: "TypeError" });
+    assert.throws(() => readEventsFile(null), { name: "TypeError" });
+    assert.throws(() => readEventsFile(42), { name: "TypeError" });
+    assert.throws(() => readEventsFile({}), { name: "TypeError" });
+    assert.throws(() => readEventsFile([]), { name: "TypeError" });
+});
+
+test("readEventsFile: empty-string filePath throws TypeError (rejects falsy strings explicitly)", () => {
+    // The literal regression to guard: a future refactor could replace
+    // `typeof filePath !== "string" || !filePath` with just the typeof
+    // check, which would let "" fall through to fs.readFileSync("", …)
+    // and emit a confusing "ENOENT: '' is not a directory" error
+    // depending on Node version. Pin the explicit empty-string reject.
+    assert.throws(() => readEventsFile(""), { name: "TypeError" });
+});
+
+test("readEventsFile: non-ENOENT fs errors propagate unchanged (no swallowing)", () => {
+    // Only ENOENT is treated as "run hasn't started yet" → []. Every
+    // other fs error (EACCES, EISDIR, EMFILE, …) must propagate so
+    // operators see the real failure instead of an empty event list
+    // that silently looks like a fresh / never-started run.
+    const fakeFs = {
+        readFileSync() {
+            const err = new Error("permission denied");
+            err.code = "EACCES";
+            throw err;
+        },
+    };
+    assert.throws(
+        () => readEventsFile("/some/path/events.jsonl", { fs: fakeFs }),
+        (err) => err.code === "EACCES" && /permission denied/.test(err.message),
+    );
+});
+
+test("readEventsFile: ENOENT specifically returns [] (not the same as the catch-all branch)", () => {
+    // Counterpart to the EACCES test above — pin that ENOENT does NOT
+    // propagate, so a swap of the `if (err.code === "ENOENT")` to
+    // anything stricter (e.g. accidentally checking err.errno -2 on a
+    // platform where errno differs) would surface as a regression
+    // here.
+    const fakeFs = {
+        readFileSync() {
+            const err = new Error("no such file");
+            err.code = "ENOENT";
+            throw err;
+        },
+    };
+    assert.deepEqual(readEventsFile("/missing/events.jsonl", { fs: fakeFs }), []);
+});
+
+test("splitAndParse: non-string input returns [] (defensive contract)", () => {
+    // splitAndParse is called from plain.mjs's stream renderer with
+    // values pulled out of fs.readFileSync — but tests + replay code
+    // also reach it directly. Pin the non-string fast-path so a future
+    // refactor that "trusts the caller" would trip a test.
+    assert.deepEqual(splitAndParse(undefined), []);
+    assert.deepEqual(splitAndParse(null), []);
+    assert.deepEqual(splitAndParse(42), []);
+    assert.deepEqual(splitAndParse({}), []);
+    assert.deepEqual(splitAndParse([]), []);
+    assert.deepEqual(splitAndParse(true), []);
+});

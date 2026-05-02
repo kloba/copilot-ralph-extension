@@ -368,6 +368,22 @@
   indent sizes) cannot silently rot.
 
 ### Tests
+- Pin `packages/tui/src/tail.mjs`'s under-covered
+  input-validation contracts so a future "simplify the tail
+  surface" PR can't silently drop the typeof guards. Added
+  five tests covering: `readEventsFile` rejects non-string
+  `filePath` with `TypeError`; rejects empty-string
+  explicitly (the regression case where dropping the
+  `|| !filePath` clause would let `""` fall through to
+  `fs.readFileSync("", …)` and surface a confusing platform-
+  dependent error); ENOENT is the ONE error code that
+  collapses to `[]` (everything else propagates unchanged so
+  operators see real failures); EACCES propagation is
+  pinned via injected fake fs; `splitAndParse` returns `[]`
+  for non-string input (defensive contract used by the
+  plain-mode renderer + tests). Regression catch verified by
+  removing the empty-string guard — only the targeted test
+  fires.
 - Pin `ralph_resume`'s `totalPausedMs` accumulator across
   multiple pause/resume cycles. The handler does
   `a.totalPausedMs += pausedFor` — the `+=` is load-bearing.

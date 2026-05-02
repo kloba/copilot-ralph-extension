@@ -4,6 +4,7 @@
   "description": "Ralph Wiggum-style autonomous iterative loop for GitHub Copilot CLI, implemented as an in-session extension.",
   "type": "module",
   "private": true,
+  "author": "Taras Kloba",
   "scripts": {
     "test": "node --test test/*.test.mjs packages/*/test/*.test.mjs",
     "check": "node scripts/check.mjs"

@@ -331,6 +331,17 @@
   invariant scan.
 
 ### Internal
+- Added the missing `"author": "Taras Kloba"` field to
+  `package.json`, matching the canonical copyright holder
+  declared in `LICENSE` since the repo was created. Tooling
+  that scrapes the npm manifest (GitHub project surfacing,
+  third-party SBOM extractors, the npm registry's
+  private-package metadata view) was previously seeing a
+  package with no author. Pinned both files in lockstep with
+  a drift-guard test in `test/extension.test.mjs` so a future
+  edit to either side forces a matching edit to the other —
+  one of the two metadata sources moving without the other
+  would silently attribute the package to a stale name.
 - `packages/tui/src/plain.mjs`'s `formatTimestamp` now also
   collapses out-of-range finite inputs to the
   `"??:??:??.???"` sentinel. Pre-iter-144 the only guard was

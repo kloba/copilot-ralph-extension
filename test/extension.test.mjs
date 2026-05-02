@@ -10058,3 +10058,25 @@ test("ci.yml: post-test step pins working-tree cleanliness so the iter 149 artif
     assert.match(ci, /git status --porcelain/,
         "ci.yml's working-tree-clean step must also run `git status --porcelain` (untracked-file check) — `git diff` alone would have missed iter 149's untracked .github/extensions/ralph/ artifacts");
 });
+
+test("package.json author matches LICENSE copyright holder", () => {
+    // Iter 151 — drift guard between two metadata sources of truth.
+    // Pre-iter-151 `package.json` had no `author` field at all, even
+    // though `LICENSE` has carried "Copyright (c) <year> Taras Kloba"
+    // since the repo was created. Tooling that scrapes the npm
+    // manifest (GitHub, the npm registry's "this is a private
+    // package" surfacing, third-party SBOM extractors) would silently
+    // attribute the package to nobody. Adding the field also creates
+    // a lockstep drift hazard (package.json updated but LICENSE not,
+    // or vice versa); this test makes one drift the other.
+    const pkg = JSON.parse(readFileSync(resolve(REPO_ROOT, "package.json"), "utf8"));
+    assert.ok(typeof pkg.author === "string" && pkg.author.length > 0,
+        "package.json must declare a non-empty `author` field for npm/GitHub tooling that scrapes the manifest");
+    const license = readFileSync(resolve(REPO_ROOT, "LICENSE"), "utf8");
+    // LICENSE format: "Copyright (c) <year> <Author Name>"
+    const m = license.match(/Copyright \(c\) \d{4} (.+)$/m);
+    assert.ok(m, "LICENSE must contain a `Copyright (c) <year> <Author Name>` line so the canonical copyright holder is unambiguous");
+    const licenseAuthor = m[1].trim();
+    assert.equal(pkg.author, licenseAuthor,
+        `package.json#author (${JSON.stringify(pkg.author)}) must match LICENSE copyright holder (${JSON.stringify(licenseAuthor)}). Update both together to avoid drift across metadata sources.`);
+});

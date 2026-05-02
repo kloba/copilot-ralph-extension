@@ -16,7 +16,7 @@ The repository has **zero npm runtime dependencies** for the non-render layer (`
 cd packages/tui && npm install   # pulls Ink + React + Yoga + Commander
 ```
 
-## Running ralph-tui locally
+## Running autopilot locally
 
 For day-to-day iteration:
 

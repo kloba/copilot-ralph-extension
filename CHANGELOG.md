@@ -6,8 +6,50 @@
 - `autopilot run` now accepts `--min N` — a floor on iteration count BEFORE the runner honors the `COMPLETE` / abort tokens. Tokens emitted on `iter < N` are logged to stderr (`agent emitted COMPLETE on iter K but iter K < min N — continuing`) and the loop keeps running. `--min 0` is the "disable early-stop" sentinel: the loop runs all the way to `--max`, ignoring both tokens entirely. Useful for `--self-improve` runs where the agent fat-iters through the whole SDLC and emits `COMPLETE` on iter 1 even though more passes were wanted. Default 1 = byte-identical to pre-flag behavior. The CLI rejects `--min` outside `{0} ∪ [1, max]` up-front so a misuse surfaces before the loop arms.
 - Runner now executes each iter in a per-iter git worktree under `$RALPH_TUI_RUNS_DIR/<runId>/worktrees/iter-<N>/` for `--self-improve` and `--grow-project` (`--worktree` opts in for `--prompt`); merged iters tear down on END, unmerged ones are preserved on disk and emit a `worktree_kept` event with the absolute path. (#66)
 
+### Fixes
+- `autopilot run --self-improve` / `--grow-project` no longer
+  silently stalls when paired with `--reset-on=iter` (or the
+  deprecated `--fresh` alias). Each iter spawns a fresh Copilot
+  session, so the one-step-per-iter SDLC prompts had no in-context
+  memory of the prior iter's `[WORKITEM_START]` / `[STAGE_PLAN]` /
+  `[TASK_LIST]` markers — the agent re-derived state 1 every
+  iter and re-emitted `[WORKITEM_START]` for the same issue
+  forever. The runner now reads its own `events.jsonl` between
+  iters and prepends a concise `[CURSOR_STATE]` block to the
+  per-iter prompt that names the active work item, the stage
+  plan, the active stage, and the next state in the SDLC table.
+  Injection runs for both `iter` and `workitem` reset modes
+  (the latter also drops the captured sessionId at every iter
+  exit) and is skipped on iter 1 / when no markers exist yet.
+  Pairing `--reset-on=iter` with `--self-improve` /
+  `--grow-project` now also prints a one-shot stderr nudge
+  recommending the default `--reset-on=workitem`.
+
 ### Internal
 - Startup sweep removes orphan worktrees from prior `terminated` runs (~200 ms budget). (#66)
+- New `summarizeCursor` / `formatCursorPreamble` /
+  `buildCursorPreamble` helpers in `packages/tui/src/runner.mjs`
+  fold a run's events.jsonl into a state-machine cursor for
+  the SDLC-prompt resume contract. Idempotence semantics are
+  intentionally stricter than the UI's `foldEvents`: a duplicate
+  same-ref `workitem_start` is a no-op (so the agent's
+  defensive re-emission doesn't reset progress) and a
+  different-ref one mid-stream marks the cursor corrupt and
+  suppresses the preamble. Auto-emitted iter-close `stage_end`
+  events are ignored (they fire even when the stage isn't
+  drained), so stage progression is derived purely from the
+  effective plan + `task_list` + `task_end` coverage.
+
+### Tests
+- `packages/tui/test/cursor-preamble.test.mjs` pins the cursor
+  reducer / preamble formatter / file-reader contract,
+  including the user-facing 9-iter / 9-duplicate-`workitem_start`
+  bug repro. `packages/tui/test/runner.test.mjs` adds three
+  spawn-mock cases that capture the per-iter prompt and assert
+  the `[CURSOR_STATE]` block lands on iter 2 of self-improve
+  (under both `iter` and `workitem` reset modes) and stays out
+  of `--prompt` runs. `packages/tui/test/bin.test.mjs` covers
+  the four-cell truth table for the new stderr nudge.
 
 ### Breaking
 - Issue #51 — Replaced `ralph-tui run --continue` / `--fresh` with

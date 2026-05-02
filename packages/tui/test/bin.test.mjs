@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
-import { parseArgv, cmdReplay, main as tuiMain } from "../bin/tui.mjs";
+import { parseArgv, cmdReplay, main as tuiMain, __test__ as binTest } from "../bin/tui.mjs";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = resolve(REPO_ROOT, "bin", "tui.mjs");
@@ -1446,4 +1446,127 @@ test("run --status: summary omits min for legacy state.json without the field (b
     assert.equal(r.status, 0);
     assert.doesNotMatch(r.stdout, /min=/, "legacy state without `min` must not print `min=…`");
     assert.match(r.stdout, /iter=0\/10/);
+});
+
+// ─── --reset-on=iter + --self-improve / --grow-project nudge ──────
+//
+// Pairing --reset-on=iter (or its deprecated --fresh alias) with an
+// SDLC mode used to silently produce the user-visible bug where the
+// agent re-emitted [WORKITEM_START] every iter for the same issue
+// without ever advancing. The runner now injects a [CURSOR_STATE]
+// preamble to compensate, but the default --reset-on=workitem is
+// still recommended — these tests pin the one-shot stderr nudge.
+
+test("cmdRun: --reset-on=iter + --self-improve emits a one-shot nudge", async () => {
+    binTest.resetDeprecationWarnings();
+    const dir = tmp();
+    const origCopilotBin = process.env.RALPH_TUI_COPILOT_BIN;
+    const origRunsDir = process.env.RALPH_TUI_RUNS_DIR;
+    process.env.RALPH_TUI_COPILOT_BIN = "/nonexistent-copilot-binary-for-cursor-nudge";
+    process.env.RALPH_TUI_RUNS_DIR = dir;
+    let captured;
+    try {
+        captured = await captureIo(async () => {
+            try { await tuiMain(["run", "--self-improve", "--reset-on=iter"]); }
+            catch { /* spawn ENOENT — irrelevant */ }
+        });
+    } finally {
+        if (origCopilotBin === undefined) delete process.env.RALPH_TUI_COPILOT_BIN;
+        else process.env.RALPH_TUI_COPILOT_BIN = origCopilotBin;
+        if (origRunsDir === undefined) delete process.env.RALPH_TUI_RUNS_DIR;
+        else process.env.RALPH_TUI_RUNS_DIR = origRunsDir;
+        rmSync(dir, { recursive: true, force: true });
+        binTest.resetDeprecationWarnings();
+    }
+    assert.match(captured.stderr, /--reset-on=iter with --self-improve/,
+        "iter+self-improve must trigger the cursor-memory nudge");
+    assert.match(captured.stderr, /\[CURSOR_STATE\] preamble/,
+        "nudge must mention the [CURSOR_STATE] preamble compensation");
+    assert.match(captured.stderr, /--reset-on=workitem is recommended/,
+        "nudge must steer users to the recommended default");
+    // One-shot: the same message must not repeat in the same buffer.
+    const matches = captured.stderr.match(/--reset-on=iter with --self-improve/g) ?? [];
+    assert.equal(matches.length, 1, "nudge must fire exactly once per process");
+});
+
+test("cmdRun: --fresh + --self-improve emits both the deprecation notice AND the cursor nudge", async () => {
+    binTest.resetDeprecationWarnings();
+    const dir = tmp();
+    const origCopilotBin = process.env.RALPH_TUI_COPILOT_BIN;
+    const origRunsDir = process.env.RALPH_TUI_RUNS_DIR;
+    process.env.RALPH_TUI_COPILOT_BIN = "/nonexistent-copilot-binary-for-cursor-nudge";
+    process.env.RALPH_TUI_RUNS_DIR = dir;
+    let captured;
+    try {
+        captured = await captureIo(async () => {
+            try { await tuiMain(["run", "--self-improve", "--fresh"]); }
+            catch { /* spawn ENOENT — irrelevant */ }
+        });
+    } finally {
+        if (origCopilotBin === undefined) delete process.env.RALPH_TUI_COPILOT_BIN;
+        else process.env.RALPH_TUI_COPILOT_BIN = origCopilotBin;
+        if (origRunsDir === undefined) delete process.env.RALPH_TUI_RUNS_DIR;
+        else process.env.RALPH_TUI_RUNS_DIR = origRunsDir;
+        rmSync(dir, { recursive: true, force: true });
+        binTest.resetDeprecationWarnings();
+    }
+    assert.match(captured.stderr, /--fresh is deprecated/,
+        "--fresh deprecation notice must still fire");
+    assert.match(captured.stderr, /--reset-on=iter with --self-improve/,
+        "the cursor nudge must also fire because --fresh maps to --reset-on=iter");
+});
+
+test("cmdRun: --reset-on=workitem + --self-improve does NOT trigger the cursor nudge", async () => {
+    binTest.resetDeprecationWarnings();
+    const dir = tmp();
+    const origCopilotBin = process.env.RALPH_TUI_COPILOT_BIN;
+    const origRunsDir = process.env.RALPH_TUI_RUNS_DIR;
+    process.env.RALPH_TUI_COPILOT_BIN = "/nonexistent-copilot-binary-for-cursor-nudge";
+    process.env.RALPH_TUI_RUNS_DIR = dir;
+    let captured;
+    try {
+        captured = await captureIo(async () => {
+            try { await tuiMain(["run", "--self-improve", "--reset-on=workitem"]); }
+            catch { /* spawn ENOENT — irrelevant */ }
+        });
+    } finally {
+        if (origCopilotBin === undefined) delete process.env.RALPH_TUI_COPILOT_BIN;
+        else process.env.RALPH_TUI_COPILOT_BIN = origCopilotBin;
+        if (origRunsDir === undefined) delete process.env.RALPH_TUI_RUNS_DIR;
+        else process.env.RALPH_TUI_RUNS_DIR = origRunsDir;
+        rmSync(dir, { recursive: true, force: true });
+        binTest.resetDeprecationWarnings();
+    }
+    assert.doesNotMatch(captured.stderr, /--reset-on=iter with --self-improve/,
+        "workitem mode must NOT trigger the cursor nudge");
+});
+
+test("cmdRun: --reset-on=iter + --prompt does NOT trigger the cursor nudge (no fixed cursor)", async () => {
+    // User-defined --prompt has no SDLC cursor invariant — pinning the
+    // nudge to self-improve / grow-project keeps it out of legitimate
+    // ad-hoc loops.
+    binTest.resetDeprecationWarnings();
+    const dir = tmp();
+    const origCopilotBin = process.env.RALPH_TUI_COPILOT_BIN;
+    const origRunsDir = process.env.RALPH_TUI_RUNS_DIR;
+    process.env.RALPH_TUI_COPILOT_BIN = "/nonexistent-copilot-binary-for-cursor-nudge";
+    process.env.RALPH_TUI_RUNS_DIR = dir;
+    let captured;
+    try {
+        captured = await captureIo(async () => {
+            try { await tuiMain(["run", "--prompt", "do the thing", "--reset-on=iter"]); }
+            catch { /* spawn ENOENT — irrelevant */ }
+        });
+    } finally {
+        if (origCopilotBin === undefined) delete process.env.RALPH_TUI_COPILOT_BIN;
+        else process.env.RALPH_TUI_COPILOT_BIN = origCopilotBin;
+        if (origRunsDir === undefined) delete process.env.RALPH_TUI_RUNS_DIR;
+        else process.env.RALPH_TUI_RUNS_DIR = origRunsDir;
+        rmSync(dir, { recursive: true, force: true });
+        binTest.resetDeprecationWarnings();
+    }
+    assert.doesNotMatch(captured.stderr, /--reset-on=iter with --self-improve/,
+        "prompt mode must NOT trigger the self-improve nudge");
+    assert.doesNotMatch(captured.stderr, /--reset-on=iter with --grow-project/,
+        "prompt mode must NOT trigger the grow-project nudge");
 });

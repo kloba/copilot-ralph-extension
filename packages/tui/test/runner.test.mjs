@@ -4,7 +4,7 @@
 //   - Pure helpers (validateFocus, composePrompt, reduceCopilotEvents)
 //     get straightforward unit tests.
 //   - State-file CAS (initState/updateState/pauseRun/resumeRun/stopRun)
-//     gets isolated tmp-dir tests via $RALPH_TUI_RUNS_DIR.
+//     gets isolated tmp-dir tests via $AUTOPILOT_RUNS_DIR.
 //   - End-to-end loop tests use a Node-script "fake copilot" shim that
 //     emits scripted JSONL on stdout. The shim is parameterised by a
 //     SCRIPT env var (path to a JSON file describing the iter's
@@ -15,7 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, chmodSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -41,6 +41,7 @@ import {
     MAX_FOCUS_CHARS,
     DEFAULT_MAX_ITERATIONS,
     MAX_ALLOWED_ITERATIONS,
+    __resetLegacyWarnGuards,
 } from "../src/runner.mjs";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -52,7 +53,7 @@ function tmp() {
 
 function makeEnv(extra = {}) {
     return {
-        RALPH_TUI_RUNS_DIR: extra.RALPH_TUI_RUNS_DIR ?? tmp(),
+        AUTOPILOT_RUNS_DIR: extra.AUTOPILOT_RUNS_DIR ?? tmp(),
         ...extra,
     };
 }
@@ -191,17 +192,68 @@ test("reduceCopilotEvents: premiumRequests is null when result is missing or mal
 
 // ───────────── State root + path ─────────────
 
-test("resolveStateRoot: honors $RALPH_TUI_RUNS_DIR", () => {
-    assert.equal(resolveStateRoot({ RALPH_TUI_RUNS_DIR: "/tmp/whatever" }), "/tmp/whatever");
+test("resolveStateRoot: honors $AUTOPILOT_RUNS_DIR", () => {
+    assert.equal(resolveStateRoot({ AUTOPILOT_RUNS_DIR: "/tmp/whatever" }), "/tmp/whatever");
 });
 
-test("resolveStateRoot: defaults under ~/.copilot/ralph-tui/runs", () => {
-    const r = resolveStateRoot({});
-    assert.match(r, /\.copilot\/ralph-tui\/runs$/);
+test("resolveStateRoot: defaults under ~/.copilot/autopilot/runs", () => {
+    // Stub fs so the legacy-path read-fallback can't trip on real
+    // home-dir state.
+    const fakeFs = { existsSync: () => false };
+    const r = resolveStateRoot({}, { fs: fakeFs });
+    assert.match(r, /\.copilot\/autopilot\/runs$/);
+});
+
+test("resolveStateRoot: legacy $RALPH_TUI_RUNS_DIR fallback emits one-shot deprecation notice", () => {
+    __resetLegacyWarnGuards();
+    const writes = [];
+    const stderr = { write: (s) => writes.push(s) };
+    const fakeFs = { existsSync: () => false };
+    assert.equal(
+        resolveStateRoot({ RALPH_TUI_RUNS_DIR: "/tmp/legacy" }, { fs: fakeFs, stderr }),
+        "/tmp/legacy",
+    );
+    // Second call same legacy env: dedup keeps stderr quiet.
+    assert.equal(
+        resolveStateRoot({ RALPH_TUI_RUNS_DIR: "/tmp/legacy" }, { fs: fakeFs, stderr }),
+        "/tmp/legacy",
+    );
+    assert.equal(writes.length, 1);
+    assert.match(writes[0], /RALPH_TUI_RUNS_DIR is deprecated/);
+});
+
+test("resolveStateRoot: $AUTOPILOT_RUNS_DIR wins over legacy with no notice", () => {
+    __resetLegacyWarnGuards();
+    const writes = [];
+    const stderr = { write: (s) => writes.push(s) };
+    const fakeFs = { existsSync: () => false };
+    assert.equal(
+        resolveStateRoot(
+            { AUTOPILOT_RUNS_DIR: "/tmp/new", RALPH_TUI_RUNS_DIR: "/tmp/legacy" },
+            { fs: fakeFs, stderr },
+        ),
+        "/tmp/new",
+    );
+    assert.equal(writes.length, 0);
+});
+
+test("resolveStateRoot: legacy-path read-fallback emits one-shot migration notice", () => {
+    __resetLegacyWarnGuards();
+    const writes = [];
+    const stderr = { write: (s) => writes.push(s) };
+    const legacyDefault = join(homedir(), ".copilot", "ralph-tui", "runs");
+    const fakeFs = { existsSync: (p) => p === legacyDefault };
+    const r = resolveStateRoot({}, { fs: fakeFs, stderr });
+    assert.equal(r, legacyDefault);
+    // Second call: dedup.
+    const r2 = resolveStateRoot({}, { fs: fakeFs, stderr });
+    assert.equal(r2, legacyDefault);
+    assert.equal(writes.length, 1);
+    assert.match(writes[0], /reading runs from legacy/);
 });
 
 test("resolveStatePath: joins root + runId + state.json", () => {
-    const env = { RALPH_TUI_RUNS_DIR: "/tmp/r" };
+    const env = { AUTOPILOT_RUNS_DIR: "/tmp/r" };
     assert.equal(resolveStatePath("foo-1", env), "/tmp/r/foo-1/state.json");
 });
 
@@ -209,20 +261,20 @@ test("resolveStatePath: joins root + runId + state.json", () => {
 
 test("updateState: throws TypeError when state.json missing", () => {
     const dir = tmp();
-    const env = { RALPH_TUI_RUNS_DIR: dir };
+    const env = { AUTOPILOT_RUNS_DIR: dir };
     assert.throws(() => updateState("nonexistent", (s) => s, env), TypeError);
     rmSync(dir, { recursive: true, force: true });
 });
 
 test("readState: returns null when state.json missing", () => {
     const dir = tmp();
-    assert.equal(readState("nope", { RALPH_TUI_RUNS_DIR: dir }), null);
+    assert.equal(readState("nope", { AUTOPILOT_RUNS_DIR: dir }), null);
     rmSync(dir, { recursive: true, force: true });
 });
 
 test("pauseRun → resumeRun: idempotent + accumulates totalPausedMs", () => {
     const dir = tmp();
-    const env = { RALPH_TUI_RUNS_DIR: dir };
+    const env = { AUTOPILOT_RUNS_DIR: dir };
     // Seed a state file directly.
     const runId = "test-1";
     mkdirSync(join(dir, runId), { recursive: true });
@@ -258,7 +310,7 @@ test("pauseRun → resumeRun: idempotent + accumulates totalPausedMs", () => {
 
 test("stopRun: sets stopRequested + stopReason, idempotent on terminated runs", () => {
     const dir = tmp();
-    const env = { RALPH_TUI_RUNS_DIR: dir };
+    const env = { AUTOPILOT_RUNS_DIR: dir };
     const runId = "test-2";
     mkdirSync(join(dir, runId), { recursive: true });
     writeFileSync(join(dir, runId, "state.json"),
@@ -277,13 +329,13 @@ test("stopRun: sets stopRequested + stopReason, idempotent on terminated runs", 
 
 test("statusRun: throws TypeError on missing", () => {
     const dir = tmp();
-    assert.throws(() => statusRun("missing", { env: { RALPH_TUI_RUNS_DIR: dir } }), TypeError);
+    assert.throws(() => statusRun("missing", { env: { AUTOPILOT_RUNS_DIR: dir } }), TypeError);
     rmSync(dir, { recursive: true, force: true });
 });
 
 test("updateState: increments version monotonically under sequential writes", () => {
     const dir = tmp();
-    const env = { RALPH_TUI_RUNS_DIR: dir };
+    const env = { AUTOPILOT_RUNS_DIR: dir };
     const runId = "v";
     mkdirSync(join(dir, runId), { recursive: true });
     writeFileSync(join(dir, runId, "state.json"), JSON.stringify({ version: 1, runId, n: 0 }));
@@ -2568,4 +2620,107 @@ test("runRalphTui: accepts an `agent` param and threads it through to runOneIter
         "runRalphTui must thread the chosen agent through to runOneIteration");
     assert.ok(!spawnedArgs.includes("--allow-all-tools"),
         "Copilot's flag must NOT leak when a different agent is selected");
+});
+
+// ───────────── Inline-fallback bin resolver (issue #49) ─────────────
+//
+// `runOneIteration` falls back to an inline resolver when the injected
+// agent doesn't expose `resolveBin` (e.g. test fixtures, downstream
+// wrappers). The fallback honours the same precedence + legacy-name
+// deprecation contract as the canonical `agents/copilot.mjs::resolveBin`.
+
+function makeBinCapturingSpawn(captureBin) {
+    return function (bin, _args) {
+        captureBin.bin = bin;
+        const handlers = { stdout: [], close: [] };
+        const child = {
+            stdout: { on: (ev, fn) => handlers.stdout.push(fn), pipe: () => {} },
+            stderr: { on: () => {}, pipe: () => {} },
+            on: (ev, fn) => { if (ev === "close") handlers.close.push(fn); },
+            kill: () => {},
+        };
+        setImmediate(() => {
+            for (const fn of handlers.stdout) fn(Buffer.from(""));
+            for (const fn of handlers.close) fn(0);
+        });
+        return child;
+    };
+}
+
+const noResolveAgent = {
+    name: "no-resolve",
+    defaultBin: "fallback-default",
+    binEnvVar: "AUTOPILOT_COPILOT_BIN",
+    spawnArgs: (prompt) => ({ args: [prompt], env: undefined }),
+};
+
+test("runOneIteration: inline fallback resolver prefers caller-supplied copilotBin", async () => {
+    const captured = {};
+    await runOneIteration({
+        prompt: "p",
+        spawn: makeBinCapturingSpawn(captured),
+        agent: noResolveAgent,
+        env: { AUTOPILOT_COPILOT_BIN: "/should/not/win", RALPH_TUI_COPILOT_BIN: "/legacy/no" },
+        copilotBin: "/explicit/win",
+    });
+    assert.equal(captured.bin, "/explicit/win");
+});
+
+test("runOneIteration: inline fallback prefers $AUTOPILOT_COPILOT_BIN over $RALPH_TUI_COPILOT_BIN", async () => {
+    __resetLegacyWarnGuards();
+    const captured = {};
+    await runOneIteration({
+        prompt: "p",
+        spawn: makeBinCapturingSpawn(captured),
+        agent: noResolveAgent,
+        env: { AUTOPILOT_COPILOT_BIN: "/usr/bin/autopilot-copilot", RALPH_TUI_COPILOT_BIN: "/usr/bin/legacy" },
+    });
+    assert.equal(captured.bin, "/usr/bin/autopilot-copilot");
+});
+
+test("runOneIteration: inline fallback honors legacy $RALPH_TUI_COPILOT_BIN with one-shot deprecation notice", async () => {
+    __resetLegacyWarnGuards();
+    const writes = [];
+    const origWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (chunk, ...rest) => {
+        const s = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+        writes.push(s);
+        return origWrite(chunk, ...rest);
+    };
+    try {
+        const captured = {};
+        await runOneIteration({
+            prompt: "p",
+            spawn: makeBinCapturingSpawn(captured),
+            agent: noResolveAgent,
+            env: { RALPH_TUI_COPILOT_BIN: "/usr/bin/legacy-copilot" },
+        });
+        assert.equal(captured.bin, "/usr/bin/legacy-copilot");
+        // Second call with same legacy env: no second notice (per-process dedup).
+        const captured2 = {};
+        await runOneIteration({
+            prompt: "p",
+            spawn: makeBinCapturingSpawn(captured2),
+            agent: noResolveAgent,
+            env: { RALPH_TUI_COPILOT_BIN: "/usr/bin/legacy-copilot" },
+        });
+        assert.equal(captured2.bin, "/usr/bin/legacy-copilot");
+        const matched = writes.filter((w) => /RALPH_TUI_COPILOT_BIN is deprecated/.test(w));
+        assert.equal(matched.length, 1, "deprecation notice should fire exactly once per process");
+        assert.match(matched[0], /AUTOPILOT_COPILOT_BIN/);
+    } finally {
+        process.stderr.write = origWrite;
+    }
+});
+
+test("runOneIteration: inline fallback returns agent.defaultBin when nothing else is set", async () => {
+    __resetLegacyWarnGuards();
+    const captured = {};
+    await runOneIteration({
+        prompt: "p",
+        spawn: makeBinCapturingSpawn(captured),
+        agent: noResolveAgent,
+        env: {},
+    });
+    assert.equal(captured.bin, "fallback-default");
 });

@@ -12,25 +12,106 @@ import {
     resolveRunsRoot,
     makeRunId,
     createEventEmitter,
+    __resetLegacyWarnGuards,
 } from "../src/events-emit.mjs";
 
-test("resolveRunsRoot: defaults to $HOME/.copilot/ralph-tui/runs", () => {
-    assert.equal(resolveRunsRoot({}), join(homedir(), ".copilot", "ralph-tui", "runs"));
+// Each resolveRunsRoot test that flips a one-shot deprecation/migration
+// notice resets the module-level dedup flags so case ordering doesn't
+// bleed state. Tests that don't touch the legacy paths still default to
+// the new $HOME/.copilot/autopilot/runs root and need a stub `existsSync`
+// returning false so the legacy-path read-fallback never fires from
+// real on-disk state on the developer's machine.
+const noFs = { existsSync: () => false };
+
+test("resolveRunsRoot: defaults to $HOME/.copilot/autopilot/runs", () => {
+    __resetLegacyWarnGuards();
+    assert.equal(
+        resolveRunsRoot({}, { fs: noFs }),
+        join(homedir(), ".copilot", "autopilot", "runs"),
+    );
 });
 
-test("resolveRunsRoot: honours RALPH_TUI_RUNS_DIR override", () => {
-    assert.equal(resolveRunsRoot({ RALPH_TUI_RUNS_DIR: "/tmp/ralph" }), "/tmp/ralph");
+test("resolveRunsRoot: honours AUTOPILOT_RUNS_DIR override", () => {
+    __resetLegacyWarnGuards();
+    assert.equal(
+        resolveRunsRoot({ AUTOPILOT_RUNS_DIR: "/tmp/autopilot" }, { fs: noFs }),
+        "/tmp/autopilot",
+    );
+});
+
+test("resolveRunsRoot: legacy RALPH_TUI_RUNS_DIR fallback emits one-shot deprecation notice", () => {
+    __resetLegacyWarnGuards();
+    const writes = [];
+    const stderr = { write: (s) => writes.push(s) };
+    assert.equal(
+        resolveRunsRoot({ RALPH_TUI_RUNS_DIR: "/tmp/ralph" }, { fs: noFs, stderr }),
+        "/tmp/ralph",
+    );
+    // Second call: same legacy env → no second notice (per-process dedup).
+    assert.equal(
+        resolveRunsRoot({ RALPH_TUI_RUNS_DIR: "/tmp/ralph" }, { fs: noFs, stderr }),
+        "/tmp/ralph",
+    );
+    assert.equal(writes.length, 1);
+    assert.match(writes[0], /RALPH_TUI_RUNS_DIR is deprecated/);
+    assert.match(writes[0], /AUTOPILOT_RUNS_DIR/);
+});
+
+test("resolveRunsRoot: AUTOPILOT_RUNS_DIR wins over RALPH_TUI_RUNS_DIR with no notice", () => {
+    __resetLegacyWarnGuards();
+    const writes = [];
+    const stderr = { write: (s) => writes.push(s) };
+    assert.equal(
+        resolveRunsRoot(
+            { AUTOPILOT_RUNS_DIR: "/tmp/new", RALPH_TUI_RUNS_DIR: "/tmp/legacy" },
+            { fs: noFs, stderr },
+        ),
+        "/tmp/new",
+    );
+    assert.equal(writes.length, 0);
+});
+
+test("resolveRunsRoot: legacy-path read fallback when new default missing + legacy default present", () => {
+    __resetLegacyWarnGuards();
+    const writes = [];
+    const stderr = { write: (s) => writes.push(s) };
+    const legacyDefault = join(homedir(), ".copilot", "ralph-tui", "runs");
+    const fakeFs = {
+        existsSync: (p) => p === legacyDefault,
+    };
+    const root = resolveRunsRoot({}, { fs: fakeFs, stderr });
+    assert.equal(root, legacyDefault);
+    // Second call within the same process: dedup keeps stderr quiet.
+    const root2 = resolveRunsRoot({}, { fs: fakeFs, stderr });
+    assert.equal(root2, legacyDefault);
+    assert.equal(writes.length, 1);
+    assert.match(writes[0], /reading runs from legacy/);
+    assert.match(writes[0], /~\/\.copilot\/autopilot\/runs/);
+});
+
+test("resolveRunsRoot: when new default exists, returns new default with no legacy notice", () => {
+    __resetLegacyWarnGuards();
+    const writes = [];
+    const stderr = { write: (s) => writes.push(s) };
+    // Both directories "exist"; new default wins (sentinel semantics:
+    // once the new root is created, the legacy notice never reprints).
+    const fakeFs = { existsSync: () => true };
+    const newDefault = join(homedir(), ".copilot", "autopilot", "runs");
+    assert.equal(resolveRunsRoot({}, { fs: fakeFs, stderr }), newDefault);
+    assert.equal(writes.length, 0);
 });
 
 test("resolveRunsRoot: ignores empty / whitespace override and falls back to default", () => {
-    const def = join(homedir(), ".copilot", "ralph-tui", "runs");
-    assert.equal(resolveRunsRoot({ RALPH_TUI_RUNS_DIR: "" }), def);
-    assert.equal(resolveRunsRoot({ RALPH_TUI_RUNS_DIR: "   " }), def);
+    __resetLegacyWarnGuards();
+    const def = join(homedir(), ".copilot", "autopilot", "runs");
+    assert.equal(resolveRunsRoot({ AUTOPILOT_RUNS_DIR: "" }, { fs: noFs }), def);
+    assert.equal(resolveRunsRoot({ AUTOPILOT_RUNS_DIR: "   " }, { fs: noFs }), def);
 });
 
 test("resolveRunsRoot: tolerates missing env arg", () => {
+    __resetLegacyWarnGuards();
     // Should not throw even when env is undefined; falls back to homedir-based default.
-    assert.match(resolveRunsRoot(undefined), /\.copilot[/\\]ralph-tui[/\\]runs$/);
+    assert.match(resolveRunsRoot(undefined, { fs: noFs }), /\.copilot[/\\]autopilot[/\\]runs$/);
 });
 
 test("makeRunId: composes ${label}-${startedAt}", () => {
@@ -77,7 +158,7 @@ test("createEventEmitter: write appends one JSONL line per call", () => {
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1234,
-        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
+        env: { AUTOPILOT_RUNS_DIR: "/tmp/r" },
         fs: fakeFs,
     });
     e.write({ type: "iteration_start", runId: e.runId, ts: 1, iteration: 1 });
@@ -95,7 +176,7 @@ test("createEventEmitter: armed event also writes a line to the run index", () =
     const e = createEventEmitter({
         label: "self_improve",
         startedAt: 99,
-        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
+        env: { AUTOPILOT_RUNS_DIR: "/tmp/r" },
         fs: fakeFs,
     });
     e.write({ type: "armed", runId: e.runId, ts: 0, maxIterations: 100, minIterations: 5 });
@@ -132,10 +213,10 @@ test("createEventEmitter: index entry round-trips through TUI's readRunIndex", a
         const e = createEventEmitter({
             label: "ralph_loop",
             startedAt: 12345,
-            env: { RALPH_TUI_RUNS_DIR: root },
+            env: { AUTOPILOT_RUNS_DIR: root },
         });
         e.write({ type: "armed", runId: e.runId, ts: 0, maxIterations: 7, minIterations: 1 });
-        const entries = readRunIndex({ env: { RALPH_TUI_RUNS_DIR: root } });
+        const entries = readRunIndex({ env: { AUTOPILOT_RUNS_DIR: root } });
         assert.equal(entries.length, 1, "TUI's readRunIndex must surface the runner-emitted run");
         assert.equal(entries[0].runId, "ralph_loop-12345");
         assert.equal(entries[0].label, "ralph_loop");
@@ -154,7 +235,7 @@ test("createEventEmitter: non-armed events do NOT touch the index", () => {
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
+        env: { AUTOPILOT_RUNS_DIR: "/tmp/r" },
         fs: fakeFs,
     });
     e.write({ type: "iteration_end", runId: e.runId, ts: 1, iteration: 1 });
@@ -167,7 +248,7 @@ test("createEventEmitter: ignores non-object / falsy events instead of writing j
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
+        env: { AUTOPILOT_RUNS_DIR: "/tmp/r" },
         fs: { mkdirSync: () => {}, appendFileSync: (p, l) => lines.push({ p, l }) },
     });
     e.write(null);
@@ -182,7 +263,7 @@ test("createEventEmitter: long excerpt is clipped to <= 500 chars + trailing ell
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
+        env: { AUTOPILOT_RUNS_DIR: "/tmp/r" },
         fs: {
             mkdirSync: () => {},
             appendFileSync: (_, line) => captured.push(line),
@@ -200,7 +281,7 @@ test("createEventEmitter: write swallows mkdir + append errors so the loop never
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
+        env: { AUTOPILOT_RUNS_DIR: "/tmp/r" },
         fs: {
             mkdirSync: () => { throw new Error("EROFS"); },
             appendFileSync: () => { throw new Error("ENOSPC"); },
@@ -216,7 +297,7 @@ test("createEventEmitter: mkdir is called once across many writes (memoised)", (
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
+        env: { AUTOPILOT_RUNS_DIR: "/tmp/r" },
         fs: {
             mkdirSync: () => { mkdirCalls += 1; },
             appendFileSync: () => {},
@@ -232,7 +313,7 @@ test("createEventEmitter: close() is a no-op safe to call repeatedly", () => {
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
+        env: { AUTOPILOT_RUNS_DIR: "/tmp/r" },
         fs: { mkdirSync: () => {}, appendFileSync: () => {} },
     });
     assert.doesNotThrow(() => { e.close(); e.close(); });
@@ -243,7 +324,7 @@ test("createEventEmitter: oversize event line is dropped after stripping excerpt
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
+        env: { AUTOPILOT_RUNS_DIR: "/tmp/r" },
         fs: {
             mkdirSync: () => {},
             appendFileSync: (_, line) => captured.push(line),
@@ -268,7 +349,7 @@ test("createEventEmitter: BigInt / circular ref events are dropped, not thrown",
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
+        env: { AUTOPILOT_RUNS_DIR: "/tmp/r" },
         fs: {
             mkdirSync: () => {},
             appendFileSync: (_, line) => captured.push(line),
@@ -289,21 +370,25 @@ test("createEventEmitter: BigInt / circular ref events are dropped, not thrown",
     assert.equal(captured.length, 1);
 });
 
-// Iter 105 — RALPH_TUI_RUNS_DIR routinely picks up stray surrounding
-// whitespace from shell heredocs, Makefile interpolation, copy-paste,
-// etc. Without trimming, the override path was returned verbatim, so
-// `RALPH_TUI_RUNS_DIR=" /tmp/runs "` created `runs` directories whose
+// Env-var values routinely pick up stray surrounding whitespace from
+// shell heredocs, Makefile interpolation, copy-paste, etc. Without
+// trimming, the override path was returned verbatim, so
+// `AUTOPILOT_RUNS_DIR=" /tmp/runs "` created `runs` directories whose
 // name literally contained leading + trailing spaces and broke the
 // matching `autopilot list` glob. Pin that the override is trimmed at
 // resolve time so a future regression cannot reintroduce that
 // papercut.
-test("resolveRunsRoot: trims surrounding whitespace from RALPH_TUI_RUNS_DIR override", () => {
-    assert.equal(resolveRunsRoot({ RALPH_TUI_RUNS_DIR: "  /tmp/ralph-runs  " }), "/tmp/ralph-runs");
-    assert.equal(resolveRunsRoot({ RALPH_TUI_RUNS_DIR: "/tmp/ralph-runs\n" }), "/tmp/ralph-runs");
-    assert.equal(resolveRunsRoot({ RALPH_TUI_RUNS_DIR: "\t/tmp/ralph-runs" }), "/tmp/ralph-runs");
+test("resolveRunsRoot: trims surrounding whitespace from AUTOPILOT_RUNS_DIR override", () => {
+    __resetLegacyWarnGuards();
+    assert.equal(resolveRunsRoot({ AUTOPILOT_RUNS_DIR: "  /tmp/ralph-runs  " }, { fs: noFs }), "/tmp/ralph-runs");
+    assert.equal(resolveRunsRoot({ AUTOPILOT_RUNS_DIR: "/tmp/ralph-runs\n" }, { fs: noFs }), "/tmp/ralph-runs");
+    assert.equal(resolveRunsRoot({ AUTOPILOT_RUNS_DIR: "\t/tmp/ralph-runs" }, { fs: noFs }), "/tmp/ralph-runs");
     // Internal whitespace (paths with literal spaces, like macOS volumes)
     // is preserved — only the SURROUNDING whitespace is stripped.
-    assert.equal(resolveRunsRoot({ RALPH_TUI_RUNS_DIR: "  /Volumes/My Drive/runs  " }), "/Volumes/My Drive/runs");
+    assert.equal(
+        resolveRunsRoot({ AUTOPILOT_RUNS_DIR: "  /Volumes/My Drive/runs  " }, { fs: noFs }),
+        "/Volumes/My Drive/runs",
+    );
 });
 
 // Iter 115 — clipExcerpt's slice boundary must not split a UTF-16
@@ -322,7 +407,7 @@ test("createEventEmitter: clipExcerpt does not produce lone high surrogates at t
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
+        env: { AUTOPILOT_RUNS_DIR: "/tmp/r" },
         fs: {
             mkdirSync: () => {},
             appendFileSync: (_, line) => captured.push(line),
@@ -448,7 +533,7 @@ test("createEventEmitter: serialize salvages an oversize event by stripping exce
     const e = createEventEmitter({
         label: "ralph_loop",
         startedAt: 1,
-        env: { RALPH_TUI_RUNS_DIR: "/tmp/r" },
+        env: { AUTOPILOT_RUNS_DIR: "/tmp/r" },
         fs: {
             mkdirSync: () => {},
             appendFileSync: (_, line) => captured.push(line),

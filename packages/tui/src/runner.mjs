@@ -34,7 +34,6 @@
 // it to finish naturally before honoring pause/stop.
 
 import { spawn as nodeSpawn, spawnSync as nodeSpawnSync } from "node:child_process";
-import { homedir } from "node:os";
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -55,6 +54,11 @@ import {
     WORKITEM_KINDS,
     TASK_OUTCOMES,
 } from "./events.mjs";
+import {
+    resolveRunsRoot as sharedResolveRunsRoot,
+    touchMigrationSentinel,
+    __resetLegacyWarnGuards as sharedResetGuards,
+} from "./runs-root.mjs";
 // Issue #83 — backend adapter abstraction. The runner is agent-
 // agnostic; it asks the chosen adapter to build the spawn argv and
 // resolve the binary, then parses the JSONL stream the same way
@@ -96,13 +100,56 @@ const MAX_LOCK_RETRIES = 200; // 5s worst-case
 
 // ─── State-file CAS ────────────────────────────────────────────────
 
-/** Resolve the state-files root, honoring $RALPH_TUI_RUNS_DIR. */
-export function resolveStateRoot(env = process.env) {
-    const override = env?.RALPH_TUI_RUNS_DIR;
-    if (override && typeof override === "string" && override.trim()) {
-        return override.trim();
+/** Resolve the state-files root. Thin wrapper over the shared
+ *  resolver in `./runs-root.mjs`; preserves this module's
+ *  `(env, deps)` signature so existing callers don't churn. See
+ *  `runs-root.mjs::resolveRunsRoot` for the precedence + legacy
+ *  fallback contract.
+ */
+export function resolveStateRoot(env = process.env, deps = {}) {
+    return sharedResolveRunsRoot(env, deps);
+}
+
+// One-shot guard for the legacy $RALPH_TUI_COPILOT_BIN deprecation
+// notice in the inline-fallback bin resolver below. Distinct from the
+// runs-root guards (which live in `./runs-root.mjs`) because COPILOT_BIN
+// is a separate concern that resets independently from run-root state.
+let warnedLegacyCopilotBin = false;
+
+/** Test seam — reset all one-shot deprecation/migration guards: both
+ *  the shared run-root guards in `./runs-root.mjs` AND this module's
+ *  COPILOT_BIN guard. Tests that toggle the legacy paths call this
+ *  before each case so ordering doesn't bleed state. */
+export function __resetLegacyWarnGuards() {
+    sharedResetGuards();
+    warnedLegacyCopilotBin = false;
+}
+
+/** Inline-fallback bin resolver when an injected `agent` adapter
+ *  doesn't expose `resolveBin`. Honors the same precedence + legacy
+ *  fallback contract as `agents/copilot.mjs::resolveBin`:
+ *    1. caller-supplied override (`copilotBin`)
+ *    2. $AUTOPILOT_COPILOT_BIN (preferred)
+ *    3. $RALPH_TUI_COPILOT_BIN (legacy; one-shot stderr deprecation)
+ *    4. agent.defaultBin (or the literal "copilot")
+ */
+function resolveCopilotBinLegacy({ copilotBin, agent, env, stderr = process.stderr }) {
+    if (copilotBin) return copilotBin;
+    if (env?.AUTOPILOT_COPILOT_BIN) return env.AUTOPILOT_COPILOT_BIN;
+    const legacy = env?.RALPH_TUI_COPILOT_BIN;
+    if (legacy) {
+        if (!warnedLegacyCopilotBin) {
+            warnedLegacyCopilotBin = true;
+            try {
+                stderr.write?.(
+                    "[autopilot] note: $RALPH_TUI_COPILOT_BIN is deprecated; "
+                    + "prefer $AUTOPILOT_COPILOT_BIN (still honored)\n",
+                );
+            } catch { /* swallow */ }
+        }
+        return legacy;
     }
-    return join(homedir(), ".copilot", "ralph-tui", "runs");
+    return agent?.defaultBin ?? "copilot";
 }
 
 /** Path to a run's state.json. */
@@ -178,6 +225,7 @@ function initState(runId, initial, env = process.env) {
     const statePath = resolveStatePath(runId, env);
     const dir = join(resolveStateRoot(env), runId);
     mkdirSync(dir, { recursive: true });
+    touchMigrationSentinel(env);
     const lockPath = acquireLock(statePath);
     try {
         const seed = { version: 1, ...initial };
@@ -646,7 +694,9 @@ export function worktreeBranchFor({ runId, iter }) {
  *  @param {string} opts.runId
  *  @param {number} opts.iter        1-indexed.
  *  @param {string} opts.baseRef     ref to fork from (default "main").
- *  @param {string} opts.runsRoot    `$RALPH_TUI_RUNS_DIR` value.
+ *  @param {string} opts.runsRoot    `$AUTOPILOT_RUNS_DIR` value (or
+ *                                   the legacy `$RALPH_TUI_RUNS_DIR`
+ *                                   read-fallback when unset).
  *  @param {string} opts.cwd         parent repo path (the user's
  *                                   working tree).
  *  @param {object} [opts.env]
@@ -1219,7 +1269,7 @@ export function runOneIteration({
 }) {
     const bin = (agent.resolveBin
         ? agent.resolveBin({ override: copilotBin, env })
-        : (copilotBin ?? env[agent.binEnvVar] ?? agent.defaultBin));
+        : resolveCopilotBinLegacy({ copilotBin, agent, env }));
     const { args: agentArgs, env: agentEnv } = agent.spawnArgs(prompt, {
         resumeSessionId,
         sessionName,

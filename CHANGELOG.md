@@ -14,6 +14,14 @@
   matches `extension/*.mjs.length` — so a future hardcode of
   either value is caught at test time.
 
+### Tests
+- Drift guard: `ci.yml`'s `matrix.node` lowest entry must equal
+  `package.json#engines.node`'s floor major. Mirrors the
+  existing `.nvmrc` ↔ `engines.node` pin so a future engines
+  bump that forgets to prune the lower CI version (silently
+  running CI against an unsupported runtime) is caught at test
+  time instead of as a misleading green check on `main`.
+
 ### Internal
 - `.github/workflows/ci.yml` now declares a `concurrency` block
   so a fast-typing contributor pushing several commits to the

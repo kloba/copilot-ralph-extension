@@ -8275,3 +8275,42 @@ test("install.sh: --dry-run reports a Total bytes line summing the per-file size
         rmSync(sandboxHome, { recursive: true, force: true });
     }
 });
+
+test("ci.yml node matrix lowest entry matches package.json#engines.node floor", () => {
+    // Iter 94 drift guard. The CI workflow matrices Node ['20', '22']
+    // and the project declares `engines.node: ">=20"`. If a future
+    // contributor bumps the engines floor (say to ">=22") without
+    // pruning '20' from the CI matrix, CI keeps running Node 20
+    // against a tree that no longer claims to support it — at best a
+    // misleading green checkmark, at worst silent breakage of an
+    // optional-chaining-over-null-iterator-style change that lights
+    // up only on the higher major. Pin the agreement explicitly.
+    //
+    // This complements the existing .nvmrc <-> engines.node test
+    // (which guards local dev) by guarding the CI runner pool.
+    const fs = readFileSync(resolve(REPO_ROOT, ".github/workflows/ci.yml"), "utf8");
+    // Bare YAML parse: pull the inline-flow array on the `node:` line.
+    const m = fs.match(/^\s*node:\s*\[([^\]]+)\]/m);
+    assert.ok(m, "ci.yml must declare an inline-flow `node: [...]` matrix");
+    const versions = m[1]
+        .split(",")
+        .map((s) => s.trim().replace(/^['"]|['"]$/g, ""))
+        .filter(Boolean)
+        .map((s) => Number(s.split(".")[0]));
+    assert.ok(versions.length >= 1, "ci.yml node matrix must contain at least one version");
+    for (const v of versions) {
+        assert.ok(Number.isInteger(v) && v > 0, `ci.yml node matrix entry must be a positive integer major (got ${v})`);
+    }
+    const minMatrix = Math.min(...versions);
+    const pkg = JSON.parse(readFileSync(resolve(REPO_ROOT, "package.json"), "utf8"));
+    const engines = pkg.engines?.node;
+    assert.ok(engines, "package.json must declare engines.node");
+    const em = String(engines).match(/(\d+)/);
+    assert.ok(em, `engines.node (${engines}) must contain a major version`);
+    const engineMajor = Number(em[1]);
+    assert.equal(
+        minMatrix,
+        engineMajor,
+        `ci.yml node matrix lowest entry (${minMatrix}) must equal engines.node floor (${engineMajor}) — bump both together`,
+    );
+});

@@ -97,6 +97,15 @@
   time instead of as a misleading green check on `main`.
 
 ### Documentation
+- `docs/CONTRIBUTING.md` previously cited `extension/handler.mjs`
+  as `~1.3kLOC`; the file has since grown to ~2.5kLOC (more
+  than 2× the documented figure), giving new contributors a
+  misleading expectation of how much state-machine glue lives
+  there. Refresh the figure to `~2.5kLOC` and pin it with a
+  drift-guard test that allows the documented value to drift
+  by up to ±30% before failing — wide enough to absorb normal
+  iteration but tight enough that the figure cannot silently
+  double again.
 - AGENTS.md §5 "Quick checklist before pushing" now includes
   `npm run check` alongside `npm test`. The two scripts cover
   different surfaces (functional tests vs. per-file

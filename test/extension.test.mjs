@@ -8697,3 +8697,27 @@ test("dependabot.yml: no stub `package-ecosystem: \"\"` and covers actions + tui
         "dependabot.yml npm stream must target /packages/tui (root package.json has zero deps and no lockfile)",
     );
 });
+
+// Iter 104 — `docs/CONTRIBUTING.md` cited handler.mjs as `~1.3kLOC`,
+// but the file has grown to ~2.5kLOC (more than 2× the documented
+// figure). Drift-guard the LOC mention so a future doubling cannot
+// silently re-establish the same drift. The guard is intentionally
+// tolerant: the `kLOC` value is permitted to be within ±30% of the
+// actual line count / 1000, so a contributor adding 200 lines of
+// state-machine glue doesn't have to update the doc on every commit.
+test("CONTRIBUTING.md handler.mjs LOC mention is within 30% of actual", () => {
+    const md = readFileSync(resolve(REPO_ROOT, "docs/CONTRIBUTING.md"), "utf8");
+    const m = md.match(/handler\.mjs[^)]*\(controller,\s*~([\d.]+)\s*kLOC\)/);
+    assert.ok(m, "CONTRIBUTING.md must keep an `(controller, ~NkLOC)` annotation on handler.mjs so contributors know the rough file size");
+    const documented = Number(m[1]);
+    assert.ok(Number.isFinite(documented) && documented > 0, "documented kLOC must be a positive number");
+    const handler = readFileSync(resolve(REPO_ROOT, "extension/handler.mjs"), "utf8");
+    const actualLines = handler.split("\n").length;
+    const actualKLOC = actualLines / 1000;
+    const ratio = documented / actualKLOC;
+    assert.ok(
+        ratio >= 0.7 && ratio <= 1.3,
+        `CONTRIBUTING.md says handler.mjs is ~${documented}kLOC; actual is ${actualLines} lines (${actualKLOC.toFixed(2)}kLOC). ` +
+        `Update the doc when the figure drifts by more than 30%.`,
+    );
+});

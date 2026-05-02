@@ -31,7 +31,7 @@ For a user-scoped install (loads the same extension across all your repos):
 
 ## Style conventions
 
-- **Source files**: `extension/extension.mjs` (SDK glue, ~30 lines) and `extension/handler.mjs` (controller, ~1.3kLOC). Keep the SDK layer thin — all logic that needs unit-testing belongs in `handler.mjs` so it can be exercised against a fake session.
+- **Source files**: `extension/extension.mjs` (SDK glue, ~30 lines) and `extension/handler.mjs` (controller, ~2.5kLOC). Keep the SDK layer thin — all logic that needs unit-testing belongs in `handler.mjs` so it can be exercised against a fake session.
 - **No third-party deps.** New runtime dependencies require a strong justification (security review, zero-fork ecosystem cost, etc.). Prefer Node built-ins.
 - **Comments**: only where context is non-obvious. The codebase already uses comments to explain *why* (rationale, edge cases, prompt-injection guards) rather than *what*.
 - **Formatting**: 4-space indentation, trailing commas in multi-line literals, double-quoted strings.

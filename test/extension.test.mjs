@@ -8559,3 +8559,73 @@ test("createEventEmitter.write: rejects arrays without appending", () => {
     writer.write([{ type: "armed" }]);
     assert.equal(writes.length, 0, "array events must be dropped (no append)");
 });
+
+// Iter 101 — install.sh --dry-run now annotates each file with
+// `[new]` / `[overwrite]` / `[unchanged]` and emits a closing
+// `Changes: A new, B existing` summary so a contributor running
+// `--dry-run` against a populated $HOME can tell at a glance
+// whether the run would be a fresh install, an in-place upgrade,
+// or a no-op. Drift guard pins both halves so the annotation
+// cannot regress.
+test("install.sh: --dry-run annotates each file with [new] against an empty sandbox HOME", async () => {
+    const sandboxHome = mkdtempSync(join(tmpdir(), "ralph-install-status-new-"));
+    try {
+        const r = spawnSync(
+            "bash",
+            [resolve(REPO_ROOT, "install.sh"), "--dry-run"],
+            { encoding: "utf8", env: { ...process.env, HOME: sandboxHome } },
+        );
+        assert.equal(r.status, 0, `--dry-run exited ${r.status}; stderr=${r.stderr}`);
+        const onDisk = readdirSync(resolve(REPO_ROOT, "extension"))
+            .filter((f) => f.endsWith(".mjs"));
+        for (const f of onDisk) {
+            assert.match(
+                r.stdout,
+                new RegExp(`${f.replace(/\./g, "\\.")} \\(\\d+ bytes\\) \\[new\\]`),
+                `dry-run output must annotate ${f} as [new] when target is absent`,
+            );
+        }
+        const m = r.stdout.match(/^Changes:\s+(\d+) new, (\d+) existing\s*$/m);
+        assert.ok(m, `dry-run stdout must include a "Changes: A new, B existing" line; got:\n${r.stdout}`);
+        assert.equal(Number(m[1]), onDisk.length, "Changes new-count must equal extension/*.mjs count for fresh install");
+        assert.equal(Number(m[2]), 0, "Changes existing-count must be 0 for fresh install");
+    } finally {
+        rmSync(sandboxHome, { recursive: true, force: true });
+    }
+});
+
+test("install.sh: --dry-run annotates each file with [unchanged] when target equals source", async () => {
+    // Pre-populate the sandbox $HOME with byte-identical copies of
+    // every shipped .mjs so each file should annotate as `[unchanged]`
+    // and the Changes summary should report `0 new, K existing`.
+    const fs = await import("node:fs");
+    const sandboxHome = mkdtempSync(join(tmpdir(), "ralph-install-status-unchanged-"));
+    try {
+        const targetDir = `${sandboxHome}/.copilot/extensions/ralph`;
+        fs.mkdirSync(targetDir, { recursive: true });
+        const onDisk = readdirSync(resolve(REPO_ROOT, "extension"))
+            .filter((f) => f.endsWith(".mjs"));
+        for (const f of onDisk) {
+            fs.copyFileSync(resolve(REPO_ROOT, "extension", f), `${targetDir}/${f}`);
+        }
+        const r = spawnSync(
+            "bash",
+            [resolve(REPO_ROOT, "install.sh"), "--dry-run"],
+            { encoding: "utf8", env: { ...process.env, HOME: sandboxHome } },
+        );
+        assert.equal(r.status, 0, `--dry-run exited ${r.status}; stderr=${r.stderr}`);
+        for (const f of onDisk) {
+            assert.match(
+                r.stdout,
+                new RegExp(`${f.replace(/\./g, "\\.")} \\(\\d+ bytes\\) \\[unchanged\\]`),
+                `dry-run output must annotate ${f} as [unchanged] when target bytes match source`,
+            );
+        }
+        const m = r.stdout.match(/^Changes:\s+(\d+) new, (\d+) existing\s*$/m);
+        assert.ok(m, `dry-run stdout must include a "Changes: A new, B existing" line; got:\n${r.stdout}`);
+        assert.equal(Number(m[1]), 0, "Changes new-count must be 0 when every target file already exists");
+        assert.equal(Number(m[2]), onDisk.length, "Changes existing-count must equal extension/*.mjs count when all target files pre-exist");
+    } finally {
+        rmSync(sandboxHome, { recursive: true, force: true });
+    }
+});

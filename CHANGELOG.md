@@ -3,6 +3,15 @@
 ## Unreleased
 
 ### Features
+- `install.sh --dry-run` now annotates each file in the
+  listing with `[new]` / `[overwrite]` / `[unchanged]` and
+  emits a closing `Changes: A new, B existing` summary so a
+  contributor can tell at a glance whether the run would be
+  a fresh install, an in-place upgrade, or a no-op. Combined
+  with the iter 93 `Total:` footprint line, the dry-run
+  output now answers three different "what would happen?"
+  questions without writing a byte. Drift-guarded so the
+  annotation cannot silently regress.
 - `install.sh --dry-run` now closes the file listing with a
   one-line install-footprint summary
   (`Total:   <N> bytes (<K> files)`) so a contributor reviewing

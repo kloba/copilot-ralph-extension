@@ -101,9 +101,28 @@ if [[ "$DRY_RUN" == "1" ]]; then
   echo "Target:    $TARGET_DIR/"
   echo "Files:"
   total=0
+  new_count=0
+  overwrite_count=0
   for f in "${FILES[@]}"; do
     size=$(wc -c < "$SOURCE_DIR/$f" | tr -d ' ')
-    echo "  $f ($size bytes)"
+    # Surface whether each file would be a fresh write or an overwrite
+    # of an existing target — useful for a contributor verifying that
+    # `./install.sh --dry-run` is a first-time install vs an upgrade.
+    # `cmp -s` compares bytes; identical content earns the explicit
+    # "unchanged" label so a no-op upgrade is obvious from the dry run
+    # alone.
+    if [[ -f "$TARGET_DIR/$f" ]]; then
+      if cmp -s "$SOURCE_DIR/$f" "$TARGET_DIR/$f"; then
+        status="unchanged"
+      else
+        status="overwrite"
+      fi
+      overwrite_count=$((overwrite_count + 1))
+    else
+      status="new"
+      new_count=$((new_count + 1))
+    fi
+    echo "  $f ($size bytes) [$status]"
     total=$((total + size))
   done
   # Surface the total install footprint so a contributor reviewing
@@ -111,6 +130,11 @@ if [[ "$DRY_RUN" == "1" ]]; then
   # bytes — useful when verifying that an install fits inside a
   # quota'd filesystem (e.g. CI sandboxes, container layers).
   echo "Total:     $total bytes (${#FILES[@]} files)"
+  # Per-file change summary: how many slots are first-time installs
+  # vs upgrades. Helps a contributor distinguish a fresh install from
+  # an in-place upgrade in CI logs without scrolling through the
+  # per-file `[new]` / `[overwrite]` / `[unchanged]` markers above.
+  echo "Changes:   $new_count new, $overwrite_count existing"
   exit 0
 fi
 

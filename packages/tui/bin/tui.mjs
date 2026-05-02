@@ -47,7 +47,7 @@ import process from "node:process";
 import fs from "node:fs";
 import nodePath from "node:path";
 import readline from "node:readline";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 import { readRunIndex, resolveRunsRoot, resolveRunEventsPath, parseDuration, pruneRuns, aggregateRuns } from "../src/writer.mjs";
 import { readEventsFile, tailEventsFile } from "../src/tail.mjs";
@@ -510,19 +510,14 @@ export function cmdStats() {
     return 0;
 }
 
-export function readTuiVersion() {
-    try {
-        const pkgPath = nodePath.resolve(
-            nodePath.dirname(fileURLToPath(import.meta.url)),
-            "..",
-            "package.json",
-        );
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-        return pkg.version || "unknown";
-    } catch {
-        return "unknown";
-    }
-}
+// Re-exported from the canonical `src/version.mjs` so the existing
+// `--version` flag and `doctor` lines keep working unchanged. The
+// shared module also feeds the live TUI Header (issue #59). We
+// import the symbol AND re-export it so internal call sites in
+// this module (the `--version` flag handler + `doctor` line) keep
+// the bare-identifier reference they had pre-extraction.
+import { readTuiVersion } from "../src/version.mjs";
+export { readTuiVersion };
 
 export function cmdWhere() {
     process.stdout.write(resolveRunsRoot() + "\n");

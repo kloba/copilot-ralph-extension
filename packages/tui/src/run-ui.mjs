@@ -26,6 +26,7 @@
 import process from "node:process";
 
 import { tailEventsFile } from "./tail.mjs";
+import { readTuiVersion } from "./version.mjs";
 
 /**
  * @param {Object} args
@@ -56,6 +57,7 @@ export async function mountRunUi({ runId, eventsPath, onUserAbort }) {
             runId,
             events: [],
             eventStream,
+            appVersion: readTuiVersion(),
             onUserAbort,
         }),
         { exitOnCtrlC: false, patchConsole: false },

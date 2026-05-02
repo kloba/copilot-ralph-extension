@@ -300,6 +300,26 @@ test("bin --help: mentions --version", () => {
     assert.match(r.stdout, /--version/);
 });
 
+// ─── version.mjs (issue #59) ─────────────────────────────────────
+// Direct unit test for the shared module; bin/tui.mjs re-exports
+// from src/version.mjs so a regression in the shared module
+// surfaces both via this import-from-src test AND the existing
+// `bin --version` integration test above.
+
+test("version.mjs: readTuiVersion returns package.json version string", async () => {
+    const { readTuiVersion } = await import("../src/version.mjs");
+    const pkg = JSON.parse(readFileSync2(resolve(REPO_ROOT, "package.json"), "utf8"));
+    assert.equal(readTuiVersion(), pkg.version);
+});
+
+test("version.mjs: bin/tui.mjs re-export matches src/version.mjs", async () => {
+    const fromBin = (await import("../bin/tui.mjs")).readTuiVersion;
+    const fromSrc = (await import("../src/version.mjs")).readTuiVersion;
+    assert.equal(typeof fromBin, "function");
+    assert.equal(typeof fromSrc, "function");
+    assert.equal(fromBin(), fromSrc());
+});
+
 function seedThreeRuns(dir) {
     writeFileSync(join(dir, "index.jsonl"),
         JSON.stringify({ type: "armed", ts: 1000, runId: "ralph_loop-1000", label: "ralph_loop", maxIterations: 5, minIterations: 1 }) + "\n"

@@ -3,6 +3,26 @@
 ## Unreleased
 
 ### Features
+- Issue #59 — TUI Header gains a dim `v<X.Y.Z>` version pip
+  pinned to the right edge of the heading row so an
+  at-a-glance read of the run pane shows which build is
+  active. Reads `packages/tui/package.json` via a new shared
+  helper `readTuiVersion()` extracted to
+  `packages/tui/src/version.mjs` (also re-exported from
+  `bin/tui.mjs` so the existing `--version` flag and `doctor`
+  output keep their previous behaviour). Visible from launch,
+  including pre-iter-1 / idle status. `<Header>` accepts an
+  optional `appVersion` string prop; when absent or empty,
+  the pip is hidden and the heading row collapses to the
+  pre-issue-59 single-text layout, so snapshot tests and
+  pre-existing callers stay deterministic. `<App>` forwards
+  the prop through; `run-ui.mjs` and `watch.mjs` pass
+  `readTuiVersion()` at mount time. `readTuiVersion()`
+  returns the literal `"unknown"` on read/parse failure
+  rather than throwing, and `<Header>` will render
+  `vunknown` over a blank pip when that fallback fires —
+  more informative than silence when something went wrong.
+
 - TUI Header gains an `elapsed HH:MM:SS` wallclock counter on
   the right row (after `tokens` / `premium`) so an at-a-glance
   read of the run pane shows how long the loop has been

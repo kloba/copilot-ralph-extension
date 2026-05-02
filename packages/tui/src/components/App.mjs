@@ -27,6 +27,12 @@ const h = React.createElement;
  *        snapshot tests.
  * @param {object[]} [props.events]   Initial / static event list.
  * @param {string} [props.runId]      Display label for the header.
+ * @param {string} [props.appVersion] Optional package version string
+ *        (e.g. `"0.1.0"`). When supplied, forwarded to <Header> so it
+ *        renders a dim `v<value>` pip in the top-right of the heading
+ *        row (issue #59). Snapshot tests + pre-issue-59 callers omit
+ *        the prop, in which case the pip is hidden and the heading
+ *        row stays single-text (existing layout).
  * @param {(reason: string) => void} [props.onUserAbort] Optional
  *        callback fired when the user requests to abort via Ctrl-C
  *        or `q`. When provided (issue #48 slice 8 — `ralph-tui run`
@@ -36,7 +42,7 @@ const h = React.createElement;
  *        TUI tears down. Read-only callers (`ralph-tui watch`)
  *        omit it; the App still exits but no driver action occurs.
  */
-export default function App({ eventStream, events: initial = [], runId, onUserAbort }) {
+export default function App({ eventStream, events: initial = [], runId, appVersion, onUserAbort }) {
     const [events, setEvents] = useState(initial);
     // `now` is read by <Header> to render the live elapsed clock. We
     // only tick it in live mode (eventStream present) so static-mode
@@ -116,7 +122,7 @@ export default function App({ eventStream, events: initial = [], runId, onUserAb
     }, [tickActive]);
 
     return h(Box, { flexDirection: "column" },
-        h(Header, { snapshot, now: isLive ? now : undefined }),
+        h(Header, { snapshot, now: isLive ? now : undefined, appVersion }),
         h(StagesRow, { snapshot }),
         h(TasksPane, { snapshot }),
         h(SubstagesPane, { snapshot }),

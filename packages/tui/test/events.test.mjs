@@ -1741,3 +1741,141 @@ test("Issue #56: foldEvents — second iter's tokensAtStart reflects mid-iter us
     assert.deepEqual(snap.iterations[1].tokensAtStart, { input: 0, output: 750 });
     assert.equal(snap.iterations[1].premiumAtStart, 1);
 });
+
+// ─── Iter 167 — foldEvent / createInitialSnapshot equivalence ─────────
+//
+// Pin that incremental folding (one event at a time, mutating an
+// existing snap) produces the same snapshot as the batch
+// `foldEvents(events)` call. The TUI App switched to incremental
+// folding in iter 167 to fix a Node OOM when streaming
+// `--self-improve --min 100` runs (the events array grew unboundedly
+// and `foldEvents` re-walked it on every render). Both code paths
+// share the same case-by-case reducer body, but tests against the
+// public `foldEvents` wrapper alone wouldn't catch a future change
+// that broke the `createInitialSnapshot` / `foldEvent` split.
+
+import { createInitialSnapshot, foldEvent } from "../src/events.mjs";
+
+test("foldEvent: batch foldEvents(events) equals events.reduce(foldEvent, createInitialSnapshot())", () => {
+    // Cover every path the TUI exercises during a real run: armed
+    // reset, iteration boundaries, usage_update streaming, stage /
+    // substage / task hierarchy, work-item start/end with a
+    // closesN, plan + amend, commit_observed, session_attached,
+    // worktree create + remove, terminal complete.
+    const events = [
+        { type: "armed", ts: 100, runId: "r", label: "self_improve",
+          maxIterations: 50, minIterations: 1 },
+        { type: "session_attached", ts: 110, runId: "r",
+          sessionId: "abc-123" },
+        { type: "iteration_start", ts: 200, runId: "r", iteration: 1 },
+        { type: "workitem_start", ts: 210, runId: "r", iteration: 1,
+          kind: "issue", ref: 42, title: "Fix the leak" },
+        { type: "stage_plan", ts: 220, runId: "r", iteration: 1,
+          stages: ["A", "B", "C"] },
+        { type: "stage_plan_amend", ts: 225, runId: "r", iteration: 1,
+          add: "D", after: "B", reason: "needs prep" },
+        { type: "stage_start", ts: 230, runId: "r", iteration: 1,
+          stage: 1, stageName: "A" },
+        { type: "task_list", ts: 240, runId: "r", iteration: 1,
+          stage: "A", items: ["t1", "t2"] },
+        { type: "task_start", ts: 250, runId: "r", iteration: 1,
+          stage: "A", sub: 1, desc: "do t1" },
+        { type: "usage_update", ts: 260, runId: "r", iteration: 1,
+          tokens: { input: 0, output: 500 }, excerpt: "working on t1" },
+        { type: "substage", ts: 270, runId: "r", iteration: 1,
+          sub: 1, verb: "bash", argsSummary: "ls", outcome: "ok",
+          durationMs: 12 },
+        { type: "task_end", ts: 280, runId: "r", iteration: 1,
+          stage: "A", sub: 1, outcome: "ok", durationMs: 30 },
+        { type: "stage_end", ts: 290, runId: "r", iteration: 1,
+          stage: 1, stageName: "A", outcome: "ok" },
+        { type: "commit_observed", ts: 295, runId: "r", iteration: 1,
+          sha: "abc1234", subject: "feat: t1",
+          trailers: ["Co-authored-by: Copilot"] },
+        { type: "workitem_end", ts: 297, runId: "r", iteration: 1,
+          kind: "issue", ref: 42, title: "Fix the leak",
+          closesN: 42 },
+        { type: "iteration_end", ts: 300, runId: "r", iteration: 1,
+          excerpt: "iter 1 done", tokens: { input: 0, output: 750 },
+          filesChanged: 3 },
+        { type: "stagnation", ts: 305, runId: "r", streak: 1 },
+        { type: "complete", ts: 400, runId: "r", reason: "all_done" },
+    ];
+
+    const batch = foldEvents(events);
+    const incremental = events.reduce((s, ev) => foldEvent(s, ev),
+        createInitialSnapshot());
+
+    assert.deepEqual(incremental, batch,
+        "incremental fold must produce the same snapshot as batch fold");
+});
+
+test("foldEvent: tolerates non-object inputs (defensive)", () => {
+    const snap = createInitialSnapshot();
+    foldEvent(snap, null);
+    foldEvent(snap, undefined);
+    foldEvent(snap, "string");
+    foldEvent(snap, 42);
+    // Snap must be byte-identical to a fresh init.
+    assert.deepEqual(snap, createInitialSnapshot());
+});
+
+test("foldEvent: returns the same snap reference (mutation contract)", () => {
+    const snap = createInitialSnapshot();
+    const ret = foldEvent(snap, {
+        type: "armed", ts: 1, runId: "r", label: "self_improve",
+    });
+    assert.equal(ret, snap, "foldEvent must return its first arg");
+    assert.equal(snap.runId, "r");
+});
+
+test("foldEvent: armed mid-stream resets the snap to a fresh-run shape", () => {
+    // Mirrors the multi-run replay path foldEvents has supported
+    // since slice 1 — when a fresh `armed` lands, history is
+    // discarded and the snap reads as a brand-new run, except the
+    // identity fields the new `armed` event carries.
+    const snap = createInitialSnapshot();
+    foldEvent(snap, { type: "armed", ts: 1, runId: "old",
+        label: "self_improve", maxIterations: 10 });
+    foldEvent(snap, { type: "iteration_start", ts: 2, runId: "old",
+        iteration: 1 });
+    foldEvent(snap, { type: "iteration_end", ts: 3, runId: "old",
+        iteration: 1, excerpt: "x" });
+    foldEvent(snap, { type: "armed", ts: 100, runId: "new",
+        label: "ralph_loop", maxIterations: 5 });
+
+    assert.equal(snap.runId, "new");
+    assert.equal(snap.label, "ralph_loop");
+    assert.equal(snap.maxIterations, 5);
+    assert.equal(snap.iteration, 0);
+    assert.deepEqual(snap.iterations, []);
+    assert.equal(snap.lastExcerpt, null);
+});
+
+test("foldEvent: incrementally folding 10000 usage_update events stays O(events)", () => {
+    // The OOM repro fed an unbounded events array into
+    // `foldEvents(events)` on every render. The new `foldEvent`
+    // contract is constant work per event regardless of history
+    // length. Pin the upper bound: 10k events should fold in well
+    // under 500 ms even on a slow runner. This is the regression
+    // guard for the iter-167 OOM fix.
+    const snap = createInitialSnapshot();
+    foldEvent(snap, { type: "armed", ts: 1, runId: "r",
+        label: "self_improve", maxIterations: 100 });
+    foldEvent(snap, { type: "iteration_start", ts: 2, runId: "r",
+        iteration: 1 });
+    const start = Date.now();
+    for (let i = 0; i < 10000; i++) {
+        foldEvent(snap, {
+            type: "usage_update",
+            ts: 100 + i,
+            runId: "r",
+            iteration: 1,
+            tokens: { input: 0, output: i },
+        });
+    }
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < 500,
+        `10k usage_update folds took ${elapsed}ms; expected < 500ms`);
+    assert.equal(snap.tokens.output, 9999);
+});

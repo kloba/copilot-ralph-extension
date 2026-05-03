@@ -44,6 +44,16 @@ autopilot run --prompt "Refactor packages/tui/src/runner.mjs and add tests. Emit
 
 See [`docs/quickstart.md`](docs/quickstart.md) for the full first-run walkthrough.
 
+## Long-haul cost example
+
+![Long-haul `autopilot` session showing 2,640 premium requests over 9h 48m 20s](docs/images/9h-session-copilot-ralph.jpg)
+
+> Long-haul autonomous loops can be **slow and costly**: this captured
+> `copilot --resume` session ran for 9h 48m 20s, consumed 2,640
+> premium requests, and streamed hundreds of millions of cached tokens.
+> Start with small `--max` / `--min` caps and watch usage before
+> leaving a run unattended.
+
 ## Documentation
 
 The live site is at **<https://kloba.github.io/autopilot/>** and built from [`docs/`](docs/):
@@ -58,16 +68,6 @@ The live site is at **<https://kloba.github.io/autopilot/>** and built from [`do
 - [`CONTRIBUTING.md`](docs/CONTRIBUTING.md) — local dev setup, style, PR expectations.
 
 [`SECURITY.md`](SECURITY.md) covers vulnerability reporting. [`CHANGELOG.md`](CHANGELOG.md) is the per-release behavior log.
-
-## Long-haul cost example
-
-![Long-haul `autopilot` session showing 2,640 premium requests over 9h 48m 20s](docs/images/9h-session-copilot-ralph.jpg)
-
-> Long-haul autonomous loops can be **slow and costly**: this captured
-> `copilot --resume` session ran for 9h 48m 20s, consumed 2,640
-> premium requests, and streamed hundreds of millions of cached tokens.
-> Start with small `--max` / `--min` caps and watch usage before
-> leaving a run unattended.
 
 ## License
 

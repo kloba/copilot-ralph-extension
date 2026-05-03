@@ -59,10 +59,6 @@ The live site is at **<https://kloba.github.io/autopilot/>** and built from [`do
 
 [`SECURITY.md`](SECURITY.md) covers vulnerability reporting. [`CHANGELOG.md`](CHANGELOG.md) is the per-release behavior log.
 
-## License
-
-MIT
-
 ## Long-haul cost example
 
 ![Long-haul `autopilot` session showing 2,640 premium requests over 9h 48m 20s](docs/images/9h-session-copilot-ralph.jpg)
@@ -72,3 +68,7 @@ MIT
 > premium requests, and streamed hundreds of millions of cached tokens.
 > Start with small `--max` / `--min` caps and watch usage before
 > leaving a run unattended.
+
+## License
+
+MIT

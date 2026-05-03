@@ -63,8 +63,17 @@ export default function LastCommit({ snapshot }) {
     // Single-line, dim — same visual weight as the trailer count
     // badge so the row stays scannable.
     const activeWt = snapshot?.activeWorktree ?? null;
-    const keptCount = Array.isArray(snapshot?.keptWorktrees) ? snapshot.keptWorktrees.length : 0;
-    const lastKept = keptCount > 0 ? snapshot.keptWorktrees[keptCount - 1] : null;
+    // Iter 167 (OOM hardening) — `keptWorktrees` is now capped at
+    // MAX_SNAPSHOT_HISTORY entries by the reducer, so its `.length`
+    // can lag the true count on very long runs. Prefer the
+    // companion scalar `keptWorktreeCount` (cumulative for the run)
+    // when present, falling back to the array length for older
+    // snapshots / replay fixtures.
+    const arrayLen = Array.isArray(snapshot?.keptWorktrees) ? snapshot.keptWorktrees.length : 0;
+    const keptCount = Number.isFinite(snapshot?.keptWorktreeCount)
+        ? snapshot.keptWorktreeCount
+        : arrayLen;
+    const lastKept = arrayLen > 0 ? snapshot.keptWorktrees[arrayLen - 1] : null;
     if (!last || typeof last.sha !== "string") {
         return h(Box, {
             borderStyle: "single",

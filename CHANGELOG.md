@@ -25,6 +25,21 @@
   incrementally in O(1) work per event, dropping the raw event
   afterwards. `foldEvents(events)` is preserved as a thin wrapper so
   existing tests / batch-replay callers stay byte-identical.
+  Defense-in-depth follow-up: every otherwise-unbounded snapshot
+  history array (`iterations`, `recentStages`, `currentStageSubstages`,
+  `recentTasks`, `completedWorkItems`, `planAmendments`,
+  `keptWorktrees`) is now sliding-window capped at
+  `MAX_SNAPSHOT_HISTORY = 256` entries via a `pushBounded(arr, item, max)`
+  helper that mutates in place. Companion scalars
+  (`keptWorktreeCount`, `currentStageSubstagesDropped`) keep
+  cumulative-for-the-run counts so the LastCommit "kept N: <path>"
+  display and SubstagesPane row ordinals stay accurate after old
+  entries are dropped. 256 was picked to stay well above the
+  serializer's per-event caps (64 stages on `stage_plan`, 64 items on
+  `task_list`) so a `recentTasks.find()` for the current stage's task
+  list never starves under cap pressure — pinned by a regression test
+  that emits MAX-5 prior-stage `task_end`s as noise then verifies a
+  fresh-stage completed task is still findable.
 - `autopilot run --self-improve` / `--grow-project` no longer
   silently stalls when paired with `--reset-on=iter` (or the
   deprecated `--fresh` alias). Each iter spawns a fresh Copilot
@@ -66,7 +81,20 @@
   event type the runner emits, non-object inputs are tolerated, a
   mid-stream `armed` resets the snap to a fresh-run shape, and
   10 000 streamed `usage_update` events fold in under 500 ms (the
-  regression guard against an O(n) re-walk creeping back).
+  regression guard against an O(n) re-walk creeping back). Seven
+  more cases pin the iter-167 sliding-window cap follow-up:
+  `MAX_SNAPSHOT_HISTORY === 256` (drift guard so the cap never
+  drops below the serializer's 64-entry stage / task limits),
+  `pushBounded` head-trim semantics, that `iterations` keeps the
+  newest entry at the tail (preserving `iteration_end`'s
+  `[length-1]` lookup), that `keptWorktreeCount` keeps the true
+  cumulative count after the array is capped, that
+  `currentStageSubstagesDropped` increments per dropped substage
+  and resets at `stage_start`, that an `armed` event resets both
+  companion counters, and the rubber-duck-flagged correctness
+  pin: a current-stage task that just completed is still
+  resolvable via `recentTasks.find()` even after MAX-5
+  prior-stage entries have been pushed onto the array.
 - `packages/tui/test/cursor-preamble.test.mjs` pins the cursor
   reducer / preamble formatter / file-reader contract,
   including the user-facing 9-iter / 9-duplicate-`workitem_start`

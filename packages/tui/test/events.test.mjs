@@ -1879,3 +1879,207 @@ test("foldEvent: incrementally folding 10000 usage_update events stays O(events)
         `10k usage_update folds took ${elapsed}ms; expected < 500ms`);
     assert.equal(snap.tokens.output, 9999);
 });
+
+// ─── Iter 167 — sliding-window caps on snapshot history arrays ────────
+//
+// Defense-in-depth follow-up to the iter-167 OOM fix: even with the
+// React state-leak fixed, an arbitrarily long `--self-improve` run
+// would slowly accumulate entries in a handful of snapshot arrays
+// (`iterations`, `recentTasks`, `keptWorktrees`, etc.) that never
+// reset. `MAX_SNAPSHOT_HISTORY` (256) caps each one in `foldEvent`
+// via `pushBounded`. These tests pin:
+//   - the cap value (drift guard for the tail-correct fix),
+//   - that exceeding the cap drops oldest entries first,
+//   - that companion counters (`keptWorktreeCount`,
+//     `currentStageSubstagesDropped`) keep diverging from
+//     `array.length` so renderers can preserve display fidelity, and
+//   - the rubber-duck-flagged correctness scenario: a current-stage
+//     task already completed must still resolve as completed via
+//     `recentTasks.find()` even after older noise has been trimmed.
+
+import { MAX_SNAPSHOT_HISTORY, pushBounded } from "../src/events.mjs";
+
+test("MAX_SNAPSHOT_HISTORY is 256 (drift guard for the OOM-hardening cap)", () => {
+    // The cap value is load-bearing: it must stay above the
+    // serializer's own per-event caps (64 stages on stage_plan, 64
+    // items on task_list) so a `recentTasks.find()` for a current
+    // stage's task list never starves. Tightening below 64 silently
+    // breaks the TasksPane completed-row resolution.
+    assert.equal(MAX_SNAPSHOT_HISTORY, 256);
+});
+
+test("pushBounded: returns 0 below cap, splices head and returns drop-count above cap", () => {
+    const arr = [];
+    assert.equal(pushBounded(arr, "a", 3), 0);
+    assert.equal(pushBounded(arr, "b", 3), 0);
+    assert.equal(pushBounded(arr, "c", 3), 0);
+    assert.deepEqual(arr, ["a", "b", "c"]);
+    assert.equal(pushBounded(arr, "d", 3), 1);
+    assert.deepEqual(arr, ["b", "c", "d"]);
+    assert.equal(pushBounded(arr, "e", 3), 1);
+    assert.deepEqual(arr, ["c", "d", "e"]);
+});
+
+test("foldEvent: snap.iterations capped at MAX_SNAPSHOT_HISTORY; oldest dropped, newest kept", () => {
+    // Push MAX+50 iteration_start events. The array should hold
+    // exactly MAX entries with the most recent at the tail; the
+    // iteration_end target (`iterations[length-1]`) must still match
+    // the latest iter so per-iter delta computation keeps working.
+    const snap = createInitialSnapshot();
+    foldEvent(snap, { type: "armed", ts: 1, runId: "r", label: "self_improve" });
+    const n = MAX_SNAPSHOT_HISTORY + 50;
+    for (let i = 1; i <= n; i++) {
+        foldEvent(snap, { type: "iteration_start", ts: 1000 + i, runId: "r", iteration: i });
+    }
+    assert.equal(snap.iterations.length, MAX_SNAPSHOT_HISTORY);
+    assert.equal(snap.iterations[snap.iterations.length - 1].iteration, n);
+    assert.equal(snap.iterations[0].iteration, n - MAX_SNAPSHOT_HISTORY + 1);
+    foldEvent(snap, {
+        type: "iteration_end",
+        ts: 1000 + n + 1,
+        runId: "r",
+        iteration: n,
+        excerpt: "tail iter ok",
+    });
+    assert.equal(snap.iterations[snap.iterations.length - 1].excerpt, "tail iter ok",
+        "iteration_end must still attach to the latest iter even after capping");
+});
+
+test("foldEvent: keptWorktreeCount keeps cumulative count when keptWorktrees array is capped", () => {
+    // Rubber-duck flagged this: the LastCommit pane displays
+    // `keptCount` and capping the array would silently make
+    // `array.length` lie. The companion scalar `keptWorktreeCount`
+    // is incremented on every `worktree_kept` event regardless of
+    // the array's sliding-window cap.
+    const snap = createInitialSnapshot();
+    foldEvent(snap, { type: "armed", ts: 1, runId: "r", label: "self_improve" });
+    const n = MAX_SNAPSHOT_HISTORY + 20;
+    for (let i = 1; i <= n; i++) {
+        foldEvent(snap, {
+            type: "worktree_kept",
+            ts: 1000 + i,
+            runId: "r",
+            iteration: i,
+            path: `/tmp/wt-${i}`,
+            branch: `iter-${i}`,
+        });
+    }
+    assert.equal(snap.keptWorktrees.length, MAX_SNAPSHOT_HISTORY,
+        "array capped at MAX_SNAPSHOT_HISTORY");
+    assert.equal(snap.keptWorktreeCount, n,
+        "scalar tracks the true cumulative count past the cap");
+    // Last entry should still be the most recent kept; LastCommit
+    // displays `keptWorktrees[length-1]` for the path.
+    assert.equal(snap.keptWorktrees[snap.keptWorktrees.length - 1].path, `/tmp/wt-${n}`);
+});
+
+test("foldEvent: currentStageSubstagesDropped tracks head-trim count for SubstagesPane offset", () => {
+    // SubstagesPane derives the `[idx]` row label from
+    // `currentStageSubstagesDropped + length + i + 1`; capping
+    // without the offset would silently renumber rows. Pin that the
+    // counter increments once per dropped entry and resets at
+    // stage_start.
+    const snap = createInitialSnapshot();
+    foldEvent(snap, { type: "armed", ts: 1, runId: "r", label: "self_improve" });
+    foldEvent(snap, { type: "iteration_start", ts: 2, runId: "r", iteration: 1 });
+    foldEvent(snap, { type: "stage_start", ts: 3, runId: "r", stage: 1, stageName: "ORIENT" });
+    const n = MAX_SNAPSHOT_HISTORY + 30;
+    for (let i = 1; i <= n; i++) {
+        foldEvent(snap, {
+            type: "substage",
+            ts: 100 + i,
+            runId: "r",
+            sub: i,
+            verb: "test",
+            argsSummary: `step ${i}`,
+            outcome: "ok",
+        });
+    }
+    assert.equal(snap.currentStageSubstages.length, MAX_SNAPSHOT_HISTORY);
+    assert.equal(snap.currentStageSubstagesDropped, 30);
+    // A new stage_start resets both the array and the dropped
+    // counter so the next stage's `[idx]` rendering starts at 1.
+    foldEvent(snap, { type: "stage_start", ts: 9999, runId: "r", stage: 2, stageName: "BUILD" });
+    assert.equal(snap.currentStageSubstages.length, 0);
+    assert.equal(snap.currentStageSubstagesDropped, 0);
+});
+
+test("foldEvent: completed task in current stage stays resolvable via find() under recentTasks cap pressure", () => {
+    // Rubber-duck-flagged correctness pin: TasksPane uses
+    // `recentTasks.find(r => r.stage === taskList.stage && r.sub === sub)`
+    // to mark current-stage tasks complete. If the cap is too small
+    // OR the head-trim drops a still-relevant entry, completed tasks
+    // would silently flip back to "pending" in the UI.
+    //
+    // Scenario: we emit MAX-10 prior-stage task_ends (noise that
+    // crowds the recentTasks array), then enter a fresh stage with a
+    // task list, and complete one of its tasks. The cap MUST NOT
+    // drop the just-completed entry — so find() must still resolve
+    // the current-stage task as completed.
+    const snap = createInitialSnapshot();
+    foldEvent(snap, { type: "armed", ts: 1, runId: "r", label: "self_improve" });
+    foldEvent(snap, { type: "iteration_start", ts: 2, runId: "r", iteration: 1 });
+    foldEvent(snap, { type: "stage_start", ts: 3, runId: "r", stage: 1, stageName: "PRIOR" });
+    const noise = MAX_SNAPSHOT_HISTORY - 5;
+    for (let i = 1; i <= noise; i++) {
+        foldEvent(snap, {
+            type: "task_end",
+            ts: 100 + i,
+            runId: "r",
+            stage: "PRIOR",
+            sub: i,
+            outcome: "ok",
+        });
+    }
+    foldEvent(snap, { type: "stage_start", ts: 9000, runId: "r", stage: 2, stageName: "CURRENT" });
+    foldEvent(snap, {
+        type: "task_list",
+        ts: 9001,
+        runId: "r",
+        stage: "CURRENT",
+        items: ["alpha task", "beta task", "gamma task"],
+    });
+    foldEvent(snap, {
+        type: "task_start",
+        ts: 9100,
+        runId: "r",
+        stage: "CURRENT",
+        sub: 1,
+        desc: "alpha task",
+    });
+    foldEvent(snap, {
+        type: "task_end",
+        ts: 9200,
+        runId: "r",
+        stage: "CURRENT",
+        sub: 1,
+        outcome: "ok",
+    });
+    // Mirror TasksPane's find() exactly.
+    const found = snap.recentTasks.find(
+        (r) => r && r.stage === "CURRENT" && r.sub === 1,
+    );
+    assert.ok(found, "current-stage task must be findable in recentTasks even under cap pressure");
+    assert.equal(found.outcome, "ok");
+    assert.ok(snap.recentTasks.length <= MAX_SNAPSHOT_HISTORY,
+        "recentTasks must not exceed the cap");
+});
+
+test("foldEvent: armed event resets keptWorktreeCount and currentStageSubstagesDropped", () => {
+    // A re-armed loop shares its snap via tail/replay; the iter-167
+    // companion counters MUST reset alongside their arrays so a new
+    // run's count doesn't carry the previous run's cap pressure.
+    const snap = createInitialSnapshot();
+    foldEvent(snap, { type: "armed", ts: 1, runId: "r1", label: "self_improve" });
+    foldEvent(snap, { type: "iteration_start", ts: 2, runId: "r1", iteration: 1 });
+    foldEvent(snap, { type: "stage_start", ts: 3, runId: "r1", stage: 1, stageName: "S" });
+    foldEvent(snap, { type: "substage", ts: 4, runId: "r1", sub: 1, verb: "v", argsSummary: "" });
+    foldEvent(snap, { type: "worktree_kept", ts: 5, runId: "r1", iteration: 1,
+        path: "/tmp/wt-1", branch: "iter-1" });
+    assert.equal(snap.keptWorktreeCount, 1);
+    foldEvent(snap, { type: "armed", ts: 9999, runId: "r2", label: "self_improve" });
+    assert.equal(snap.keptWorktreeCount, 0);
+    assert.equal(snap.currentStageSubstagesDropped, 0);
+    assert.deepEqual(snap.keptWorktrees, []);
+    assert.deepEqual(snap.currentStageSubstages, []);
+});

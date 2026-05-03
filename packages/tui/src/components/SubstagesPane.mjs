@@ -54,8 +54,19 @@ export default function SubstagesPane({ snapshot, maxRows = 12 }) {
         // bounded so a long stage doesn't push the rest of the UI
         // off-screen.
         const visible = subs.slice(-maxRows);
+        // Iter 167 (OOM hardening) — `currentStageSubstages` is now
+        // capped at MAX_SNAPSHOT_HISTORY entries by the reducer,
+        // which also bumps a `currentStageSubstagesDropped`
+        // companion counter for every entry trimmed from the head.
+        // Adding it to the visible-window ordinal preserves the
+        // displayed `[N]` row label as the substage's true position
+        // within the stage. Falls back to 0 for snapshots that
+        // predate the counter.
+        const dropped = Number.isFinite(snapshot?.currentStageSubstagesDropped)
+            ? snapshot.currentStageSubstagesDropped
+            : 0;
         const rows = visible.map((sub, i) => {
-            const idx = subs.length - visible.length + i + 1;
+            const idx = dropped + subs.length - visible.length + i + 1;
             const verb = sub.verb ?? "?";
             const args = sub.argsSummary ?? "";
             const outcome = sub.outcome ?? "?";

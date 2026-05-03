@@ -40,6 +40,37 @@
 /** Hard cap on a single emitted event line, enforced by the writer. */
 export const MAX_EVENT_LINE_BYTES = 16 * 1024;
 
+/** Sliding-window cap on snapshot history arrays
+ *  (`iterations`, `recentStages`, `recentTasks`, `currentStageSubstages`,
+ *  `completedWorkItems`, `planAmendments`, `keptWorktrees`). Defense in
+ *  depth against the second-order OOM scenario where a very long
+ *  `--self-improve --min N` run eventually accumulates tens of thousands
+ *  of array entries even after the iter-167 React-state fix
+ *  (`packages/tui/src/components/App.mjs` now folds incrementally — see
+ *  the comment block there for the original crash). 256 was picked to
+ *  stay well above the serializer's per-event caps (64 stages on
+ *  `stage_plan`, 64 items on `task_list`) so capping never starves a
+ *  legitimate `find()` lookup in a renderer; see the "completed task
+ *  in current stage stays completed under cap pressure" regression
+ *  test in `events.test.mjs` for the worst-case pin. */
+export const MAX_SNAPSHOT_HISTORY = 256;
+
+/** Push `item` onto `arr`, then trim the head so `arr.length <= max`.
+ *  Returns the number of entries dropped (0 in steady state once the
+ *  cap is reached). Used by `foldEvent` to bound otherwise-unbounded
+ *  history arrays without re-allocating the array on every event;
+ *  `splice(0, n)` mutates in place. Companion counters
+ *  (`keptWorktreeCount`, `currentStageSubstagesDropped`) consume the
+ *  return value so renderers can keep accurate displayed counts /
+ *  ordinals after old entries are dropped. */
+export function pushBounded(arr, item, max) {
+    arr.push(item);
+    if (arr.length > max) {
+        return arr.splice(0, arr.length - max).length;
+    }
+    return 0;
+}
+
 /** Set of recognised event types — used by parseEventLine for validation.
  *
  * Strictly additive: a new event type appends to this list and never
@@ -743,6 +774,22 @@ export function createInitialSnapshot() {
         // "kept N: <path>" lines below the active row.
         activeWorktree: null,
         keptWorktrees: [],
+        // Companion to `keptWorktrees` — total count of `worktree_kept`
+        // events seen for this run. Diverges from
+        // `keptWorktrees.length` once the array's sliding-window cap
+        // (`MAX_SNAPSHOT_HISTORY`) trims old entries. The TUI's
+        // LastCommit pane displays this so "kept N: <path>" stays
+        // accurate on long runs that drop array tail entries.
+        keptWorktreeCount: 0,
+        // Companion to `currentStageSubstages` — number of substage
+        // entries dropped from the head once the per-stage array
+        // exceeded the cap. SubstagesPane's `[idx]` row label is
+        // computed from `dropped + visibleOffset + 1` so the
+        // displayed ordinal still reflects the substage's true
+        // position within the stage even after capping. Resets at
+        // every `stage_start` and `iteration_start` (the array also
+        // resets in lockstep).
+        currentStageSubstagesDropped: 0,
     };
     return snap;
 }
@@ -805,11 +852,13 @@ export function foldEvent(snap, ev) {
             snap.lastCommit = null;
             snap.activeWorktree = null;
             snap.keptWorktrees = [];
+            snap.keptWorktreeCount = 0;
+            snap.currentStageSubstagesDropped = 0;
             break;
         case "iteration_start":
             if (Number.isFinite(ev.iteration)) {
                 snap.iteration = ev.iteration;
-                snap.iterations.push({
+                pushBounded(snap.iterations, {
                     iteration: ev.iteration,
                     startedAt: ev.ts,
                     endedAt: null,
@@ -821,7 +870,7 @@ export function foldEvent(snap, ev) {
                     // `iteration_end`.
                     tokensAtStart: { ...snap.tokens },
                     premiumAtStart: snap.premiumRequests,
-                });
+                }, MAX_SNAPSHOT_HISTORY);
             }
             snap.status = "running";
             // A fresh iteration starts with no active stage and an
@@ -831,6 +880,7 @@ export function foldEvent(snap, ev) {
             snap.activeStage = null;
             snap.recentStages = [];
             snap.currentStageSubstages = [];
+            snap.currentStageSubstagesDropped = 0;
             break;
         case "iteration_end": {
             const last = snap.iterations[snap.iterations.length - 1];
@@ -926,6 +976,7 @@ export function foldEvent(snap, ev) {
                 ? ev.stageName : `STAGE_${ev.stage}`;
             snap.activeStage = { stage: ev.stage, name, startedAt: ev.ts };
             snap.currentStageSubstages = [];
+            snap.currentStageSubstagesDropped = 0;
             // Each L2 stage has its own L2.5 task list — null it
             // out so a stale list from the previous stage cannot
             // bleed into the new one. taskInFlight follows: a
@@ -955,6 +1006,15 @@ export function foldEvent(snap, ev) {
                 durationMs,
                 outcome: typeof ev.outcome === "string" ? ev.outcome : null,
             });
+            // Defense-in-depth cap: `recentStages` is reset per
+            // `iteration_start` so it normally tops out at the SDLC
+            // length (~10), but a malformed event stream that
+            // emits stage_end without iteration_start could grow
+            // unboundedly. Trim the head so we don't help the heap
+            // along.
+            if (snap.recentStages.length > MAX_SNAPSHOT_HISTORY) {
+                snap.recentStages.splice(0, snap.recentStages.length - MAX_SNAPSHOT_HISTORY);
+            }
             if (snap.activeStage && snap.activeStage.stage === ev.stage) {
                 snap.activeStage = null;
             }
@@ -962,14 +1022,15 @@ export function foldEvent(snap, ev) {
         }
         case "substage": {
             if (!Number.isFinite(ev.sub)) break;
-            snap.currentStageSubstages.push({
+            const dropped = pushBounded(snap.currentStageSubstages, {
                 sub: ev.sub,
                 ts: ev.ts,
                 verb: typeof ev.verb === "string" ? ev.verb : null,
                 argsSummary: typeof ev.argsSummary === "string" ? ev.argsSummary : null,
                 outcome: typeof ev.outcome === "string" ? ev.outcome : null,
                 durationMs: Number.isFinite(ev.durationMs) ? ev.durationMs : null,
-            });
+            }, MAX_SNAPSHOT_HISTORY);
+            snap.currentStageSubstagesDropped += dropped;
             break;
         }
         case "backlog_snapshot": {
@@ -1023,14 +1084,14 @@ export function foldEvent(snap, ev) {
                 ? ev.title
                 : (snap.activeWorkItem && startedAt !== null ? snap.activeWorkItem.title : null);
             const closesN = Number.isFinite(ev.closesN) ? ev.closesN : null;
-            snap.completedWorkItems.push({
+            pushBounded(snap.completedWorkItems, {
                 kind: ev.kind,
                 ref: Number.isFinite(ev.ref) ? ev.ref : null,
                 title,
                 startedAt,
                 endedAt: ev.ts,
                 closesN,
-            });
+            }, MAX_SNAPSHOT_HISTORY);
             if (closesN !== null) snap.closedByLoop += 1;
             if (
                 snap.activeWorkItem
@@ -1064,7 +1125,7 @@ export function foldEvent(snap, ev) {
                 reason: typeof ev.reason === "string" ? ev.reason : "",
                 ts: ev.ts,
             };
-            snap.planAmendments.push(amendment);
+            pushBounded(snap.planAmendments, amendment, MAX_SNAPSHOT_HISTORY);
             // Apply the amendment to the current plan so the
             // renderer can show the up-to-date plan + the badge
             // history side by side. Insert-after semantics: when
@@ -1123,7 +1184,7 @@ export function foldEvent(snap, ev) {
             const durationMs = Number.isFinite(ev.durationMs)
                 ? ev.durationMs
                 : (startedAt !== null && Number.isFinite(ev.ts) ? ev.ts - startedAt : null);
-            snap.recentTasks.push({
+            pushBounded(snap.recentTasks, {
                 stage: ev.stage,
                 sub: ev.sub,
                 desc,
@@ -1131,7 +1192,7 @@ export function foldEvent(snap, ev) {
                 durationMs,
                 startedAt,
                 endedAt: ev.ts,
-            });
+            }, MAX_SNAPSHOT_HISTORY);
             if (
                 snap.taskInFlight
                 && snap.taskInFlight.stage === ev.stage
@@ -1200,12 +1261,17 @@ export function foldEvent(snap, ev) {
         case "worktree_kept": {
             if (typeof ev.path !== "string" || !ev.path) break;
             if (typeof ev.branch !== "string" || !ev.branch) break;
-            snap.keptWorktrees.push({
+            pushBounded(snap.keptWorktrees, {
                 path: ev.path,
                 branch: ev.branch,
                 iteration: Number.isFinite(ev.iteration) ? ev.iteration : null,
                 ts: ev.ts,
-            });
+            }, MAX_SNAPSHOT_HISTORY);
+            // Bump the cumulative-for-the-run counter independently
+            // of the array's sliding window so LastCommit's
+            // "kept N: <path>" stays accurate even after old entries
+            // are dropped from `keptWorktrees`.
+            snap.keptWorktreeCount += 1;
             if (
                 snap.activeWorktree
                 && snap.activeWorktree.path === ev.path

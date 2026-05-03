@@ -4,12 +4,12 @@
 // to compute the snapshot every render. Uses React.createElement (no
 // JSX) so it runs in plain Node ESM.
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Box, useApp, useInput } from "ink";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { foldEvents } from "../events.mjs";
+import { foldEvents, foldEvent } from "../events.mjs";
 import { tailSessionFile } from "../tail.mjs";
 import { formatSessionEvent } from "../stream-format.mjs";
 import Header from "./Header.mjs";
@@ -87,7 +87,35 @@ function deriveTaskKey(snapshot) {
  *        omit it; the App still exits but no driver action occurs.
  */
 export default function App({ eventStream, events: initial = [], runId, appVersion, caffeinateActive, onUserAbort }) {
-    const [events, setEvents] = useState(initial);
+    // Iter 167 (OOM fix) — hold the snapshot in a mutable ref and
+    // apply each tailed event to it incrementally via `foldEvent`.
+    // Pre-iter-167 we kept the raw events array in state and re-ran
+    // `foldEvents(events)` from scratch on every render, which made
+    // memory grow unboundedly (each `usage_update` event during
+    // streaming pushed onto `events`) and turned each render into
+    // O(n) work over a many-thousand-element array. A
+    // `--self-improve --min 100` run reliably crashed Node with
+    // "Ineffective mark-compacts near heap limit" at ~4 GB. The new
+    // shape:
+    //   • `snapRef.current` — single mutable snapshot, mutated by
+    //     `foldEvent` on each tailed event. Initialized once from
+    //     `props.events` so static/replay mode still works.
+    //   • `version` — primitive state bumped after each fold so
+    //     React re-renders. Kept separate from the snapshot so we
+    //     never violate React's "treat state as immutable" contract
+    //     (the snapshot itself is intentionally mutable, but it
+    //     lives in a ref, not in state).
+    // The render-time `runId` fallback ("a static caller can supply
+    // runId without an `armed` event having fired yet") is now
+    // applied at init time onto the ref, not in render — avoiding a
+    // render-time mutation of persistent data.
+    const snapRef = useRef(null);
+    if (snapRef.current === null) {
+        snapRef.current = foldEvents(initial);
+        if (runId && !snapRef.current.runId) snapRef.current.runId = runId;
+    }
+    const [, setVersion] = useState(0);
+    const bumpVersion = () => setVersion((v) => v + 1);
     // `now` is read by <Header> to render the live elapsed clock. We
     // only tick it in live mode (eventStream present) so static-mode
     // renders (existing tests + snapshot fixtures) stay deterministic
@@ -139,7 +167,8 @@ export default function App({ eventStream, events: initial = [], runId, appVersi
             try {
                 for await (const ev of eventStream) {
                     if (cancelled) break;
-                    setEvents((prev) => prev.concat([ev]));
+                    foldEvent(snapRef.current, ev);
+                    bumpVersion();
                     if (ev.type === "complete" || ev.type === "abort") {
                         // Exit a few frames later so the user sees the
                         // final status before the UI tears down.
@@ -154,8 +183,7 @@ export default function App({ eventStream, events: initial = [], runId, appVersi
         return () => { cancelled = true; };
     }, [eventStream, exit]);
 
-    const snapshot = foldEvents(events);
-    if (runId && !snapshot.runId) snapshot.runId = runId;
+    const snapshot = snapRef.current;
 
     // 1 Hz tick to keep the Header's elapsed counter live. Live mode
     // only — static renders (tests, fixtures) don't tick. Stops at

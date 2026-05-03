@@ -34,6 +34,11 @@ try {
 }
 
 const skip = inkAvailable ? false : "ink-testing-library not installed (cd packages/tui && npm install)";
+const ANSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g;
+
+function stripAnsi(value) {
+    return String(value).replace(ANSI_RE, "");
+}
 
 test("Header shows status badge, label, run id and task counter", { skip }, () => {
     const snapshot = {
@@ -146,7 +151,7 @@ test("Header: shows premium counter when snapshot.premiumRequests is set", { ski
         tokens: { input: 0, output: 415 },
         premiumRequests: 7,
     };
-    const out = render(React.createElement(Header, { snapshot })).lastFrame();
+    const out = stripAnsi(render(React.createElement(Header, { snapshot })).lastFrame());
     assert.match(out, /premium\s+7/);
 });
 
@@ -180,7 +185,7 @@ test("Header: shows elapsed HH:MM:SS for a running loop using injected now", { s
         terminalAt: null,
     };
     const now = 1_000_000 + ((14 * 60 + 32) * 1000); // +14m32s
-    const out = render(React.createElement(Header, { snapshot, now })).lastFrame();
+    const out = stripAnsi(render(React.createElement(Header, { snapshot, now })).lastFrame());
     assert.match(out, /elapsed\s+00:14:32/);
 });
 
@@ -194,7 +199,7 @@ test("Header: elapsed freezes at terminalAt for complete status (ignores now)", 
         terminalAt: 1_000_000 + 5_000,  // run finished after 5s
     };
     const now = 1_000_000 + ((14 * 60 + 32) * 1000);
-    const out = render(React.createElement(Header, { snapshot, now })).lastFrame();
+    const out = stripAnsi(render(React.createElement(Header, { snapshot, now })).lastFrame());
     assert.match(out, /elapsed\s+00:00:05/);
     assert.doesNotMatch(out, /14:32/);
 });
@@ -208,7 +213,7 @@ test("Header: elapsed freezes at terminalAt for aborted status", { skip }, () =>
         terminalAt: 1_000_000 + 90_000, // 1m30s run
     };
     const now = 1_000_000 + 999_999_999; // any now value, ignored
-    const out = render(React.createElement(Header, { snapshot, now })).lastFrame();
+    const out = stripAnsi(render(React.createElement(Header, { snapshot, now })).lastFrame());
     assert.match(out, /elapsed\s+00:01:30/);
 });
 
@@ -247,7 +252,7 @@ test("Header: elapsed visible without `now` once status is terminal (uses termin
         startedAt: 1_000_000, updatedAt: 1_007_000,
         terminalAt: 1_000_000 + 7_000,
     };
-    const out = render(React.createElement(Header, { snapshot })).lastFrame();
+    const out = stripAnsi(render(React.createElement(Header, { snapshot })).lastFrame());
     assert.match(out, /elapsed\s+00:00:07/);
 });
 
@@ -853,7 +858,7 @@ test("Header: ∞ shown when maxIterations is the runaway-guard ceiling", { skip
         status: "running", label: "self_improve", runId: "r1",
         iteration: 5, maxIterations: 1000, tokens: { input: 0, output: 0 },
     };
-    const out = render(React.createElement(Header, { snapshot })).lastFrame();
+    const out = stripAnsi(render(React.createElement(Header, { snapshot })).lastFrame());
     assert.match(out, /task\s+5/);
     assert.match(out, /∞/);
 });
@@ -865,7 +870,7 @@ test("Header: backlog row shows '(N done)' pip when closedByLoop > 0", { skip },
         backlog: { openIssues: 3, openPrs: 1, redCi: 0 },
         closedByLoop: 7,
     };
-    const out = render(React.createElement(Header, { snapshot })).lastFrame();
+    const out = stripAnsi(render(React.createElement(Header, { snapshot })).lastFrame());
     assert.match(out, /3 open issues/);
     assert.match(out, /\(7 done\)/);
 });

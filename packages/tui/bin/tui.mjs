@@ -517,7 +517,7 @@ async function cmdWatch(runId, opts) {
     return 0;
 }
 
-export function cmdDoctor() {
+export async function cmdDoctor() {
     const root = resolveRunsRoot();
     const indexPath = nodePath.join(root, "index.jsonl");
     let healthy = true;
@@ -571,6 +571,26 @@ export function cmdDoctor() {
     // node + tui version
     lines.push(`node: ${process.version}`);
     lines.push(`tui version: ${readTuiVersion()}`);
+
+    // Issue #105 — Copilot CLI version probe. Informational only:
+    // doctor's exit code stays gated on filesystem health (the
+    // critical-path autopilot setup). A user running doctor before
+    // installing Copilot CLI shouldn't get a non-zero exit for a
+    // soft dependency, and a user who picked the Claude backend
+    // doesn't care if Copilot is missing. The probe still surfaces
+    // the version + status so operators can see at a glance whether
+    // the planned Copilot run will hit issue #105's "unknown option
+    // '--output-format'" failure. Skipped when
+    // `AUTOPILOT_SKIP_CLI_VERSION_CHECK=1` is set.
+    if (process.env.AUTOPILOT_SKIP_CLI_VERSION_CHECK !== "1") {
+        try {
+            const copilotMod = await import("../src/agents/copilot.mjs");
+            if (typeof copilotMod.checkCliVersion === "function") {
+                const r = copilotMod.checkCliVersion();
+                lines.push(copilotMod.describeCliVersionResult(r));
+            }
+        } catch { /* swallow — adapter import failure must not crash doctor */ }
+    }
 
     process.stdout.write(lines.join("\n") + "\n");
     if (!healthy) {
@@ -774,6 +794,28 @@ export async function cmdRun(flags) {
                 return 2;
             }
             throw err;
+        }
+    }
+
+    // Issue #105 — proactive Copilot CLI version check. The runner
+    // calls `copilot -p ... --output-format json` each iter; older
+    // Copilot CLI builds (< 1.0.0) reject `--output-format` with an
+    // opaque "unknown option" error from the failed iter-1 spawn.
+    // Probe the binary up-front and surface a friendlier upgrade
+    // hint to stderr before the loop starts. Skipped when the
+    // effective agent isn't Copilot (Claude has its own contract)
+    // or when `AUTOPILOT_SKIP_CLI_VERSION_CHECK=1` is set (test
+    // suites + power users who know their custom shim is fine).
+    // The check is warn-only — we never abort, so a fork or
+    // non-standard build still runs.
+    const effectiveAgentName = flags.agent || "copilot";
+    if (effectiveAgentName === "copilot" && process.env.AUTOPILOT_SKIP_CLI_VERSION_CHECK !== "1") {
+        const copilotMod = agent || await loadAgentByName("copilot");
+        if (copilotMod && typeof copilotMod.checkCliVersion === "function") {
+            const r = copilotMod.checkCliVersion();
+            if (!r.ok && (r.reason === "too-old" || r.reason === "missing")) {
+                process.stderr.write(`autopilot: ${copilotMod.describeCliVersionResult(r)}\n`);
+            }
         }
     }
 
@@ -1116,7 +1158,7 @@ export async function main(argv = process.argv.slice(2)) {
         case "list": return cmdList({ json: Boolean(flags.json), limit: flags.limit });
         case "replay": return cmdReplay(positional[0]);
         case "watch": return await cmdWatch(positional[0], { plain: flags.plain });
-        case "doctor": return cmdDoctor();
+        case "doctor": return await cmdDoctor();
         case "prune": return cmdPrune(flags);
         case "stats": return cmdStats();
         case "where": return cmdWhere();

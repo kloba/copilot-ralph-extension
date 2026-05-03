@@ -7,6 +7,24 @@
 - Runner now executes each iter in a per-iter git worktree under `$RALPH_TUI_RUNS_DIR/<runId>/worktrees/iter-<N>/` for `--self-improve` and `--grow-project` (`--worktree` opts in for `--prompt`); merged iters tear down on END, unmerged ones are preserved on disk and emit a `worktree_kept` event with the absolute path. (#66)
 
 ### Fixes
+- `autopilot run` now probes the Copilot CLI's `--version` output before starting the loop and prints a clear upgrade hint (`copilot CLI: 0.0.354 is older than 1.0.0 — upgrade with \`npm i -g @github/copilot\``) when the resolved binary is older than 1.0.0, missing, or non-executable. The same probe also surfaces in `autopilot doctor` as a `copilot CLI: …` status line so users can confirm the planned run will accept `--output-format json` before kicking off an iter. The check is warn-only (the loop still starts) and can be skipped with `AUTOPILOT_SKIP_CLI_VERSION_CHECK=1`. (#105)
+- `autopilot run --self-improve` (and any long-running tail consumer)
+  no longer crashes with `FATAL ERROR: Ineffective mark-compacts near
+  heap limit Allocation failed - JavaScript heap out of memory` after
+  ~100 iterations. The TUI's React `App` component used to keep every
+  tailed event in `useState` (`prev.concat([ev])`) and re-run
+  `foldEvents(events)` from scratch on every render, so the events
+  array grew unboundedly while each render re-walked the entire
+  history. With `usage_update` events streamed every ~80 chars of
+  assistant output, a `--min 100` self-improve run accumulated tens of
+  thousands of entries and the per-render allocation churn outpaced
+  the GC, blowing past Node's ~4 GB heap cap. The reducer in
+  `packages/tui/src/events.mjs` now exports a single-event
+  `foldEvent(snap, ev)` (and `createInitialSnapshot()`); `App.mjs`
+  holds the snapshot in a `useRef` and applies each event
+  incrementally in O(1) work per event, dropping the raw event
+  afterwards. `foldEvents(events)` is preserved as a thin wrapper so
+  existing tests / batch-replay callers stay byte-identical.
 - `autopilot run --self-improve` / `--grow-project` no longer
   silently stalls when paired with `--reset-on=iter` (or the
   deprecated `--fresh` alias). Each iter spawns a fresh Copilot
@@ -41,6 +59,14 @@
   effective plan + `task_list` + `task_end` coverage.
 
 ### Tests
+- `packages/tui/test/events.test.mjs` adds five cases that pin the
+  iter-167 OOM fix: `foldEvent` is reference-equal to its mutated
+  argument, batch `foldEvents(events)` deep-equals
+  `events.reduce(foldEvent, createInitialSnapshot())` across every
+  event type the runner emits, non-object inputs are tolerated, a
+  mid-stream `armed` resets the snap to a fresh-run shape, and
+  10 000 streamed `usage_update` events fold in under 500 ms (the
+  regression guard against an O(n) re-walk creeping back).
 - `packages/tui/test/cursor-preamble.test.mjs` pins the cursor
   reducer / preamble formatter / file-reader contract,
   including the user-facing 9-iter / 9-duplicate-`workitem_start`

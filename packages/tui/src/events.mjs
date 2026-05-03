@@ -617,18 +617,19 @@ export function parseEventLine(line) {
 }
 
 /**
- * Reduce a list of LoopEvents into a snapshot describing the run's current
- * state. Pure function — used by the TUI's render path and by tests as the
- * canonical event-stream interpreter.
+ * Build the initial snapshot literal used as the seed for an
+ * event-by-event fold. Exported so consumers (the TUI App) can hold a
+ * mutable snapshot in a ref and apply `foldEvent` incrementally
+ * instead of allocating a fresh snapshot per render — that pattern
+ * blew the heap during long `--self-improve --min 100` runs because
+ * `foldEvents(events)` was O(n) per render with `events` growing
+ * unboundedly (issue #115 / OOM repro).
  *
- * The fold prefers the *latest* armed/complete/abort markers so a replay
- * file containing multiple runs will only show the final one (the writer
- * truncates the file at arm-time, but a replay tool may concatenate runs).
+ * Pure / deterministic: every call returns a brand-new object graph
+ * so callers can safely mutate the result without aliasing across
+ * mounts.
  */
-export function foldEvents(events) {
-    if (!Array.isArray(events)) {
-        throw new TypeError("foldEvents: events must be an array");
-    }
+export function createInitialSnapshot() {
     /** @type {{
      *   runId: string|null,
      *   label: string|null,
@@ -743,458 +744,503 @@ export function foldEvents(events) {
         activeWorktree: null,
         keptWorktrees: [],
     };
+    return snap;
+}
 
-    for (const ev of events) {
-        if (!ev || typeof ev !== "object") continue;
-        snap.updatedAt = Number.isFinite(ev.ts) ? ev.ts : snap.updatedAt;
-        switch (ev.type) {
-            case "armed":
-                snap.runId = ev.runId;
-                snap.label = ev.label ?? snap.label;
-                snap.status = "running";
-                snap.iteration = 0;
-                snap.maxIterations = ev.maxIterations ?? snap.maxIterations;
-                snap.minIterations = ev.minIterations ?? snap.minIterations;
-                snap.stagnationStreak = 0;
-                snap.reason = null;
-                snap.tokens = { input: 0, output: 0 };
-                snap.premiumRequests = null;
-                snap.lastExcerpt = null;
-                snap.startedAt = ev.ts;
-                snap.terminalAt = null;
-                // Issue #57 — a re-armed run produces a fresh sessionId
-                // (or none yet). Reset so the previous run's value
-                // doesn't bleed into the new one's first frames.
-                snap.sessionId = null;
-                snap.iterations = [];
-                snap.activeStage = null;
-                snap.recentStages = [];
-                snap.currentStageSubstages = [];
-                snap.backlog = null;
-                snap.activeWorkItem = null;
-                snap.completedWorkItems = [];
-                snap.closedByLoop = 0;
-                snap.currentPlan = null;
-                snap.planAmendments = [];
-                snap.currentTaskList = null;
-                snap.taskInFlight = null;
-                snap.recentTasks = [];
-                snap.lastCommit = null;
-                snap.activeWorktree = null;
-                snap.keptWorktrees = [];
-                break;
-            case "iteration_start":
-                if (Number.isFinite(ev.iteration)) {
-                    snap.iteration = ev.iteration;
-                    snap.iterations.push({
-                        iteration: ev.iteration,
-                        startedAt: ev.ts,
-                        endedAt: null,
-                        excerpt: null,
-                        // Snapshot cumulative-for-the-run counters at
-                        // iter open so the Timeline can derive
-                        // per-iter deltas (tokens, premium). The
-                        // `filesChanged` field is set later on
-                        // `iteration_end`.
-                        tokensAtStart: { ...snap.tokens },
-                        premiumAtStart: snap.premiumRequests,
-                    });
-                }
-                snap.status = "running";
-                // A fresh iteration starts with no active stage and an
-                // empty per-iter stage history. The active loop loops
-                // over its SDLC stages from the top each iter, so the
-                // header's "Stages — iter N" pane is per-iter.
-                snap.activeStage = null;
-                snap.recentStages = [];
-                snap.currentStageSubstages = [];
-                break;
-            case "iteration_end": {
-                const last = snap.iterations[snap.iterations.length - 1];
-                if (last && (!Number.isFinite(ev.iteration) || last.iteration === ev.iteration)) {
-                    last.endedAt = ev.ts;
-                    if (typeof ev.excerpt === "string") last.excerpt = ev.excerpt;
-                    // Strictly opt-in: missing on old runs leaves
-                    // the iter without a `filesChanged` field so
-                    // the Timeline cell stays hidden (replay-safe).
-                    if (Number.isFinite(ev.filesChanged) && ev.filesChanged >= 0) {
-                        last.filesChanged = ev.filesChanged;
-                    }
-                }
-                if (typeof ev.excerpt === "string") snap.lastExcerpt = ev.excerpt;
-                if (ev.tokens) {
-                    snap.tokens = {
-                        input: Number.isFinite(ev.tokens.input) ? ev.tokens.input : snap.tokens.input,
-                        output: Number.isFinite(ev.tokens.output) ? ev.tokens.output : snap.tokens.output,
-                    };
-                }
-                if (Number.isFinite(ev.premiumRequests) && ev.premiumRequests >= 0) {
-                    snap.premiumRequests = ev.premiumRequests;
-                }
-                break;
-            }
-            // Live mid-iter usage update emitted by the runner whenever
-            // a root-agent `assistant.message` (per-message
-            // outputTokens delta) or terminal `result` (premiumRequests
-            // for that iter) lands. Carries cumulative-for-the-run
-            // totals so the TUI Header snapshot updates
-            // within seconds of agent output rather than waiting for
-            // `iteration_end` at iter close.
-            case "usage_update": {
-                if (ev.tokens) {
-                    snap.tokens = {
-                        input: Number.isFinite(ev.tokens.input) ? ev.tokens.input : snap.tokens.input,
-                        output: Number.isFinite(ev.tokens.output) ? ev.tokens.output : snap.tokens.output,
-                    };
-                }
-                if (Number.isFinite(ev.premiumRequests) && ev.premiumRequests >= 0) {
-                    snap.premiumRequests = ev.premiumRequests;
-                }
-                // Issue #54 slice 2a — live Timeline excerpt. The
-                // runner streams root-agent `assistant.message`
-                // content into `usage_update` events whenever 80+
-                // new chars accumulate so the in-flight iter row
-                // shows live progress instead of `(working…)`. Both
-                // `snap.lastExcerpt` (run-scope) and
-                // `iterations[last].excerpt` (per-iter) are updated
-                // together, gated by the same `endedAt == null` +
-                // iter-match check so a late event landing after
-                // `iteration_end` (e.g. delayed delivery during the
-                // iter rollover) cannot regress either surface to a
-                // stale value. The closed iter's excerpt stays as
-                // the canonical post-iter reduction wrote it, and
-                // lastExcerpt stays on the most-recent observed
-                // iter — preserving Detail/Timeline parity.
-                if (typeof ev.excerpt === "string" && ev.excerpt) {
-                    const last = snap.iterations[snap.iterations.length - 1];
-                    if (
-                        last
-                        && last.endedAt == null
-                        && (!Number.isFinite(ev.iteration) || last.iteration === ev.iteration)
-                    ) {
-                        last.excerpt = ev.excerpt;
-                        snap.lastExcerpt = ev.excerpt;
-                    }
-                }
-                break;
-            }
-            case "pause":
-                snap.status = "paused";
-                break;
-            case "resume":
-                snap.status = "running";
-                break;
-            case "stagnation":
-                if (Number.isFinite(ev.streak)) snap.stagnationStreak = ev.streak;
-                break;
-            case "complete":
-                snap.status = "complete";
-                snap.reason = ev.reason ?? snap.reason;
-                if (Number.isFinite(ev.ts)) snap.terminalAt = ev.ts;
-                break;
-            case "abort":
-                snap.status = "aborted";
-                snap.reason = ev.reason ?? snap.reason;
-                if (Number.isFinite(ev.ts)) snap.terminalAt = ev.ts;
-                break;
-            case "stage_start": {
-                if (!Number.isFinite(ev.stage)) break;
-                const name = typeof ev.stageName === "string" && ev.stageName
-                    ? ev.stageName : `STAGE_${ev.stage}`;
-                snap.activeStage = { stage: ev.stage, name, startedAt: ev.ts };
-                snap.currentStageSubstages = [];
-                // Each L2 stage has its own L2.5 task list — null it
-                // out so a stale list from the previous stage cannot
-                // bleed into the new one. taskInFlight follows: a
-                // task that was running when the stage ended is no
-                // longer "in flight" once the new stage begins.
-                snap.currentTaskList = null;
-                snap.taskInFlight = null;
-                break;
-            }
-            case "stage_end": {
-                if (!Number.isFinite(ev.stage)) break;
-                const name = typeof ev.stageName === "string" && ev.stageName
-                    ? ev.stageName
-                    : (snap.activeStage && snap.activeStage.stage === ev.stage
-                        ? snap.activeStage.name : `STAGE_${ev.stage}`);
-                const startedAt = snap.activeStage && snap.activeStage.stage === ev.stage
-                    ? snap.activeStage.startedAt : null;
-                const durationMs = Number.isFinite(ev.durationMs)
-                    ? ev.durationMs
-                    : (Number.isFinite(startedAt) && Number.isFinite(ev.ts)
-                        ? ev.ts - startedAt : null);
-                snap.recentStages.push({
-                    stage: ev.stage,
-                    name,
-                    startedAt,
-                    endedAt: ev.ts,
-                    durationMs,
-                    outcome: typeof ev.outcome === "string" ? ev.outcome : null,
-                });
-                if (snap.activeStage && snap.activeStage.stage === ev.stage) {
-                    snap.activeStage = null;
-                }
-                break;
-            }
-            case "substage": {
-                if (!Number.isFinite(ev.sub)) break;
-                snap.currentStageSubstages.push({
-                    sub: ev.sub,
-                    ts: ev.ts,
-                    verb: typeof ev.verb === "string" ? ev.verb : null,
-                    argsSummary: typeof ev.argsSummary === "string" ? ev.argsSummary : null,
-                    outcome: typeof ev.outcome === "string" ? ev.outcome : null,
-                    durationMs: Number.isFinite(ev.durationMs) ? ev.durationMs : null,
-                });
-                break;
-            }
-            case "backlog_snapshot": {
-                // Replace whole-record so "absent field on later event"
-                // doesn't accidentally forget a value the older event
-                // had — the runner is the source of truth and emits
-                // every field it managed to capture.
-                snap.backlog = {
-                    redCi: Number.isFinite(ev.redCi) ? ev.redCi : null,
-                    openPrs: Number.isFinite(ev.openPrs) ? ev.openPrs : null,
-                    openIssues: Number.isFinite(ev.openIssues) ? ev.openIssues : null,
-                    closedByLoop: Number.isFinite(ev.closedByLoop) ? ev.closedByLoop : null,
-                };
-                break;
-            }
-            case "workitem_start": {
-                if (!WORKITEM_KIND_SET.has(ev.kind)) break;
-                snap.activeWorkItem = {
-                    kind: ev.kind,
-                    ref: Number.isFinite(ev.ref) ? ev.ref : null,
-                    title: typeof ev.title === "string" && ev.title ? ev.title : null,
+/**
+ * Apply a single LoopEvent to a snapshot in-place. Returns `snap` for
+ * convenience so callers can chain. Used by the TUI App for
+ * incremental folding (one event at a time as the tail emits) AND by
+ * `foldEvents` below for batch replay — both paths share semantics
+ * exactly.
+ *
+ * Pre-iter-115 the App re-ran `foldEvents(allEvents)` from scratch on
+ * every render, which kept O(n) work per event AND retained every
+ * raw event for the whole run lifetime. A long `--self-improve --min
+ * 100` run would push that array into the tens of thousands of
+ * entries (each `usage_update` event during streaming) and the
+ * ensuing allocation churn killed the heap. The split lets the TUI
+ * keep the snapshot in a `useRef` and apply each new event to the
+ * existing object, dropping the raw event afterwards.
+ *
+ * Defensive against junk: ignores non-object inputs, unknown event
+ * types fall through the switch's `default`, and individual case
+ * bodies validate their fields the same way the batch fold did.
+ */
+export function foldEvent(snap, ev) {
+    if (!ev || typeof ev !== "object") return snap;
+    snap.updatedAt = Number.isFinite(ev.ts) ? ev.ts : snap.updatedAt;
+    switch (ev.type) {
+        case "armed":
+            snap.runId = ev.runId;
+            snap.label = ev.label ?? snap.label;
+            snap.status = "running";
+            snap.iteration = 0;
+            snap.maxIterations = ev.maxIterations ?? snap.maxIterations;
+            snap.minIterations = ev.minIterations ?? snap.minIterations;
+            snap.stagnationStreak = 0;
+            snap.reason = null;
+            snap.tokens = { input: 0, output: 0 };
+            snap.premiumRequests = null;
+            snap.lastExcerpt = null;
+            snap.startedAt = ev.ts;
+            snap.terminalAt = null;
+            // Issue #57 — a re-armed run produces a fresh sessionId
+            // (or none yet). Reset so the previous run's value
+            // doesn't bleed into the new one's first frames.
+            snap.sessionId = null;
+            snap.iterations = [];
+            snap.activeStage = null;
+            snap.recentStages = [];
+            snap.currentStageSubstages = [];
+            snap.backlog = null;
+            snap.activeWorkItem = null;
+            snap.completedWorkItems = [];
+            snap.closedByLoop = 0;
+            snap.currentPlan = null;
+            snap.planAmendments = [];
+            snap.currentTaskList = null;
+            snap.taskInFlight = null;
+            snap.recentTasks = [];
+            snap.lastCommit = null;
+            snap.activeWorktree = null;
+            snap.keptWorktrees = [];
+            break;
+        case "iteration_start":
+            if (Number.isFinite(ev.iteration)) {
+                snap.iteration = ev.iteration;
+                snap.iterations.push({
+                    iteration: ev.iteration,
                     startedAt: ev.ts,
-                };
-                // Each L1 work item gets a fresh plan + task list.
-                // Reset the L2/L2.5/L3 cursor so the new work item
-                // doesn't inherit the previous work item's stages or
-                // tasks (the issue body says the agent generates a
-                // *per-work-item* stage plan).
-                snap.currentPlan = null;
-                snap.currentTaskList = null;
-                snap.taskInFlight = null;
-                break;
-            }
-            case "workitem_end": {
-                if (!WORKITEM_KIND_SET.has(ev.kind)) break;
-                // Match the closing event to the active item by (kind, ref)
-                // when a ref is present; otherwise fall back to the active
-                // item's identity. A workitem_end with no preceding
-                // workitem_start (replay started mid-run) still appends to
-                // completedWorkItems so the renderer's count stays right —
-                // we just have no startedAt to record.
-                const startedAt = snap.activeWorkItem
-                    && snap.activeWorkItem.kind === ev.kind
-                    && (
-                        (Number.isFinite(ev.ref) && snap.activeWorkItem.ref === ev.ref)
-                        || !Number.isFinite(ev.ref)
-                    )
-                    ? snap.activeWorkItem.startedAt
-                    : null;
-                const title = typeof ev.title === "string" && ev.title
-                    ? ev.title
-                    : (snap.activeWorkItem && startedAt !== null ? snap.activeWorkItem.title : null);
-                const closesN = Number.isFinite(ev.closesN) ? ev.closesN : null;
-                snap.completedWorkItems.push({
-                    kind: ev.kind,
-                    ref: Number.isFinite(ev.ref) ? ev.ref : null,
-                    title,
-                    startedAt,
-                    endedAt: ev.ts,
-                    closesN,
+                    endedAt: null,
+                    excerpt: null,
+                    // Snapshot cumulative-for-the-run counters at
+                    // iter open so the Timeline can derive
+                    // per-iter deltas (tokens, premium). The
+                    // `filesChanged` field is set later on
+                    // `iteration_end`.
+                    tokensAtStart: { ...snap.tokens },
+                    premiumAtStart: snap.premiumRequests,
                 });
-                if (closesN !== null) snap.closedByLoop += 1;
-                if (
-                    snap.activeWorkItem
-                    && snap.activeWorkItem.kind === ev.kind
-                    && (
-                        (Number.isFinite(ev.ref) && snap.activeWorkItem.ref === ev.ref)
-                        || !Number.isFinite(ev.ref)
-                    )
-                ) {
-                    snap.activeWorkItem = null;
+            }
+            snap.status = "running";
+            // A fresh iteration starts with no active stage and an
+            // empty per-iter stage history. The active loop loops
+            // over its SDLC stages from the top each iter, so the
+            // header's "Stages — iter N" pane is per-iter.
+            snap.activeStage = null;
+            snap.recentStages = [];
+            snap.currentStageSubstages = [];
+            break;
+        case "iteration_end": {
+            const last = snap.iterations[snap.iterations.length - 1];
+            if (last && (!Number.isFinite(ev.iteration) || last.iteration === ev.iteration)) {
+                last.endedAt = ev.ts;
+                if (typeof ev.excerpt === "string") last.excerpt = ev.excerpt;
+                // Strictly opt-in: missing on old runs leaves
+                // the iter without a `filesChanged` field so
+                // the Timeline cell stays hidden (replay-safe).
+                if (Number.isFinite(ev.filesChanged) && ev.filesChanged >= 0) {
+                    last.filesChanged = ev.filesChanged;
                 }
-                break;
             }
-            case "stage_plan": {
-                if (!Array.isArray(ev.stages) || ev.stages.length === 0) break;
-                const stages = ev.stages
-                    .filter((s) => typeof s === "string" && s)
-                    .map(String);
-                if (stages.length === 0) break;
-                snap.currentPlan = { stages, setAt: ev.ts };
-                break;
-            }
-            case "stage_plan_amend": {
-                const hasAdd = typeof ev.add === "string" && ev.add;
-                const hasRemove = typeof ev.remove === "string" && ev.remove;
-                if (!hasAdd && !hasRemove) break;
-                const amendment = {
-                    add: hasAdd ? ev.add : null,
-                    remove: hasRemove ? ev.remove : null,
-                    after: typeof ev.after === "string" && ev.after ? ev.after : null,
-                    reason: typeof ev.reason === "string" ? ev.reason : "",
-                    ts: ev.ts,
+            if (typeof ev.excerpt === "string") snap.lastExcerpt = ev.excerpt;
+            if (ev.tokens) {
+                snap.tokens = {
+                    input: Number.isFinite(ev.tokens.input) ? ev.tokens.input : snap.tokens.input,
+                    output: Number.isFinite(ev.tokens.output) ? ev.tokens.output : snap.tokens.output,
                 };
-                snap.planAmendments.push(amendment);
-                // Apply the amendment to the current plan so the
-                // renderer can show the up-to-date plan + the badge
-                // history side by side. Insert-after semantics: when
-                // `after` is provided, splice the new stage right
-                // after that anchor; otherwise append to the tail.
-                if (snap.currentPlan) {
-                    const next = [...snap.currentPlan.stages];
-                    if (hasRemove) {
-                        const idx = next.indexOf(ev.remove);
-                        if (idx !== -1) next.splice(idx, 1);
-                    }
-                    if (hasAdd) {
-                        let insertAt = next.length;
-                        if (amendment.after) {
-                            const anchor = next.indexOf(amendment.after);
-                            if (anchor !== -1) insertAt = anchor + 1;
-                        }
-                        next.splice(insertAt, 0, ev.add);
-                    }
-                    snap.currentPlan = { stages: next, setAt: ev.ts };
-                }
-                break;
             }
-            case "task_list": {
-                if (typeof ev.stage !== "string" || !ev.stage) break;
-                if (!Array.isArray(ev.items)) break;
-                const items = ev.items.filter((s) => typeof s === "string" && s);
-                snap.currentTaskList = { stage: ev.stage, items, setAt: ev.ts };
-                break;
+            if (Number.isFinite(ev.premiumRequests) && ev.premiumRequests >= 0) {
+                snap.premiumRequests = ev.premiumRequests;
             }
-            case "task_start": {
-                if (typeof ev.stage !== "string" || !ev.stage) break;
-                if (!Number.isFinite(ev.sub)) break;
-                snap.taskInFlight = {
-                    stage: ev.stage,
-                    sub: ev.sub,
-                    desc: typeof ev.desc === "string" ? ev.desc : "",
-                    startedAt: ev.ts,
-                };
-                break;
-            }
-            case "task_end": {
-                if (typeof ev.stage !== "string" || !ev.stage) break;
-                if (!Number.isFinite(ev.sub)) break;
-                if (!TASK_OUTCOME_SET.has(ev.outcome)) break;
-                const startedAt = snap.taskInFlight
-                    && snap.taskInFlight.stage === ev.stage
-                    && snap.taskInFlight.sub === ev.sub
-                    ? snap.taskInFlight.startedAt
-                    : null;
-                const desc = snap.taskInFlight
-                    && snap.taskInFlight.stage === ev.stage
-                    && snap.taskInFlight.sub === ev.sub
-                    ? snap.taskInFlight.desc
-                    : null;
-                const durationMs = Number.isFinite(ev.durationMs)
-                    ? ev.durationMs
-                    : (startedAt !== null && Number.isFinite(ev.ts) ? ev.ts - startedAt : null);
-                snap.recentTasks.push({
-                    stage: ev.stage,
-                    sub: ev.sub,
-                    desc,
-                    outcome: ev.outcome,
-                    durationMs,
-                    startedAt,
-                    endedAt: ev.ts,
-                });
-                if (
-                    snap.taskInFlight
-                    && snap.taskInFlight.stage === ev.stage
-                    && snap.taskInFlight.sub === ev.sub
-                ) {
-                    snap.taskInFlight = null;
-                }
-                break;
-            }
-            case "commit_observed": {
-                if (typeof ev.sha !== "string" || !ev.sha) break;
-                if (typeof ev.subject !== "string" || !ev.subject) break;
-                snap.lastCommit = {
-                    sha: ev.sha,
-                    subject: ev.subject,
-                    trailers: Array.isArray(ev.trailers)
-                        ? ev.trailers.filter((t) => typeof t === "string" && t)
-                        : [],
-                    ts: ev.ts,
-                };
-                break;
-            }
-            case "session_attached": {
-                // Issue #57 — surface the Copilot CLI session id so
-                // the App can mount tailSessionFile() against the
-                // matching `~/.copilot/session-state/<id>.jsonl`.
-                // Defensive validation mirrors the serializer's
-                // contract (non-empty string, ≤64 chars); a
-                // serializer that ever emits a malformed value
-                // produces a no-op fold rather than poisoning the
-                // snapshot.
-                if (typeof ev.sessionId !== "string" || !ev.sessionId) break;
-                if (ev.sessionId.length > 64) break;
-                snap.sessionId = ev.sessionId;
-                break;
-            }
-            // Issue #66 — per-iter git worktree lifecycle. Each iter
-            // that runs in worktree mode emits `worktree_created` at
-            // the top of its `iteration_start` block, then either
-            // `worktree_removed` (changes merged into base ref →
-            // sandbox + branch deleted) or `worktree_kept` (changes
-            // not merged → sandbox preserved on disk for inspection).
-            // Defensive shape validation mirrors the serializer.
-            case "worktree_created": {
-                if (typeof ev.path !== "string" || !ev.path) break;
-                if (typeof ev.branch !== "string" || !ev.branch) break;
-                snap.activeWorktree = {
-                    path: ev.path,
-                    branch: ev.branch,
-                    baseRef: typeof ev.baseRef === "string" && ev.baseRef ? ev.baseRef : null,
-                    iteration: Number.isFinite(ev.iteration) ? ev.iteration : null,
-                    startedAt: ev.ts,
-                };
-                break;
-            }
-            case "worktree_removed": {
-                if (typeof ev.path !== "string" || !ev.path) break;
-                if (
-                    snap.activeWorktree
-                    && snap.activeWorktree.path === ev.path
-                ) {
-                    snap.activeWorktree = null;
-                }
-                break;
-            }
-            case "worktree_kept": {
-                if (typeof ev.path !== "string" || !ev.path) break;
-                if (typeof ev.branch !== "string" || !ev.branch) break;
-                snap.keptWorktrees.push({
-                    path: ev.path,
-                    branch: ev.branch,
-                    iteration: Number.isFinite(ev.iteration) ? ev.iteration : null,
-                    ts: ev.ts,
-                });
-                if (
-                    snap.activeWorktree
-                    && snap.activeWorktree.path === ev.path
-                ) {
-                    snap.activeWorktree = null;
-                }
-                break;
-            }
-            default:
-                // Unreachable — parseEventLine filters unknown types.
-                break;
+            break;
         }
+        // Live mid-iter usage update emitted by the runner whenever
+        // a root-agent `assistant.message` (per-message
+        // outputTokens delta) or terminal `result` (premiumRequests
+        // for that iter) lands. Carries cumulative-for-the-run
+        // totals so the TUI Header snapshot updates
+        // within seconds of agent output rather than waiting for
+        // `iteration_end` at iter close.
+        case "usage_update": {
+            if (ev.tokens) {
+                snap.tokens = {
+                    input: Number.isFinite(ev.tokens.input) ? ev.tokens.input : snap.tokens.input,
+                    output: Number.isFinite(ev.tokens.output) ? ev.tokens.output : snap.tokens.output,
+                };
+            }
+            if (Number.isFinite(ev.premiumRequests) && ev.premiumRequests >= 0) {
+                snap.premiumRequests = ev.premiumRequests;
+            }
+            // Issue #54 slice 2a — live Timeline excerpt. The
+            // runner streams root-agent `assistant.message`
+            // content into `usage_update` events whenever 80+
+            // new chars accumulate so the in-flight iter row
+            // shows live progress instead of `(working…)`. Both
+            // `snap.lastExcerpt` (run-scope) and
+            // `iterations[last].excerpt` (per-iter) are updated
+            // together, gated by the same `endedAt == null` +
+            // iter-match check so a late event landing after
+            // `iteration_end` (e.g. delayed delivery during the
+            // iter rollover) cannot regress either surface to a
+            // stale value. The closed iter's excerpt stays as
+            // the canonical post-iter reduction wrote it, and
+            // lastExcerpt stays on the most-recent observed
+            // iter — preserving Detail/Timeline parity.
+            if (typeof ev.excerpt === "string" && ev.excerpt) {
+                const last = snap.iterations[snap.iterations.length - 1];
+                if (
+                    last
+                    && last.endedAt == null
+                    && (!Number.isFinite(ev.iteration) || last.iteration === ev.iteration)
+                ) {
+                    last.excerpt = ev.excerpt;
+                    snap.lastExcerpt = ev.excerpt;
+                }
+            }
+            break;
+        }
+        case "pause":
+            snap.status = "paused";
+            break;
+        case "resume":
+            snap.status = "running";
+            break;
+        case "stagnation":
+            if (Number.isFinite(ev.streak)) snap.stagnationStreak = ev.streak;
+            break;
+        case "complete":
+            snap.status = "complete";
+            snap.reason = ev.reason ?? snap.reason;
+            if (Number.isFinite(ev.ts)) snap.terminalAt = ev.ts;
+            break;
+        case "abort":
+            snap.status = "aborted";
+            snap.reason = ev.reason ?? snap.reason;
+            if (Number.isFinite(ev.ts)) snap.terminalAt = ev.ts;
+            break;
+        case "stage_start": {
+            if (!Number.isFinite(ev.stage)) break;
+            const name = typeof ev.stageName === "string" && ev.stageName
+                ? ev.stageName : `STAGE_${ev.stage}`;
+            snap.activeStage = { stage: ev.stage, name, startedAt: ev.ts };
+            snap.currentStageSubstages = [];
+            // Each L2 stage has its own L2.5 task list — null it
+            // out so a stale list from the previous stage cannot
+            // bleed into the new one. taskInFlight follows: a
+            // task that was running when the stage ended is no
+            // longer "in flight" once the new stage begins.
+            snap.currentTaskList = null;
+            snap.taskInFlight = null;
+            break;
+        }
+        case "stage_end": {
+            if (!Number.isFinite(ev.stage)) break;
+            const name = typeof ev.stageName === "string" && ev.stageName
+                ? ev.stageName
+                : (snap.activeStage && snap.activeStage.stage === ev.stage
+                    ? snap.activeStage.name : `STAGE_${ev.stage}`);
+            const startedAt = snap.activeStage && snap.activeStage.stage === ev.stage
+                ? snap.activeStage.startedAt : null;
+            const durationMs = Number.isFinite(ev.durationMs)
+                ? ev.durationMs
+                : (Number.isFinite(startedAt) && Number.isFinite(ev.ts)
+                    ? ev.ts - startedAt : null);
+            snap.recentStages.push({
+                stage: ev.stage,
+                name,
+                startedAt,
+                endedAt: ev.ts,
+                durationMs,
+                outcome: typeof ev.outcome === "string" ? ev.outcome : null,
+            });
+            if (snap.activeStage && snap.activeStage.stage === ev.stage) {
+                snap.activeStage = null;
+            }
+            break;
+        }
+        case "substage": {
+            if (!Number.isFinite(ev.sub)) break;
+            snap.currentStageSubstages.push({
+                sub: ev.sub,
+                ts: ev.ts,
+                verb: typeof ev.verb === "string" ? ev.verb : null,
+                argsSummary: typeof ev.argsSummary === "string" ? ev.argsSummary : null,
+                outcome: typeof ev.outcome === "string" ? ev.outcome : null,
+                durationMs: Number.isFinite(ev.durationMs) ? ev.durationMs : null,
+            });
+            break;
+        }
+        case "backlog_snapshot": {
+            // Replace whole-record so "absent field on later event"
+            // doesn't accidentally forget a value the older event
+            // had — the runner is the source of truth and emits
+            // every field it managed to capture.
+            snap.backlog = {
+                redCi: Number.isFinite(ev.redCi) ? ev.redCi : null,
+                openPrs: Number.isFinite(ev.openPrs) ? ev.openPrs : null,
+                openIssues: Number.isFinite(ev.openIssues) ? ev.openIssues : null,
+                closedByLoop: Number.isFinite(ev.closedByLoop) ? ev.closedByLoop : null,
+            };
+            break;
+        }
+        case "workitem_start": {
+            if (!WORKITEM_KIND_SET.has(ev.kind)) break;
+            snap.activeWorkItem = {
+                kind: ev.kind,
+                ref: Number.isFinite(ev.ref) ? ev.ref : null,
+                title: typeof ev.title === "string" && ev.title ? ev.title : null,
+                startedAt: ev.ts,
+            };
+            // Each L1 work item gets a fresh plan + task list.
+            // Reset the L2/L2.5/L3 cursor so the new work item
+            // doesn't inherit the previous work item's stages or
+            // tasks (the issue body says the agent generates a
+            // *per-work-item* stage plan).
+            snap.currentPlan = null;
+            snap.currentTaskList = null;
+            snap.taskInFlight = null;
+            break;
+        }
+        case "workitem_end": {
+            if (!WORKITEM_KIND_SET.has(ev.kind)) break;
+            // Match the closing event to the active item by (kind, ref)
+            // when a ref is present; otherwise fall back to the active
+            // item's identity. A workitem_end with no preceding
+            // workitem_start (replay started mid-run) still appends to
+            // completedWorkItems so the renderer's count stays right —
+            // we just have no startedAt to record.
+            const startedAt = snap.activeWorkItem
+                && snap.activeWorkItem.kind === ev.kind
+                && (
+                    (Number.isFinite(ev.ref) && snap.activeWorkItem.ref === ev.ref)
+                    || !Number.isFinite(ev.ref)
+                )
+                ? snap.activeWorkItem.startedAt
+                : null;
+            const title = typeof ev.title === "string" && ev.title
+                ? ev.title
+                : (snap.activeWorkItem && startedAt !== null ? snap.activeWorkItem.title : null);
+            const closesN = Number.isFinite(ev.closesN) ? ev.closesN : null;
+            snap.completedWorkItems.push({
+                kind: ev.kind,
+                ref: Number.isFinite(ev.ref) ? ev.ref : null,
+                title,
+                startedAt,
+                endedAt: ev.ts,
+                closesN,
+            });
+            if (closesN !== null) snap.closedByLoop += 1;
+            if (
+                snap.activeWorkItem
+                && snap.activeWorkItem.kind === ev.kind
+                && (
+                    (Number.isFinite(ev.ref) && snap.activeWorkItem.ref === ev.ref)
+                    || !Number.isFinite(ev.ref)
+                )
+            ) {
+                snap.activeWorkItem = null;
+            }
+            break;
+        }
+        case "stage_plan": {
+            if (!Array.isArray(ev.stages) || ev.stages.length === 0) break;
+            const stages = ev.stages
+                .filter((s) => typeof s === "string" && s)
+                .map(String);
+            if (stages.length === 0) break;
+            snap.currentPlan = { stages, setAt: ev.ts };
+            break;
+        }
+        case "stage_plan_amend": {
+            const hasAdd = typeof ev.add === "string" && ev.add;
+            const hasRemove = typeof ev.remove === "string" && ev.remove;
+            if (!hasAdd && !hasRemove) break;
+            const amendment = {
+                add: hasAdd ? ev.add : null,
+                remove: hasRemove ? ev.remove : null,
+                after: typeof ev.after === "string" && ev.after ? ev.after : null,
+                reason: typeof ev.reason === "string" ? ev.reason : "",
+                ts: ev.ts,
+            };
+            snap.planAmendments.push(amendment);
+            // Apply the amendment to the current plan so the
+            // renderer can show the up-to-date plan + the badge
+            // history side by side. Insert-after semantics: when
+            // `after` is provided, splice the new stage right
+            // after that anchor; otherwise append to the tail.
+            if (snap.currentPlan) {
+                const next = [...snap.currentPlan.stages];
+                if (hasRemove) {
+                    const idx = next.indexOf(ev.remove);
+                    if (idx !== -1) next.splice(idx, 1);
+                }
+                if (hasAdd) {
+                    let insertAt = next.length;
+                    if (amendment.after) {
+                        const anchor = next.indexOf(amendment.after);
+                        if (anchor !== -1) insertAt = anchor + 1;
+                    }
+                    next.splice(insertAt, 0, ev.add);
+                }
+                snap.currentPlan = { stages: next, setAt: ev.ts };
+            }
+            break;
+        }
+        case "task_list": {
+            if (typeof ev.stage !== "string" || !ev.stage) break;
+            if (!Array.isArray(ev.items)) break;
+            const items = ev.items.filter((s) => typeof s === "string" && s);
+            snap.currentTaskList = { stage: ev.stage, items, setAt: ev.ts };
+            break;
+        }
+        case "task_start": {
+            if (typeof ev.stage !== "string" || !ev.stage) break;
+            if (!Number.isFinite(ev.sub)) break;
+            snap.taskInFlight = {
+                stage: ev.stage,
+                sub: ev.sub,
+                desc: typeof ev.desc === "string" ? ev.desc : "",
+                startedAt: ev.ts,
+            };
+            break;
+        }
+        case "task_end": {
+            if (typeof ev.stage !== "string" || !ev.stage) break;
+            if (!Number.isFinite(ev.sub)) break;
+            if (!TASK_OUTCOME_SET.has(ev.outcome)) break;
+            const startedAt = snap.taskInFlight
+                && snap.taskInFlight.stage === ev.stage
+                && snap.taskInFlight.sub === ev.sub
+                ? snap.taskInFlight.startedAt
+                : null;
+            const desc = snap.taskInFlight
+                && snap.taskInFlight.stage === ev.stage
+                && snap.taskInFlight.sub === ev.sub
+                ? snap.taskInFlight.desc
+                : null;
+            const durationMs = Number.isFinite(ev.durationMs)
+                ? ev.durationMs
+                : (startedAt !== null && Number.isFinite(ev.ts) ? ev.ts - startedAt : null);
+            snap.recentTasks.push({
+                stage: ev.stage,
+                sub: ev.sub,
+                desc,
+                outcome: ev.outcome,
+                durationMs,
+                startedAt,
+                endedAt: ev.ts,
+            });
+            if (
+                snap.taskInFlight
+                && snap.taskInFlight.stage === ev.stage
+                && snap.taskInFlight.sub === ev.sub
+            ) {
+                snap.taskInFlight = null;
+            }
+            break;
+        }
+        case "commit_observed": {
+            if (typeof ev.sha !== "string" || !ev.sha) break;
+            if (typeof ev.subject !== "string" || !ev.subject) break;
+            snap.lastCommit = {
+                sha: ev.sha,
+                subject: ev.subject,
+                trailers: Array.isArray(ev.trailers)
+                    ? ev.trailers.filter((t) => typeof t === "string" && t)
+                    : [],
+                ts: ev.ts,
+            };
+            break;
+        }
+        case "session_attached": {
+            // Issue #57 — surface the Copilot CLI session id so
+            // the App can mount tailSessionFile() against the
+            // matching `~/.copilot/session-state/<id>.jsonl`.
+            // Defensive validation mirrors the serializer's
+            // contract (non-empty string, ≤64 chars); a
+            // serializer that ever emits a malformed value
+            // produces a no-op fold rather than poisoning the
+            // snapshot.
+            if (typeof ev.sessionId !== "string" || !ev.sessionId) break;
+            if (ev.sessionId.length > 64) break;
+            snap.sessionId = ev.sessionId;
+            break;
+        }
+        // Issue #66 — per-iter git worktree lifecycle. Each iter
+        // that runs in worktree mode emits `worktree_created` at
+        // the top of its `iteration_start` block, then either
+        // `worktree_removed` (changes merged into base ref →
+        // sandbox + branch deleted) or `worktree_kept` (changes
+        // not merged → sandbox preserved on disk for inspection).
+        // Defensive shape validation mirrors the serializer.
+        case "worktree_created": {
+            if (typeof ev.path !== "string" || !ev.path) break;
+            if (typeof ev.branch !== "string" || !ev.branch) break;
+            snap.activeWorktree = {
+                path: ev.path,
+                branch: ev.branch,
+                baseRef: typeof ev.baseRef === "string" && ev.baseRef ? ev.baseRef : null,
+                iteration: Number.isFinite(ev.iteration) ? ev.iteration : null,
+                startedAt: ev.ts,
+            };
+            break;
+        }
+        case "worktree_removed": {
+            if (typeof ev.path !== "string" || !ev.path) break;
+            if (
+                snap.activeWorktree
+                && snap.activeWorktree.path === ev.path
+            ) {
+                snap.activeWorktree = null;
+            }
+            break;
+        }
+        case "worktree_kept": {
+            if (typeof ev.path !== "string" || !ev.path) break;
+            if (typeof ev.branch !== "string" || !ev.branch) break;
+            snap.keptWorktrees.push({
+                path: ev.path,
+                branch: ev.branch,
+                iteration: Number.isFinite(ev.iteration) ? ev.iteration : null,
+                ts: ev.ts,
+            });
+            if (
+                snap.activeWorktree
+                && snap.activeWorktree.path === ev.path
+            ) {
+                snap.activeWorktree = null;
+            }
+            break;
+        }
+        default:
+            // Unreachable — parseEventLine filters unknown types.
+            break;
+    }
+    return snap;
+}
+
+/**
+ * Reduce a list of LoopEvents into a snapshot describing the run's current
+ * state. Pure function — used by the TUI's render path and by tests as the
+ * canonical event-stream interpreter.
+ *
+ * The fold prefers the *latest* armed/complete/abort markers so a replay
+ * file containing multiple runs will only show the final one (the writer
+ * truncates the file at arm-time, but a replay tool may concatenate runs).
+ *
+ * Implementation note: thin wrapper over `createInitialSnapshot()` +
+ * `foldEvent()`. Public contract preserved byte-for-byte so the
+ * ~100 existing tests keep working without churn.
+ */
+export function foldEvents(events) {
+    if (!Array.isArray(events)) {
+        throw new TypeError("foldEvents: events must be an array");
+    }
+    const snap = createInitialSnapshot();
+    for (const ev of events) {
+        foldEvent(snap, ev);
     }
     return snap;
 }

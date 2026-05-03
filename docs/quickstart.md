@@ -7,11 +7,13 @@ and a second terminal tailing it live.
 ## Prerequisites
 
 - **Node.js >= 20.** Check with `node --version`.
-- **GitHub Copilot CLI** on your `$PATH`. Check with `copilot --version`. If
-  the binary is missing, follow the upstream
-  [Copilot CLI install guide](https://github.com/github/gh-copilot) first —
-  autopilot drives `copilot -p ...` once per iteration and cannot start
-  without it.
+- **GitHub Copilot CLI >= 1.0.0** on your `$PATH`. Check with
+  `copilot --version`. If the binary is missing or the reported
+  version is older, install / upgrade with `npm i -g @github/copilot`
+  — autopilot drives `copilot -p ... --output-format json` once per
+  iteration and the `--output-format` flag was re-introduced in the
+  1.0.0 line (see issue #105). After installing, run
+  `autopilot doctor` to confirm the resolved version is recognised.
 - **`git`** (any modern version) — autopilot inspects your working tree to
   signal progress between iterations.
 

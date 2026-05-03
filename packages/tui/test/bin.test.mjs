@@ -156,6 +156,35 @@ test("bin doctor: healthy case exits 0 and prints all sections", () => {
     rmSync(dir, { recursive: true, force: true });
 });
 
+test("bin doctor: includes copilot CLI status line by default (issue #105)", () => {
+    const dir = tmp();
+    // Force the copilot probe through a known-bad path so the test
+    // is hermetic — whatever the real $PATH looks like on the host
+    // we get a deterministic "not found" / "unknown" line. We must
+    // NOT set AUTOPILOT_SKIP_CLI_VERSION_CHECK here since the whole
+    // point is to assert the line shows up by default; clear it
+    // explicitly to defend against parent shells that already set it.
+    const r = runBin(["doctor"], {
+        RALPH_TUI_RUNS_DIR: dir,
+        AUTOPILOT_COPILOT_BIN: "/nonexistent-copilot-for-doctor-test",
+        AUTOPILOT_SKIP_CLI_VERSION_CHECK: "",
+    });
+    assert.equal(r.status, 0, "doctor must stay informational on missing copilot");
+    assert.match(r.stdout, /copilot CLI:/);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("bin doctor: AUTOPILOT_SKIP_CLI_VERSION_CHECK=1 suppresses the copilot CLI status line", () => {
+    const dir = tmp();
+    const r = runBin(["doctor"], {
+        RALPH_TUI_RUNS_DIR: dir,
+        AUTOPILOT_SKIP_CLI_VERSION_CHECK: "1",
+    });
+    assert.equal(r.status, 0);
+    assert.doesNotMatch(r.stdout, /copilot CLI:/);
+    rmSync(dir, { recursive: true, force: true });
+});
+
 test("bin doctor: unwritable runs root exits non-zero with path", () => {
     const dir = tmp();
     chmodSync(dir, 0o500);

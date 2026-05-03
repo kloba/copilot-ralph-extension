@@ -8,6 +8,14 @@
 
 > Above: `autopilot watch <runId>` tailing a `--self-improve` run on iter 1/10 — IDEATE/CRITIQUE/BASELINE stages green, IMPLEMENT in flight on open issue #105, with sub-task ticks, recent tool calls (`grep` / `view`), and the per-iter timeline rendered side-by-side.
 
+![Long-haul `autopilot` session showing 2,640 premium requests over 9h 48m 20s](docs/images/9h-session-copilot-ralph.jpg)
+
+> Long-haul autonomous loops can be **slow and costly**: this captured
+> `copilot --resume` session ran for 9h 48m 20s, consumed 2,640
+> premium requests, and streamed hundreds of millions of cached tokens.
+> Start with small `--max` / `--min` caps and watch usage before
+> leaving a run unattended.
+
 ## How it works
 
 `autopilot` drives a coding agent through three levels of decomposition, then loops:

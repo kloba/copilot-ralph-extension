@@ -115,6 +115,10 @@
   into a single per-run directory.
 
 ### Documentation
+- README now includes a long-haul `copilot --resume` screenshot
+  (`docs/images/9h-session-copilot-ralph.jpg`) showing a 9h 48m
+  autonomous session with 2,640 premium requests, so readers see
+  the time and usage cost risk before starting unattended runs.
 - README now leads with an `autopilot watch` screenshot
   (`docs/images/autopilot-watch.jpg`) of a `--self-improve` run
   mid-IMPLEMENT on open issue #105 — stages, tasks, activity,

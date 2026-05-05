@@ -138,6 +138,15 @@
   into a `{sha, subject, trailers[]}` triple, capping
   trailers at 8 to match the events.mjs serializer.
 
+### Documentation
+
+- Drop multi-agent positioning from README and `package.json`
+  keywords. v1 of the autopilot extension targets Copilot CLI
+  exclusively; the Ralph technique itself remains agent-agnostic
+  but this implementation is Copilot-specific. (issue
+  [#117](https://github.com/kloba/autopilot/issues/117), epic
+  [#116](https://github.com/kloba/autopilot/issues/116))
+
 ### Features
 
 - `ralph-tui run` now surfaces output-token totals and

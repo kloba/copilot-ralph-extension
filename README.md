@@ -17,12 +17,13 @@ Existing Ralph implementations for Copilot CLI (e.g. copilot-ralph-mode) are **s
 
 This extension instead runs **in-session**, driven by the Copilot CLI extension SDK's `session.idle` event — the same architectural pattern as Anthropic's Claude Code [`ralph-wiggum`](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum) plugin (their `Stop` hook). Conversation context is **retained** across iterations and every iteration is a normal assistant turn the user sees.
 
-| | This extension | Shell wrappers | Claude Code plugin |
-|---|---|---|---|
-| Agent | Copilot CLI | Copilot/Claude/Codex/etc. | Claude Code |
-| Context across iterations | Retained | Fresh each iter | Retained |
-| Where it runs | Inside your active session | External subprocess | Inside your active session |
-| Mechanism | `session.idle` event + `session.send` | Subprocess fork per iter | `Stop` hook + re-prompt |
+| | This extension | Shell wrappers |
+|---|---|---|
+| Context across iterations | Retained | Fresh each iter |
+| Where it runs | Inside your active Copilot CLI session | External subprocess |
+| Mechanism | `session.idle` event + `session.send` | Subprocess fork per iter |
+
+The Ralph technique itself is agent-agnostic — for Claude Code, see [Anthropic's `ralph-wiggum` plugin](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum). This repo specifically targets Copilot CLI's extension SDK and its native subagent (`/fleet`) infrastructure.
 
 If you want fresh-context iterations, use a shell-wrapper implementation. If you want the agent to keep its working memory inside Copilot CLI, use this.
 

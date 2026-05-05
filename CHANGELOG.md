@@ -72,6 +72,15 @@
     consecutive parse failures stop the loop with
     `parser_lost_lock`.
 
+### Fixes
+- Issue #121 follow-up — every `state.history` row now
+  carries a numeric `ts` field (`Date.now()` at push
+  time). Without it the watcher TUI's Timeline pane
+  rendered every row's clock column as `--:--:--`.
+  Pinned by a drift-guard test that asserts `typeof
+  row.ts === "number"` for every push site (outcome,
+  parse_failure, stop).
+
 ### Internal
 - Issue #120 — loop driver rewritten from scratch.
   `extension/handler.mjs` shrank from 2,437 LOC to

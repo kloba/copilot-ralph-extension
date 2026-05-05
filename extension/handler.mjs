@@ -349,7 +349,7 @@ export function createAutopilotController(opts = {}) {
         state.armed = false;
         state.stop_reason = reason;
         state.finished_at = Date.now();
-        if (detail) state.history.push({ iter: state.iter, event: "stop", reason, detail });
+        if (detail) state.history.push({ iter: state.iter, ts: Date.now(), event: "stop", reason, detail });
         const verb = reason === "complete" ? "✅ completed" : "⏹ stopped";
         log(`${verb} autopilot after ${state.iter} iter${state.iter === 1 ? "" : "s"} (reason: ${reason}${detail ? `, detail: ${detail}` : ""})`);
         // Move active-state into last_run for /autopilot status from a
@@ -380,7 +380,7 @@ export function createAutopilotController(opts = {}) {
             // the literal `[AUTOPILOT_RESULT:`).
             if (text.includes("[AUTOPILOT_RESULT:")) {
                 state.parse_failure_streak += 1;
-                state.history.push({ iter: state.iter, event: "parse_failure", error: parsed.error });
+                state.history.push({ iter: state.iter, ts: Date.now(), event: "parse_failure", error: parsed.error });
                 log(`autopilot: parse_failure streak=${state.parse_failure_streak} (${parsed.error})`);
                 writeState();
                 if (state.parse_failure_streak >= PARSE_FAILURE_LIMIT) {
@@ -396,7 +396,7 @@ export function createAutopilotController(opts = {}) {
             sha: parsed.sha ?? null,
             reason: parsed.reason ?? null,
         };
-        state.history.push({ iter: state.iter, event: "outcome", ...state.last_iter_outcome });
+        state.history.push({ iter: state.iter, ts: Date.now(), event: "outcome", ...state.last_iter_outcome });
         if (parsed.outcome === "complete") {
             state.scout_streak_no_work += 1;
             stopLoop("complete");

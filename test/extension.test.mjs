@@ -395,6 +395,43 @@ test("state: max_tokens cap stops the loop when exceeded", () => {
     }
 });
 
+// Drift guard: every `state.history` row must carry a numeric `ts`
+// (Date.now() at push time). The TUI Timeline pane (#121) renders
+// `formatClock(row.ts)` and falls back to `--:--:--` when missing,
+// so dropping `ts` would silently degrade the dashboard. Three
+// push sites in handler.mjs: outcome, parse_failure, stop.
+test("state: every history row includes a numeric `ts` field", () => {
+    const { controller, cleanup } = makeController();
+    try {
+        const session = makeFakeSession();
+        controller.attach(session);
+        const run = controller.tools.find((t) => t.name === "autopilot_run");
+        return run.handler({ max_iters: 5 }).then(() => {
+            const before = Date.now();
+            // 1) outcome push (shipped).
+            runTurn(session, `[AUTOPILOT_RESULT: {"outcome":"shipped","sha":"deadbee"}]`);
+            // 2) parse_failure push.
+            session.emit("assistant.message", {
+                data: { content: "[AUTOPILOT_RESULT: not-json}]" },
+            });
+            session.emit("session.idle", { data: {} });
+            // 3) stop push (with detail) via complete outcome.
+            runTurn(session, `[AUTOPILOT_RESULT: {"outcome":"complete"}]`);
+            const after = Date.now();
+            const rows = controller.state.history;
+            assert.ok(rows.length >= 2, `expected ≥2 history rows, got ${rows.length}`);
+            for (const row of rows) {
+                assert.equal(typeof row.ts, "number",
+                    `history row ${JSON.stringify(row)} missing numeric ts`);
+                assert.ok(row.ts >= before && row.ts <= after,
+                    `history row ts ${row.ts} outside test window [${before}, ${after}]`);
+            }
+        });
+    } finally {
+        cleanup();
+    }
+});
+
 test("state: sub-agent assistant.message events do not advance the parent loop", () => {
     const { controller, cleanup } = makeController();
     try {

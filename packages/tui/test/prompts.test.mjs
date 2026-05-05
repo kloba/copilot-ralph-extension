@@ -31,6 +31,7 @@ import assert from "node:assert/strict";
 import {
     PROMPT_SELF_IMPROVE,
     PROMPT_GROW_PROJECT,
+    PROMPT_FLEET,
     COMPLETION_PROMISE,
     BAKED_ABORT_TOKEN,
     BAKED_BACKLOG_ABORT_TOKEN,
@@ -208,4 +209,92 @@ test("PROMPT_GROW_PROJECT contains COMPLETION_PROMISE token", () => {
 
 test("PROMPT_GROW_PROJECT contains BAKED_BACKLOG_ABORT_TOKEN", () => {
     assert.ok(PROMPT_GROW_PROJECT.includes(BAKED_BACKLOG_ABORT_TOKEN));
+});
+
+// ───────────── PROMPT_FLEET: token presence + framing ─────────────
+//
+// Fleet is the new "find one work item, ship it, repeat" loop. The
+// runner reads COMPLETION_PROMISE / BAKED_BACKLOG_ABORT_TOKEN from
+// prompts.mjs to decide when to advance the iter / terminate the
+// loop, so a regression that drops either literal silently breaks
+// the whole loop. The load-time guard at the bottom of prompts.mjs
+// already throws on import; these tests duplicate the check at the
+// unit level for a named-failure signal.
+
+test("PROMPT_FLEET contains COMPLETION_PROMISE token", () => {
+    assert.ok(
+        PROMPT_FLEET.includes(COMPLETION_PROMISE),
+        "PROMPT_FLEET must contain 'COMPLETE' — runner watches for this token",
+    );
+});
+
+test("PROMPT_FLEET contains BAKED_BACKLOG_ABORT_TOKEN", () => {
+    assert.ok(
+        PROMPT_FLEET.includes(BAKED_BACKLOG_ABORT_TOKEN),
+        "PROMPT_FLEET must contain 'ABORT_NO_BACKLOG' — runner watches for this token",
+    );
+});
+
+test("PROMPT_FLEET frames the prompt as 'AUTOPILOT MODE'", () => {
+    // The framing token doubles as a UX promise: 'no questions to the
+    // user'. A regression that drops it would silently re-introduce
+    // approval prompts mid-loop.
+    assert.match(
+        PROMPT_FLEET,
+        /AUTOPILOT MODE/,
+        "PROMPT_FLEET must frame the loop as AUTOPILOT MODE — the no-questions contract depends on this",
+    );
+});
+
+test("PROMPT_FLEET pins the five-stage walk in order: ORIENT → IMPLEMENT → COMMIT → PUSH → END", () => {
+    // Match the numbered walk anchors (`1.` / `2.` / …) so the test
+    // pins the per-iter stage list, not the prose mentions of the same
+    // stage names elsewhere in the prompt body. The runner's worktree
+    // teardown depends on `[STAGE: END]` at the tail; reordering or
+    // dropping any stage breaks teardown. This mirrors
+    // `SDLC_STAGES_FLEET` in events.mjs (pinned separately in
+    // events.test.mjs).
+    const orientIdx = PROMPT_FLEET.indexOf("1. [STAGE: ORIENT]");
+    const implementIdx = PROMPT_FLEET.indexOf("2. [STAGE: IMPLEMENT]");
+    const commitIdx = PROMPT_FLEET.indexOf("3. [STAGE: COMMIT]");
+    const pushIdx = PROMPT_FLEET.indexOf("4. [STAGE: PUSH]");
+    const endIdx = PROMPT_FLEET.indexOf("5. [STAGE: END]");
+    assert.ok(orientIdx >= 0, "PROMPT_FLEET must mention 1. [STAGE: ORIENT]");
+    assert.ok(implementIdx > orientIdx, "2. [STAGE: IMPLEMENT] must come after 1. [STAGE: ORIENT]");
+    assert.ok(commitIdx > implementIdx, "3. [STAGE: COMMIT] must come after 2. [STAGE: IMPLEMENT]");
+    assert.ok(pushIdx > commitIdx, "4. [STAGE: PUSH] must come after 3. [STAGE: COMMIT]");
+    assert.ok(endIdx > pushIdx, "5. [STAGE: END] must come after 4. [STAGE: PUSH] (worktree teardown depends on it)");
+});
+
+test("PROMPT_FLEET pins priority-tier order: RED CI → STALE OPEN PR → OPEN ISSUE", () => {
+    // Same priority tiers as PROMPT_SELF_IMPROVE EXCEPT no tier (d)
+    // ideation backstop — fleet drains, it doesn't grow.
+    const aIdx = PROMPT_FLEET.indexOf("a. RED CI");
+    const bIdx = PROMPT_FLEET.indexOf("b. STALE OPEN PR");
+    const cIdx = PROMPT_FLEET.indexOf("c. OPEN ISSUE");
+    assert.ok(aIdx >= 0, "tier (a) RED CI must be present");
+    assert.ok(bIdx > aIdx, "tier (b) STALE OPEN PR must come after tier (a)");
+    assert.ok(cIdx > bIdx, "tier (c) OPEN ISSUE must come after tier (b)");
+});
+
+test("PROMPT_FLEET does NOT contain IDEATE_NEXT_FEATURE — fleet drains, it doesn't grow", () => {
+    // The fundamental difference vs PROMPT_SELF_IMPROVE: fleet aborts
+    // when the backlog is empty; it does NOT auto-grow new features.
+    // A future edit that re-adds an ideation step here would silently
+    // turn fleet into self_improve.
+    assert.ok(
+        !PROMPT_FLEET.includes("IDEATE_NEXT_FEATURE"),
+        "PROMPT_FLEET must NOT contain IDEATE_NEXT_FEATURE — fleet aborts on empty backlog instead",
+    );
+});
+
+test("PROMPT_FLEET pins the no-questions-to-user hard rule", () => {
+    // The headline UX promise of fleet mode. Regressing this silently
+    // re-introduces approval prompts, which defeats the point of
+    // putting the loop on autopilot.
+    assert.match(
+        PROMPT_FLEET,
+        /No questions to the user|never ask the user a question/i,
+        "PROMPT_FLEET must pin the no-questions-to-user contract",
+    );
 });

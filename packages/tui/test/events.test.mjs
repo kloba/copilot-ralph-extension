@@ -640,9 +640,10 @@ test("foldEvents: armed resets all stage / substage / backlog state (replay-with
 import {
     SDLC_STAGES_SELF_IMPROVE,
     SDLC_STAGES_GROW_PROJECT,
+    SDLC_STAGES_FLEET,
     stagesForLabel,
 } from "../src/events.mjs";
-import { PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT } from "../src/prompts.mjs";
+import { PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, PROMPT_FLEET } from "../src/prompts.mjs";
 
 test("SDLC_STAGES_SELF_IMPROVE: every stage name appears in PROMPT_SELF_IMPROVE", () => {
     for (const stage of SDLC_STAGES_SELF_IMPROVE) {
@@ -662,9 +663,26 @@ test("SDLC_STAGES_GROW_PROJECT: every stage name appears in PROMPT_GROW_PROJECT"
     }
 });
 
+test("SDLC_STAGES_FLEET: every stage name appears in PROMPT_FLEET", () => {
+    for (const stage of SDLC_STAGES_FLEET) {
+        assert.ok(
+            PROMPT_FLEET.includes(`[STAGE: ${stage}]`),
+            `PROMPT_FLEET missing marker [STAGE: ${stage}] — drift between events.mjs stage list and the baked prompt body`,
+        );
+    }
+});
+
+test("SDLC_STAGES_FLEET: pinned five-stage shape ORIENT → IMPLEMENT → COMMIT → PUSH → END", () => {
+    // The runner's per-iter worktree teardown depends on the END stage
+    // being the tail; reordering or trimming the list silently breaks
+    // teardown for the fleet loop.
+    assert.deepEqual(SDLC_STAGES_FLEET, ["ORIENT", "IMPLEMENT", "COMMIT", "PUSH", "END"]);
+});
+
 test("stagesForLabel: maps labels to their canonical lists; unknown → null", () => {
     assert.equal(stagesForLabel("self_improve"), SDLC_STAGES_SELF_IMPROVE);
     assert.equal(stagesForLabel("grow_project"), SDLC_STAGES_GROW_PROJECT);
+    assert.equal(stagesForLabel("fleet"), SDLC_STAGES_FLEET);
     assert.equal(stagesForLabel("ralph_loop"), null, "ralph_loop / custom-prompt mode has no fixed stage list");
     assert.equal(stagesForLabel(undefined), null);
     assert.equal(stagesForLabel(""), null);

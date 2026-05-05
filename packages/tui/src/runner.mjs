@@ -41,6 +41,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
     PROMPT_SELF_IMPROVE,
     PROMPT_GROW_PROJECT,
+    PROMPT_FLEET,
     COMPLETION_PROMISE,
     BAKED_ABORT_TOKEN,
     BAKED_BACKLOG_ABORT_TOKEN,
@@ -50,6 +51,7 @@ import { createEventEmitter } from "./events-emit.mjs";
 import {
     SDLC_STAGES_SELF_IMPROVE,
     SDLC_STAGES_GROW_PROJECT,
+    SDLC_STAGES_FLEET,
     PINNED_TAIL_STAGES,
     WORKITEM_KINDS,
     TASK_OUTCOMES,
@@ -74,7 +76,7 @@ const TASK_OUTCOME_SET = new Set(TASK_OUTCOMES);
 // re-importing ./prompts.mjs (single import surface for the
 // TUI package; downstream tooling that wants the prompt string for
 // audit/dump only depends on this module).
-export { PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, COMPLETION_PROMISE, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN };
+export { PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT, PROMPT_FLEET, COMPLETION_PROMISE, BAKED_ABORT_TOKEN, BAKED_BACKLOG_ABORT_TOKEN };
 
 // Cap on the optional --grow-project focus arg.
 export const MAX_FOCUS_CHARS = 2000;
@@ -298,13 +300,14 @@ export function validateFocus(focus) {
 }
 
 /** Compose the per-iter prompt body. For --self-improve /
- *  --grow-project, this is the baked SDLC prompt with optional
- *  `Focus this run on: <focus>` suffix. For --prompt mode, it's the
- *  user's prompt verbatim. */
+ *  --grow-project / --fleet, this is the baked SDLC prompt with
+ *  optional `Focus this run on: <focus>` suffix. For --prompt mode,
+ *  it's the user's prompt verbatim. */
 export function composePrompt({ mode, prompt, focus }) {
     let base;
     if (mode === "self-improve") base = PROMPT_SELF_IMPROVE;
     else if (mode === "grow-project") base = PROMPT_GROW_PROJECT;
+    else if (mode === "fleet") base = PROMPT_FLEET;
     else if (mode === "prompt") base = prompt;
     else throw new TypeError(`composePrompt: unknown mode "${mode}"`);
     if (focus) return `${base}\n\nFocus this run on: ${focus}`;
@@ -698,6 +701,7 @@ export function buildCursorPreamble({ runId, env, deps = {} } = {}) {
 function labelForMode(mode) {
     if (mode === "self-improve") return "ralph-tui-self-improve";
     if (mode === "grow-project") return "ralph-tui-grow-project";
+    if (mode === "fleet") return "ralph-tui-fleet";
     if (mode === "prompt") return "ralph-tui-prompt";
     throw new TypeError(`labelForMode: unknown mode "${mode}"`);
 }
@@ -712,6 +716,7 @@ function labelForMode(mode) {
 export function stagesForMode(mode) {
     if (mode === "self-improve") return SDLC_STAGES_SELF_IMPROVE;
     if (mode === "grow-project") return SDLC_STAGES_GROW_PROJECT;
+    if (mode === "fleet") return SDLC_STAGES_FLEET;
     return null;
 }
 
@@ -1543,6 +1548,7 @@ export function extractAgentTimeline(events, allowedStages) {
 function defaultAbortPromise(mode) {
     if (mode === "self-improve") return BAKED_ABORT_TOKEN;
     if (mode === "grow-project") return BAKED_BACKLOG_ABORT_TOKEN;
+    if (mode === "fleet") return BAKED_BACKLOG_ABORT_TOKEN;
     return undefined; // --prompt mode has no default abort
 }
 
@@ -1754,7 +1760,7 @@ export { RESET_ON_VALUES };
  * or unrecoverable subprocess error.
  *
  * Required:
- *   mode           "self-improve" | "grow-project" | "prompt"
+ *   mode           "self-improve" | "grow-project" | "fleet" | "prompt"
  *
  * One of (default `resetOn = "workitem"`):
  *   resetOn        "workitem" (default) | "iter" | "never"
@@ -1830,14 +1836,14 @@ export async function runRalphTui(opts) {
         // back to no commit narration.
         gitExec = defaultGitExec,
         // Issue #66 — opt-in per-iter git worktree mode. Default-on
-        // for `self-improve` and `grow-project` (both follow the
-        // COMMIT → PUSH → END pinned tail), opt-in for `--prompt`.
-        // When true, each iter spawns in a fresh worktree at
-        // `<runsRoot>/<runId>/worktrees/iter-<N>/` branched from
+        // for `self-improve`, `grow-project`, and `fleet` (all three
+        // follow the COMMIT → PUSH → END pinned tail), opt-in for
+        // `--prompt`. When true, each iter spawns in a fresh worktree
+        // at `<runsRoot>/<runId>/worktrees/iter-<N>/` branched from
         // `worktreeBaseRef`; the worktree is removed on END iff its
         // changes are merged into the base ref, otherwise a
         // `worktree_kept` event records the absolute path.
-        worktree = (mode === "self-improve" || mode === "grow-project"),
+        worktree = (mode === "self-improve" || mode === "grow-project" || mode === "fleet"),
         // Issue #66 D4 — base ref each iter forks from. `main` HEAD
         // at iter start so iter N+1 sees iter N's merged work. The
         // value is a ref string (`main`, `develop`, an SHA, …);
@@ -1845,7 +1851,7 @@ export async function runRalphTui(opts) {
         worktreeBaseRef = DEFAULT_WORKTREE_BASE_REF,
     } = opts;
 
-    if (mode !== "self-improve" && mode !== "grow-project" && mode !== "prompt") {
+    if (mode !== "self-improve" && mode !== "grow-project" && mode !== "fleet" && mode !== "prompt") {
         throw new TypeError(`runRalphTui: invalid mode "${mode}"`);
     }
 

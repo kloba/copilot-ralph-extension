@@ -273,11 +273,32 @@ export const SDLC_STAGES_GROW_PROJECT = Object.freeze([
     "END",
 ]);
 
+/** Canonical SDLC stage list for `--fleet`, in execution order.
+ *
+ * Unlike self_improve / grow_project (one-step-per-iter cursor) the
+ * fleet loop ships one WORK ITEM per iter atomically — orient + pick
+ * + implement + commit + push + end all in a single iter. Each iter
+ * walks every stage in this list and emits `[STAGE: END]` so the
+ * per-iter worktree teardown fires (runner.mjs:2761-2794 only removes
+ * the worktree when `sawEndStage && verifyMerged(...)`).
+ *
+ * `ORIENT` is the brief gh probe + work-item pick. `IMPLEMENT` covers
+ * everything from edit to test green. `COMMIT` / `PUSH` / `END` are
+ * the pinned tail shared with the other SDLC modes. */
+export const SDLC_STAGES_FLEET = Object.freeze([
+    "ORIENT",
+    "IMPLEMENT",
+    "COMMIT",
+    "PUSH",
+    "END",
+]);
+
 /** Map a loop label to its canonical stage list. Returns null for
  *  custom-prompt loops (no stage row rendered). */
 export function stagesForLabel(label) {
     if (label === "self_improve") return SDLC_STAGES_SELF_IMPROVE;
     if (label === "grow_project") return SDLC_STAGES_GROW_PROJECT;
+    if (label === "fleet") return SDLC_STAGES_FLEET;
     return null;
 }
 

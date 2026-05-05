@@ -35,6 +35,7 @@ import {
     runOneIteration,
     PROMPT_SELF_IMPROVE,
     PROMPT_GROW_PROJECT,
+    PROMPT_FLEET,
     COMPLETION_PROMISE,
     BAKED_ABORT_TOKEN,
     BAKED_BACKLOG_ABORT_TOKEN,
@@ -91,6 +92,16 @@ test("composePrompt: grow-project with focus appends suffix", () => {
     const out = composePrompt({ mode: "grow-project", focus: "X" });
     assert.ok(out.startsWith(PROMPT_GROW_PROJECT));
     assert.ok(out.endsWith("\n\nFocus this run on: X"));
+});
+
+test("composePrompt: fleet no focus = baked PROMPT_FLEET verbatim", () => {
+    assert.equal(composePrompt({ mode: "fleet" }), PROMPT_FLEET);
+});
+
+test("composePrompt: fleet with focus appends suffix", () => {
+    const out = composePrompt({ mode: "fleet", focus: "drain red CI first" });
+    assert.ok(out.startsWith(PROMPT_FLEET));
+    assert.ok(out.endsWith("\n\nFocus this run on: drain red CI first"));
 });
 
 test("composePrompt: prompt mode uses raw user prompt", () => {
@@ -571,6 +582,32 @@ test("runRalphTui: ABORT_NO_BACKLOG default abort for grow-project", async () =>
     assert.equal(result.terminationReason, "abort");
 });
 
+test("runRalphTui: ABORT_NO_BACKLOG default abort for fleet", async () => {
+    // Fleet inherits grow-project's BAKED_BACKLOG_ABORT_TOKEN as the
+    // default abort_promise — when all three backlog tiers are empty
+    // the agent emits ABORT_NO_BACKLOG and the runner terminates the
+    // whole loop. Pin the wiring at the integration boundary so a
+    // future edit to defaultAbortPromise(mode) can't silently regress
+    // fleet's terminator without this test failing.
+    const spawn = makeMockSpawn([
+        {
+            stdout: [
+                JSON.stringify({ type: "assistant.message", data: { content: BAKED_BACKLOG_ABORT_TOKEN } }),
+                JSON.stringify({ type: "result", success: true, result: { sessionId: "s" } }),
+            ].join("\n") + "\n",
+            exitCode: 0,
+        },
+    ]);
+    const result = await runRalphTui({
+        mode: "fleet",
+        contextMode: "fresh",
+        max: 5,
+        env: makeEnv(),
+        spawn,
+    });
+    assert.equal(result.terminationReason, "abort");
+});
+
 test("runRalphTui: max-iter cap fires when no terminator is emitted", async () => {
     let n = 0;
     const spawn = function () {
@@ -821,11 +858,12 @@ test("runRalphTui: emits abort (NOT 'aborted') for early-terminate", async () =>
 // ─── Issue #48 slice 4: stage marker parser + runner integration ─────
 
 import { extractStageMarkers, stagesForMode } from "../src/runner.mjs";
-import { SDLC_STAGES_SELF_IMPROVE, SDLC_STAGES_GROW_PROJECT } from "../src/events.mjs";
+import { SDLC_STAGES_SELF_IMPROVE, SDLC_STAGES_GROW_PROJECT, SDLC_STAGES_FLEET } from "../src/events.mjs";
 
 test("stagesForMode: maps modes to canonical lists", () => {
     assert.equal(stagesForMode("self-improve"), SDLC_STAGES_SELF_IMPROVE);
     assert.equal(stagesForMode("grow-project"), SDLC_STAGES_GROW_PROJECT);
+    assert.equal(stagesForMode("fleet"), SDLC_STAGES_FLEET);
     assert.equal(stagesForMode("prompt"), null,
         "prompt mode has no canonical stage list — the user supplies the prompt");
     assert.equal(stagesForMode("future-mode"), null);

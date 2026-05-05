@@ -1062,6 +1062,7 @@ test("parseArgv: --help is recognised and main short-circuits to USAGE before ba
 
 import {
     cmdAgentSubcommand,
+    cmdFleet,
     AGENT_REGISTRY,
     loadAgentByName,
     main as binMain,
@@ -1326,6 +1327,102 @@ test("main: 'copilot --help' surfaces the run-style flags", () => {
     assert.match(r.stdout, /--grow-project/);
     assert.match(r.stdout, /--continue/);
     assert.match(r.stdout, /--fresh/);
+});
+
+// ─── Fleet pivot — `--fleet` flag + `autopilot fleet` subcommand ──
+//
+// Mirrors the agent-subcommand wiring above. Bare `autopilot fleet`
+// drives the baked PROMPT_FLEET via copilot with workitem-reset / yolo;
+// `autopilot run --fleet` is the explicit form that lets the user pick
+// flags. The two paths share `cmdFleet` (subcommand) and the bare
+// `--fleet` mode dispatch in `cmdRun` (validated by runner.test.mjs's
+// `composePrompt({mode:"fleet"})` and ABORT_NO_BACKLOG-default tests).
+
+test("parseArgv: --fleet sets flag (boolean, not value-taking)", () => {
+    const r = parseArgv(["run", "--fleet", "--fresh"]);
+    assert.equal(r.cmd, "run");
+    assert.equal(r.flags.fleet, true);
+    assert.equal(r.flags.fresh, true);
+});
+
+test("--help surfaces --fleet documentation", () => {
+    const r = runBin(["--help"]);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /--fleet/, "--help must document the --fleet driver flag");
+    assert.match(r.stdout, /autopilot fleet/, "--help must document the bare `autopilot fleet` subcommand");
+});
+
+test("cmdFleet: bare 'fleet' fills in fleet driver + agent=copilot, prints fleet banner", async () => {
+    const dir = tmp();
+    const origRunsDir = process.env.RALPH_TUI_RUNS_DIR;
+    const origCopilotBin = process.env.RALPH_TUI_COPILOT_BIN;
+    process.env.RALPH_TUI_RUNS_DIR = dir;
+    process.env.RALPH_TUI_COPILOT_BIN = "/nonexistent-copilot-binary-for-fleet";
+    let captured;
+    try {
+        captured = await captureIo(async () => {
+            try { await cmdFleet({}); } catch { /* spawn failure — irrelevant */ }
+        });
+    } finally {
+        if (origRunsDir === undefined) delete process.env.RALPH_TUI_RUNS_DIR;
+        else process.env.RALPH_TUI_RUNS_DIR = origRunsDir;
+        if (origCopilotBin === undefined) delete process.env.RALPH_TUI_COPILOT_BIN;
+        else process.env.RALPH_TUI_COPILOT_BIN = origCopilotBin;
+        rmSync(dir, { recursive: true, force: true });
+    }
+    assert.match(captured.stderr, /starting fleet loop with copilot/,
+        "bare 'fleet' must print the fleet-pinned banner to stderr");
+    assert.match(captured.stderr, /workitem.*yolo/,
+        "bare 'fleet' banner must mention workitem reset and yolo");
+});
+
+test("cmdFleet: rejects when combined with --self-improve / --grow-project / --prompt", async () => {
+    // The fleet subcommand has unambiguous semantics — mixing with
+    // another driver flag is a usage error. The user can drop down to
+    // `autopilot run` for explicit mixing.
+    const captured = await captureIo(async () => {
+        await cmdFleet({ "self-improve": true });
+    });
+    assert.match(captured.stderr, /cannot combine with --self-improve/,
+        "cmdFleet must reject conflicting driver flags");
+
+    const captured2 = await captureIo(async () => {
+        await cmdFleet({ prompt: "anything" });
+    });
+    assert.match(captured2.stderr, /cannot combine.*--prompt/,
+        "cmdFleet must reject --prompt mixing");
+});
+
+test("main: 'fleet' subcommand routes through cmdFleet", async () => {
+    const dir = tmp();
+    const origRunsDir = process.env.RALPH_TUI_RUNS_DIR;
+    const origCopilotBin = process.env.RALPH_TUI_COPILOT_BIN;
+    process.env.RALPH_TUI_RUNS_DIR = dir;
+    process.env.RALPH_TUI_COPILOT_BIN = "/nonexistent-copilot-binary-for-fleet";
+    let captured;
+    try {
+        captured = await captureIo(async () => {
+            try { await binMain(["fleet"]); } catch { /* spawn failure — irrelevant */ }
+        });
+    } finally {
+        if (origRunsDir === undefined) delete process.env.RALPH_TUI_RUNS_DIR;
+        else process.env.RALPH_TUI_RUNS_DIR = origRunsDir;
+        if (origCopilotBin === undefined) delete process.env.RALPH_TUI_COPILOT_BIN;
+        else process.env.RALPH_TUI_COPILOT_BIN = origCopilotBin;
+        rmSync(dir, { recursive: true, force: true });
+    }
+    assert.match(captured.stderr, /starting fleet loop with copilot/);
+});
+
+test("run --fleet --self-improve fails with clear 'choose one of' error", () => {
+    // The mode dispatcher inside cmdRun must reject a stacked driver
+    // flag combination — this prevents an ambiguity where the user
+    // could end up running self-improve with a fleet banner.
+    const r = runBin(["run", "--fleet", "--self-improve"]);
+    assert.notEqual(r.status, 0,
+        "stacked --fleet + --self-improve must exit non-zero");
+    assert.match(r.stderr, /choose exactly one of/);
+    assert.match(r.stderr, /--fleet/);
 });
 
 test("main: 'claude --help' surfaces the run-style flags", () => {

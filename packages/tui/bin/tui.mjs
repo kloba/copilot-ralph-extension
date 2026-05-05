@@ -15,6 +15,16 @@
 //                                iters with Claude Code's CLI
 //                                (`claude -p ... --dangerously-skip-permissions
 //                                --output-format stream-json`).
+//   fleet                      — drive an iter loop with the baked
+//                                "find one work item, ship it, repeat"
+//                                fleet prompt: orient → implement →
+//                                commit → push → end, atomic per iter,
+//                                no questions to the user. Bare
+//                                invocation = fleet / workitem-reset /
+//                                yolo against the Copilot CLI backend.
+//                                Aborts with ABORT_NO_BACKLOG when all
+//                                three backlog tiers (red CI / stale
+//                                PR / open issue) are empty.
 //   list                       — show recorded runs (newest first;
 //                                 `--json` for scripting/dashboards;
 //                                 `--limit N` to cap the table).
@@ -91,7 +101,12 @@ USAGE
   autopilot prune [--older-than 30d] [--dry-run]
   autopilot stats
   autopilot where
-  autopilot run (--self-improve | --grow-project | --prompt TEXT)
+  autopilot fleet [run flags]                      (drive iters with the
+                                                    fleet \"find one work
+                                                    item, ship it, repeat\"
+                                                    prompt; bare = fleet /
+                                                    workitem-reset / yolo)
+  autopilot run (--self-improve | --grow-project | --fleet | --prompt TEXT)
                 [--reset-on={workitem|iter|never}]
                 [--max N] [--min N] [--focus TEXT] [--headless | --plain]
                 [--completion-promise TOKEN] [--abort-promise TOKEN]
@@ -113,6 +128,11 @@ OPTIONS
   --dry-run   For \`prune\`: list what would be removed; delete nothing.
   --self-improve  For \`run\`: drive the baked self_improve SDLC prompt.
   --grow-project  For \`run\`: drive the baked grow_project SDLC prompt.
+  --fleet         For \`run\`: drive the fleet "find one work item, ship
+              it, repeat" prompt — one WORK ITEM per iter, atomic, no
+              questions to the user. Aborts with ABORT_NO_BACKLOG when
+              all three tiers (red CI / stale PR / open issue) are
+              empty. Default for the bare \`autopilot fleet\` subcommand.
   --prompt TEXT   For \`run\`: drive a ralph_loop-style custom prompt.
   --reset-on={workitem|iter|never}
               For \`run\`: when to start a fresh agent session.
@@ -696,6 +716,7 @@ const SIBLING_FLAGS = ["pause", "resume", "stop", "status"];
 function modeLabelFromFlags(flags) {
     if (flags["self-improve"]) return "self-improve";
     if (flags["grow-project"]) return "grow-project";
+    if (flags.fleet) return "fleet";
     if (flags.prompt !== undefined) return "prompt";
     return "self-improve";
 }
@@ -719,6 +740,7 @@ export async function cmdAgentSubcommand(agentName, flags) {
     const hasSiblingFlag = SIBLING_FLAGS.some((k) => merged[k] !== undefined);
     const hasDriverFlag = merged["self-improve"]
         || merged["grow-project"]
+        || merged.fleet
         || merged.prompt !== undefined;
     // Bare invocation (no driver flag, no sibling flag) → default to
     // self-improve / fresh.
@@ -735,6 +757,47 @@ export async function cmdAgentSubcommand(agentName, flags) {
         const modeLabel = modeLabelFromFlags(merged);
         process.stderr.write(
             `autopilot: starting ${modeLabel} loop with ${agentName} (${ctxLabel}, yolo). Press q to stop.\n`,
+        );
+    }
+    return await cmdRun(merged);
+}
+
+/** Bare `autopilot fleet` subcommand. Sets `--fleet` and falls through
+ *  to `cmdRun` with the existing flag plumbing. Mirrors how
+ *  `cmdAgentSubcommand` routes bare `autopilot copilot` /
+ *  `autopilot claude` to a default driver flag — except here the
+ *  agent backend is explicitly Copilot (the fleet prompt is validated
+ *  only against the Copilot CLI for v1). Explicit `--prompt` /
+ *  `--self-improve` / `--grow-project` flags are rejected so the
+ *  subcommand has unambiguous semantics; use `autopilot run --fleet`
+ *  if you need to mix flags.
+ *
+ *  Banner mirrors the bare-`autopilot` startup line so the user has a
+ *  one-line confirmation that fleet mode is about to run.
+ */
+export async function cmdFleet(flags) {
+    const merged = { ...flags };
+    const hasSiblingFlag = SIBLING_FLAGS.some((k) => merged[k] !== undefined);
+    const hasOtherDriver = merged["self-improve"]
+        || merged["grow-project"]
+        || merged.prompt !== undefined;
+    if (hasOtherDriver) {
+        // Don't call `fail()` here — that hard-exits the process,
+        // which is fine in production (one shot per CLI invocation)
+        // but breaks in-process tests that exercise this validation
+        // path. Mirror the existing pattern: write the diagnostic to
+        // stderr and return the conventional exit code so the caller
+        // (subcommand dispatcher → main → process.exit) can finalise.
+        process.stderr.write(
+            `autopilot: fleet: cannot combine with --self-improve / --grow-project / --prompt — use \`autopilot run\` for explicit mode mixing.\n`,
+        );
+        return 2;
+    }
+    merged.fleet = true;
+    if (!merged.agent) merged.agent = "copilot";
+    if (!hasSiblingFlag) {
+        process.stderr.write(
+            `autopilot: starting fleet loop with copilot (--reset-on=workitem, yolo). Press q to stop.\n`,
         );
     }
     return await cmdRun(merged);
@@ -820,19 +883,23 @@ export async function cmdRun(flags) {
     }
 
     // Driver path — exactly one of --self-improve / --grow-project /
-    // --prompt and exactly one of --continue / --fresh.
+    // --fleet / --prompt and exactly one of --continue / --fresh.
     let mode = null;
     if (flags["self-improve"]) mode = "self-improve";
     if (flags["grow-project"]) {
-        if (mode) { fail(`run: choose exactly one of --self-improve / --grow-project / --prompt`); return 2; }
+        if (mode) { fail(`run: choose exactly one of --self-improve / --grow-project / --fleet / --prompt`); return 2; }
         mode = "grow-project";
     }
+    if (flags.fleet) {
+        if (mode) { fail(`run: choose exactly one of --self-improve / --grow-project / --fleet / --prompt`); return 2; }
+        mode = "fleet";
+    }
     if (flags.prompt !== undefined) {
-        if (mode) { fail(`run: choose exactly one of --self-improve / --grow-project / --prompt`); return 2; }
+        if (mode) { fail(`run: choose exactly one of --self-improve / --grow-project / --fleet / --prompt`); return 2; }
         mode = "prompt";
     }
     if (!mode) {
-        fail(`run: choose one of --self-improve / --grow-project / --prompt TEXT`);
+        fail(`run: choose one of --self-improve / --grow-project / --fleet / --prompt TEXT`);
         return 2;
     }
     if (mode === "prompt" && (flags.prompt === true || typeof flags.prompt !== "string" || !flags.prompt.trim())) {
@@ -1169,6 +1236,10 @@ export async function main(argv = process.argv.slice(2)) {
         // through to `cmdRun` unchanged.
         case "copilot": return await cmdAgentSubcommand("copilot", flags);
         case "claude": return await cmdAgentSubcommand("claude", flags);
+        // Fleet pivot — bare `autopilot fleet` runs the
+        // "find one work item, ship it, repeat" prompt with copilot
+        // and the default workitem reset boundary.
+        case "fleet": return await cmdFleet(flags);
         default:
             fail(`unknown command: ${cmd}\n${USAGE}`);
             return 2;

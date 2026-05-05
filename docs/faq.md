@@ -106,21 +106,27 @@ state-machine writeup.
 
 ## Output and observability
 
-### Where does a running loop's event log live?
+### Where is a running loop's state persisted?
 
-By default: `~/.copilot/ralph/runs/<runId>/events.jsonl`. Override
-the runs root with the `RALPH_EVENTS_DIR` environment variable. The
-`<runId>` shape is `${label}-${startedAt}` — sortable,
-filesystem-safe, and surfaced in the `armed` event so the TUI can
-locate it.
+By default: `~/.copilot/autopilot/state.json`. The autopilot loop
+driver (`extension/handler.mjs`) writes a JSON snapshot to that
+path on every state change via an atomic temp+rename so concurrent
+readers never see a half-written file. Override the path with
+`AUTOPILOT_STATE_FILE` if you need to.
 
-### How do I tail a running loop's events?
+### How do I watch a running loop?
 
-Use the bundled TUI: `npx ralph-tui watch <runId>` to follow events
-live, or `ralph-tui list` to see runs the index knows about. See
-README → [Inspecting a running loop](https://github.com/kloba/copilot-ralph-extension#inspecting-a-running-loop-ap_status-tool)
-for the snapshot tool that returns a structured live snapshot
-without leaving the chat.
+Use the bundled `@autopilot/tui` watcher — see
+[`packages/tui/README.md`](../packages/tui/README.md). One-liner
+from the repo root:
+
+```sh
+node packages/tui/bin/tui.mjs watch
+```
+
+It polls the state file and renders Header / Timeline / Footer.
+You can also call `autopilot_status` from inside the originating
+Copilot CLI session for a single structured snapshot.
 
 ### Why is `pausedForMs` zero on a `resume` event?
 

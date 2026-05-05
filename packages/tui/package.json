@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Terminal UI for visualizing live ap_loop / self_improve / grow_project runs (issue #22).",
+  "description": "Read-only terminal dashboard for the autopilot loop's persisted state file (issue #121).",
   "author": "Taras Kloba",
   "keywords": [
     "github-copilot",
@@ -23,12 +23,14 @@
   },
   "homepage": "https://github.com/kloba/autopilot#readme",
   "bin": {
-    "autopilot": "./bin/tui.mjs"
+    "autopilot-tui": "./bin/tui.mjs"
   },
-  "main": "./src/events.mjs",
+  "main": "./src/state.mjs",
   "exports": {
-    ".": "./src/events.mjs",
-    "./events": "./src/events.mjs"
+    ".": "./src/state.mjs",
+    "./state": "./src/state.mjs",
+    "./format": "./src/format.mjs",
+    "./render-plain": "./src/render-plain.mjs"
   },
   "scripts": {
     "test": "node --test test/*.test.mjs"
@@ -37,9 +39,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "commander": "^14.0.3",
     "ink": "^7.0.1",
-    "ink-spinner": "^5.0.0",
     "react": "^19.2.5"
   },
   "devDependencies": {

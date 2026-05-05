@@ -26,6 +26,22 @@
   `[SUBSTAGE:]` markers and the `events-emit.mjs` event
   bridge are gone — the TUI consumes the result-token
   protocol directly.
+- Issue #121 (refs #116) — TUI rewritten as a thin
+  read-only watcher of `~/.copilot/autopilot/state.json`.
+  The legacy out-of-session SDLC driver (`ralph-tui run …`,
+  ~510 LOC of `_legacy-prompts.mjs` + `_legacy-events-emit.mjs`,
+  the `runner.mjs` mode-2 path, plus `events.mjs` /
+  `tail.mjs` / `writer.mjs` / `plain.mjs` / `watch.mjs` /
+  `run-ui.mjs` and 5 dead components) is hard-removed.
+  Mode-2 callers must migrate to `/autopilot run` from a
+  regular Copilot CLI session and run the watcher in a
+  side terminal. Bin renamed `autopilot-tui` (was
+  `autopilot`) — the autopilot loop itself is invoked via
+  the in-session `/autopilot run` slash command, not the
+  TUI's bin. `commander` and `ink-spinner` dropped from
+  the package's deps. The watcher's UI is intentionally
+  passive: `q` / Ctrl-C only exits the TUI; the loop has
+  no reverse channel from the watcher.
 - Deprecated: `ap_loop`, `ap_status`, `ap_stop` are now
   thin shims that forward to `autopilot_run`,
   `autopilot_status`, `autopilot_stop` with a
@@ -86,6 +102,33 @@
   `createAutopilotController` so test fixtures and
   installed copies importing the legacy name still work
   through the 0.7.x cycle. Slated for removal in 0.8.0.
+- Issue #121 — `packages/tui/` reduced from ~5,000 LOC
+  / 28 files to ~700 LOC / 9 source files + 4 tests. New
+  source layout: `src/state.mjs` (disk reader + drift-
+  guarded `RESULT_TOKEN_RE`), `src/format.mjs` (pure
+  formatters), `src/render-plain.mjs` (plain-text
+  dashboard), `src/mount.mjs` (lazy ink loader), and
+  `src/components/{Header,Timeline,Footer,App}.mjs`
+  (Ink presentation). `bin/tui.mjs` rewritten as a
+  stdlib-only argv parser exposing
+  `watch | show | where` plus `--plain` / `--poll-ms` /
+  `--state-file` / `--help` / `--version`. The Ink
+  renderer is lazily imported so a fresh checkout
+  without `npm install` falls back to plain mode
+  automatically (`ERR_MODULE_NOT_FOUND` → plain). Test
+  count for `packages/tui/` dropped from the legacy
+  6-file/event-stream suite to a 4-file / 142-test
+  pin-set covering state-file parsing, formatter purity,
+  the plain renderer, the bin's argv contract, and the
+  drift guard that re-reads `extension/handler.mjs`'s
+  `RESULT_TOKEN_RE` literal and asserts the TUI's
+  duplicate matches `source` + `flags`. `docs/cli-stack.md`
+  was deleted (it referenced the now-removed Commander +
+  ink-spinner stack and the obsolete watch-UI panes); the
+  TUI's user-facing surface lives in
+  `packages/tui/README.md`. README's "Out-of-session
+  driver" section replaced with a "Read-only watcher TUI"
+  callout.
 
 ### Tests
 - Issues #120 + #122 — `test/extension.test.mjs` rewritten.

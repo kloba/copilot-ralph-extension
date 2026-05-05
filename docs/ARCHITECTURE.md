@@ -19,15 +19,16 @@ The trade-off is documented in the README's comparison table; see [What's differ
 
 ```
 extension/
-├── extension.mjs   # SDK glue — joinSession + createRalphController() + register tools/hooks
-├── handler.mjs     # The entire controller: state machine, validation, tool defs, baked prompts
-└── events-emit.mjs # Zero-dep JSONL event emitter (writes ~/.copilot/ralph/runs/<runId>/events.jsonl)
+├── extension.mjs       # SDK glue — joinSession + register tools/hooks
+├── handler.mjs         # The entire controller: state machine, validation, tool defs, baked prompts, state-file writer
+├── scout-tool.mjs      # Scout sub-agent contract used inside the SDLC tools
+└── shipper-agent.mjs   # Shipper sub-agent contract used inside the SDLC tools
 test/
 ├── extension.test.mjs       # node:test suite — controller against a fake session
-├── events-emit.test.mjs     # Unit tests for the JSONL emitter helpers
-└── handler-events.test.mjs  # Integration tests covering controller↔emitter wiring
-packages/tui/       # Stand-alone TUI consumer (`ralph-tui`) — see packages/tui/README.md
-install.sh          # User- or project-scoped install into ~/.copilot/extensions or .github/extensions
+├── scout-tool.test.mjs      # Scout sub-agent unit tests
+└── shipper-agent.test.mjs   # Shipper sub-agent unit tests
+packages/tui/        # Read-only state-file watcher (`autopilot-tui`) — see packages/tui/README.md
+install.sh           # User- or project-scoped install into ~/.copilot/extensions or .github/extensions
 ```
 
 ### `extension.mjs` vs `handler.mjs` split

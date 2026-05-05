@@ -1,47 +1,41 @@
-# `@autopilot/tui` — Live TUI for ap_loop
+# `@autopilot/tui` — Read-only watcher for the autopilot loop
 
-> Terminal visualizer for live `ap_loop` / `self_improve` /
-> `grow_project` runs (issue #22). Tails a JSONL event stream the
-> loop handler writes to `~/.copilot/autopilot/events/<runId>/events.jsonl`
-> and renders a live timeline, detail pane, and controls.
+> Terminal dashboard for the autopilot loop's persisted state file
+> (issue #121). Polls `~/.copilot/autopilot/state.json` — written
+> atomically by the in-extension loop driver in
+> `extension/handler.mjs` — and renders a Header / Timeline / Footer
+> dashboard on every poll cycle.
 
-The TUI is **opt-in** — the core extension keeps working with zero
-new runtime deps. You only need this package when you actually want
-to *watch* a loop run.
+The TUI is **opt-in** and **read-only**. It does not spawn anything,
+does not feed prompts, does not drive a loop. The loop itself runs
+inside a regular Copilot CLI session — start it with `/autopilot run`.
+
+> **Note:** the legacy out-of-session SDLC driver (`autopilot run …`,
+> ~510 LOC of `_legacy-prompts.mjs` / `_legacy-events-emit.mjs` /
+> the `runner.mjs` mode-2 path) was removed in 0.7.0. If you used
+> the previous mode-2 entry, migrate to `/autopilot run` from a
+> regular Copilot CLI session.
 
 ## Subcommands
 
 ```text
-autopilot list [--json] [--limit N]  Show recorded runs (newest first).
-                                     `--json` emits the index as a JSON
-                                     array for scripting/dashboards;
-                                     `--limit N` caps the table.
-autopilot replay <runId>             Print every event in a past run.
-autopilot watch [runId] [--plain]    Tail the given run (or the most
-                                     recent one if omitted) in real time.
-autopilot doctor                     Diagnose the runs directory + writer
-                                     wiring (permissions, malformed
-                                     JSONL, stale lockfiles, broken
-                                     symlinks).
-autopilot prune [--older-than D]     Remove runs older than DURATION
-        [--dry-run]                  (e.g. 30d / 12h / 5m; default 30d).
-                                     `--dry-run` lists what would go
-                                     without touching the filesystem.
-autopilot stats                      Aggregate stats across the run
-                                     index (run count, total iterations,
-                                     p50/p95 durations, top SDLC tools).
-autopilot where                      Print the resolved runs root path
-                                     so a contributor can `cd` into it.
-autopilot --help     | -h            Show usage.
-autopilot --version  | -V            Print the autopilot package version.
+autopilot-tui watch [--plain] [--poll-ms 500] [--state-file PATH]
+                                 Mount the live dashboard. Default
+                                 command when no subcommand is given.
+                                 `--plain` emits a fresh dashboard
+                                 block on every poll cycle (auto-on
+                                 when stdout is not a TTY).
+autopilot-tui show  [--state-file PATH]
+                                 Print one dashboard block for the
+                                 current state and exit (handy for
+                                 scripts).
+autopilot-tui where              Print the resolved state-file path.
+autopilot-tui --help    | -h     Show usage.
+autopilot-tui --version | -V     Print the package version.
 ```
 
-`--plain` is **auto-enabled when stdout is not a TTY** so CI logs and
-`asciinema rec` outputs stay grep-friendly and ANSI-free. The
-interactive Ink-rendered watch UI (Header / Timeline / DetailPane /
-Controls — see [docs/cli-stack.md](../../docs/cli-stack.md)) ships in
-the next slice; if its module isn't installed, `watch` falls back to
-`--plain` automatically.
+`q` (or Ctrl-C) quits the TUI. The loop continues running in its
+own session — the TUI has no reverse channel.
 
 ## Quick start
 
@@ -49,170 +43,38 @@ the next slice; if its module isn't installed, `watch` falls back to
 # 1. From the repo root, no install needed for plain mode:
 node packages/tui/bin/tui.mjs --help
 
-# 2. List recorded runs (writes from extension/events-emit.mjs end up
-#    in $RALPH_EVENTS_DIR or ~/.copilot/autopilot/events).
-node packages/tui/bin/tui.mjs list
+# 2. Print the current state once.
+node packages/tui/bin/tui.mjs show
 
-# 3. Replay a finished run as plain log lines.
-node packages/tui/bin/tui.mjs replay self_improve-1735000000000
-
-# 4. Tail the most recent run in plain mode (good for CI / asciinema).
-node packages/tui/bin/tui.mjs watch --plain
+# 3. Watch live (Ink dashboard if `npm install` ran in
+#    packages/tui/, otherwise plain text).
+node packages/tui/bin/tui.mjs watch
 ```
 
-For the interactive Ink-rendered watch UI (slice 5):
+## Environment
+
+| Variable                | Default                                    | Description                              |
+| ----------------------- | ------------------------------------------ | ---------------------------------------- |
+| `AUTOPILOT_STATE_FILE`  | `~/.copilot/autopilot/state.json`          | Override the state-file path. Same effect as `--state-file`. |
+
+## Module layout
+
+* `src/state.mjs` — disk reader + the `RESULT_TOKEN_RE` regex
+  (drift-guarded against `extension/handler.mjs` so the TUI and
+  loop driver always agree on the token shape).
+* `src/format.mjs` — pure-function formatters (durations, clock
+  times, outcome rows, header summary). No I/O, fully unit-tested.
+* `src/render-plain.mjs` — plain-text dashboard renderer.
+* `src/components/{Header,Timeline,Footer,App}.mjs` — Ink
+  presentation layer.
+* `src/mount.mjs` — lazy-imports `ink` and `react`, mounts the App.
+* `bin/tui.mjs` — argv parser + dispatcher. Stdlib-only.
+
+## Running the tests
 
 ```sh
-cd packages/tui
-npm install                     # pulls Ink + React + Yoga + Commander.
-node bin/tui.mjs watch          # auto-detects TTY; renders the live UI.
-```
-
-## Plain-mode log line format
-
-Every event renders as a single space-separated line. The columns are
-stable so `grep`, `awk`, and friends work directly:
-
-```text
-HH:MM:SS.mmm  <verb>  <runId>  iter=N/M  tokens=I/O  excerpt="…"
-```
-
-| Field        | When present                                        |
-| ------------ | --------------------------------------------------- |
-| `HH:MM:SS.mmm` | Always — UTC, ms precision (CI-stable).           |
-| `<verb>`     | One of `armed`, `iter+`, `iter-`, `pause`, `resume`, `stagn`, `done `, `abort`. |
-| `<runId>`    | Always.                                             |
-| `iter=N/M`   | When the event has an iteration counter.            |
-| `min=N`      | Only on `armed`.                                    |
-| `tokens=I/O` | On `iteration_end` when usage was observed.         |
-| `streak=N`   | On `stagnation` events.                             |
-| `reason=…`   | On `complete` / `abort`.                            |
-| `note="…"`   | On `complete` / `abort` when the loop attached a note. |
-| `excerpt="…"` | On `iteration_end` — capped at 80 chars, whitespace collapsed. |
-
-## asciinema recipe
-
-```sh
-# Record a 60-second demo of a self-improve loop.
-asciinema rec demo.cast \
-  --command 'node packages/tui/bin/tui.mjs watch --plain' \
-  --idle-time-limit 1.0 \
-  --rows 24 --cols 100 \
-  --title 'autopilot self_improve — live'
-```
-
-Tips:
-
-* Pass `--plain` so the recording is plain text and replays cleanly
-  on any asciinema player without ANSI quirks.
-* Pin `--rows`/`--cols` so the embedded player matches your asset
-  dimensions in docs.
-* `--idle-time-limit 1.0` collapses long idle gaps between
-  iterations so the demo stays watchable end-to-end.
-
-## Override the runs root
-
-```sh
-export RALPH_EVENTS_DIR=/tmp/ralph-runs
-node packages/tui/bin/tui.mjs list
-```
-
-Useful for:
-
-* Testing the TUI against a sandboxed dir without touching real runs.
-* CI jobs that want to assert on a specific run without depending on
-  the user's home directory.
-* Replaying a captured `events.jsonl` from a teammate (drop their
-  file at `$RALPH_EVENTS_DIR/<runId>/events.jsonl`).
-
-## Auto-upgrade for each `run`
-
-Long-haul `autopilot run` loops (e.g. `--self-improve` draining a
-backlog over hours) often want to start on the freshest source. The
-repo ships `scripts/ralph-tui-fresh.sh` — a thin Bash wrapper that
-runs `git pull --quiet --ff-only` from the repo root *only* when the
-first arg is `run`, then `exec`s `node packages/tui/bin/tui.mjs`
-with the same args.
-
-```sh
-# In ~/.zshrc or ~/.bashrc — point at your local clone:
-alias autopilot="$HOME/repos/autopilot/scripts/ralph-tui-fresh.sh"
-
-# Then long-haul runs auto-upgrade before iter 1:
-autopilot run --self-improve --continue
-
-# Quick read-only subcommands skip the upgrade (no `git pull` cost):
-autopilot list
-autopilot watch
-```
-
-Why this is safe:
-
-* **No self-overwrite race.** The TUI binary is loaded into memory
-  once at Node startup. The wrapper's `git pull` lands the new
-  source *before* `exec node …/tui.mjs` imports the module graph —
-  there's no window in which Node sees a half-written file.
-* **No mid-loop version skew.** Once Node has imported the module
-  graph, a concurrent `git pull` in another shell cannot change
-  the running iter's behaviour. Iter 1 and iter 100 of a single
-  run always execute identical code.
-* **Silent on failure.** No network, dirty tree, non-fast-forward,
-  or detached HEAD all silently fall through (`|| true`) to the
-  existing checkout. The wrapper never blocks a run on git
-  issues, and `--ff-only` deliberately refuses to clobber local
-  work-in-progress.
-
-This is opt-in by design: pinning a specific commit (e.g. for
-reproducibility in CI) is still possible by invoking
-`node packages/tui/bin/tui.mjs run …` directly.
-
-## Architecture notes
-
-* `src/events.mjs` — pure event contract: `EVENT_TYPES`, `makeRunId`,
-  `serializeEvent`, `parseEventLine`, `foldEvents`. Stdlib-only so
-  the loop handler can import it directly.
-* `src/writer.mjs` — DI'd JSONL writer used by the loop handler.
-  Maintains `<root>/index.jsonl` so `list` enumerates runs without
-  recursing into every per-run dir.
-* `src/tail.mjs` — `readEventsFile` (sync, for `replay`) and
-  `tailEventsFile` (async iterator, for `watch`). Polls and detects
-  file replacement by tracking **both** `ino` and `birthtimeMs`,
-  so a `replay`-style overwrite (or any unlink+create that happens
-  to reuse the freed inode — common on Linux ext4) still restarts
-  the reader at offset 0.
-* `src/plain.mjs` — `formatEventLine`: pure event → log line. The
-  Ink renderer (slice 5) shares this module for non-TTY fallback.
-* `bin/tui.mjs` — argv parser + dispatcher. Stdlib-only today; will
-  promote to Commander once the Ink renderer's deps land.
-
-## Tests
-
-```sh
-# From the repo root.
-npm test
-
-# Or scoped to the TUI package.
 node --test packages/tui/test/*.test.mjs
 ```
 
-Coverage for the non-render layer:
-
-* `events.test.mjs` — serializer / parser invariants, `foldEvents`
-  fold behavior across every event type.
-* `writer.test.mjs` — DI-driven writer behavior, index file shape,
-  error surfacing through `onError`.
-* `tail.test.mjs` — partial-line buffering, malformed-line tolerance,
-  ENOENT-until-it-exists, and file-replacement detection along **both**
-  axes the implementation tracks: a fresh inode (ino change) and a
-  reused inode whose `birthtimeMs` advanced (the Linux-ext4 blind
-  spot a naïve ino-only check would miss).
-* `plain.test.mjs` — every event type's expected log-line shape,
-  excerpt truncation/collapse, garbage-input safety.
-* `bin.test.mjs` — argv parser, `--help`, `list` (empty + populated),
-  `replay` (success + missing-runId), unknown-command exit code.
-
-## Stack reference
-
-See [`docs/cli-stack.md`](../../docs/cli-stack.md) for the full
-Ink + Yoga + Commander stack-verification, including precedent in
-Anthropic's Claude Code CLI and GitHub Copilot CLI.
+(or `npm test` from the repo root, which exercises the extension
+tests in the same pass.)

@@ -241,39 +241,34 @@ Each iteration walks the agent through thirteen stages: **ORIENT** (`gh issue li
 
 > ⚠️ **The baked prompt instructs the agent to emit `COMPLETE` at the end of every iteration and `ABORT_NO_BACKLOG` when the backlog is exhausted.** As with `self_improve`, `completion_promise` would fire on iter 1 if `min_iterations` allowed it; the default `min_iterations: 10` defers honoring `COMPLETE` until iter 10. Set `min_iterations` equal to `max_iterations` to drain the full budget. Use `ap_stop` to tear down a long-running session early.
 
-### Out-of-session driver (`ralph-tui run`)
+### Read-only watcher TUI (`autopilot-tui`)
 
-The in-session loop tools (`ap_loop` / `self_improve` / `grow_project`) reuse the same Copilot CLI session across every iteration, so context grows monotonically — useful when each iter builds on the last, but it caps the practical iteration count and the Copilot SDK exposes no session-history reset to extension code, so a "clean context per iter" mode is not possible from inside the tool surface.
-
-The `ralph-tui run` subcommand is the **out-of-session** alternative: it spawns each iteration as a fresh `copilot -p "<prompt>" --allow-all-tools --output-format json` subprocess and gives you both shapes:
-
-```bash
-# Drain the backlog with a fresh context every iter (no growing history).
-ralph-tui run --self-improve --fresh --max 50
-
-# Drain the backlog while the conversation history grows across iters
-# (closer to the in-session ap_loop shape, but with a TTY-free driver).
-ralph-tui run --self-improve --continue --max 50
-
-# Grow the project backlog with a focus area, fresh context per iter.
-ralph-tui run --grow-project --fresh --focus "ralph-tui replay UX" --max 30
-
-# Custom prompt mode.
-ralph-tui run --prompt "Refactor extension/handler.mjs..." --fresh
-```
-
-Pick exactly one prompt mode (`--self-improve` / `--grow-project` / `--prompt "..."`) AND exactly one context mode (`--continue` / `--fresh`). `--continue` captures the terminal `result.sessionId` from the JSONL stream on iter 1 and resumes via `--resume=<sessionId>` on iter 2+; `--fresh` re-spawns with no session reuse so every iteration starts from a clean slate. Events flow into the same `~/.copilot/ralph-tui/runs/<runId>/events.jsonl` stream the in-session runner uses, so `ralph-tui watch / replay / list / stats` all work unchanged.
-
-Sibling commands operate on a live run's state file:
+The optional `@autopilot/tui` package ships a thin **read-only**
+dashboard that polls the loop's persisted state file
+(`~/.copilot/autopilot/state.json`, written atomically by the
+in-extension driver) and renders Header / Timeline / Footer panes.
+It does NOT spawn anything, does NOT feed prompts, does NOT drive a
+loop — start the loop with `/autopilot run` from a regular Copilot
+CLI session and run the watcher in a side terminal:
 
 ```bash
-ralph-tui run --pause   <runId>     # pause at next iter boundary
-ralph-tui run --resume  <runId>     # resume a paused run
-ralph-tui run --stop    <runId>     # request graceful stop
-ralph-tui run --status  <runId>     # snapshot of run state
+# Print the current state once.
+node packages/tui/bin/tui.mjs show
+
+# Live dashboard (Ink-rendered if ink/react are installed,
+# plain-text fallback otherwise; auto-plain when stdout is not a TTY).
+node packages/tui/bin/tui.mjs watch
 ```
 
-`SIGINT` / `SIGTERM` at the driver process flips `stopRequested=true` via the same lock-protected CAS path; the in-flight child is allowed to exit naturally before the driver emits the terminal `abort` event with `reason: "user_stopped"`.
+Pressing `q` or Ctrl-C quits the TUI; the loop keeps running. The
+watcher has no reverse channel to the loop — to stop the loop, run
+`/autopilot stop` from the originating Copilot CLI session.
+
+> The legacy out-of-session SDLC driver (`ralph-tui run …`) was
+> removed in 0.7.0 alongside the broader autopilot rewrite. The new
+> watcher is the entire TUI surface — see
+> [`packages/tui/README.md`](packages/tui/README.md) for the
+> trimmed CLI.
 
 ## Development
 

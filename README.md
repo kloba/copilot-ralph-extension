@@ -36,7 +36,7 @@ mkdir -p ~/.copilot/extensions/ralph
 # Order matters: leaf modules first, entry point (extension.mjs) LAST.
 # If `/extensions reload` fires mid-download, this guarantees the SDK
 # never sees a new entry point importing missing/old siblings.
-for f in events-emit.mjs prompts.mjs scout-tool.mjs handler.mjs extension.mjs; do
+for f in events-emit.mjs prompts.mjs scout-tool.mjs shipper-agent.mjs handler.mjs extension.mjs; do
   curl -fsSL "https://raw.githubusercontent.com/kloba/copilot-ralph-extension/main/extension/$f" \
     -o ~/.copilot/extensions/ralph/$f
 done
@@ -55,7 +55,7 @@ Then in any Copilot CLI session, run:
 ```bash
 mkdir -p .github/extensions/ralph
 # Same leaf-first ordering as Option A — see comment there.
-for f in events-emit.mjs prompts.mjs scout-tool.mjs handler.mjs extension.mjs; do
+for f in events-emit.mjs prompts.mjs scout-tool.mjs shipper-agent.mjs handler.mjs extension.mjs; do
   curl -fsSL "https://raw.githubusercontent.com/kloba/copilot-ralph-extension/main/extension/$f" \
     -o .github/extensions/ralph/$f
 done
@@ -85,7 +85,7 @@ The default install snippets curl from `main`, which is rolling-latest. To pin a
 VERSION=v0.7.0
 mkdir -p ~/.copilot/extensions/ralph
 # Same leaf-first ordering as Option A — see comment there.
-for f in events-emit.mjs prompts.mjs scout-tool.mjs handler.mjs extension.mjs; do
+for f in events-emit.mjs prompts.mjs scout-tool.mjs shipper-agent.mjs handler.mjs extension.mjs; do
   curl -fsSL "https://github.com/kloba/copilot-ralph-extension/releases/download/$VERSION/$f" \
     -o ~/.copilot/extensions/ralph/$f
 done

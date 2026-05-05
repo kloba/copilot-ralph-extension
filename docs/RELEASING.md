@@ -31,6 +31,7 @@ A formal tag-driven release-automation workflow now ships at [`.github/workflows
        extension/handler.mjs \
        extension/events-emit.mjs \
        extension/scout-tool.mjs \
+       extension/shipper-agent.mjs \
        --title "vX.Y.Z" --notes-file <(awk '/^## X\.Y\.Z[[:space:]]*$/{p=1;next} p&&/^## /{exit} p' CHANGELOG.md)
      ```
 
@@ -55,7 +56,7 @@ mkdir -p .github/extensions/ralph
 # mirrors install.sh's FILES array and README Option A/B/D. If
 # `/extensions reload` fires mid-download, this guarantees the SDK
 # never sees a new `extension.mjs` importing missing/old siblings.
-for f in events-emit.mjs prompts.mjs scout-tool.mjs handler.mjs extension.mjs; do
+for f in events-emit.mjs prompts.mjs scout-tool.mjs shipper-agent.mjs handler.mjs extension.mjs; do
   curl -L -o ".github/extensions/ralph/$f" \
     "https://github.com/kloba/copilot-ralph-extension/releases/download/vX.Y.Z/$f"
 done

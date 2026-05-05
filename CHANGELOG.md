@@ -3,6 +3,25 @@
 ## Unreleased
 
 ### Features
+- Issue #119 (refs #116) — new `autopilot-shipper` custom
+  agent registered via `SessionConfig.customAgents`.
+  Receives a JSON handoff from `autopilot_scout` (#118) via
+  the model's built-in delegation tool and ships the work
+  item end-to-end as ONE atomic commit. Emits `SHIPPED:<sha>`
+  or `BLOCKED:<reason>` on its own line as terminal output;
+  the parent agent relays that token through the existing
+  `[AUTOPILOT_RESULT: …]` root-token contract to the loop
+  driver (#120). Tool allowlist is a fixed subset of the
+  built-in tools (`bash`, `view`, `edit`, `create`,
+  `str_replace_editor`, `grep`, `glob`) — explicitly
+  excludes `ap_*` / `autopilot_*` so the shipper cannot
+  recurse into the outer loop, plus `task` / `delegate` /
+  `ask_user` so the shipper cannot spawn its own sub-agents
+  or stall waiting for human input. A module-load assertion
+  pins the prompt body under 6 KB (currently ~3.4 KB) so a
+  future edit that bloats it fails fast at session-load
+  time. Wave 2c of the fleet pivot.
+
 - Issue #118 (refs #116) — new `autopilot_scout` tool: a
   pure-function deterministic probe of `gh` + repo state
   that picks the next work item for autopilot. Returns one

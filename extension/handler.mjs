@@ -77,41 +77,37 @@ const PARSE_FAILURE_LIMIT = 2;
 // is better — every iter pays this in input tokens.
 export const PER_ITER_PROMPT = `You are the AUTOPILOT loop driver. Per-iter loop:
 
-STEP 1 — call the \`${SCOUT_TOOL_NAME}\` tool. It returns one of:
+STEP 1 — call \`${SCOUT_TOOL_NAME}\`. It returns one of:
   { "kind": "no_work" }
   { "kind": "blocked", "reason": "...", "detail": "..." }
   { "kind": "candidate", "ref": "...", "ref_kind": "...",
     "title": "...", "scope_files": [...],
     "acceptance": "...", "evidence": {...} }
 
-STEP 2 — based on the kind:
-- "no_work":  emit ONE LINE on its own:
-    [AUTOPILOT_RESULT: {"outcome":"complete"}]
-  Then stop this iter.
-- "blocked":  emit:
-    [AUTOPILOT_RESULT: {"outcome":"blocked","reason":"<reason>: <detail>"}]
-  Then stop this iter.
-- "candidate": delegate to the \`${SHIPPER_AGENT_NAME}\` custom agent
-  via the built-in delegation tool. Pass the entire scout JSON as the
-  handoff. The shipper emits \`SHIPPED: <sha>\` or \`BLOCKED: <reason>\`
-  as ITS terminal output. When delegation returns, parse the shipper's
-  last assistant message for that token and echo it as YOUR root token:
+STEP 2 — based on kind, emit ONE token on its own line:
+- no_work:   [AUTOPILOT_RESULT: {"outcome":"complete"}]
+- blocked:   [AUTOPILOT_RESULT: {"outcome":"blocked","source":"scout","reason":"<reason>: <detail>"}]
+- candidate: delegate to the \`${SHIPPER_AGENT_NAME}\` agent with the
+  scout JSON. The shipper emits \`SHIPPED: <sha>\` or \`BLOCKED: <reason>\`.
+  Echo as YOUR token (note "source":"shipper" on blocked):
     [AUTOPILOT_RESULT: {"outcome":"shipped","sha":"<sha>"}]
-    [AUTOPILOT_RESULT: {"outcome":"blocked","reason":"<reason>"}]
-  Then stop this iter.
+    [AUTOPILOT_RESULT: {"outcome":"blocked","source":"shipper","reason":"<reason>"}]
 
 CONSTRAINTS:
-- Emit EXACTLY ONE [AUTOPILOT_RESULT: {…}] per iter, on its own line.
-- The token must be valid JSON inside the brackets.
-- Never ask the user. Never wait for input. Never make commits yourself
-  — that is the shipper's job.`;
+- EXACTLY ONE [AUTOPILOT_RESULT: {…}] per iter (no draft tokens earlier
+  in the message — the loop driver rejects multi-token messages).
+- Valid JSON inside the brackets. The "source" field is REQUIRED on
+  every blocked outcome — it routes scout-side vs shipper-side streaks.
+- Never ask the user. Never make commits — that is the shipper's job.`;
 
-// Regex pinning the root-token contract. Kept as a non-greedy match
-// inside a single line so the parser cannot accidentally swallow a
-// later token (or stray brace) on a malformed iter. Exported for
-// tests that pin the parser.
-export const RESULT_TOKEN_RE =
-    /\[AUTOPILOT_RESULT:\s*(\{[^\[\]]*?\})\s*\]/;
+// Regex pinning the START of a root token. The body is balanced-bracket
+// scanned imperatively in `extractAllTokens` — a single regex cannot
+// honor JSON's nesting and quoting rules, and the legacy
+// `/\{[^\[\]]*?\}/` shape silently rejected valid payloads containing
+// brackets in strings or arrays. Exported for tests that pin the
+// parser. The flags + source are also drift-guarded by the TUI's
+// `RESULT_TOKEN_RE` clone in `packages/tui/src/state.mjs`.
+export const RESULT_TOKEN_RE = /\[AUTOPILOT_RESULT:\s*/g;
 
 // State file. Lives under ~/.copilot/autopilot/ — same parent as the
 // legacy events root so install.sh's existing $HOME-touching path
@@ -164,6 +160,7 @@ function makeFreshState({ persisted = null } = {}) {
         max_tokens: null,
         focus: null,
         scout_streak_no_work: 0,
+        scout_streak_blocked: 0,
         shipper_streak_blocked: 0,
         parse_failure_streak: 0,
         last_iter_outcome: null,
@@ -190,22 +187,75 @@ function makeFreshState({ persisted = null } = {}) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Token parser. Scans assistant message text for the ONE root token,
-// JSON-parses it, returns one of:
+// Token parser. Scans the assistant message text for the root token,
+// using a balanced-bracket extractor that survives JSON values
+// containing brackets (`{"reason":"crash in [foo]"}`,
+// `{"files":["a","b"]}`) and that REJECTS messages with multiple
+// tokens — the contract says exactly one per iter, and silently
+// taking the first lets a stray earlier token override the real
+// final outcome. Returns one of:
 //   { ok: true, outcome: "complete" }
 //   { ok: true, outcome: "shipped", sha: "<sha>" }
 //   { ok: true, outcome: "blocked", reason: "<reason>" }
 //   { ok: false, error: "<reason>" }
 // ─────────────────────────────────────────────────────────────────────
+function extractAllTokens(text) {
+    const tokens = [];
+    if (typeof text !== "string" || text.length === 0) return tokens;
+    // RESULT_TOKEN_RE has /g — exec it from a fresh state on every call.
+    const re = new RegExp(RESULT_TOKEN_RE.source, RESULT_TOKEN_RE.flags);
+    let m;
+    while ((m = re.exec(text)) !== null) {
+        const start = m.index + m[0].length;
+        if (text[start] !== "{") continue;
+        // Walk balanced braces, respecting JSON string quoting + escapes.
+        let depth = 0;
+        let inStr = false;
+        let esc = false;
+        let end = -1;
+        for (let i = start; i < text.length; i++) {
+            const c = text[i];
+            if (inStr) {
+                if (esc) { esc = false; continue; }
+                if (c === "\\") esc = true;
+                else if (c === "\"") inStr = false;
+                continue;
+            }
+            if (c === "\"") inStr = true;
+            else if (c === "{") depth++;
+            else if (c === "}") {
+                depth--;
+                if (depth === 0) { end = i; break; }
+            }
+        }
+        if (end === -1) continue;
+        // Require the closing `]` (allowing whitespace) directly after
+        // the JSON. Sticky `/y` anchors the match at lastIndex; `^` is
+        // not honored under /y without /m, so we drop it and rely on
+        // the sticky position alone.
+        const closeRe = /\s*\]/y;
+        closeRe.lastIndex = end + 1;
+        if (!closeRe.test(text)) continue;
+        tokens.push(text.slice(start, end + 1));
+        // Resume scanning AFTER this token so two adjacent tokens are
+        // both detected (and trigger the multi-token error below).
+        re.lastIndex = end + 1;
+    }
+    return tokens;
+}
+
 export function parseAutopilotResult(text) {
     if (typeof text !== "string" || text.length === 0) {
         return { ok: false, error: "missing_token" };
     }
-    const m = RESULT_TOKEN_RE.exec(text);
-    if (!m) return { ok: false, error: "missing_token" };
+    const tokens = extractAllTokens(text);
+    if (tokens.length === 0) return { ok: false, error: "missing_token" };
+    if (tokens.length > 1) {
+        return { ok: false, error: `ambiguous_tokens: ${tokens.length}` };
+    }
     let payload;
     try {
-        payload = JSON.parse(m[1]);
+        payload = JSON.parse(tokens[0]);
     } catch (err) {
         return { ok: false, error: `malformed_json: ${err?.message ?? err}` };
     }
@@ -222,7 +272,14 @@ export function parseAutopilotResult(text) {
     }
     if (outcome === "blocked") {
         const reason = typeof payload.reason === "string" ? payload.reason : "unspecified";
-        return { ok: true, outcome: "blocked", reason };
+        // `source` distinguishes scout-side (gh outage, no work) from
+        // shipper-side (push failed, scope too large) blocks; persisted
+        // for streak attribution. Defaults to "unknown" when the parent
+        // omits it (older prompt revisions).
+        const source = (payload.source === "scout" || payload.source === "shipper")
+            ? payload.source
+            : "unknown";
+        return { ok: true, outcome: "blocked", reason, source };
     }
     return { ok: false, error: `unknown_outcome: ${JSON.stringify(outcome)}` };
 }
@@ -323,6 +380,7 @@ export function createAutopilotController(opts = {}) {
     const reinject = () => {
         if (!sessionRef?.send) {
             log("autopilot: cannot re-inject — session not attached");
+            stopLoop("send_failed", "session_not_attached");
             return;
         }
         try {
@@ -330,10 +388,12 @@ export function createAutopilotController(opts = {}) {
             if (r && typeof r.then === "function") {
                 r.catch((err) => {
                     log(`autopilot: send rejected: ${err?.message ?? err}`);
+                    stopLoop("send_failed", String(err?.message ?? err));
                 });
             }
         } catch (err) {
             log(`autopilot: send threw: ${err?.message ?? err}`);
+            stopLoop("send_failed", String(err?.message ?? err));
         }
     };
 
@@ -404,16 +464,47 @@ export function createAutopilotController(opts = {}) {
         }
         if (parsed.outcome === "shipped") {
             state.shipper_streak_blocked = 0;
+            state.scout_streak_blocked = 0;
             state.scout_streak_no_work = 0;
             log(`autopilot: shipped ${parsed.sha ?? "(no sha)"}`);
             writeState();
             return;
         }
         if (parsed.outcome === "blocked") {
+            // Route to the scout-side or shipper-side streak based on
+            // `source`. A scout-side block (gh outage, no candidate
+            // surfaced) is independent from a shipper-side block (push
+            // rejected, scope too large) — counting them together
+            // would stop the loop after a single transient gh hiccup
+            // followed by two unrelated shipper failures.
+            if (parsed.source === "scout") {
+                state.scout_streak_blocked += 1;
+                log(`autopilot: scout blocked (${parsed.reason}) — streak=${state.scout_streak_blocked}`);
+                writeState();
+                if (state.scout_streak_blocked >= BLOCKED_STREAK_LIMIT) {
+                    stopLoop("scout_blocked", parsed.reason);
+                }
+                return;
+            }
+            if (parsed.source === "shipper") {
+                state.shipper_streak_blocked += 1;
+                log(`autopilot: shipper blocked (${parsed.reason}) — streak=${state.shipper_streak_blocked}`);
+                writeState();
+                if (state.shipper_streak_blocked >= BLOCKED_STREAK_LIMIT) {
+                    stopLoop("shipper_blocked", parsed.reason);
+                }
+                return;
+            }
+            // Source unknown (older prompt, or parent agent forgot the
+            // field). Bump BOTH streaks so a stuck unattributed loop
+            // still terminates — but keep the legacy `repeated_blocked`
+            // reason so existing operator runbooks are unaffected.
+            state.scout_streak_blocked += 1;
             state.shipper_streak_blocked += 1;
-            log(`autopilot: blocked (${parsed.reason}) — streak=${state.shipper_streak_blocked}`);
+            log(`autopilot: blocked (${parsed.reason}) [source=unknown] — streaks scout=${state.scout_streak_blocked} shipper=${state.shipper_streak_blocked}`);
             writeState();
-            if (state.shipper_streak_blocked >= BLOCKED_STREAK_LIMIT) {
+            if (state.shipper_streak_blocked >= BLOCKED_STREAK_LIMIT
+                || state.scout_streak_blocked >= BLOCKED_STREAK_LIMIT) {
                 stopLoop("repeated_blocked", parsed.reason);
             }
             return;
@@ -507,6 +598,7 @@ export function createAutopilotController(opts = {}) {
         max_tokens: state.max_tokens,
         focus: state.focus,
         scout_streak_no_work: state.scout_streak_no_work,
+        scout_streak_blocked: state.scout_streak_blocked,
         shipper_streak_blocked: state.shipper_streak_blocked,
         parse_failure_streak: state.parse_failure_streak,
         last_iter_outcome: state.last_iter_outcome,

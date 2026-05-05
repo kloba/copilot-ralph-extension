@@ -350,9 +350,23 @@ export async function _pickCandidate({ probe, runGh, cwd } = {}) {
             }
         }
     } else if (picked.ref_kind === "issue") {
-        const body = (picked.evidence && typeof picked.evidence.body === "string")
+        // Rubber-duck fix #6: the probe's `gh issue list` deliberately
+        // omits `body` to keep the listing lightweight, so reading
+        // `picked.evidence.body` here always saw an empty string in
+        // production. Fetch the body on-demand for the picked issue
+        // only — same pattern as the PR `gh pr view` call above.
+        let body = (picked.evidence && typeof picked.evidence.body === "string")
             ? picked.evidence.body
             : "";
+        if (!body && typeof runGh === "function" && picked.ref) {
+            const bodyRes = await runGh(["issue", "view", picked.ref, "--json", "body"], { cwd });
+            if (bodyRes && bodyRes.ok) {
+                const parsed = tryParseJson(bodyRes.stdout || "{}");
+                if (parsed.ok && parsed.value && typeof parsed.value.body === "string") {
+                    body = parsed.value.body;
+                }
+            }
+        }
         scope_files = extractScopeFromText(body, MAX_SCOPE_FILES_FROM_BODY);
     }
     return {

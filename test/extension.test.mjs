@@ -135,12 +135,31 @@ test("parser: shipped outcome without sha → null sha", () => {
 
 test("parser: blocked outcome with reason", () => {
     const r = parseAutopilotResult(`[AUTOPILOT_RESULT: {"outcome":"blocked","reason":"gh_unauth: not logged in"}]`);
-    assert.deepEqual(r, { ok: true, outcome: "blocked", reason: "gh_unauth: not logged in" });
+    assert.deepEqual(r, { ok: true, outcome: "blocked", reason: "gh_unauth: not logged in", source: "unknown" });
 });
 
 test("parser: blocked outcome without reason → unspecified", () => {
     const r = parseAutopilotResult(`[AUTOPILOT_RESULT: {"outcome":"blocked"}]`);
-    assert.deepEqual(r, { ok: true, outcome: "blocked", reason: "unspecified" });
+    assert.deepEqual(r, { ok: true, outcome: "blocked", reason: "unspecified", source: "unknown" });
+});
+
+test("parser: blocked outcome with explicit source field", () => {
+    // Routes scout-side vs shipper-side blocks into separate streaks.
+    const scout = parseAutopilotResult(
+        `[AUTOPILOT_RESULT: {"outcome":"blocked","reason":"gh_unauth","source":"scout"}]`,
+    );
+    assert.deepEqual(scout, { ok: true, outcome: "blocked", reason: "gh_unauth", source: "scout" });
+    const shipper = parseAutopilotResult(
+        `[AUTOPILOT_RESULT: {"outcome":"blocked","reason":"push_rejected","source":"shipper"}]`,
+    );
+    assert.deepEqual(shipper, { ok: true, outcome: "blocked", reason: "push_rejected", source: "shipper" });
+});
+
+test("parser: blocked with bogus source value defaults to unknown", () => {
+    const r = parseAutopilotResult(
+        `[AUTOPILOT_RESULT: {"outcome":"blocked","reason":"x","source":"hacker"}]`,
+    );
+    assert.equal(r.source, "unknown");
 });
 
 test("parser: missing token → ok:false / missing_token", () => {
@@ -174,12 +193,68 @@ test("parser: token surrounded by other text", () => {
 });
 
 test("parser regex: only matches up to closing bracket on same logical group", () => {
-    // The regex is non-greedy on the JSON body and forbids `[]` inside,
-    // so a stray `[` later in the line cannot extend the match.
+    // The balanced-bracket extractor stops at the matching `}` for the
+    // outer JSON and requires a literal `]` (with optional whitespace)
+    // immediately after, so a trailing `[stale]` cannot extend the
+    // match.
     const r = parseAutopilotResult(
         `[AUTOPILOT_RESULT: {"outcome":"shipped","sha":"abc"}] [stale]`,
     );
     assert.deepEqual(r, { ok: true, outcome: "shipped", sha: "abc" });
+});
+
+test("parser: multiple AUTOPILOT_RESULT tokens → ambiguous_tokens", () => {
+    // Rubber-duck blocker #1 fix: when the parent agent emits more
+    // than one token (e.g. a stale "shipped" plus a fresh "complete"),
+    // refuse to pick — the loop driver cannot know which is current.
+    const r = parseAutopilotResult(
+        `[AUTOPILOT_RESULT: {"outcome":"shipped","sha":"abc"}]\n` +
+        `[AUTOPILOT_RESULT: {"outcome":"complete"}]`,
+    );
+    assert.equal(r.ok, false);
+    assert.match(r.error, /ambiguous_tokens: 2/);
+});
+
+test("parser: brackets inside JSON string values are accepted", () => {
+    // Rubber-duck blocker #1 fix: the old regex `[^\[\]]` rejected
+    // any payload containing `[` or `]` even inside a quoted string.
+    // The balanced-bracket walker now respects JSON string quoting.
+    const r = parseAutopilotResult(
+        `[AUTOPILOT_RESULT: {"outcome":"blocked","reason":"PR #42 [stale]"}]`,
+    );
+    assert.equal(r.ok, true);
+    assert.equal(r.outcome, "blocked");
+    assert.equal(r.reason, "PR #42 [stale]");
+});
+
+test("parser: escaped quote inside JSON string is respected", () => {
+    // The walker honours `\\` escaping inside strings, so an escaped
+    // quote does not prematurely close the string.
+    const r = parseAutopilotResult(
+        `[AUTOPILOT_RESULT: {"outcome":"blocked","reason":"got \\"foo\\" back"}]`,
+    );
+    assert.equal(r.ok, true);
+    assert.equal(r.reason, 'got "foo" back');
+});
+
+test("parser: nested objects inside JSON payload are accepted", () => {
+    // The walker tracks brace depth, so nested objects do not throw
+    // off the matching `}` detection.
+    const r = parseAutopilotResult(
+        `[AUTOPILOT_RESULT: {"outcome":"shipped","sha":"abc","meta":{"k":"v"}}]`,
+    );
+    assert.equal(r.ok, true);
+    assert.equal(r.outcome, "shipped");
+});
+
+test("parser: token without closing bracket → ignored", () => {
+    // The closer regex requires a literal `]` immediately after the
+    // JSON, so a half-emitted token is treated as no token.
+    const r = parseAutopilotResult(
+        `[AUTOPILOT_RESULT: {"outcome":"complete"}`,
+    );
+    assert.equal(r.ok, false);
+    assert.equal(r.error, "missing_token");
 });
 
 // ─────────────────────────────────────────────────────────────────────
@@ -286,6 +361,158 @@ test("state: shipped between blocks resets the blocked streak", () => {
             runTurn(session, `[AUTOPILOT_RESULT: {"outcome":"blocked","reason":"y"}]`);
             assert.equal(controller.state.armed, true);
             assert.equal(controller.state.shipper_streak_blocked, 2);
+        });
+    } finally {
+        cleanup();
+    }
+});
+
+test("state: scout-side blocks bump only the scout streak (and stop with scout_blocked)", () => {
+    // Rubber-duck fix #3: a transient gh outage on the scout side
+    // should not exhaust the shipper budget. With separate streaks,
+    // 3 scout-side blocks stop with `scout_blocked`, and the
+    // shipper streak stays at 0 throughout.
+    const { controller, cleanup } = makeController();
+    try {
+        const session = makeFakeSession();
+        controller.attach(session);
+        const run = controller.tools.find((t) => t.name === "autopilot_run");
+        return run.handler({ max_iters: 10 }).then(() => {
+            runTurn(session, `[AUTOPILOT_RESULT: {"outcome":"blocked","source":"scout","reason":"gh_unauth"}]`);
+            assert.equal(controller.state.scout_streak_blocked, 1);
+            assert.equal(controller.state.shipper_streak_blocked, 0);
+            runTurn(session, `[AUTOPILOT_RESULT: {"outcome":"blocked","source":"scout","reason":"gh_rate"}]`);
+            assert.equal(controller.state.scout_streak_blocked, 2);
+            assert.equal(controller.state.shipper_streak_blocked, 0);
+            runTurn(session, `[AUTOPILOT_RESULT: {"outcome":"blocked","source":"scout","reason":"gh_unauth"}]`);
+            assert.equal(controller.state.armed, false);
+            assert.equal(controller.state.stop_reason, "scout_blocked");
+            assert.equal(controller.state.scout_streak_blocked, 3);
+            assert.equal(controller.state.shipper_streak_blocked, 0);
+        });
+    } finally {
+        cleanup();
+    }
+});
+
+test("state: shipper-side blocks bump only the shipper streak (and stop with shipper_blocked)", () => {
+    const { controller, cleanup } = makeController();
+    try {
+        const session = makeFakeSession();
+        controller.attach(session);
+        const run = controller.tools.find((t) => t.name === "autopilot_run");
+        return run.handler({ max_iters: 10 }).then(() => {
+            runTurn(session, `[AUTOPILOT_RESULT: {"outcome":"blocked","source":"shipper","reason":"push_rejected"}]`);
+            assert.equal(controller.state.scout_streak_blocked, 0);
+            assert.equal(controller.state.shipper_streak_blocked, 1);
+            runTurn(session, `[AUTOPILOT_RESULT: {"outcome":"blocked","source":"shipper","reason":"scope_too_large"}]`);
+            assert.equal(controller.state.shipper_streak_blocked, 2);
+            runTurn(session, `[AUTOPILOT_RESULT: {"outcome":"blocked","source":"shipper","reason":"tests_failed"}]`);
+            assert.equal(controller.state.armed, false);
+            assert.equal(controller.state.stop_reason, "shipper_blocked");
+            assert.equal(controller.state.scout_streak_blocked, 0);
+            assert.equal(controller.state.shipper_streak_blocked, 3);
+        });
+    } finally {
+        cleanup();
+    }
+});
+
+test("state: a successful shipped resets BOTH blocked streaks (scout + shipper)", () => {
+    const { controller, cleanup } = makeController();
+    try {
+        const session = makeFakeSession();
+        controller.attach(session);
+        const run = controller.tools.find((t) => t.name === "autopilot_run");
+        return run.handler({ max_iters: 10 }).then(() => {
+            runTurn(session, `[AUTOPILOT_RESULT: {"outcome":"blocked","source":"scout","reason":"x"}]`);
+            runTurn(session, `[AUTOPILOT_RESULT: {"outcome":"blocked","source":"shipper","reason":"y"}]`);
+            assert.equal(controller.state.scout_streak_blocked, 1);
+            assert.equal(controller.state.shipper_streak_blocked, 1);
+            runTurn(session, `[AUTOPILOT_RESULT: {"outcome":"shipped","sha":"abc"}]`);
+            assert.equal(controller.state.scout_streak_blocked, 0);
+            assert.equal(controller.state.shipper_streak_blocked, 0);
+        });
+    } finally {
+        cleanup();
+    }
+});
+
+test("state: legacy blocked outcomes without source still trip repeated_blocked", () => {
+    // Backwards compatibility: an older parent prompt that omits
+    // the source field bumps BOTH streaks so a stuck loop still
+    // terminates. Stop reason stays the legacy `repeated_blocked`
+    // for runbook compatibility.
+    const { controller, cleanup } = makeController();
+    try {
+        const session = makeFakeSession();
+        controller.attach(session);
+        const run = controller.tools.find((t) => t.name === "autopilot_run");
+        return run.handler({ max_iters: 10 }).then(() => {
+            runTurn(session, `[AUTOPILOT_RESULT: {"outcome":"blocked","reason":"a"}]`);
+            runTurn(session, `[AUTOPILOT_RESULT: {"outcome":"blocked","reason":"b"}]`);
+            runTurn(session, `[AUTOPILOT_RESULT: {"outcome":"blocked","reason":"c"}]`);
+            assert.equal(controller.state.armed, false);
+            assert.equal(controller.state.stop_reason, "repeated_blocked");
+        });
+    } finally {
+        cleanup();
+    }
+});
+
+test("state: send throwing synchronously stops the loop with send_failed", () => {
+    // Rubber-duck blocker #2 fix: if the SDK's send throws (session
+    // detached, transport closed) the loop must stop, not silently
+    // leave armed=true and become a zombie.
+    const { controller, cleanup } = makeController();
+    try {
+        const session = makeFakeSession();
+        session.send = () => { throw new Error("transport closed"); };
+        controller.attach(session);
+        const run = controller.tools.find((t) => t.name === "autopilot_run");
+        return run.handler({ max_iters: 5 }).then(() => {
+            assert.equal(controller.state.armed, false);
+            assert.equal(controller.state.stop_reason, "send_failed");
+        });
+    } finally {
+        cleanup();
+    }
+});
+
+test("state: send rejecting asynchronously stops the loop with send_failed", () => {
+    const { controller, cleanup } = makeController();
+    try {
+        const session = makeFakeSession();
+        session.send = () => Promise.reject(new Error("session detached"));
+        controller.attach(session);
+        const run = controller.tools.find((t) => t.name === "autopilot_run");
+        return run.handler({ max_iters: 5 }).then(() => {
+            // Microtask-delayed promise rejection — flush the queue.
+            return new Promise((resolve) => setImmediate(resolve)).then(() => {
+                assert.equal(controller.state.armed, false);
+                assert.equal(controller.state.stop_reason, "send_failed");
+            });
+        });
+    } finally {
+        cleanup();
+    }
+});
+
+test("state: detach mid-loop stops with detached (and reinject would not zombie)", () => {
+    // Detach uses its own `detached` stop reason. The `send_failed`
+    // path is exercised by the throw/reject tests above. This test
+    // pins that detach is loud (state.armed=false) — i.e. there is
+    // no path where the loop is armed but the session is gone.
+    const { controller, cleanup } = makeController();
+    try {
+        const session = makeFakeSession();
+        const detach = controller.attach(session);
+        const run = controller.tools.find((t) => t.name === "autopilot_run");
+        return run.handler({ max_iters: 5 }).then(() => {
+            assert.equal(controller.state.armed, true);
+            detach();
+            assert.equal(controller.state.armed, false);
+            assert.equal(controller.state.stop_reason, "detached");
         });
     } finally {
         cleanup();

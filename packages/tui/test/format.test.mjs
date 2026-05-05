@@ -138,3 +138,63 @@ test("summarizeHeader: stopped non-complete → STOPPED", () => {
     assert.equal(out.statusWord, "STOPPED");
     assert.match(out.line, /reason: user_stopped/);
 });
+
+test("summarizeHeader: post-loop hook cleared stop_reason → falls back to last_run.stop_reason", () => {
+    // Rubber-duck fix #5: after `armOnNextRun` clears the active
+    // `stop_reason` (so the next arm starts clean), the snapshot
+    // briefly has `stop_reason: null` while the just-finished run
+    // sits in `last_run`. Without the fallback, the TUI flips to
+    // IDLE — the user loses sight of WHY the loop stopped.
+    const out = summarizeHeader({
+        armed: false,
+        stop_reason: null,
+        iter: 7,
+        max_iters: 200,
+        last_run: {
+            stop_reason: "shipper_blocked",
+            started_at: 1000,
+            finished_at: 5000,
+            iter: 7,
+            history: [],
+        },
+    });
+    assert.equal(out.statusWord, "STOPPED");
+    assert.match(out.line, /reason: shipper_blocked/);
+});
+
+test("summarizeHeader: complete carries through last_run after stop_reason cleared", () => {
+    const out = summarizeHeader({
+        armed: false,
+        stop_reason: null,
+        iter: 12,
+        max_iters: 200,
+        last_run: {
+            stop_reason: "complete",
+            started_at: 1000,
+            finished_at: 5000,
+            iter: 12,
+            history: [],
+        },
+    });
+    assert.equal(out.statusWord, "DONE");
+});
+
+test("summarizeHeader: armed snapshot does NOT use last_run.stop_reason", () => {
+    // While armed, the TUI must show RUNNING — a stale `last_run`
+    // from the previous run must not bleed into the active label.
+    const out = summarizeHeader({
+        armed: true,
+        stop_reason: null,
+        iter: 1,
+        max_iters: 200,
+        started_at: Date.now(),
+        last_run: {
+            stop_reason: "shipper_blocked",
+            started_at: 1000,
+            finished_at: 5000,
+            iter: 7,
+            history: [],
+        },
+    });
+    assert.equal(out.statusWord, "RUNNING");
+});

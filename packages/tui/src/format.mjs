@@ -143,18 +143,27 @@ export function summarizeHeader(snapshot, { now = Date.now() } = {}) {
         runtime = formatDuration(snapshot.last_run.finished_at - snapshot.last_run.started_at);
     }
 
+    // Rubber-duck fix #5: after the post-loop hook fires, the
+    // extension's `armOnNextRun` clears `stop_reason` from the active
+    // snapshot but preserves the just-finished run in `last_run`. The
+    // TUI must keep showing "STOPPED · reason: …" until a new arm
+    // happens, so we fall back to `last_run.stop_reason` when armed
+    // is false and the active reason was cleared.
+    const reason = snapshot.stop_reason
+        ?? (armed ? null : snapshot.last_run?.stop_reason ?? null);
+
     let statusWord;
     let statusColor;
     if (armed && paused) { statusWord = "PAUSED"; statusColor = "yellow"; }
     else if (armed) { statusWord = "RUNNING"; statusColor = "cyan"; }
-    else if (snapshot.stop_reason === "complete") { statusWord = "DONE"; statusColor = "green"; }
-    else if (snapshot.stop_reason) { statusWord = "STOPPED"; statusColor = "red"; }
+    else if (reason === "complete") { statusWord = "DONE"; statusColor = "green"; }
+    else if (reason) { statusWord = "STOPPED"; statusColor = "red"; }
     else { statusWord = "IDLE"; statusColor = "gray"; }
 
     const parts = [`autopilot ${version ? `v${version} ` : ""}${statusWord}`];
     parts.push(`iter ${iter}/${maxIters}`);
     if (runtime) parts.push(armed ? `running ${runtime}` : `ran ${runtime}`);
-    if (snapshot.stop_reason && !armed) parts.push(`reason: ${snapshot.stop_reason}`);
+    if (reason && !armed) parts.push(`reason: ${reason}`);
 
     return {
         statusWord,

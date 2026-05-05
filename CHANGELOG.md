@@ -2,6 +2,64 @@
 
 ## Unreleased
 
+### Fixes
+- Rubber-duck integration audit on the fleet pivot
+  (refs #116) — three control-plane bugs hardened
+  before release:
+  - **Token parser**: rewrote `[AUTOPILOT_RESULT: {…}]`
+    extraction in `extension/handler.mjs`. The old regex
+    was first-match-wins and rejected any payload
+    containing `[` or `]` even inside a JSON string. The
+    new extractor is a balanced-bracket walker that
+    respects JSON string quoting + escapes, and
+    explicitly REJECTS messages containing more than one
+    token (returns `ambiguous_tokens: N`) — a stale
+    earlier draft can no longer override the real final
+    outcome. Five new parser tests pin multi-token
+    rejection, brackets-in-string acceptance, escaped
+    quote handling, nested object handling, and
+    no-closing-bracket rejection.
+  - **Send-failure stops the loop**: `reinject()` in
+    `extension/handler.mjs` previously logged send errors
+    and left `state.armed=true`, producing zombie runs
+    that consumed iters forever. It now calls
+    `stopLoop("send_failed", …)` on session-not-attached,
+    synchronous throw, AND async rejection. Three new
+    state-machine tests pin each path.
+  - **Scout/shipper streak separation**: a transient gh
+    outage on the scout side no longer eats into the
+    shipper budget. New `scout_streak_blocked` runs in
+    parallel with `shipper_streak_blocked`; the contract
+    requires the parent agent to emit
+    `"source":"scout"|"shipper"` on every blocked outcome
+    so the loop driver can route correctly. Three blocks
+    with the same source now stop with `scout_blocked` or
+    `shipper_blocked` (legacy unsourced blocks still trip
+    `repeated_blocked` for runbook compatibility). Four
+    new state-machine tests pin the routing.
+- **TUI header preserves stop reason after post-loop
+  hook** (#116) — `summarizeHeader` in
+  `packages/tui/src/format.mjs` now falls back to
+  `last_run.stop_reason` when the active snapshot's
+  `stop_reason` was cleared by the post-loop hook
+  (`armOnNextRun`). Without this, the TUI flipped from
+  STOPPED back to IDLE the moment the user opened a new
+  prompt, hiding why the loop ended. Three new TUI
+  format tests pin the fallback (and pin that an armed
+  snapshot does NOT bleed `last_run` into the active
+  label).
+- **Scout fetches issue body on-demand** (#116) — the
+  probe's `gh issue list` deliberately omits `body` to
+  keep the listing lightweight, so the picker's
+  `picked.evidence.body` was always empty in production
+  and `scope_files` extraction never found anything for
+  issue candidates. `extension/scout-tool.mjs` now
+  performs a `gh issue view <num> --json body` for the
+  picked issue only — same on-demand pattern as the PR
+  `gh pr view` call. Two new scout tests pin the success
+  and the soft-failure (empty `scope_files` instead of
+  blocking the loop).
+
 ## 0.7.0
 
 ### Breaking

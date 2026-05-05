@@ -81,17 +81,23 @@ test("defaultStatePath: ends with the documented suffix under HOME", () => {
         `expected default path to end with .copilot/autopilot/state.json, got ${p}`);
 });
 
-test("RESULT_TOKEN_RE: matches the canonical token shapes the extension emits", () => {
+test("RESULT_TOKEN_RE: anchors on the canonical token prefix", () => {
+    // The regex matches the START marker only — the JSON body is
+    // extracted by a balanced-bracket walker in
+    // `extension/handler.mjs#extractAllTokens` (kept out of the TUI
+    // because the TUI never parses tokens at runtime; it reads
+    // `state.history` rows pre-parsed by the extension). All we need
+    // here is sanity that the prefix matches every canonical shape.
     const cases = [
         '[AUTOPILOT_RESULT: {"outcome":"complete"}]',
         '[AUTOPILOT_RESULT: {"outcome":"shipped","sha":"abc1234"}]',
         '[AUTOPILOT_RESULT: {"outcome":"blocked","reason":"gh_unauth: foo"}]',
     ];
     for (const c of cases) {
-        const m = RESULT_TOKEN_RE.exec(c);
-        assert.ok(m, `expected ${c} to match`);
-        const parsed = JSON.parse(m[1]);
-        assert.equal(typeof parsed.outcome, "string");
+        // /g flag — exec from a fresh state.
+        const re = new RegExp(RESULT_TOKEN_RE.source, RESULT_TOKEN_RE.flags);
+        const m = re.exec(c);
+        assert.ok(m, `expected ${c} prefix to match`);
     }
 });
 

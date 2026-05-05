@@ -321,6 +321,59 @@ test("handler: scope_files extraction from issue body picks file paths only", as
     );
 });
 
+test("handler: when issue list omits body, scout fetches it via `gh issue view <num> --json body`", async () => {
+    // Rubber-duck fix #6: the production probe deliberately omits
+    // `body` from `gh issue list` to keep the listing lightweight.
+    // The picker must fetch the body for the chosen issue on-demand
+    // so `scope_files` extraction actually finds the paths the issue
+    // mentions.
+    const issues = [{
+        number: 17,
+        title: "Wire telemetry",
+        labels: [],
+        updatedAt: "x",
+        url: "https://x",
+        // No body field — mirrors what the production list returns.
+    }];
+    const map = ghOkEmptyMap();
+    map[PROBE_KEYS.issues] = jsonOk(issues);
+    // Fallback `gh issue view` call returning the body. The map key
+    // must match exactly — runGh.join(" ") on the args.
+    map["issue view 17 --json body"] = jsonOk({
+        body: "Touches extension/handler.mjs and packages/tui/src/state.mjs.",
+    });
+    const tool = createScoutTool({ runGh: makeRunGh(map) });
+    const out = await tool.handler({});
+    const parsed = JSON.parse(out.textResultForLlm);
+    assert.equal(parsed.kind, "candidate");
+    assert.equal(parsed.ref, "17");
+    assert.deepEqual(
+        parsed.scope_files,
+        ["extension/handler.mjs", "packages/tui/src/state.mjs"],
+    );
+});
+
+test("handler: issue body fetch failure → scope_files empty (not blocked)", async () => {
+    // A failed body fetch is a soft failure: the candidate is still
+    // returned, just without scope_files. The shipper can find the
+    // files itself via grep / repo inspection.
+    const issues = [{
+        number: 99,
+        title: "Something",
+        labels: [],
+        updatedAt: "x",
+        url: "https://x",
+    }];
+    const map = ghOkEmptyMap();
+    map[PROBE_KEYS.issues] = jsonOk(issues);
+    map["issue view 99 --json body"] = { ok: false, stdout: "", stderr: "404", code: 1 };
+    const tool = createScoutTool({ runGh: makeRunGh(map) });
+    const out = await tool.handler({});
+    const parsed = JSON.parse(out.textResultForLlm);
+    assert.equal(parsed.kind, "candidate");
+    assert.deepEqual(parsed.scope_files, []);
+});
+
 test("handler: no_work when every probe returns clean empty array", async () => {
     const tool = createScoutTool({ runGh: makeRunGh(ghOkEmptyMap()) });
     const out = await tool.handler({});

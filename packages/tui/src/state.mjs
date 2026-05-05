@@ -26,9 +26,10 @@ import { join } from "node:path";
 // extension/handler.mjs (drift-guarded by
 // `RESULT_TOKEN_RE matches the extension's literal` in
 // packages/tui/test/state.test.mjs which reads handler.mjs and
-// asserts byte-equality).
-export const RESULT_TOKEN_RE =
-    /\[AUTOPILOT_RESULT:\s*(\{[^\[\]]*?\})\s*\]/;
+// asserts byte-equality). The /g flag is required — the extension's
+// `extractAllTokens` uses repeated `re.exec` to detect duplicate
+// tokens (which the loop driver rejects as `ambiguous_tokens`).
+export const RESULT_TOKEN_RE = /\[AUTOPILOT_RESULT:\s*/g;
 
 /**
  * Default location of the extension's state file. Resolved lazily so

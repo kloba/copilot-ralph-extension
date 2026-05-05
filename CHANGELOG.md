@@ -3,6 +3,23 @@
 ## Unreleased
 
 ### Features
+- Issue #118 (refs #116) — new `autopilot_scout` tool: a
+  pure-function deterministic probe of `gh` + repo state
+  that picks the next work item for autopilot. Returns one
+  of: `candidate` (CI failure > stale PR > human-filed
+  issue), `no_work` (every probe succeeded AND every probe
+  returned empty), or `blocked` (any probe failed —
+  `gh_missing`, `gh_unauth`, `gh_rate_limited`,
+  `gh_error`). Never collapses a probe failure to
+  `no_work` — a transient `gh` outage cannot end the loop.
+  Issues labelled `grow-project` or `proposed` are excluded
+  (those belong to the loop-ideated feature backlog runner,
+  not the human-filed work scout surfaces). Wave 2a of the
+  fleet pivot — replaces the ORIENT/IDEATE/SELECT stages of
+  the legacy 30 KB `PROMPT_SELF_IMPROVE` so the LLM can
+  focus on shipping. Wired into `extension/extension.mjs`
+  separately in wave 2b (issue #120).
+
 - Issue #54 — `ralph-tui run` UX hardening across the
   three-level layout. The four top panes
   (`<Header>` / `<StagesRow>` / `<TasksPane>` /

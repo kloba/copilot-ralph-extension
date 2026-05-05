@@ -113,7 +113,7 @@ done
 # new fully-coherent set (entry replaced → imports the already-
 # replaced new siblings). It can never see an old entry against new
 # siblings whose API contract may have shifted under it.
-FILES=(events-emit.mjs prompts.mjs handler.mjs extension.mjs)
+FILES=(events-emit.mjs prompts.mjs scout-tool.mjs handler.mjs extension.mjs)
 
 # VERSION is extracted from `extension/handler.mjs`'s `export const
 # VERSION = "X.Y.Z";` declaration above the arg-parse loop so the

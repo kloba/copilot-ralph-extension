@@ -9570,13 +9570,13 @@ test("docs(architecture): DI options list includes every supported createRalphCo
 
 // Iter 121 — drift guard: README's 3 manual-install `curl` loops MUST
 // list source files in the same leaf-first order as install.sh's
-// FILES array (events-emit.mjs prompts.mjs handler.mjs extension.mjs — entry
-// point LAST). install.sh's atomic per-file copy is intentional —
-// from iter 113's commit message: "If a concurrent `/extensions
-// reload` fires mid-install, replacing the entry point last means
-// the SDK either sees the old fully-coherent set or the new fully-
-// coherent set. It can never see an old entry against new siblings
-// whose API contract may have shifted under it."
+// FILES array (events-emit.mjs prompts.mjs scout-tool.mjs handler.mjs
+// extension.mjs — entry point LAST). install.sh's atomic per-file copy
+// is intentional — from iter 113's commit message: "If a concurrent
+// `/extensions reload` fires mid-install, replacing the entry point
+// last means the SDK either sees the old fully-coherent set or the new
+// fully-coherent set. It can never see an old entry against new
+// siblings whose API contract may have shifted under it."
 //
 // The same invariant applies to the README's curl-based manual
 // install: a download interrupted (or merely slow) mid-loop, with a
@@ -9592,7 +9592,7 @@ test("README curl install loops use leaf-first order matching install.sh's FILES
     const expectedOrder = installFilesMatch[1].trim();
     assert.equal(
         expectedOrder,
-        "events-emit.mjs prompts.mjs handler.mjs extension.mjs",
+        "events-emit.mjs prompts.mjs scout-tool.mjs handler.mjs extension.mjs",
         "install.sh's FILES order is the source of truth — entry point LAST. " +
         "Update this assertion AND every doc curl loop in lockstep if you change it.",
     );

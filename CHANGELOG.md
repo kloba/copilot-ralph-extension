@@ -2,6 +2,120 @@
 
 ## Unreleased
 
+## 0.7.0
+
+### Breaking
+- Issues #120 + #122 (refs #116) — autopilot replaces ralph.
+  The 1.2 KLOC SDLC controller (legacy `ap_loop` /
+  `self_improve` / `grow_project`) has been retired and
+  replaced by a thin re-injection driver (~660 LOC) around
+  the new `autopilot_scout` (#118) probe and
+  `autopilot-shipper` (#119) custom agent. Each iter the
+  driver picks the work item via scout, hands it to the
+  shipper sub-agent, and parses one
+  `[AUTOPILOT_RESULT: { outcome, … }]` root token from the
+  parent's response to advance state. Outcomes are exactly
+  three: `complete` (no work — stop), `shipped` (commit
+  landed — continue), `blocked` (irrecoverable — three in
+  a row stop with `repeated_blocked`). `self_improve` and
+  `grow_project` are HARD REMOVED — calling them produces
+  the SDK's normal "tool not found" error. The 30 KB
+  `prompts.mjs` (`PROMPT_SELF_IMPROVE` / `PROMPT_GROW_PROJECT`)
+  is gone; per-iter prompt is now a 1 KB protocol
+  reminder. The legacy `[STAGE:]` / `[TASK:]` /
+  `[SUBSTAGE:]` markers and the `events-emit.mjs` event
+  bridge are gone — the TUI consumes the result-token
+  protocol directly.
+- Deprecated: `ap_loop`, `ap_status`, `ap_stop` are now
+  thin shims that forward to `autopilot_run`,
+  `autopilot_status`, `autopilot_stop` with a
+  `⚠️ deprecated: …` warning prepended to the
+  tool result. Slated for removal in 0.8.0.
+  `ap_pause` / `ap_resume` return a failure with
+  `deferred to v2` — pause/resume are not part of the
+  0.7.0 surface and will return in a later minor.
+
+### Features
+- Issues #120 + #122 (refs #116) — new tool surface and
+  slash command:
+  - `autopilot_run({ max_iters, max_tokens?, focus? })`
+    arms the loop and kicks off iter 1 immediately.
+  - `autopilot_stop()` halts a running loop with
+    `stop_reason: user_stopped`.
+  - `autopilot_status()` returns a read-only snapshot
+    (armed, iter, streaks, last_iter_outcome, version,
+    last_run if present).
+  - `/autopilot [run|stop|status]` slash command — `run`
+    is the default with no args, `status` logs a one-line
+    summary without mutation, `stop` is equivalent to
+    calling the tool.
+  - Root-token contract:
+    `[AUTOPILOT_RESULT: { "outcome": "complete" | "shipped" | "blocked", "sha"?: string, "reason"?: string }]`
+    — exactly one token per parent response, parsed by
+    `parseAutopilotResult()` (exported for testing). Two
+    consecutive parse failures stop the loop with
+    `parser_lost_lock`.
+
+### Internal
+- Issue #120 — loop driver rewritten from scratch.
+  `extension/handler.mjs` shrank from 2,437 LOC to
+  ~660 LOC. State machine drives off `session.idle`
+  (the SDK's root-agent agentic-loop completion event)
+  not per-tool `assistant.turn_end`, so a single root
+  response with N tool calls produces exactly one iter
+  boundary. Sub-agent assistant.message events
+  (carrying `agentId`) are filtered out of the parent
+  loop so the shipper's intermediate
+  narration cannot be mistaken for the parent's
+  terminal token. State is persisted to
+  `~/.copilot/autopilot/state.json` via atomic
+  `tmp + rename` writes; corrupt files are recoverable
+  (load returns null, controller starts fresh).
+- Issue #122 — deleted `extension/prompts.mjs` (~30 KB
+  of SDLC prompt scaffolding) and
+  `extension/events-emit.mjs` (legacy `[STAGE:]` /
+  `[TASK:]` / `[SUBSTAGE:]` event bridge to the TUI).
+  The autopilot driver speaks the result-token protocol
+  directly; the TUI's iteration boundary detection now
+  hangs off `session.idle` like the driver itself.
+  `install.sh`'s `FILES` array trimmed from 6 modules to
+  4 (`scout-tool.mjs shipper-agent.mjs handler.mjs extension.mjs`)
+  — entry-point `extension.mjs` still LAST per the
+  atomic-reload contract.
+- `createRalphController` is preserved as an alias for
+  `createAutopilotController` so test fixtures and
+  installed copies importing the legacy name still work
+  through the 0.7.x cycle. Slated for removal in 0.8.0.
+
+### Tests
+- Issues #120 + #122 — `test/extension.test.mjs` rewritten.
+  Legacy test bodies (505 tests pinning
+  `PROMPT_SELF_IMPROVE` / `PROMPT_GROW_PROJECT` /
+  `BAKED_RALPH_LOOP_RIDER` / `[STAGE:]` markers /
+  `adaptive_budget` / `stagnation_limit`) are gone —
+  none of those contracts exist. New tests pin: the
+  `[AUTOPILOT_RESULT: …]` parser (token shapes,
+  malformed JSON, missing token, unknown outcome,
+  trailing brackets), state-machine transitions
+  (shipped resets streaks, 3 blocked → repeated_blocked,
+  parse-failure × 2 → parser_lost_lock, max_iters cap,
+  max_tokens cap, sub-agent events ignored, detach
+  stops cleanly), atomic state-file persistence
+  (corrupt-file recoverable), deprecation shim wrapping
+  (warning + forward to new tool), `/autopilot status`
+  is read-only, hooks fire post-loop context exactly
+  once. All earlier drift guards preserved (install.sh
+  FILES matches `extension/*.mjs` on disk, entry-point
+  LAST, README curl loops match install.sh, SECURITY.md
+  in-scope list covers every shipped module, AGENTS.md
+  section order matches CHANGELOG `## Unreleased`,
+  VERSION matches `package.json`, `install.sh --version`
+  prints the right version).
+- Removed 3 pre-existing failing tests that referenced
+  the deleted `scripts/ralph-tui-fresh.sh`. They were
+  unrelated to the autopilot rewrite but lived inside
+  the now-replaced `test/extension.test.mjs` body.
+
 ### Features
 - Issue #119 (refs #116) — new `autopilot-shipper` custom
   agent registered via `SessionConfig.customAgents`.

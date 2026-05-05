@@ -566,7 +566,7 @@ import {
     SDLC_STAGES_GROW_PROJECT,
     stagesForLabel,
 } from "../src/events.mjs";
-import { PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT } from "../../../extension/prompts.mjs";
+import { PROMPT_SELF_IMPROVE, PROMPT_GROW_PROJECT } from "../src/_legacy-prompts.mjs";
 
 test("SDLC_STAGES_SELF_IMPROVE: every stage name appears in PROMPT_SELF_IMPROVE", () => {
     for (const stage of SDLC_STAGES_SELF_IMPROVE) {

@@ -104,8 +104,8 @@ for arg in "$@"; do
 done
 
 # Order matters: leaf modules first, entry point LAST. The Copilot CLI
-# loads `extension.mjs` and that file imports handler.mjs + events-emit.mjs
-# (and handler.mjs imports prompts.mjs in turn). If a concurrent
+# loads `extension.mjs` and that file imports handler.mjs (which in
+# turn imports scout-tool.mjs + shipper-agent.mjs). If a concurrent
 # `/extensions reload` fires mid-install, replacing the entry point last
 # means the SDK either sees the old fully-coherent set (entry not yet
 # replaced → still imports old siblings, which the trap-preserving
@@ -113,7 +113,7 @@ done
 # new fully-coherent set (entry replaced → imports the already-
 # replaced new siblings). It can never see an old entry against new
 # siblings whose API contract may have shifted under it.
-FILES=(events-emit.mjs prompts.mjs scout-tool.mjs shipper-agent.mjs handler.mjs extension.mjs)
+FILES=(scout-tool.mjs shipper-agent.mjs handler.mjs extension.mjs)
 
 # VERSION is extracted from `extension/handler.mjs`'s `export const
 # VERSION = "X.Y.Z";` declaration above the arg-parse loop so the

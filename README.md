@@ -36,7 +36,7 @@ mkdir -p ~/.copilot/extensions/ralph
 # Order matters: leaf modules first, entry point (extension.mjs) LAST.
 # If `/extensions reload` fires mid-download, this guarantees the SDK
 # never sees a new entry point importing missing/old siblings.
-for f in events-emit.mjs prompts.mjs scout-tool.mjs shipper-agent.mjs handler.mjs extension.mjs; do
+for f in scout-tool.mjs shipper-agent.mjs handler.mjs extension.mjs; do
   curl -fsSL "https://raw.githubusercontent.com/kloba/copilot-ralph-extension/main/extension/$f" \
     -o ~/.copilot/extensions/ralph/$f
 done
@@ -55,7 +55,7 @@ Then in any Copilot CLI session, run:
 ```bash
 mkdir -p .github/extensions/ralph
 # Same leaf-first ordering as Option A — see comment there.
-for f in events-emit.mjs prompts.mjs scout-tool.mjs shipper-agent.mjs handler.mjs extension.mjs; do
+for f in scout-tool.mjs shipper-agent.mjs handler.mjs extension.mjs; do
   curl -fsSL "https://raw.githubusercontent.com/kloba/copilot-ralph-extension/main/extension/$f" \
     -o .github/extensions/ralph/$f
 done
@@ -75,7 +75,7 @@ cd copilot-ralph-extension
 
 `install.sh` syntax-checks each source file with `node --check` and writes via temp-file + atomic `mv`, so a concurrent Copilot CLI reload can never see a half-written `handler.mjs`.
 
-> **Windows note:** the runtime extension (`extension.mjs`, `handler.mjs`, and `events-emit.mjs`) is plain ESM and works wherever Copilot CLI runs. The `install.sh` script requires a Bash shell — on Windows use **WSL**, **Git Bash**, or **MSYS2**. As a fallback, follow Option A or B above (the `mkdir -p` + `curl` snippets) inside any POSIX-ish shell, or copy every `.mjs` file from `extension/` manually into `%USERPROFILE%\.copilot\extensions\ralph\`.
+> **Windows note:** the runtime extension (`extension.mjs`, `handler.mjs`, `scout-tool.mjs`, `shipper-agent.mjs`) is plain ESM and works wherever Copilot CLI runs. The `install.sh` script requires a Bash shell — on Windows use **WSL**, **Git Bash**, or **MSYS2**. As a fallback, follow Option A or B above (the `mkdir -p` + `curl` snippets) inside any POSIX-ish shell, or copy every `.mjs` file from `extension/` manually into `%USERPROFILE%\.copilot\extensions\ralph\`.
 
 ### Option D — Pin a specific tagged release
 
@@ -85,7 +85,7 @@ The default install snippets curl from `main`, which is rolling-latest. To pin a
 VERSION=v0.7.0
 mkdir -p ~/.copilot/extensions/ralph
 # Same leaf-first ordering as Option A — see comment there.
-for f in events-emit.mjs prompts.mjs scout-tool.mjs shipper-agent.mjs handler.mjs extension.mjs; do
+for f in scout-tool.mjs shipper-agent.mjs handler.mjs extension.mjs; do
   curl -fsSL "https://github.com/kloba/copilot-ralph-extension/releases/download/$VERSION/$f" \
     -o ~/.copilot/extensions/ralph/$f
 done
@@ -515,7 +515,7 @@ Behaviour:
 
 ## Troubleshooting
 
-- **`/extensions` doesn't list `ralph`.** Confirm every `.mjs` from `extension/` (currently `extension.mjs`, `handler.mjs`, and `events-emit.mjs`) is present in `~/.copilot/extensions/ralph/` (user-scoped) or `.github/extensions/ralph/` (project-scoped, only visible from inside that repo) and restart Copilot CLI. `./install.sh` from source double-checks every file with `node --check` before writing, and a partial copy (e.g. only the first two modules) crashes at module-load with `Cannot find module './events-emit.mjs'`.
+- **`/extensions` doesn't list `ralph`.** Confirm every `.mjs` from `extension/` (currently `extension.mjs`, `handler.mjs`, `scout-tool.mjs`, `shipper-agent.mjs`) is present in `~/.copilot/extensions/ralph/` (user-scoped) or `.github/extensions/ralph/` (project-scoped, only visible from inside that repo) and restart Copilot CLI. `./install.sh` from source double-checks every file with `node --check` before writing, and a partial copy (e.g. only the first two modules) crashes at module-load with `Cannot find module './handler.mjs'`.
 - **`<owner> is already armed/running` failure.** Only one loop runs per session at a time — call `ap_stop` before re-arming. The leading word (`ap_loop`, `self_improve`, or `grow_project`) reflects whichever tool armed the active loop, so the guard fires on any of the three when one of the others is active.
 - **`abort_promise … overlap as substrings`.** `completion_promise` and `abort_promise` must be disjoint phrases (e.g. `"DONE"` and `"DONE_FAIL"` is rejected because one contains the other). Pick non-overlapping tokens.
 - **Loop ends immediately with `reason: send_error`.** The first `session.send` call rejected — usually because `controller.attach(session)` was not called or the session is no longer live. Check `result.note` for the underlying error.

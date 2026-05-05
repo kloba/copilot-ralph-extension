@@ -20,7 +20,7 @@ A formal tag-driven release-automation workflow now ships at [`.github/workflows
 4. **Create a GitHub Release**:
    - Title: `vX.Y.Z`.
    - Body: paste the new `## X.Y.Z` section from `CHANGELOG.md` verbatim.
-   - Attach every `.mjs` module under `extension/` as a release asset so users can pin a specific revision without cloning the repo. The full set is the same one `install.sh` copies — currently `extension.mjs`, `handler.mjs`, and `events-emit.mjs`. A drift guard in `test/extension.test.mjs` keeps `release.yml`'s asset list in sync with the directory; mirror that list here when invoking `gh release create` manually:
+   - Attach every `.mjs` module under `extension/` as a release asset so users can pin a specific revision without cloning the repo. The full set is the same one `install.sh` copies — currently `extension.mjs`, `handler.mjs`, `scout-tool.mjs`, and `shipper-agent.mjs`. A drift guard in `test/extension.test.mjs` keeps `release.yml`'s asset list in sync with the directory; mirror that list here when invoking `gh release create` manually:
      ```bash
      # Extract the matching CHANGELOG block (heading-line + body up to,
      # but not including, the next "## " heading). Escapes the dots in
@@ -29,7 +29,6 @@ A formal tag-driven release-automation workflow now ships at [`.github/workflows
      gh release create vX.Y.Z \
        extension/extension.mjs \
        extension/handler.mjs \
-       extension/events-emit.mjs \
        extension/scout-tool.mjs \
        extension/shipper-agent.mjs \
        --title "vX.Y.Z" --notes-file <(awk '/^## X\.Y\.Z[[:space:]]*$/{p=1;next} p&&/^## /{exit} p' CHANGELOG.md)
@@ -56,7 +55,7 @@ mkdir -p .github/extensions/ralph
 # mirrors install.sh's FILES array and README Option A/B/D. If
 # `/extensions reload` fires mid-download, this guarantees the SDK
 # never sees a new `extension.mjs` importing missing/old siblings.
-for f in events-emit.mjs prompts.mjs scout-tool.mjs shipper-agent.mjs handler.mjs extension.mjs; do
+for f in scout-tool.mjs shipper-agent.mjs handler.mjs extension.mjs; do
   curl -L -o ".github/extensions/ralph/$f" \
     "https://github.com/kloba/copilot-ralph-extension/releases/download/vX.Y.Z/$f"
 done

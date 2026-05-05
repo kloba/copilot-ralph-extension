@@ -1,20 +1,26 @@
+// LEGACY: copy of the pre-0.7.0 extension/prompts.mjs, kept inside the
+// TUI package because the TUI's `autopilot run` out-of-session driver
+// still uses the SDLC prompts (`PROMPT_SELF_IMPROVE` /
+// `PROMPT_GROW_PROJECT`) and their completion / abort tokens.
+//
+// The in-extension equivalents were deleted in 0.7.0 (issue #122) when
+// the in-session loop pivoted to the autopilot_scout + autopilot-shipper
+// + `[AUTOPILOT_RESULT: …]` root-token contract. The out-of-session
+// driver predates the pivot and is slated for the same treatment in a
+// later release; until then this file lets the TUI compile without
+// re-introducing the legacy modules at the user-facing extension/
+// surface.
+//
 // Baked SDLC prompts for the self_improve and grow_project loops, plus
 // the literal completion / abort tokens they emit. Lives in its own
 // module so it can be imported by:
 //
-//   - extension/handler.mjs — the in-session loop runner
 //   - packages/tui/src/runner.mjs — the out-of-session ralph-tui run
 //     driver (each iter is a fresh `copilot -p ...` subprocess)
 //
-// Both runners must ship the IDENTICAL prompt body, otherwise behaviour
-// diverges between `self_improve` / `grow_project` (in-session) and
-// `ralph-tui run --self-improve` / `ralph-tui run --grow-project`
-// (out-of-session). Centralising the prompt source removes that drift
-// surface entirely.
-//
-// Pure-stdlib, zero imports: this module is loaded by both the SDK
-// extension entry point and the TUI binary, neither of which can take
-// non-stdlib deps without changing the install/package contract.
+// Pure-stdlib, zero imports: this module is loaded by the TUI binary,
+// which cannot take non-stdlib deps without changing the package
+// contract.
 
 // Literal completion token both prompts instruct the agent to emit on
 // its own line so the loop driver advances. handler.mjs's

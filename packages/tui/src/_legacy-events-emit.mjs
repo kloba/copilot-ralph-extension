@@ -1,7 +1,17 @@
+// LEGACY: copy of the pre-0.7.0 extension/events-emit.mjs, kept inside
+// the TUI package because the TUI's `autopilot run` out-of-session
+// driver still emits the legacy [STAGE:] / [TASK:] / [SUBSTAGE:] event
+// stream from each per-iter copilot subprocess.
+//
+// The in-extension equivalent was deleted in 0.7.0 (issue #122) when
+// the in-session loop pivoted to the `[AUTOPILOT_RESULT: …]` root-token
+// contract. The out-of-session driver predates the pivot and is slated
+// for the same treatment in a later release; until then this file lets
+// the TUI compile without re-introducing the legacy module at the
+// user-facing extension/ surface.
+//
 // Zero-dep JSONL event emitter for ap_loop / self_improve / grow_project
-// (issue #22). Mirrors the contract in packages/tui/src/{events,writer}.mjs
-// but lives here next to handler.mjs so install.sh can copy it next to
-// extension.mjs without dragging in the whole packages/tui workspace.
+// (issue #22). Mirrors the contract in packages/tui/src/{events,writer}.mjs.
 //
 // All errors are swallowed: the loop must keep running even if the disk
 // is full, the path is unwritable, or the user nuked ~/.copilot mid-run.

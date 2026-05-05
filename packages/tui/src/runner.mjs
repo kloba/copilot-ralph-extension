@@ -48,9 +48,9 @@ import {
     COMPLETION_PROMISE,
     BAKED_ABORT_TOKEN,
     BAKED_BACKLOG_ABORT_TOKEN,
-} from "../../../extension/prompts.mjs";
+} from "./_legacy-prompts.mjs";
 
-import { createEventEmitter } from "../../../extension/events-emit.mjs";
+import { createEventEmitter } from "./_legacy-events-emit.mjs";
 import {
     SDLC_STAGES_SELF_IMPROVE,
     SDLC_STAGES_GROW_PROJECT,
